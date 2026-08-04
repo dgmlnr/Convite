@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveTrick, type PlayedCard, type TeamId } from "./index.js";
+import {
+  resolveTrick,
+  resolveHandWinner,
+  type PlayedCard,
+  type TeamId,
+} from "./index.js";
 
 describe("truco-engine public API (browser)", () => {
   it("resolves a trick identically in a real browser, proving Node/browser parity", () => {
@@ -11,5 +16,16 @@ describe("truco-engine public API (browser)", () => {
     ];
 
     expect(resolveTrick(plays).winnerTeamId).toBe(teamB);
+  });
+
+  it("resolves a hand winner (parda rule) identically in a real browser", () => {
+    const teamB = "team-b" as TeamId;
+
+    const result = resolveHandWinner(
+      [{ winnerTeamId: null }, { winnerTeamId: null }, { winnerTeamId: null }],
+      teamB,
+    );
+
+    expect(result).toEqual({ decided: true, winnerTeamId: teamB });
   });
 });
