@@ -1,0 +1,12 @@
+{
+  "name": "@hexdev/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/platform-core": "workspace:*",
+    "@hexdev/transport-colyseus": "workspace:*",
+    "@hexdev/truco-module": "workspace:*"
+  }
+}

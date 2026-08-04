@@ -1,0 +1,11 @@
+{
+  "name": "@hexdev/transport-colyseus",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/platform-core": "workspace:*",
+    "colyseus": "^0.17.10"
+  }
+}

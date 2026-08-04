@@ -1,0 +1,9 @@
+{
+  "name": "@hexdev/platform-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hexdev/platform-contract": "workspace:*"
+  }
+}

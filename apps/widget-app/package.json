@@ -1,0 +1,10 @@
+{
+  "name": "@hexdev/widget-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hexdev/widget-protocol": "workspace:*",
+    "@hexdev/widget-sdk": "workspace:*"
+  }
+}

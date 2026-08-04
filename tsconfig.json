@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/platform-contract" },
+    { "path": "packages/widget-protocol" },
+    { "path": "packages/platform-core" },
+    { "path": "packages/games/truco-engine" },
+    { "path": "packages/games/truco-bot" },
+    { "path": "packages/games/truco-ui" },
+    { "path": "packages/games/truco-module" },
+    { "path": "packages/transport-colyseus" },
+    { "path": "packages/widget-sdk" },
+    { "path": "apps/server" },
+    { "path": "apps/widget-app" }
+  ]
+}
