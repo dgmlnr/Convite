@@ -1,9 +1,12 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import type { Card } from "./card.js";
+import { buildDeck } from "./deck.js";
 import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
 import type { MatchState, TrucoCallLevel } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
-import type { TrucoAction } from "./truco-chain.js";
+import type { Action, TrucoAction } from "./truco-chain.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
@@ -181,5 +184,35 @@ describe("applyAction — illegal actions are rejected, not silently ignored", (
     applyAction(state, { type: "call-truco", playerId: playerA, level: "truco" });
 
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+describe("applyAction — full purity property over the combined truco+envido action space (spec: 'applyAction is pure')", () => {
+  it("for any reachable state and any of its legal actions, applying twice yields equal results and never mutates the input", () => {
+    const dealArb = fc.shuffledSubarray(buildDeck() as Card[], { minLength: 6, maxLength: 6 });
+    const walkArb = fc.array(fc.nat({ max: 9 }), { maxLength: 15 });
+
+    fc.assert(
+      fc.property(dealArb, walkArb, fc.nat({ max: 9 }), (cards, walk, finalStep) => {
+        const fresh = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+        let state = startHand(fresh, [cards.slice(0, 3), cards.slice(3, 6)]);
+        for (const step of walk) {
+          const legal = [...getLegalActions(state, playerA), ...getLegalActions(state, playerB)];
+          if (legal.length === 0) break;
+          const result = applyAction(state, legal[step % legal.length]!);
+          if (result.ok) state = result.state;
+        }
+
+        const legal: readonly Action[] = [...getLegalActions(state, playerA), ...getLegalActions(state, playerB)];
+        if (legal.length === 0) return true; // match/hand already terminal — nothing left to apply
+
+        const action = legal[finalStep % legal.length]!;
+        const before = JSON.stringify(state);
+        const first = applyAction(state, action);
+        const second = applyAction(state, action);
+
+        return JSON.stringify(state) === before && JSON.stringify(first) === JSON.stringify(second);
+      }),
+    );
   });
 });
