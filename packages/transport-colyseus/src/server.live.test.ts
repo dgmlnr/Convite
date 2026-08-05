@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { boot, type ColyseusTestServer } from "@colyseus/testing";
 import type { GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { createGameModuleRegistry, createJtiReplayGuard, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
 
@@ -78,7 +78,8 @@ describe("createMatchServer — live WebSocket integration (the composition root
     ]);
     const registry = createGameModuleRegistry([{ module: liveModule, requestSystemAction: (state) => ((state as LiveState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) }]);
     const httpServer = createServer();
-    const gameServer = createMatchServer({ httpServer, registry, auth: { issuer, repository, replayGuard: createJtiReplayGuard() }, rng: () => 0.5 });
+    const auth = { issuer, repository, replayGuard: createJtiReplayGuard(), joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }) };
+    const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     testServer = await boot(gameServer);
   });
 

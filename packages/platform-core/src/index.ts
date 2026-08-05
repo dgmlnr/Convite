@@ -1,5 +1,7 @@
 export type { GameModuleRegistration, GameModuleRegistry, SystemActionRequester } from "./registry.js";
 export { createGameModuleRegistry } from "./registry.js";
+export type { RateLimiter, RateLimiterOptions } from "./rate-limiter.js";
+export { createRateLimiter } from "./rate-limiter.js";
 export type {
   EmbedMintResult,
   JtiReplayGuard,

@@ -4,10 +4,11 @@ import type { ApplyResult, GameModule, PlayerId, SeatAssignment } from "@hexdev/
 import {
   createGameModuleRegistry,
   createJtiReplayGuard,
+  createRateLimiter,
   createSessionTokenIssuer,
   createStaticTenantRepository,
 } from "@hexdev/platform-core";
-import type { SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
+import type { RateLimiter, SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
 import { MatchRoom } from "./match-room.js";
 import type { MatchRoomAuthOptions } from "./match-room.js";
 
@@ -70,13 +71,15 @@ const SECRET = "fixture-secret-key";
 const P0 = "seat-0-player" as PlayerId;
 const P1 = "seat-1-player" as PlayerId;
 
-function createAuth(): MatchRoomAuthOptions {
+function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoomAuthOptions {
   const issuer = createSessionTokenIssuer(SECRET);
   const repository = createStaticTenantRepository([
     { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck"] },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
-  return { issuer, repository, replayGuard: createJtiReplayGuard() };
+  // Generous default so unrelated tests never accidentally trip the limit —
+  // the dedicated rate-limiting describe block overrides this.
+  return { issuer, repository, replayGuard: createJtiReplayGuard(), joinRateLimiter: overrides.joinRateLimiter ?? createRateLimiter({ limit: 1000, windowMs: 60_000 }) };
 }
 
 /** A fixed source for tests that never assert on the entropy VALUE, only on
@@ -266,6 +269,43 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
     await expect(
       room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" }),
     ).rejects.toThrow(/not entitled/);
+  });
+});
+
+describe("MatchRoom.onAuth — per-IP join rate limiting (hardening: public surface, obs 2945)", () => {
+  function freshRoomWithLimiter(joinRateLimiter: RateLimiter) {
+    const auth = createAuth({ joinRateLimiter });
+    const registry = createGameModuleRegistry([fixtureModule]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
+    return { room, auth };
+  }
+
+  it("rejects a join attempt once a single IP exceeds its configured limit within the window", async () => {
+    const { room, auth } = freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
+    const first = fakeClient("s0");
+    await room.onAuth(first.client, { token: await mintToken(auth.issuer, P0) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "5.5.5.5" });
+    const second = fakeClient("s1");
+    await expect(
+      room.onAuth(second.client, { token: await mintToken(auth.issuer, P1) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "5.5.5.5" }),
+    ).rejects.toThrow(/too many join attempts/);
+  });
+
+  it("does not rate-limit a different IP even after the first IP is exhausted", async () => {
+    const { room, auth } = freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
+    const first = fakeClient("s0");
+    await room.onAuth(first.client, { token: await mintToken(auth.issuer, P0) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "5.5.5.5" });
+    const second = fakeClient("s1");
+    const resolved = await room.onAuth(second.client, { token: await mintToken(auth.issuer, P1) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "6.6.6.6" });
+    expect(resolved).toEqual({ playerId: P1 });
+  });
+
+  it("rate-limits BEFORE token verification — a flood of no-token attempts from one IP is rejected too", async () => {
+    const { room } = freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
+    const first = fakeClient("s0");
+    await expect(room.onAuth(first.client, {}, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "7.7.7.7" })).rejects.toThrow(/no session token/);
+    const second = fakeClient("s1");
+    await expect(room.onAuth(second.client, {}, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "7.7.7.7" })).rejects.toThrow(/too many join attempts/);
   });
 });
 

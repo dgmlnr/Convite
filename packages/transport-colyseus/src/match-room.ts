@@ -1,6 +1,6 @@
 import { Room, type AuthContext, type Client } from "colyseus";
 import type { GameId, GameModule, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
-import type { GameModuleRegistry, JtiReplayGuard, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
+import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
  * imported directly: `transport-colyseus` must not know HOW tokens are
@@ -9,6 +9,10 @@ export interface MatchRoomAuthOptions {
   readonly issuer: SessionTokenIssuer;
   readonly repository: TenantRepository;
   readonly replayGuard: JtiReplayGuard;
+  /** Per-IP join throttle (hardening, obs 2945: room join had no rate
+   * limiting at all). Checked BEFORE token verification, so even a flood of
+   * token-less connection attempts from one address is bounded. */
+  readonly joinRateLimiter: RateLimiter;
 }
 
 export interface MatchRoomCreateOptions {
@@ -111,6 +115,10 @@ export class MatchRoom extends Room {
     const auth = this.auth;
     if (module === undefined || auth === undefined) {
       throw new Error("MatchRoom: onAuth called before onCreate registered a module");
+    }
+    const ip = Array.isArray(context.ip) ? context.ip[0] : context.ip;
+    if (ip !== undefined && !auth.joinRateLimiter.tryConsume(ip)) {
+      throw new Error("MatchRoom: join rejected, too many join attempts from this address");
     }
     if (typeof options.token !== "string") {
       throw new Error("MatchRoom: join rejected, no session token presented");

@@ -1,23 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import { createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
 import { handleEmbedRequest } from "./embed-handler.js";
 
 const TENANT_ID = "tenant-a" as TenantId;
 const ALLOWED_ORIGIN = "https://tenant-a.example";
+const CLIENT_IP = "203.0.113.1";
 
-function deps() {
+/** Generous limits by default so unrelated tests never trip rate limiting
+ * — the dedicated describe block below overrides with tight limits. */
+function deps(overrides: { ipLimit?: number; keyLimit?: number } = {}) {
   const repository = createStaticTenantRepository([
     { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["truco-argentino"] },
   ]);
   const issuer = createSessionTokenIssuer("test-secret");
-  return { repository, issuer, ttlSeconds: 120 };
+  return {
+    repository,
+    issuer,
+    ttlSeconds: 120,
+    ipLimiter: createRateLimiter({ limit: overrides.ipLimit ?? 1000, windowMs: 60_000 }),
+    keyLimiter: createRateLimiter({ limit: overrides.keyLimit ?? 1000, windowMs: 60_000 }),
+  };
 }
 
 describe("handleEmbedRequest (spec: tenant-catalog — origin allowlist enforcement)", () => {
   it("mints a token for an allowed origin and a known embed key", async () => {
     const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
-    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, deps());
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, deps());
     expect(result.status).toBe(200);
     const body = JSON.parse(result.body) as { token: string };
     expect(typeof body.token).toBe("string");
@@ -25,20 +34,54 @@ describe("handleEmbedRequest (spec: tenant-catalog — origin allowlist enforcem
 
   it("rejects a disallowed origin and issues no token", async () => {
     const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
-    const result = await handleEmbedRequest(url, "https://evil.example", deps());
+    const result = await handleEmbedRequest(url, "https://evil.example", CLIENT_IP, deps());
     expect(result.status).toBe(403);
     expect(result.body).not.toContain("token");
   });
 
   it("rejects when the Origin header is missing entirely", async () => {
     const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
-    const result = await handleEmbedRequest(url, undefined, deps());
+    const result = await handleEmbedRequest(url, undefined, CLIENT_IP, deps());
     expect(result.status).toBe(400);
   });
 
   it("rejects an unknown embed key", async () => {
     const url = new URL("https://play.hexdev/embed?k=pk_does_not_exist");
-    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, deps());
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, deps());
     expect(result.status).toBe(403);
+  });
+});
+
+describe("handleEmbedRequest — rate limiting (hardening: public surface, obs 2945)", () => {
+  it("rejects the request that exceeds the per-IP limit, even with a valid key and origin", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const shared = deps({ ipLimit: 1 });
+    await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, shared);
+    const second = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, shared);
+    expect(second.status).toBe(429);
+  });
+
+  it("does not rate-limit a different IP once the first IP is exhausted", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const shared = deps({ ipLimit: 1 });
+    await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, shared);
+    const other = await handleEmbedRequest(url, ALLOWED_ORIGIN, "203.0.113.9", shared);
+    expect(other.status).toBe(200);
+  });
+
+  it("rejects the request that exceeds the per-embed-key limit even from many different IPs (a leaked key hammered from a botnet)", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const shared = deps({ keyLimit: 1 });
+    await handleEmbedRequest(url, ALLOWED_ORIGIN, "203.0.113.1", shared);
+    const second = await handleEmbedRequest(url, ALLOWED_ORIGIN, "203.0.113.2", shared);
+    expect(second.status).toBe(429);
+  });
+
+  it("skips the per-IP check when no client IP is available, but still enforces the per-key limit", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const shared = deps({ ipLimit: 1 });
+    await handleEmbedRequest(url, ALLOWED_ORIGIN, undefined, shared);
+    const second = await handleEmbedRequest(url, ALLOWED_ORIGIN, undefined, shared);
+    expect(second.status).toBe(200); // no IP to track, so no IP-based rejection
   });
 });
