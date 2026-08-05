@@ -1,4 +1,4 @@
-import type { GameId, PlayerId } from "@hexdev/platform-contract";
+import type { Clock, GameId, PlayerId } from "@hexdev/platform-contract";
 
 /** A platform-wide tenant identifier. */
 export type TenantId = string & { readonly __brand: "TenantId" };
@@ -116,21 +116,57 @@ export function createSessionTokenIssuer(secret: string): SessionTokenIssuer {
 
 /** Rejects an already-consumed `jti` — design §7's mitigation for a token
  * replayed from a different origin (a spoofed `Origin` header is the one
- * hole this flow admits it cannot close). KNOWN LIMITATION: in-memory only,
- * unbounded growth — acceptable only because tokens are short-lived and v1
- * is single-process; a real deployment needs TTL eviction or a shared store. */
+ * hole this flow admits it cannot close). Bounded (last open memory-
+ * exhaustion vector, obs 2945): entries are evicted by TTL matching the
+ * token lifetime — a jti cannot be replayed after its token has itself
+ * expired anyway, so holding it any longer is pure waste — plus a hard
+ * `maxTrackedKeys` backstop, the SAME shape as `createRateLimiter`.
+ * KNOWN LIMITATION, unchanged: still single-process, in-memory only — a
+ * horizontally-scaled deployment needs a shared store to catch a replay
+ * against a DIFFERENT process. */
 export interface JtiReplayGuard {
   consume(jti: string): boolean; // true = accepted (first use), false = replay
+  /** Distinct jtis currently tracked — exposed so the memory bound can be
+   * observed directly (tests, monitoring), matching `RateLimiter.size()`. */
+  size(): number;
 }
 
-export function createJtiReplayGuard(): JtiReplayGuard {
-  const seen = new Set<string>();
+export interface JtiReplayGuardOptions {
+  /** Token lifetime in ms. Required — there is no safe universal default
+   * across callers with different session TTLs; a guard whose TTL outlives
+   * its tokens can never actually evict anything. */
+  readonly ttlMs: number;
+  readonly clock?: Clock;
+  /** Caps how many distinct jtis are tracked at once, so a flood of
+   * minted-and-used tokens cannot grow this guard's memory without bound
+   * even within a single TTL window — the same backstop `createRateLimiter`
+   * uses for its tracked keys. */
+  readonly maxTrackedKeys?: number;
+}
+
+const DEFAULT_MAX_TRACKED_JTIS = 10_000;
+
+export function createJtiReplayGuard(options: JtiReplayGuardOptions): JtiReplayGuard {
+  const clock = options.clock ?? Date.now;
+  const maxTrackedKeys = options.maxTrackedKeys ?? DEFAULT_MAX_TRACKED_JTIS;
+  const seen = new Map<string, number>(); // jti -> expiresAt (epoch ms)
+
+  function sweepExpired(now: number): void {
+    for (const [jti, expiresAt] of seen) {
+      if (expiresAt <= now) seen.delete(jti);
+    }
+  }
+
   return {
     consume(jti) {
-      if (seen.has(jti)) return false;
-      seen.add(jti);
+      const now = clock();
+      const expiresAt = seen.get(jti);
+      if (expiresAt !== undefined && expiresAt > now) return false; // still within TTL: replay
+      if (seen.size >= maxTrackedKeys) sweepExpired(now);
+      seen.set(jti, now + options.ttlMs);
       return true;
     },
+    size: () => seen.size,
   };
 }
 

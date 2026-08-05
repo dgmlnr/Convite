@@ -13,7 +13,10 @@ import { handleEmbedRequest } from "./embed-handler.js";
 const config = loadServerConfig(process.env);
 const repository = createStaticTenantRepository(config.tenants);
 const issuer = createSessionTokenIssuer(config.sessionSecret);
-const replayGuard = createJtiReplayGuard();
+// TTL matches the session token lifetime (obs 2945: bounding this guard was
+// the last open memory-exhaustion vector) — a jti cannot be replayed after
+// its own token has expired anyway, so holding it any longer is pure waste.
+const replayGuard = createJtiReplayGuard({ ttlMs: config.sessionTtlSeconds * 1000 });
 // Rate limiting (hardening, obs 2945: /embed is now a REAL public endpoint
 // with none). Per-IP + per-key on /embed, per-IP on room join. GUESSED
 // defaults, disclosed in config.ts — configurable via env for a real

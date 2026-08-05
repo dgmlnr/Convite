@@ -79,7 +79,12 @@ function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoo
   ]);
   // Generous default so unrelated tests never accidentally trip the limit —
   // the dedicated rate-limiting describe block overrides this.
-  return { issuer, repository, replayGuard: createJtiReplayGuard(), joinRateLimiter: overrides.joinRateLimiter ?? createRateLimiter({ limit: 1000, windowMs: 60_000 }) };
+  return {
+    issuer,
+    repository,
+    replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), // matches this fixture's default mintToken ttlSeconds
+    joinRateLimiter: overrides.joinRateLimiter ?? createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+  };
 }
 
 /** A fixed source for tests that never assert on the entropy VALUE, only on

@@ -78,7 +78,12 @@ describe("createMatchServer — live WebSocket integration (the composition root
     ]);
     const registry = createGameModuleRegistry([{ module: liveModule, requestSystemAction: (state) => ((state as LiveState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) }]);
     const httpServer = createServer();
-    const auth = { issuer, repository, replayGuard: createJtiReplayGuard(), joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }) };
+    const auth = {
+      issuer,
+      repository,
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), // matches this fixture's mint() ttlSeconds
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+    };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     testServer = await boot(gameServer);
   });

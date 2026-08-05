@@ -5,6 +5,7 @@ export { createRateLimiter } from "./rate-limiter.js";
 export type {
   EmbedMintResult,
   JtiReplayGuard,
+  JtiReplayGuardOptions,
   SessionTokenClaims,
   SessionTokenIssuer,
   TenantId,

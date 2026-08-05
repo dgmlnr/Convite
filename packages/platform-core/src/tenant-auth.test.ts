@@ -73,11 +73,45 @@ describe("createSessionTokenIssuer", () => {
   });
 });
 
-describe("createJtiReplayGuard", () => {
+function fakeClock(startMs = 0) {
+  let now = startMs;
+  return { now: () => now, advance: (ms: number) => (now += ms) };
+}
+
+describe("createJtiReplayGuard (bounded, obs 2945: unbounded in-memory growth was the last open memory-exhaustion vector)", () => {
   it("accepts a jti once, then rejects the same jti as a replay", () => {
-    const guard = createJtiReplayGuard();
+    const guard = createJtiReplayGuard({ ttlMs: 120_000 });
     expect(guard.consume("jti-1")).toBe(true);
     expect(guard.consume("jti-1")).toBe(false);
+  });
+
+  it("still rejects a replay partway through the TTL window, not just immediately", () => {
+    const clock = fakeClock();
+    const guard = createJtiReplayGuard({ ttlMs: 120_000, clock: clock.now });
+    expect(guard.consume("jti-1")).toBe(true);
+    clock.advance(119_999);
+    expect(guard.consume("jti-1")).toBe(false);
+  });
+
+  it("evicts a jti once its TTL elapses, using the injected clock — never real time", () => {
+    const clock = fakeClock();
+    const guard = createJtiReplayGuard({ ttlMs: 120_000, clock: clock.now });
+    expect(guard.consume("jti-1")).toBe(true);
+    clock.advance(120_000);
+    // the token this jti belonged to has itself already expired by now — a
+    // jti cannot be replayed against an expired token, so re-accepting it
+    // here is safe, not a regression of the replay guarantee.
+    expect(guard.consume("jti-1")).toBe(true);
+  });
+
+  it("bounds tracked-jti memory under a flood of minted-and-used tokens: stale entries are swept once maxTrackedKeys is reached", () => {
+    const clock = fakeClock();
+    const guard = createJtiReplayGuard({ ttlMs: 100, clock: clock.now, maxTrackedKeys: 3 });
+    for (let i = 0; i < 3; i += 1) guard.consume(`jti-${i}`);
+    expect(guard.size()).toBe(3);
+    clock.advance(200); // every tracked jti's TTL has now elapsed
+    guard.consume("jti-new"); // size >= maxTrackedKeys triggers a sweep before insertion
+    expect(guard.size()).toBe(1); // the 3 stale entries were evicted, only the fresh one remains
   });
 });
 
