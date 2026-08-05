@@ -37,11 +37,19 @@ module.exports = {
       from: { path: "^packages/(games/truco-module|transport-colyseus|widget-sdk)/src" },
       to: { path: "^apps/" },
     },
+    {
+      name: "no-colyseus-outside-transport",
+      severity: "error",
+      comment:
+        "colyseus (and its @colyseus/* internals) may only be imported from transport-colyseus. pnpm's isolated node_modules already makes an undeclared import fail to resolve elsewhere; this is a second, orthogonal, non-overlapping mechanical check on the same invariant, per design §1.",
+      from: { pathNot: "^packages/transport-colyseus/src" },
+      to: { path: "(^colyseus(/|$)|^@colyseus/|node_modules/(colyseus|@colyseus)/)" },
+    },
   ],
   options: {
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
     doNotFollow: { path: "node_modules" },
-    exclude: { path: "\\.test\\.ts$" },
+    exclude: { path: "(\\.test\\.ts$|/dist/)" },
   },
 };
