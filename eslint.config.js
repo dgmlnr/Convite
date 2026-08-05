@@ -36,4 +36,28 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["packages/transport-colyseus/src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // Colyseus's `reserveSeatFor(room, options, authData)` SKIPS `onAuth`
+          // entirely when `authData` is non-empty — it assigns `client.auth`
+          // directly, with no error and no warning. Verified in the installed
+          // @colyseus/core Room.mjs:
+          //   if (authData) { client.auth = authData }
+          //   else if (this.onAuth !== _Room.prototype.onAuth) { ... onAuth ... }
+          //
+          // MatchRoom.onAuth is where token verification, origin re-validation,
+          // entitlement checking and the replay guard all live. Passing authData
+          // would silently disable all four. Reserve with two arguments only and
+          // let onAuth stay the sole authority on every live join.
+          selector: "CallExpression[callee.property.name='reserveSeatFor'][arguments.length>2]",
+          message:
+            "reserveSeatFor's third argument (authData) bypasses onAuth entirely, disabling token, origin, entitlement and replay checks. Reserve with two arguments and let onAuth run.",
+        },
+      ],
+    },
+  },
 );
