@@ -34,8 +34,7 @@ export type TrucoState =
       readonly decliningTeamId: TeamId;
     };
 
-/** Falta envido is deferred (dynamic to-the-target cost) — see apply-progress. */
-export type EnvidoCallLevel = "envido" | "envidoEnvido" | "realEnvido";
+export type EnvidoCallLevel = "envido" | "envidoEnvido" | "realEnvido" | "faltaEnvido";
 
 /** Envido call-chain state (spec: "Envido Call Chain and Scoring"). `calls` is
  * the ordered chain, oldest first — cumulative-accept and decline values are

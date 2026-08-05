@@ -3,7 +3,7 @@ import type { Card } from "./card.js";
 import { calculateEnvidoPoints } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, startHand } from "./match.js";
-import type { MatchState } from "./match.js";
+import type { EnvidoCallLevel, MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 
@@ -26,7 +26,7 @@ function apply(state: MatchState, action: Action): MatchState {
 }
 
 /** Escalates the envido chain through `levels`, alternating caller/responder (only the non-calling team may respond), leaving the last level pending. */
-function pendingEnvidoAt(levels: readonly ("envido" | "envidoEnvido" | "realEnvido")[]): MatchState {
+function pendingEnvidoAt(levels: readonly EnvidoCallLevel[]): MatchState {
   let state = freshHand();
   let caller = playerA;
   let responder = playerB;
@@ -62,7 +62,7 @@ describe("getLegalActions — envido opens alongside truco, then gates it", () =
 });
 
 describe("getLegalActions — envido escalation", () => {
-  it("only the non-calling team may respond or escalate, may skip a level, and real envido pending has no further escalation", () => {
+  it("only the non-calling team may respond or escalate, may skip a level, and falta envido is offered as the final escalation", () => {
     const state = pendingEnvidoAt(["envido"]);
     expect(getLegalActions(state, playerA).some((a) => a.type !== "call-truco")).toBe(false);
     expect(getLegalActions(state, playerB)).toEqual([
@@ -70,13 +70,42 @@ describe("getLegalActions — envido escalation", () => {
       { type: "respond-envido", playerId: playerB, response: "no-quiero" },
       { type: "call-envido", playerId: playerB, level: "envidoEnvido" },
       { type: "call-envido", playerId: playerB, level: "realEnvido" },
+      { type: "call-envido", playerId: playerB, level: "faltaEnvido" },
     ]);
     const skipped = apply(state, { type: "call-envido", playerId: playerB, level: "realEnvido" }); // skips envido-envido
     expect(skipped.hand?.envido).toMatchObject({ status: "pending", calls: ["envido", "realEnvido"] });
     expect(getLegalActions(skipped, playerA)).toEqual([
       { type: "respond-envido", playerId: playerA, response: "quiero" },
       { type: "respond-envido", playerId: playerA, response: "no-quiero" },
-    ]); // no further escalation once real envido is pending
+      { type: "call-envido", playerId: playerA, level: "faltaEnvido" }, // still escalatable to falta
+    ]);
+  });
+
+  it("falta envido pending has no further escalation for either team", () => {
+    const faltaPending = apply(pendingEnvidoAt(["envido"]), { type: "call-envido", playerId: playerB, level: "faltaEnvido" });
+    expect(getLegalActions(faltaPending, playerA)).toEqual([
+      { type: "respond-envido", playerId: playerA, response: "quiero" },
+      { type: "respond-envido", playerId: playerA, response: "no-quiero" },
+    ]);
+  });
+});
+
+describe("applyAction — falta envido's accepted value overrides the chain (spec: 'Falta envido cost is dynamic')", () => {
+  it("awards exactly pointsToWin minus the leading team's score, NOT the sum of the prior calls plus falta (regression: PR5 caught 37 instead of 6)", () => {
+    const base = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30 });
+    const leading: MatchState = { ...base, teams: [{ ...base.teams[0]!, score: 24 }, base.teams[1]!] };
+    const dealt = startHand(leading, [
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
+    ]);
+    const pending = apply(
+      apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" }),
+      { type: "call-envido", playerId: playerB, level: "faltaEnvido" },
+    );
+
+    const accepted = apply(pending, { type: "respond-envido", playerId: playerA, response: "quiero" });
+
+    expect(accepted.hand?.envido).toMatchObject({ status: "accepted", acceptedValue: 6 });
   });
 });
 
@@ -100,6 +129,7 @@ describe("applyAction — envido cumulative cost and reveal (spec: truco-rules)"
     [["envido"] as const, 1, 0],
     [["envido", "envidoEnvido"] as const, 0, 2],
     [["envido", "envidoEnvido", "realEnvido"] as const, 4, 0],
+    [["envido", "faltaEnvido"] as const, 0, 2], // falta's own value is never read on decline — only the calls before it count
   ])("declining after %j concedes the value of the calls before it", (levels, scoreA, scoreB) => {
     const decliner = levels.length % 2 === 1 ? playerB : playerA;
     const declined = apply(pendingEnvidoAt(levels), { type: "respond-envido", playerId: decliner, response: "no-quiero" });

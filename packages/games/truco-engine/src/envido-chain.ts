@@ -43,15 +43,29 @@ export type ApplyEnvidoResult =
   | { readonly ok: false; readonly violation: string };
 
 /** Weight per level — envido calls may skip levels (envido -> real envido
- * directly), unlike the strictly-sequential truco chain. Falta envido is
- * deferred (dynamic to-the-target cost) — see apply-progress. */
-const ENVIDO_CALL_WEIGHT: Record<EnvidoCallLevel, number> = { envido: 1, envidoEnvido: 2, realEnvido: 3 };
+ * directly), unlike the strictly-sequential truco chain. Falta envido is the
+ * maximum weight, so it is always the final legal escalation. */
+const ENVIDO_CALL_WEIGHT: Record<EnvidoCallLevel, number> = { envido: 1, envidoEnvido: 2, realEnvido: 3, faltaEnvido: 4 };
 const ENVIDO_CALL_ORDER = Object.keys(ENVIDO_CALL_WEIGHT) as readonly EnvidoCallLevel[];
-const ENVIDO_CALL_VALUE: Record<EnvidoCallLevel, number> = { envido: 2, envidoEnvido: 2, realEnvido: 3 };
+/** faltaEnvido has NO fixed value: its accepted value is `faltaEnvidoValue`
+ * below, never summed. This sentinel must never be read — NaN makes an
+ * accidental read fail loudly instead of silently producing a wrong score. */
+const ENVIDO_CALL_VALUE: Record<EnvidoCallLevel, number> = { envido: 2, envidoEnvido: 2, realEnvido: 3, faltaEnvido: Number.NaN };
 
 const sumValue = (calls: readonly EnvidoCallLevel[]): number => calls.reduce((sum, l) => sum + ENVIDO_CALL_VALUE[l], 0);
-/** Decline concedes the value of calls strictly before the declined one, floored at 1 for a bare first call (spec). */
+/** Decline concedes the value of calls strictly before the declined one, floored at 1 for a bare first call (spec).
+ * This always excludes the declined call itself, so it never reads faltaEnvido's sentinel value even when falta is declined. */
 const declineValue = (calls: readonly EnvidoCallLevel[]): number => Math.max(1, sumValue(calls.slice(0, -1)));
+
+/** Falta envido's accepted value OVERRIDES the cumulative chain entirely: the
+ * points the LEADING team needs to reach the match target (spec: "Falta
+ * envido cost is dynamic"). NOT cumulative with prior calls — unlike real
+ * envido / envido-envido, whose spec bullet explicitly says "accumulating",
+ * falta envido's bullet deliberately omits that word. An earlier cumulative
+ * implementation produced 37 instead of 6 for a 30-point target with a
+ * 24-point leader; this is that regression's fix (see apply-progress). */
+const faltaEnvidoValue = (state: MatchState): number =>
+  state.config.pointsToWin - Math.max(...state.teams.map((team) => team.score));
 
 const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =>
   state.players.find((player) => player.id === playerId);
@@ -115,7 +129,9 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   if (action.type === "respond-envido") {
     const pending = hand.envido as Extract<EnvidoState, { status: "pending" }>;
     if (action.response === "quiero") {
-      const envido: EnvidoState = { status: "accepted", calls: pending.calls, callingTeamId: pending.callingTeamId, acceptedValue: sumValue(pending.calls) };
+      const isFalta = pending.calls[pending.calls.length - 1] === "faltaEnvido";
+      const acceptedValue = isFalta ? faltaEnvidoValue(state) : sumValue(pending.calls);
+      const envido: EnvidoState = { status: "accepted", calls: pending.calls, callingTeamId: pending.callingTeamId, acceptedValue };
       return { ok: true, state: { ...state, hand: { ...hand, envido } } };
     }
     const awarded = declineValue(pending.calls);
