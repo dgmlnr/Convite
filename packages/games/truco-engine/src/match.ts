@@ -34,10 +34,24 @@ export type TrucoState =
       readonly decliningTeamId: TeamId;
     };
 
+/** Falta envido is deferred (dynamic to-the-target cost) — see apply-progress. */
+export type EnvidoCallLevel = "envido" | "envidoEnvido" | "realEnvido";
+
+/** Envido call-chain state (spec: "Envido Call Chain and Scoring"). `calls` is
+ * the ordered chain, oldest first — cumulative-accept and decline values are
+ * pure functions of it. `accepted` freezes the value; `revealed` awards it. */
+export type EnvidoState =
+  | { readonly status: "none" }
+  | { readonly status: "pending"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId }
+  | { readonly status: "accepted"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly acceptedValue: number }
+  | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
+  | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number };
+
 /** State materialized once a hand's deal has been dealt (design §4). */
 export interface HandState {
   readonly manoSeat: number;
   readonly truco: TrucoState;
+  readonly envido: EnvidoState;
 }
 
 export interface MatchState {
@@ -111,6 +125,7 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
     hand: {
       manoSeat: manoSeatFor(state.dealerSeat, state.players.length),
       truco: { status: "none" },
+      envido: { status: "none" },
     },
   };
 }

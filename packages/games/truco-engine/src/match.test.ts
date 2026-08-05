@@ -55,6 +55,14 @@ describe("startHand", () => {
     expect(next.hand?.truco).toEqual({ status: "none" });
   });
 
+  it("starts a fresh hand with no envido call pending", () => {
+    const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+
+    const next = startHand(state, [handOf(1), handOf(2)]);
+
+    expect(next.hand?.envido).toEqual({ status: "none" });
+  });
+
   it("throws when the deal does not supply a hand for every seat", () => {
     const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
 

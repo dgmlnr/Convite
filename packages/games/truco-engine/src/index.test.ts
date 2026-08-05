@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyAction,
+  calculateEnvidoPoints,
   createHeadToHeadMatch,
   getLegalActions,
   resolveTrick,
@@ -51,5 +52,17 @@ describe("truco-engine public API (node)", () => {
 
     expect(declined.state.teams[0]!.score).toBe(1);
     expect(getLegalActions(declined.state, playerA)).toEqual([]);
+  });
+
+  it("calls envido and computes envido points through the package's public entry point", () => {
+    const playerA = "player-a" as PlayerId;
+    const hand = startHand(
+      createHeadToHeadMatch({ playerAId: playerA, playerBId: "player-b" as PlayerId, pointsToWin: 15 }),
+      [[], []],
+    );
+    const called = applyAction(hand, { type: "call-envido", playerId: playerA, level: "envido" });
+
+    expect(called.ok && called.state.hand?.envido.status).toBe("pending");
+    expect(calculateEnvidoPoints([{ suit: "oro", rank: 7 }])).toBe(7);
   });
 });

@@ -35,11 +35,11 @@ function pendingAt(level: TrucoCallLevel): MatchState {
 }
 
 describe("getLegalActions — truco call chain", () => {
-  it("either player may call truco when nothing is pending", () => {
+  it("either player may call truco when nothing is pending (envido is also legal — see envido-chain.test.ts)", () => {
     const state = freshHand();
 
-    expect(getLegalActions(state, playerA)).toEqual([{ type: "call-truco", playerId: playerA, level: "truco" }]);
-    expect(getLegalActions(state, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }]);
+    expect(getLegalActions(state, playerA)).toEqual([{ type: "call-truco", playerId: playerA, level: "truco" }, { type: "call-envido", playerId: playerA, level: "envido" }]);
+    expect(getLegalActions(state, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }, { type: "call-envido", playerId: playerB, level: "envido" }]);
   });
 
   it("only the non-calling team may respond while a call is pending", () => {
@@ -77,12 +77,12 @@ describe("getLegalActions — truco call chain", () => {
     expect(getLegalActions(declined, playerB)).toEqual([]);
   });
 
-  it("a fresh hand after a decline offers only a fresh truco call, no leftover escalation", () => {
+  it("a fresh hand after a decline offers only a fresh truco call (plus envido), no leftover escalation", () => {
     const declined = apply(pendingAt("truco"), { type: "respond-truco", playerId: playerB, response: "no-quiero" });
     const handTwo = startHand(declined, [[], []]);
 
-    expect(getLegalActions(handTwo, playerA)).toEqual([{ type: "call-truco", playerId: playerA, level: "truco" }]);
-    expect(getLegalActions(handTwo, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }]);
+    expect(getLegalActions(handTwo, playerA)).toEqual([{ type: "call-truco", playerId: playerA, level: "truco" }, { type: "call-envido", playerId: playerA, level: "envido" }]);
+    expect(getLegalActions(handTwo, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }, { type: "call-envido", playerId: playerB, level: "envido" }]);
   });
 
   it("returns no actions once the hand has not started", () => {

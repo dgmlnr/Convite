@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyAction,
+  calculateEnvidoPoints,
   createHeadToHeadMatch,
   getLegalActions,
   resolveTrick,
@@ -48,5 +49,16 @@ describe("truco-engine public API (browser)", () => {
       { type: "respond-truco", playerId: playerB, response: "quiero" },
       { type: "respond-truco", playerId: playerB, response: "no-quiero" },
     ]);
+  });
+
+  it("offers the envido opening call and computes envido points identically in a real browser", () => {
+    const playerA = "player-a" as PlayerId;
+    const hand = startHand(
+      createHeadToHeadMatch({ playerAId: playerA, playerBId: "player-b" as PlayerId, pointsToWin: 15 }),
+      [[], []],
+    );
+
+    expect(getLegalActions(hand, playerA)).toContainEqual({ type: "call-envido", playerId: playerA, level: "envido" });
+    expect(calculateEnvidoPoints([{ suit: "espada", rank: 4 }])).toBe(4);
   });
 });
