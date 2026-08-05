@@ -1,5 +1,5 @@
 import { Room, type AuthContext, type Client } from "colyseus";
-import type { GameId, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import type { GameId, GameModule, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
@@ -16,6 +16,10 @@ export interface MatchRoomCreateOptions {
   readonly config: unknown;
   readonly registry: GameModuleRegistry;
   readonly auth: MatchRoomAuthOptions;
+  /** The server-owned entropy source for this room's system actions (design
+   * §4: "the engine never randomizes" — this is where randomness enters).
+   * `apps/server` supplies a real CSPRNG; tests supply a fixed source. */
+  readonly rng: RandomSource;
 }
 
 interface MatchRoomJoinOptions {
@@ -71,6 +75,9 @@ export class MatchRoom extends Room {
   private config: unknown;
   private matchState: unknown;
   private auth: MatchRoomAuthOptions | undefined;
+  private registry: GameModuleRegistry | undefined;
+  private gameId: GameId | undefined;
+  private rng: RandomSource | undefined;
   private readonly seats: SeatedClient[] = [];
 
   override onCreate(options: MatchRoomCreateOptions): void {
@@ -81,6 +88,9 @@ export class MatchRoom extends Room {
     this.module = module;
     this.config = options.config;
     this.auth = options.auth;
+    this.registry = options.registry;
+    this.gameId = options.gameId;
+    this.rng = options.rng;
     this.maxClients = module.metadata.seatCount;
     this.onMessage("action", (client, message: unknown) => this.handleAction(client, message));
   }
@@ -142,6 +152,7 @@ export class MatchRoom extends Room {
       const seatAssignments: SeatAssignment[] = this.seats.map((seated, seat) => ({ seat, playerId: seated.playerId }));
       this.matchState = module.createMatch(this.config, seatAssignments);
       this.broadcastViews();
+      this.maybeAdvanceSystemAction();
     }
   }
 
@@ -179,6 +190,34 @@ export class MatchRoom extends Room {
       client.send("action-rejected", result.violation);
       return; // state deliberately untouched: the server-authoritative guarantee
     }
+    this.matchState = result.state;
+    this.broadcastViews();
+    this.maybeAdvanceSystemAction();
+  }
+
+  /**
+   * "Nobody can act, but the match must advance" (design's system-action
+   * note): fires whenever every seated player is legal-action-less AND the
+   * match has not ended. Delegates entirely to `registry.getSystemAction`
+   * (paired with the module by whoever registered it, e.g. `truco-module`'s
+   * deal factory) — this room stays ignorant of WHAT the action is or WHY
+   * it was needed, same as `handleAction`'s ordinary path. A `null` result
+   * (no requestSystemAction registered, or the module decides none is
+   * needed right now) is a legitimate no-op, not an error.
+   */
+  private maybeAdvanceSystemAction(): void {
+    const module = this.module;
+    const registry = this.registry;
+    const gameId = this.gameId;
+    const rng = this.rng;
+    if (module === undefined || registry === undefined || gameId === undefined || rng === undefined || this.matchState === undefined) return;
+    if (module.getOutcome(this.matchState) !== null) return;
+    const anySeatCanAct = this.seats.some((seated) => module.getLegalActions(this.matchState, seated.playerId).length > 0);
+    if (anySeatCanAct) return;
+    const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
+    if (systemAction === null) return;
+    const result = module.applyAction(this.matchState, systemAction);
+    if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
     this.matchState = result.state;
     this.broadcastViews();
   }

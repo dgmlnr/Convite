@@ -1,4 +1,4 @@
-export type { GameModuleRegistry } from "./registry.js";
+export type { GameModuleRegistration, GameModuleRegistry, SystemActionRequester } from "./registry.js";
 export { createGameModuleRegistry } from "./registry.js";
 export type {
   EmbedMintResult,

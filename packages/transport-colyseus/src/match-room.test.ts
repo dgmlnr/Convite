@@ -73,11 +73,16 @@ const P1 = "seat-1-player" as PlayerId;
 function createAuth(): MatchRoomAuthOptions {
   const issuer = createSessionTokenIssuer(SECRET);
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret"] },
+    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck"] },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
   return { issuer, repository, replayGuard: createJtiReplayGuard() };
 }
+
+/** A fixed source for tests that never assert on the entropy VALUE, only on
+ * the mechanism firing — the real CSPRNG lives in `apps/server` (design §4:
+ * "the server is where the entropy lives"). */
+const DEFAULT_RNG = () => 0.5;
 
 function mintToken(issuer: SessionTokenIssuer, playerId: PlayerId, overrides: { tenantId?: TenantId; ttlSeconds?: number } = {}) {
   return issuer.mint({ tenantId: overrides.tenantId ?? TENANT_ID, playerId, entitlements: [] }, overrides.ttlSeconds ?? 60);
@@ -117,7 +122,7 @@ async function createJoinedRoom() {
   const auth = createAuth();
   const registry = createGameModuleRegistry([fixtureModule]);
   const room = new MatchRoom();
-  room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth });
+  room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
   const seat0 = fakeClient("s0");
   const seat1 = fakeClient("s1");
   await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
@@ -129,7 +134,7 @@ describe("MatchRoom", () => {
   it("refuses to create when no module is registered for the requested gameId", () => {
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
-    expect(() => room.onCreate({ gameId: "does-not-exist", config: undefined, registry, auth: createAuth() })).toThrow(/no GameModule registered/);
+    expect(() => room.onCreate({ gameId: "does-not-exist", config: undefined, registry, auth: createAuth(), rng: DEFAULT_RNG })).toThrow(/no GameModule registered/);
   });
 
   it("delegates match creation to the registered module only once every seat has joined", async () => {
@@ -185,7 +190,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
     const auth = createAuth();
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
-    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth });
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
     return { room, auth };
   }
 
@@ -261,5 +266,67 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
     await expect(
       room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" }),
     ).rejects.toThrow(/not entitled/);
+  });
+});
+
+/**
+ * Again deliberately non-truco: a match that has NO client-reachable legal
+ * action at all — the ONLY way it can ever advance is a system action. If
+ * `MatchRoom` only advanced games shaped like truco's `start-hand`, this
+ * would prove nothing about the mechanism being generic (design: paired in
+ * the registry per-module, never a `platform-contract` port member).
+ */
+interface StuckState {
+  readonly dealt: boolean;
+}
+type StuckAction = { readonly type: "deal"; readonly playerId: PlayerId };
+const SYSTEM_ACTOR = "system-actor" as PlayerId;
+
+const stuckModule: GameModule<StuckState, StuckAction, StuckState, void> = {
+  id: "fixture-stuck",
+  metadata: { seatCount: 2, displayNameKey: "fixture.stuck", assetBase: "/fixture" },
+  configOptions: [],
+  createMatch: () => ({ dealt: false }),
+  applyAction: (_state, action) =>
+    action.type === "deal" ? { ok: true, state: { dealt: true } } : { ok: false, violation: { code: "not-supported", message: "only the system can deal" } },
+  getLegalActions: () => [], // no seated player can EVER act directly here
+  getViewFor: (state) => state,
+  getOutcome: () => null,
+  serialize: (state) => state as never,
+  deserialize: (json) => json as unknown as StuckState,
+  createBot: () => ({ chooseAction: async () => ({ type: "deal", playerId: SYSTEM_ACTOR }) }),
+};
+
+describe("MatchRoom + system actions (design: paired in the registry, never a GameModule port member)", () => {
+  it("applies a registered requestSystemAction automatically once no seated player has any legal action", async () => {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([
+      { module: stuckModule, requestSystemAction: (state) => ((state as StuckState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    // First broadcast: createMatch's initial (undealt) view. Second: the
+    // system action's resulting (dealt) view — applied without any client
+    // ever sending an "action" message.
+    expect(seat0.sent).toHaveLength(2);
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { dealt: true } });
+    expect(seat1.sent[1]).toEqual({ type: "view", message: { dealt: true } });
+  });
+
+  it("never advances a module with no requestSystemAction registered, even with zero legal actions", async () => {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([stuckModule]); // bare module: no pairing
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    expect(seat0.sent).toHaveLength(1); // stuck: no second broadcast ever arrives
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { dealt: false } });
   });
 });

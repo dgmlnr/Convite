@@ -1,5 +1,6 @@
 export type { GameId, PlayerId } from "./ids.js";
 export type { JsonValue } from "./json.js";
+export type { RandomSource } from "./random.js";
 export type {
   ApplyResult,
   BotStrategy,

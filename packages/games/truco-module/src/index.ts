@@ -7,9 +7,14 @@ import {
   rotateDealer,
   startHand,
 } from "@hexdev/truco-engine";
-import type { Action as EngineAction, DealInput, MatchConfig, MatchState, PlayerView } from "@hexdev/truco-engine";
+import type { Action as EngineAction, MatchConfig, MatchState, PlayerView } from "@hexdev/truco-engine";
 import { chooseFirstLegalAction } from "@hexdev/truco-bot";
 import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { SYSTEM_ACTOR_ID, requestSystemAction } from "./deal.js";
+import type { StartHandAction } from "./deal.js";
+
+export { SYSTEM_ACTOR_ID, requestSystemAction };
+export type { StartHandAction };
 
 /**
  * The one thing the generic port has no room for: starting a hand needs
@@ -17,26 +22,10 @@ import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOut
  * action — the same way `truco-engine`'s own `startHand(state, deal)`
  * already externalizes randomness — never as a distinct lifecycle method on
  * `GameModule` (see apply-progress's anti-truco-shape audit for why
- * `startHand` was rejected from the port sketch). Whoever calls
- * `applyAction` with this action (the transport, a test, a bot search
- * sampling a hypothetical) supplies the materialized deal; this module never
- * generates randomness itself.
+ * `startHand` was rejected from the port sketch). `requestSystemAction`
+ * (`./deal.ts`) is what MATERIALIZES that data — paired with `trucoModule`
+ * in the registry, never as a `platform-contract` port member.
  */
-/** `GameModule`'s `TAction` bound now requires `{ playerId: PlayerId }`
- * structurally (see apply-progress). `start-hand` has no human actor — a
- * SYSTEM action, never legitimately client-submitted — so this sentinel
- * only satisfies the type bound. Incidental bonus: it never matches a real
- * seated player's id, so the room's actor-mismatch check still rejects a
- * client-forged `start-hand` — not a substitute for real system-action
- * gating (designed, not implemented — see apply-progress). */
-export const SYSTEM_ACTOR_ID = "__system__" as PlayerId;
-
-export interface StartHandAction {
-  readonly type: "start-hand";
-  readonly playerId: PlayerId;
-  readonly deal: DealInput;
-}
-
 export type TrucoModuleAction = EngineAction | StartHandAction;
 
 function toEngineActions(actions: readonly TrucoModuleAction[]): readonly EngineAction[] {
