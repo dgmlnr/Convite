@@ -17,16 +17,21 @@ interface SeatedClient {
   readonly playerId: PlayerId;
 }
 
-/** Reads a claimed actor identity off an otherwise-opaque action. Relies on
- * an UNENFORCED convention — every `truco-module` action embeds its own
- * `playerId` field — that `platform-contract`'s `GameModule` type does not
- * require of `TAction`. Flagged, not silently trusted: a future game module
- * that omits this field would silently lose this check. See apply-progress. */
+/** Reads a claimed actor identity off an otherwise-opaque action arriving
+ * over the wire as `unknown`. FORMERLY relied on an unenforced convention
+ * (flagged in obs 2941); `platform-contract`'s `GameModule<TState, TAction
+ * extends {playerId}, ...>` bound now makes `playerId` a COMPILE-TIME
+ * requirement of every conformant module's action type, so this runtime
+ * check is only doing the wire-boundary job (untrusted JSON has no static
+ * type) — not compensating for a missing port guarantee. A malformed or
+ * absent field returns `undefined`, which the caller treats as a mismatch:
+ * fails closed, never open. */
 function actorOf(action: unknown): PlayerId | undefined {
   if (typeof action !== "object" || action === null || !("playerId" in action)) {
     return undefined;
   }
-  return (action as { playerId: unknown }).playerId as PlayerId;
+  const claimed = (action as { playerId: unknown }).playerId;
+  return typeof claimed === "string" ? (claimed as PlayerId) : undefined;
 }
 
 /**
@@ -46,7 +51,7 @@ function actorOf(action: unknown): PlayerId | undefined {
  * view), with no Schema/StateView machinery and no per-game room subclass.
  */
 export class MatchRoom extends Room {
-  private module: GameModule<unknown, unknown, unknown, unknown> | undefined;
+  private module: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> | undefined;
   private config: unknown;
   private matchState: unknown;
   private readonly seats: SeatedClient[] = [];
@@ -99,7 +104,9 @@ export class MatchRoom extends Room {
 
     let result;
     try {
-      result = module.applyAction(this.matchState, action);
+      // Safe cast: the actor-mismatch check above already proved `action`
+      // structurally carries a `playerId` matching the authenticated seat.
+      result = module.applyAction(this.matchState, action as { readonly playerId: PlayerId });
     } catch (error) {
       client.send("action-rejected", { code: "malformed-action", message: error instanceof Error ? error.message : String(error) });
       return; // state deliberately untouched

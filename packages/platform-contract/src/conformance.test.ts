@@ -16,7 +16,7 @@ interface CounterState {
   readonly target: number;
 }
 
-type CounterAction = { readonly type: "increment" };
+type CounterAction = { readonly type: "increment"; readonly playerId: PlayerId };
 type CounterConfig = { readonly target: number };
 
 const counterModule: GameModule<CounterState, CounterAction, CounterState, CounterConfig> = {
@@ -28,7 +28,7 @@ const counterModule: GameModule<CounterState, CounterAction, CounterState, Count
     state.count >= state.target
       ? { ok: false, violation: { code: "already-done", message: "already reached target" } }
       : { ok: true, state: { ...state, count: state.count + 1 } },
-  getLegalActions: (state) => (state.count >= state.target ? [] : [{ type: "increment" }]),
+  getLegalActions: (state, playerId) => (state.count >= state.target ? [] : [{ type: "increment", playerId }]),
   getViewFor: (state) => state,
   getOutcome: (state) => (state.count >= state.target ? { winnerIds: [] } : null),
   serialize: (state) => state as unknown as JsonValue,
@@ -52,7 +52,7 @@ describeGameModule(
     seats,
     playerId: soloPlayerId,
     reachableState: { count: 0, target: 3 },
-    legalAction: { type: "increment" },
+    legalAction: { type: "increment", playerId: soloPlayerId },
     terminalState: { count: 3, target: 3 },
     botTier: "easy",
   },

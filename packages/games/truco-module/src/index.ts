@@ -22,8 +22,18 @@ import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOut
  * sampling a hypothetical) supplies the materialized deal; this module never
  * generates randomness itself.
  */
+/** `GameModule`'s `TAction` bound now requires `{ playerId: PlayerId }`
+ * structurally (see apply-progress). `start-hand` has no human actor — a
+ * SYSTEM action, never legitimately client-submitted — so this sentinel
+ * only satisfies the type bound. Incidental bonus: it never matches a real
+ * seated player's id, so the room's actor-mismatch check still rejects a
+ * client-forged `start-hand` — not a substitute for real system-action
+ * gating (designed, not implemented — see apply-progress). */
+export const SYSTEM_ACTOR_ID = "__system__" as PlayerId;
+
 export interface StartHandAction {
   readonly type: "start-hand";
+  readonly playerId: PlayerId;
   readonly deal: DealInput;
 }
 

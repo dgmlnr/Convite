@@ -67,8 +67,18 @@ export interface BotStrategy<TView, TAction> {
  *    `getOutcome` is exactly the failure mode `getMatchWinner`'s
  *    derived-not-stored design already exists to avoid. `getOutcome(state)
  *    !== null` is the single source of truth for "has this match ended".
+ *
+ * `TAction extends { readonly playerId: PlayerId }` — PR10a's transport had
+ * to know WHO an action claims to be from, but the port had no such
+ * requirement: `truco-module` actions carried `playerId` only by UNENFORCED
+ * CONVENTION (obs 2941). Now compile-time: any `GameModule<...>` must have
+ * an action type structurally carrying its actor's identity, so a transport
+ * can read `action.playerId` generically for ANY game, no duck-typing.
+ * (Rejected: a required `actorOf(action)` port method — pure indirection,
+ * since every action already needs this field for the engine's own
+ * turn/ownership checks; see apply-progress for the full comparison.)
  */
-export interface GameModule<TState, TAction, TView, TConfig> {
+export interface GameModule<TState, TAction extends { readonly playerId: PlayerId }, TView, TConfig> {
   readonly id: GameId;
   readonly metadata: GameMetadata;
   readonly configOptions: readonly ConfigOption[];

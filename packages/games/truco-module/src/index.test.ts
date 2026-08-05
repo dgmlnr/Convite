@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { describeGameModule } from "@hexdev/platform-contract";
 import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import type { Card, MatchConfig, MatchState } from "@hexdev/truco-engine";
-import { trucoModule } from "./index.js";
+import { SYSTEM_ACTOR_ID, trucoModule } from "./index.js";
 import type { TrucoModuleAction } from "./index.js";
 
 const playerAId = "player-a" as PlayerId;
@@ -26,7 +26,7 @@ const handB: readonly Card[] = [
 
 function dealtFixtureState(): MatchState {
   const created = trucoModule.createMatch(config, seats);
-  const dealt = trucoModule.applyAction(created, { type: "start-hand", deal: [handA, handB] });
+  const dealt = trucoModule.applyAction(created, { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deal: [handA, handB] });
   if (!dealt.ok) throw new Error("fixture setup: dealing the first hand failed");
   return dealt.state;
 }
@@ -55,7 +55,7 @@ describeGameModule(
 describe("truco-module: adapter-specific behavior beyond the generic contract", () => {
   it("rejects starting a new hand while one is already in progress", () => {
     const state = dealtFixtureState();
-    const result = trucoModule.applyAction(state, { type: "start-hand", deal: [handA, handB] });
+    const result = trucoModule.applyAction(state, { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deal: [handA, handB] });
     expect(result.ok).toBe(false);
   });
 

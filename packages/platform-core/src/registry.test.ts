@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ApplyResult, BotStrategy, GameModule } from "@hexdev/platform-contract";
+import type { ApplyResult, BotStrategy, GameModule, PlayerId } from "@hexdev/platform-contract";
 import { createGameModuleRegistry } from "./registry.js";
 
-function fixtureModule(id: string): GameModule<unknown, unknown, unknown, unknown> {
+function fixtureModule(id: string): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
   return {
     id,
     metadata: { seatCount: 2, displayNameKey: "fixture.name", assetBase: "/fixture" },
@@ -14,7 +14,9 @@ function fixtureModule(id: string): GameModule<unknown, unknown, unknown, unknow
     getOutcome: () => null,
     serialize: () => ({}),
     deserialize: (json) => json,
-    createBot: (): BotStrategy<unknown, unknown> => ({ chooseAction: () => ({}) }),
+    createBot: (): BotStrategy<unknown, { readonly playerId: PlayerId }> => ({
+      chooseAction: () => ({ playerId: "fixture-actor" as PlayerId }),
+    }),
   };
 }
 

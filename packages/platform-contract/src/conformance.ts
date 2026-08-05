@@ -42,7 +42,7 @@ export interface GameModuleFixtures<TState, TAction, TConfig> {
  * outcome/termination consistency, bot legality — never a rule specific to
  * any one game.
  */
-export function describeGameModule<TState, TAction, TView, TConfig>(
+export function describeGameModule<TState, TAction extends { readonly playerId: PlayerId }, TView, TConfig>(
   gameModule: GameModule<TState, TAction, TView, TConfig>,
   fixtures: GameModuleFixtures<TState, TAction, TConfig>,
   harness: ConformanceHarness,
@@ -92,6 +92,14 @@ export function describeGameModule<TState, TAction, TView, TConfig>(
 
     it("getOutcome is non-null once the match has ended", () => {
       expect(gameModule.getOutcome(fixtures.terminalState) === null).toBe(false);
+    });
+
+    it("the fixture's legal action structurally claims the player it belongs to", () => {
+      // Every GameModule's TAction is required (compile-time) to extend
+      // `{ readonly playerId: PlayerId }` — this is the executed proof that
+      // the contract holds for THIS module's own action shape, not just
+      // asserted at the type level. See platform-contract/src/contract.ts.
+      expect(fixtures.legalAction.playerId).toBe(fixtures.playerId);
     });
 
     it("a bot always chooses one of the legal actions it is offered", async () => {
