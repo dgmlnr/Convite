@@ -10,6 +10,7 @@
     }
   },
   "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
     "@hexdev/truco-engine": "workspace:*"
   }
 }

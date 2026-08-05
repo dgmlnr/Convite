@@ -69,6 +69,9 @@ importers:
 
   packages/games/truco-bot:
     dependencies:
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
       '@hexdev/truco-engine':
         specifier: workspace:*
         version: link:../truco-engine
@@ -86,6 +89,10 @@ importers:
       '@hexdev/truco-engine':
         specifier: workspace:*
         version: link:../truco-engine
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
 
   packages/games/truco-ui:
     dependencies:
