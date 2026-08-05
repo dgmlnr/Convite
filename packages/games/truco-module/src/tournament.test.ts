@@ -110,7 +110,7 @@ describe("hard vs easy — seeded tournament", () => {
     }
 
     const winRate = hardWins / SEEDS;
-    // eslint-disable-next-line no-console -- deliberate: the real numbers are the evidence this test exists to produce
+    // Deliberate: the real numbers are the evidence this test exists to produce.
     console.log(`hard vs easy — ${SEEDS} seeded matches, hard won ${hardWins}/${SEEDS} (${(winRate * 100).toFixed(1)}%)`);
     expect(winRate).toBeGreaterThan(0.65);
   });
