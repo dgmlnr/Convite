@@ -75,6 +75,17 @@ describe("truco-engine public API (browser)", () => {
     expect(JSON.stringify(getViewFor(hand, playerA))).not.toContain(JSON.stringify({ suit: "oro", rank: 12 }));
   });
 
+  it("plays a card through the package's public entry point identically in a real browser", () => {
+    const playerA = "player-a" as PlayerId;
+    const playerB = "player-b" as PlayerId;
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const hand = startHand(match, [[], [{ suit: "espada", rank: 1 }]]); // mano = playerB (seat 1)
+
+    const result = applyAction(hand, { type: "play-card", playerId: playerB, card: { suit: "espada", rank: 1 } });
+
+    expect(result.ok).toBe(true);
+  });
+
   it("reports no match winner for an in-progress match identically in a real browser", () => {
     const playerA = "player-a" as PlayerId;
     const playerB = "player-b" as PlayerId;

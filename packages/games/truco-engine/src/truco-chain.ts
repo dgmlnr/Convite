@@ -1,3 +1,5 @@
+import { applyCardPlayAction, getLegalCardPlayActions } from "./card-play.js";
+import type { PlayCardAction } from "./card-play.js";
 import { applyEnvidoAction, getLegalEnvidoActions } from "./envido-chain.js";
 import type { EnvidoAction } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
@@ -19,8 +21,8 @@ export interface RespondTrucoAction {
 /** The truco call-chain's own actions; `Action` below is the widened union. */
 export type TrucoAction = CallTrucoAction | RespondTrucoAction;
 
-/** Every action the reducer pair accepts (spec: "Pure, Deterministic Engine API"). PR5 widens truco-only to truco+envido; PR6 (card play) extends it the same way, never forking a parallel reducer. */
-export type Action = TrucoAction | EnvidoAction;
+/** Every action the reducer pair accepts (spec: "Pure, Deterministic Engine API"). PR5 widened truco-only to truco+envido; this card-play slice widens it again the same way, never forking a parallel reducer. */
+export type Action = TrucoAction | EnvidoAction | PlayCardAction;
 
 export type ApplyResult =
   | { readonly ok: true; readonly state: MatchState }
@@ -73,6 +75,7 @@ function getLegalTrucoActions(state: MatchState, playerId: PlayerId): readonly T
   }
 
   if (hand.envido.status === "pending" || hand.envido.status === "accepted") return [];
+  if (hand.outcome.decided) return []; // hand already decided by card play — nothing further is legal
 
   const truco = hand.truco;
 
@@ -108,7 +111,11 @@ export function getLegalActions(state: MatchState, playerId: PlayerId): readonly
   if (getMatchWinner(state) !== null) {
     return [];
   }
-  return [...getLegalTrucoActions(state, playerId), ...getLegalEnvidoActions(state, playerId)];
+  return [
+    ...getLegalTrucoActions(state, playerId),
+    ...getLegalEnvidoActions(state, playerId),
+    ...getLegalCardPlayActions(state, playerId),
+  ];
 }
 
 function isLegalTruco(state: MatchState, action: TrucoAction): boolean {
@@ -162,9 +169,10 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
 }
 
 /** Pure reducer for the whole engine. Never mutates `state`; dispatches to the
- * truco or envido chain by `action.type` — the SAME reducer pair, not parallel reducers. */
+ * truco, envido, or card-play chain by `action.type` — the SAME reducer pair,
+ * not parallel reducers. */
 export function applyAction(state: MatchState, action: Action): ApplyResult {
-  return action.type === "call-truco" || action.type === "respond-truco"
-    ? applyTrucoAction(state, action)
-    : applyEnvidoAction(state, action);
+  if (action.type === "call-truco" || action.type === "respond-truco") return applyTrucoAction(state, action);
+  if (action.type === "play-card") return applyCardPlayAction(state, action);
+  return applyEnvidoAction(state, action);
 }

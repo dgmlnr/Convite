@@ -32,6 +32,20 @@ describe("getViewFor — per-player redaction (spec: 'Per-Player View Redaction'
     const state = freshDealtHand([], []);
     expect(() => getViewFor(state, "ghost" as PlayerId)).toThrow();
   });
+
+  it("projects turn/trick state (already-played cards are public, unlike unplayed hand cards)", () => {
+    // default dealerSeat is 0, so mano (seat 1, playerB) leads trick 1.
+    const state = freshDealtHand([{ suit: "espada", rank: 4 }], [{ suit: "espada", rank: 1 }]);
+    const played = applyAction(state, { type: "play-card", playerId: playerB, card: { suit: "espada", rank: 1 } });
+    if (!played.ok) throw new Error("expected ok");
+
+    const view = getViewFor(played.state, playerA);
+
+    expect(view.hand?.turnSeat).toBe(0); // playerA's turn now
+    expect(view.hand?.currentTrickPlays).toEqual([{ playerId: playerB, teamId: played.state.teams[1]!.id, seat: 1, card: { suit: "espada", rank: 1 } }]);
+    expect(view.hand?.trickOutcomes).toEqual([]);
+    expect(view.hand?.outcome).toEqual({ decided: false });
+  });
 });
 
 /** Reachable-state generator: shuffles the real 40-card deck into two 3-card

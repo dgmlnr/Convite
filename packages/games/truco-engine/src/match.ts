@@ -1,5 +1,7 @@
 import type { Card } from "./card.js";
+import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId, TeamId } from "./ids.js";
+import type { TrickOutcome } from "./trick.js";
 
 export interface Team {
   readonly id: TeamId;
@@ -46,11 +48,30 @@ export type EnvidoState =
   | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
   | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number };
 
+/** A single played card, recorded with its player/team/seat so trick
+ * advancement and turn validation can be driven off it (card play is public
+ * once played — the redaction constraint only covers UNPLAYED hand cards). */
+export interface HandPlay {
+  readonly playerId: PlayerId;
+  readonly teamId: TeamId;
+  readonly seat: number;
+  readonly card: Card;
+}
+
 /** State materialized once a hand's deal has been dealt (design §4). */
 export interface HandState {
   readonly manoSeat: number;
   readonly truco: TrucoState;
   readonly envido: EnvidoState;
+  /** Seat whose turn it is to play a card next. */
+  readonly turnSeat: number;
+  /** Plays recorded for the trick currently in progress (0 or 1 — resets to
+   * `[]` once the trick's second card resolves it). */
+  readonly currentTrickPlays: readonly HandPlay[];
+  /** Completed trick outcomes, oldest first — feeds `resolveHandWinner` directly. */
+  readonly trickOutcomes: readonly TrickOutcome[];
+  /** Whether card play has decided the hand yet (`resolveHandWinner`'s result). */
+  readonly outcome: HandOutcome;
 }
 
 export interface MatchState {
@@ -118,13 +139,18 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
     return { ...player, hand };
   });
 
+  const manoSeat = manoSeatFor(state.dealerSeat, state.players.length);
   return {
     ...state,
     players,
     hand: {
-      manoSeat: manoSeatFor(state.dealerSeat, state.players.length),
+      manoSeat,
       truco: { status: "none" },
       envido: { status: "none" },
+      turnSeat: manoSeat,
+      currentTrickPlays: [],
+      trickOutcomes: [],
+      outcome: { decided: false },
     },
   };
 }

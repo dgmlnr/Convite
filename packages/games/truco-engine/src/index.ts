@@ -1,3 +1,4 @@
+export type { PlayCardAction } from "./card-play.js";
 export type { Card, Rank, Suit } from "./card.js";
 export { RANKS, SUITS, cardId } from "./card.js";
 export { cardPower } from "./card-power.js";
@@ -11,6 +12,7 @@ export type {
   DealInput,
   EnvidoCallLevel,
   EnvidoState,
+  HandPlay,
   HandState,
   MatchConfig,
   MatchState,

@@ -80,6 +80,19 @@ describe("truco-engine public API (node)", () => {
     expect(view.opponents).toEqual([{ playerId: playerB, teamId: hand.teams[1]!.id, cardsRemaining: 1 }]);
   });
 
+  it("plays a card through the package's public entry point and records it as a legal, wired-up trick play", () => {
+    const playerA = "player-a" as PlayerId;
+    const playerB = "player-b" as PlayerId;
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const hand = startHand(match, [[], [{ suit: "espada", rank: 1 }]]); // mano = playerB (seat 1)
+
+    const result = applyAction(hand, { type: "play-card", playerId: playerB, card: { suit: "espada", rank: 1 } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.state.hand?.trickOutcomes).toEqual([]);
+    expect(result.state.players[1]!.hand).toEqual([]);
+  });
+
   it("reports the match winner once a team's score reaches the target through the package's public entry point", () => {
     const playerA = "player-a" as PlayerId;
     const playerB = "player-b" as PlayerId;

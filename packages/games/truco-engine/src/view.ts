@@ -1,6 +1,8 @@
 import type { Card } from "./card.js";
+import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId, TeamId } from "./ids.js";
-import type { EnvidoState, MatchConfig, MatchState, TrucoState } from "./match.js";
+import type { EnvidoState, HandPlay, MatchConfig, MatchState, TrucoState } from "./match.js";
+import type { TrickOutcome } from "./trick.js";
 
 /**
  * No field on `PlayerView` (or its nested types) is capable of structurally
@@ -24,6 +26,11 @@ export interface HandView {
   readonly manoSeat: number;
   readonly truco: TrucoState;
   readonly envido: EnvidoState;
+  readonly turnSeat: number;
+  /** Already-played cards for the trick in progress — public, unlike hand cards. */
+  readonly currentTrickPlays: readonly HandPlay[];
+  readonly trickOutcomes: readonly TrickOutcome[];
+  readonly outcome: HandOutcome;
 }
 
 export interface PlayerView {
@@ -67,7 +74,15 @@ export function getViewFor(state: MatchState, playerId: PlayerId): PlayerView {
     hand:
       state.hand === null
         ? null
-        : { manoSeat: state.hand.manoSeat, truco: state.hand.truco, envido: state.hand.envido },
+        : {
+            manoSeat: state.hand.manoSeat,
+            truco: state.hand.truco,
+            envido: state.hand.envido,
+            turnSeat: state.hand.turnSeat,
+            currentTrickPlays: state.hand.currentTrickPlays,
+            trickOutcomes: state.hand.trickOutcomes,
+            outcome: state.hand.outcome,
+          },
     config: state.config,
     dealerSeat: state.dealerSeat,
   };

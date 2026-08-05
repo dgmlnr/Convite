@@ -74,7 +74,7 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  * Opening is gated on `truco.status === "none"`: the real interrupt-a-pending-truco rule needs card-play state this slice lacks (deferred to PR6); closest sound proxy now. */
 export function getLegalEnvidoActions(state: MatchState, playerId: PlayerId): readonly EnvidoAction[] {
   const hand = state.hand;
-  if (hand === null || findPlayer(state, playerId) === undefined) return [];
+  if (hand === null || hand.outcome.decided || findPlayer(state, playerId) === undefined) return [];
   const player = findPlayer(state, playerId)!;
   const envido = hand.envido;
   if (envido.status === "none") {
