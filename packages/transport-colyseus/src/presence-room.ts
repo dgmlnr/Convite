@@ -1,6 +1,6 @@
-import { Room, type Client } from "colyseus";
+import { Room, matchMaker, type Client } from "colyseus";
 import type { GameId } from "@hexdev/platform-contract";
-import type { GameModuleRegistry, MatchmakingPool, ModalityConfig, PresenceSweeper } from "@hexdev/platform-core";
+import type { GameModuleRegistry, MatchmakingPool, ModalityConfig, Pairing, PresenceSweeper } from "@hexdev/platform-core";
 import { createPresenceSweeper, deriveModalities } from "@hexdev/platform-core";
 
 export interface PresenceRoomCreateOptions {
@@ -13,17 +13,37 @@ export interface PresenceRoomCreateOptions {
   readonly poolKey?: string;
   readonly sweeper?: PresenceSweeper;
   readonly sweepTickMs?: number;
+  /** The Colyseus room name a pairing is handed off into — the SAME name
+   * `createMatchServer` registers `MatchRoom` under (default `"match"`).
+   * A config value only: `PresenceRoom` never imports `MatchRoom`, keeping
+   * the lobby ignorant of any specific game-room implementation. */
+  readonly matchRoomName?: string;
 }
 
 interface PresenceJoinOptions {
   readonly modality: ModalityConfig;
   readonly playerId: string;
+  /** The player's own session token (design §7), forwarded UNVALIDATED into
+   * the eventual `MatchRoom` seat reservation so `MatchRoom.onAuth` — not
+   * this room — stays the ONLY place identity is ever verified (signature,
+   * origin, entitlement, replay). `PresenceRoom` still performs NO join-time
+   * auth of its own (unchanged v1 scope boundary, obs 2927): this field is
+   * custodied, never inspected, never trusted for anything presence-side. */
+  readonly token?: string;
 }
 
 interface WaitingClient {
   readonly client: Client;
   readonly modality: ModalityConfig;
   readonly playerId: string;
+  readonly token: string | undefined;
+}
+
+/** One seat of a formed pairing, paired with the `WaitingClient` (if still
+ * tracked) that is about to be handed off into the match room. */
+interface PairedSeat {
+  readonly playerId: string;
+  readonly entry: WaitingClient | undefined;
 }
 
 /**
@@ -43,6 +63,7 @@ export class PresenceRoom extends Room {
   private pool: MatchmakingPool | undefined;
   private poolKey: string | undefined;
   private sweeper: PresenceSweeper | undefined;
+  private matchRoomName = "match";
   private readonly waiting = new Map<string, WaitingClient>();
 
   override onCreate(options: PresenceRoomCreateOptions): void {
@@ -53,20 +74,21 @@ export class PresenceRoom extends Room {
     this.registry = options.registry;
     this.pool = options.pool;
     this.poolKey = options.poolKey;
+    this.matchRoomName = options.matchRoomName ?? "match";
     this.sweeper = options.sweeper ?? createPresenceSweeper();
     // Counters do not need 20Hz sync (design §8).
     this.setPatchRate(1000);
     this.clock.setInterval(() => this.sweepZombies(), options.sweepTickMs ?? 1000);
   }
 
-  override onJoin(client: Client, options: PresenceJoinOptions): void {
+  override async onJoin(client: Client, options: PresenceJoinOptions): Promise<void> {
     const pool = this.pool;
     const gameId = this.gameId;
     if (pool === undefined || gameId === undefined) return;
     pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
-    this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId });
+    this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId, token: options.token });
     this.broadcastCounts();
-    this.tryPair(options.modality);
+    await this.tryPair(options.modality);
   }
 
   override onLeave(client: Client): void {
@@ -79,21 +101,59 @@ export class PresenceRoom extends Room {
     this.broadcastCounts();
   }
 
-  private tryPair(modality: ModalityConfig): void {
+  /**
+   * On a formed pairing: remove both from the queue (unchanged, exactly
+   * once — `MatchmakingPool.tryPair` splices atomically), THEN hand off into
+   * a real `MatchRoom` via Colyseus's own seat-reservation mechanism
+   * (`matchMaker.createRoom` + `matchMaker.reserveSeatFor`), never a second,
+   * lighter identity path: each reservation carries only the player's own
+   * token, UNVALIDATED here, so `MatchRoom.onAuth` alone still decides
+   * whether the eventual live join is accepted. Reserving BOTH seats before
+   * either client even receives the `paired` message also closes the seat-
+   * theft window a naive "tell them the roomId, let them self-join" hand-off
+   * would leave open: `MatchRoom.hasReachedMaxClients()` counts reserved
+   * seats too, so a third client can never join in between.
+   */
+  private async tryPair(modality: ModalityConfig): Promise<void> {
     const pool = this.pool;
     const gameId = this.gameId;
     if (pool === undefined || gameId === undefined) return;
-    const pairing = pool.tryPair(gameId, modality, this.poolKey);
+    const pairing: Pairing | null = pool.tryPair(gameId, modality, this.poolKey);
     if (pairing === null) return;
-    for (const [self, other] of [
-      [pairing.a, pairing.b],
-      [pairing.b, pairing.a],
-    ] as const) {
-      const entry = this.waiting.get(self.connectionId);
-      this.waiting.delete(self.connectionId);
-      entry?.client.send("paired", { opponentPlayerId: other.playerId, modality });
-    }
+    const seats: readonly PairedSeat[] = [pairing.a, pairing.b].map((player) => {
+      const entry = this.waiting.get(player.connectionId);
+      this.waiting.delete(player.connectionId);
+      return { playerId: player.playerId, entry };
+    });
     this.broadcastCounts();
+    await this.handOffToMatch(gameId, modality, seats);
+  }
+
+  private async handOffToMatch(gameId: GameId, modality: ModalityConfig, seats: readonly PairedSeat[]): Promise<void> {
+    let room: Awaited<ReturnType<typeof matchMaker.createRoom>>;
+    try {
+      room = await matchMaker.createRoom(this.matchRoomName, { gameId, config: modality });
+    } catch (error) {
+      this.notifyHandoffFailure(seats, error);
+      return;
+    }
+    await Promise.all(
+      seats.map(async ({ entry }, index) => {
+        if (entry === undefined) return;
+        const opponent = seats[index === 0 ? 1 : 0]!;
+        try {
+          const matchReservation = await matchMaker.reserveSeatFor(room, { token: entry.token });
+          entry.client.send("paired", { opponentPlayerId: opponent.playerId, modality, matchReservation });
+        } catch (error) {
+          this.notifyHandoffFailure([{ playerId: opponent.playerId, entry }], error);
+        }
+      }),
+    );
+  }
+
+  private notifyHandoffFailure(seats: readonly PairedSeat[], error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const { entry } of seats) entry?.client.send("pairing-failed", { message });
   }
 
   /** Backstop for an `onLeave` a transport never delivered (design §8): a
