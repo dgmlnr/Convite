@@ -50,6 +50,7 @@ describe("truco-engine public API (browser)", () => {
     expect(getLegalActions(called.state, playerB)).toEqual([
       { type: "respond-truco", playerId: playerB, response: "quiero" },
       { type: "respond-truco", playerId: playerB, response: "no-quiero" },
+      { type: "call-envido", playerId: playerB, level: "envido" },
     ]);
   });
 

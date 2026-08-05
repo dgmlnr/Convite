@@ -45,32 +45,36 @@ describe("getLegalActions — truco call chain", () => {
     expect(getLegalActions(state, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }, { type: "call-envido", playerId: playerB, level: "envido" }]);
   });
 
-  it("only the non-calling team may respond while a call is pending", () => {
+  it("only the non-calling team may respond while a call is pending (envido may still interrupt it — see envido-chain.test.ts for the dedicated opening-gate coverage)", () => {
     const state = pendingAt("truco");
 
-    expect(getLegalActions(state, playerA)).toEqual([]);
+    expect(getLegalActions(state, playerA)).toEqual([{ type: "call-envido", playerId: playerA, level: "envido" }]);
     expect(getLegalActions(state, playerB)).toEqual([
       { type: "respond-truco", playerId: playerB, response: "quiero" },
       { type: "respond-truco", playerId: playerB, response: "no-quiero" },
+      { type: "call-envido", playerId: playerB, level: "envido" },
     ]);
   });
 
-  it("only the accepting team may escalate after quiero", () => {
+  it("only the accepting team may escalate truco after quiero (envido may still interrupt it)", () => {
     const accepted = apply(pendingAt("truco"), { type: "respond-truco", playerId: playerB, response: "quiero" });
 
-    expect(getLegalActions(accepted, playerA)).toEqual([]);
-    expect(getLegalActions(accepted, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "retruco" }]);
+    expect(getLegalActions(accepted, playerA)).toEqual([{ type: "call-envido", playerId: playerA, level: "envido" }]);
+    expect(getLegalActions(accepted, playerB)).toEqual([
+      { type: "call-truco", playerId: playerB, level: "retruco" },
+      { type: "call-envido", playerId: playerB, level: "envido" },
+    ]);
   });
 
-  it("vale cuatro accepted has no further escalation for either team", () => {
+  it("vale cuatro accepted has no further truco escalation for either team, but envido may still open (first trick, no card played yet)", () => {
     const accepted = apply(pendingAt("valeCuatro"), {
       type: "respond-truco",
       playerId: playerB,
       response: "quiero",
     });
 
-    expect(getLegalActions(accepted, playerA)).toEqual([]);
-    expect(getLegalActions(accepted, playerB)).toEqual([]);
+    expect(getLegalActions(accepted, playerA)).toEqual([{ type: "call-envido", playerId: playerA, level: "envido" }]);
+    expect(getLegalActions(accepted, playerB)).toEqual([{ type: "call-envido", playerId: playerB, level: "envido" }]);
   });
 
   it("no truco action is legal after a decline", () => {
@@ -103,6 +107,7 @@ describe("applyAction — legal escalation sequence (spec: truco-rules)", () => 
     expect(getLegalActions(state, playerA)).toEqual([
       { type: "respond-truco", playerId: playerA, response: "quiero" },
       { type: "respond-truco", playerId: playerA, response: "no-quiero" },
+      { type: "call-envido", playerId: playerA, level: "envido" },
     ]);
   });
 });

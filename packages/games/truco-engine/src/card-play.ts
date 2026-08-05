@@ -3,9 +3,10 @@ import type { Card } from "./card.js";
 import { resolveHandWinner } from "./hand-winner.js";
 import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId } from "./ids.js";
-import type { HandPlay, HandState, MatchState, Player, TrucoCallLevel } from "./match.js";
+import type { HandPlay, HandState, MatchState, Player } from "./match.js";
 import { resolveTrick } from "./trick.js";
 import type { TrickOutcome } from "./trick.js";
+import { ACCEPTED_HAND_VALUE } from "./truco-scoring.js";
 
 export interface PlayCardAction {
   readonly type: "play-card";
@@ -43,13 +44,6 @@ export function getLegalCardPlayActions(state: MatchState, playerId: PlayerId): 
 function isLegalCardPlay(state: MatchState, action: PlayCardAction): boolean {
   return getLegalCardPlayActions(state, action.playerId).some((legal) => cardId(legal.card) === cardId(action.card));
 }
-
-/** Standard Truco Argentino hand values — INFERENCE, not literal spec text
- * (the spec never states numeric points for truco levels). Mirrors the same
- * real-world scoring convention truco-chain.ts's DECLINE_VALUE already
- * assumed: a hand played to conclusion is worth 1 point if truco was never
- * called, or the ACCEPTED level's value (2/3/4) otherwise. */
-const ACCEPTED_HAND_VALUE: Record<TrucoCallLevel, number> = { truco: 2, retruco: 3, valeCuatro: 4 };
 
 function handValue(hand: HandState): number {
   return hand.truco.status === "accepted" ? ACCEPTED_HAND_VALUE[hand.truco.level] : 1;

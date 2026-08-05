@@ -38,13 +38,16 @@ function pendingEnvidoAt(levels: readonly EnvidoCallLevel[]): MatchState {
 }
 
 describe("getLegalActions — envido opens alongside truco, then gates it", () => {
-  it("either player may open truco or envido when nothing is pending, but not envido once truco is already called (no card-play state to bound it yet)", () => {
+  it("either player may open truco or envido when nothing is pending", () => {
     expect(getLegalActions(freshHand(), playerA)).toEqual([
       { type: "call-truco", playerId: playerA, level: "truco" },
       { type: "call-envido", playerId: playerA, level: "envido" },
     ]);
+  });
+
+  it("envido may still open even after truco has been called — it interrupts a pending truco call (real rule; replaces the earlier truco.status==='none' placeholder)", () => {
     const called = apply(freshHand(), { type: "call-truco", playerId: playerA, level: "truco" });
-    expect(getLegalActions(called, playerB).some((a) => a.type === "call-envido")).toBe(false);
+    expect(getLegalActions(called, playerB)).toContainEqual({ type: "call-envido", playerId: playerB, level: "envido" });
   });
 
   it.each([
@@ -58,6 +61,70 @@ describe("getLegalActions — envido opens alongside truco, then gates it", () =
   it("truco opens again once envido has resolved (declined)", () => {
     const declined = apply(pendingEnvidoAt(["envido"]), { type: "respond-envido", playerId: playerB, response: "no-quiero" });
     expect(getLegalActions(declined, playerA)).toContainEqual({ type: "call-truco", playerId: playerA, level: "truco" });
+  });
+});
+
+describe("getLegalActions — envido opening gate: only during the first trick, before your own card lands", () => {
+  // dealerSeat: 1 makes playerA (seat 0) mano — matches card-play.test.ts's convention.
+  function firstTrickHand(handA: readonly Card[], handB: readonly Card[]): MatchState {
+    const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat: 1 });
+    return startHand(state, [handA, handB]);
+  }
+
+  const cardA1: Card = { suit: "espada", rank: 1 };
+  const cardA2: Card = { suit: "basto", rank: 7 };
+  const cardB1: Card = { suit: "espada", rank: 4 };
+  const cardB2: Card = { suit: "oro", rank: 4 };
+
+  it("mano may open envido before playing their first card", () => {
+    const state = firstTrickHand([cardA1], [cardB1]);
+    expect(getLegalActions(state, playerA)).toContainEqual({ type: "call-envido", playerId: playerA, level: "envido" });
+  });
+
+  it("pie may open envido after mano has played, but before playing their own card", () => {
+    const state = firstTrickHand([cardA1], [cardB1]);
+    const afterManoPlays = apply(state, { type: "play-card", playerId: playerA, card: cardA1 });
+    expect(getLegalActions(afterManoPlays, playerB)).toContainEqual({ type: "call-envido", playerId: playerB, level: "envido" });
+  });
+
+  it("nobody can open once both first-trick cards are on the table", () => {
+    const state = firstTrickHand([cardA1], [cardB1]);
+    const afterTrick1 = apply(
+      apply(state, { type: "play-card", playerId: playerA, card: cardA1 }),
+      { type: "play-card", playerId: playerB, card: cardB1 },
+    );
+    expect(getLegalActions(afterTrick1, playerA).some((a) => a.type === "call-envido")).toBe(false);
+    expect(getLegalActions(afterTrick1, playerB).some((a) => a.type === "call-envido")).toBe(false);
+  });
+
+  it("envido is never callable once the first trick has resolved (covers trick 2 and 3)", () => {
+    const state = firstTrickHand([cardA1, cardA2], [cardB1, cardB2]);
+    const afterTrick1 = apply(
+      apply(state, { type: "play-card", playerId: playerA, card: cardA1 }),
+      { type: "play-card", playerId: playerB, card: cardB1 },
+    );
+    expect(getLegalActions(afterTrick1, playerA).some((a) => a.type === "call-envido")).toBe(false);
+    const midTrick2 = apply(afterTrick1, { type: "play-card", playerId: playerA, card: cardA2 });
+    expect(getLegalActions(midTrick2, playerB).some((a) => a.type === "call-envido")).toBe(false);
+  });
+
+  it("a player who already played their card can still escalate an envido opened by the opponent, just not open one", () => {
+    const state = firstTrickHand([cardA1], [cardB1]);
+    const afterManoPlays = apply(state, { type: "play-card", playerId: playerA, card: cardA1 });
+    const opened = apply(afterManoPlays, { type: "call-envido", playerId: playerB, level: "envido" });
+
+    expect(getLegalActions(opened, playerA)).toContainEqual({ type: "respond-envido", playerId: playerA, response: "quiero" });
+    expect(getLegalActions(opened, playerA)).toContainEqual({ type: "call-envido", playerId: playerA, level: "realEnvido" });
+  });
+
+  it("a truco decline still blocks envido opening even though the first trick never happened (regression: hand already over)", () => {
+    const state = firstTrickHand([cardA1], [cardB1]);
+    const declined = apply(
+      apply(state, { type: "call-truco", playerId: playerA, level: "truco" }),
+      { type: "respond-truco", playerId: playerB, response: "no-quiero" },
+    );
+    expect(getLegalActions(declined, playerA).some((a) => a.type === "call-envido")).toBe(false);
+    expect(getLegalActions(declined, playerB).some((a) => a.type === "call-envido")).toBe(false);
   });
 });
 

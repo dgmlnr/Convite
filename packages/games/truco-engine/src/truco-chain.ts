@@ -5,6 +5,7 @@ import type { EnvidoAction } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { getMatchWinner } from "./match.js";
 import type { MatchState, Player, TrucoCallLevel, TrucoState } from "./match.js";
+import { DECLINE_VALUE } from "./truco-scoring.js";
 
 export interface CallTrucoAction {
   readonly type: "call-truco";
@@ -32,15 +33,6 @@ const NEXT_LEVEL: Record<TrucoCallLevel, TrucoCallLevel | null> = {
   truco: "retruco",
   retruco: "valeCuatro",
   valeCuatro: null,
-};
-
-/** Points conceded on a decline: the last ACCEPTED level's value, or the
- * base 1-point hand value for a first call. Escalation is strictly
- * sequential, so this is a static function of the declined level alone. */
-const DECLINE_VALUE: Record<TrucoCallLevel, number> = {
-  truco: 1,
-  retruco: 2,
-  valeCuatro: 3,
 };
 
 function findPlayer(state: MatchState, playerId: PlayerId): Player | undefined {

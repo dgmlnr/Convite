@@ -1,6 +1,6 @@
 import type { Card, Rank, Suit } from "./card.js";
 import type { PlayerId, TeamId } from "./ids.js";
-import type { EnvidoCallLevel, EnvidoState, MatchState, Player } from "./match.js";
+import type { EnvidoCallLevel, EnvidoState, HandState, MatchState, Player } from "./match.js";
 
 /** Envido point value of a rank: 1-7 count face value, 10/11/12 count zero. */
 const ENVIDO_RANK_VALUE: Record<Rank, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 10: 0, 11: 0, 12: 0 };
@@ -70,15 +70,38 @@ const faltaEnvidoValue = (state: MatchState): number =>
 const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =>
   state.players.find((player) => player.id === playerId);
 
-/** Envido-chain legality, mirroring the truco chain's `getLegalActions`.
- * Opening is gated on `truco.status === "none"`: the real interrupt-a-pending-truco rule needs card-play state this slice lacks (deferred to PR6); closest sound proxy now. */
+/** Envido may only be OPENED during the FIRST trick, before that trick's
+ * second card is played (spec is silent on the exact boundary; verified
+ * against real Truco Argentino convention — ludoteka.com, trucogame.com,
+ * timbax.com, folkloretradiciones.com.ar, trucobits.com — all consistent).
+ * This REPLACES the earlier `truco.status === "none"` simplification
+ * (PR5/PR6/PR7): envido now correctly interrupts a PENDING or ACCEPTED truco
+ * call, as long as it is still the first trick and the opener has not yet
+ * played their own card. A truco DECLINE still blocks opening — it already
+ * ended the hand, independent of trick position.
+ * INFERENCE, explicitly flagged: this does not additionally require "mano
+ * acts before pie may open" as a strict turn-order rule gated on
+ * `hand.turnSeat`. Two reasons: (1) `turnSeat` only advances on card play,
+ * never on calls, so gating on it would incorrectly block a pie
+ * response-by-envido to a still-pending mano truco call — exactly the
+ * scenario this fix is meant to unlock; (2) no OTHER call in this engine is
+ * turn-gated either (`getLegalTrucoActions` lets either player make the
+ * first truco call), so this stays consistent with that existing
+ * convention rather than inventing a new one. */
+function canOpenEnvido(hand: HandState, player: Player): boolean {
+  if (hand.truco.status === "declined") return false; // hand already ended by a truco decline
+  if (hand.trickOutcomes.length > 0) return false; // first trick already resolved — never legal in trick 2/3
+  return !hand.currentTrickPlays.some((play) => play.playerId === player.id); // opener must not have played their own card yet
+}
+
+/** Envido-chain legality, mirroring the truco chain's `getLegalActions`. */
 export function getLegalEnvidoActions(state: MatchState, playerId: PlayerId): readonly EnvidoAction[] {
   const hand = state.hand;
   if (hand === null || hand.outcome.decided || findPlayer(state, playerId) === undefined) return [];
   const player = findPlayer(state, playerId)!;
   const envido = hand.envido;
   if (envido.status === "none") {
-    return hand.truco.status === "none" ? [{ type: "call-envido", playerId, level: "envido" }] : [];
+    return canOpenEnvido(hand, player) ? [{ type: "call-envido", playerId, level: "envido" }] : [];
   }
   if (envido.status === "pending") {
     if (player.teamId === envido.callingTeamId) return [];
