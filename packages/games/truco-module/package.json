@@ -13,5 +13,8 @@
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/truco-engine": "workspace:*",
     "@hexdev/truco-bot": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
   }
 }

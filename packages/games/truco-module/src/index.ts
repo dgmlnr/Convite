@@ -8,8 +8,8 @@ import {
   startHand,
 } from "@hexdev/truco-engine";
 import type { Action as EngineAction, MatchConfig, MatchState, PlayerView } from "@hexdev/truco-engine";
-import { chooseFirstLegalAction } from "@hexdev/truco-bot";
-import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { createBotStrategy, withThinkingDelay } from "@hexdev/truco-bot";
+import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { SYSTEM_ACTOR_ID, requestSystemAction } from "./deal.js";
 import type { StartHandAction } from "./deal.js";
 
@@ -74,12 +74,24 @@ function getOutcome(state: MatchState): MatchOutcome | null {
   return { winnerIds: winner === undefined ? [] : winner.playerIds };
 }
 
+/**
+ * Real CSPRNG (design §4: "the server is where entropy lives"), same shape
+ * used by `apps/server`'s own `rng` — NOT the same runtime instance (see
+ * apply-progress for why threading the room's single rng into `createBot`
+ * would require widening `GameModule.createBot`'s port signature, out of
+ * scope for this unit since it has no live transport consumer yet). Only
+ * the `hard` tier ever calls this; `easy`/`normal` are fully deterministic.
+ */
+const defaultRng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+
+/** Replaces PR9's `chooseFirstLegalAction` placeholder with the real tiers
+ * (spec: "Three Difficulty Tiers"), wrapped in the ~1s thinking delay
+ * (spec: "Tunable Bot Move Latency") — the delay wraps the STRATEGY here,
+ * never lives inside it, so `truco-bot`'s own strategy tests stay instant. */
 function createBot(tier: BotTier): BotStrategy<PlayerView, TrucoModuleAction> {
-  // `tier` is not yet used: every tier maps to the same placeholder strategy
-  // until Phase 6 (PR11) adds real easy/normal/hard heuristics.
-  void tier;
+  const strategy = withThinkingDelay(createBotStrategy(tier, defaultRng));
   return {
-    chooseAction: (view, legalActions) => chooseFirstLegalAction(view, toEngineActions(legalActions)),
+    chooseAction: (view, legalActions, budgetMs) => strategy.chooseAction(view, toEngineActions(legalActions), budgetMs),
   };
 }
 

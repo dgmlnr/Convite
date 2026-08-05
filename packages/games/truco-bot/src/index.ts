@@ -1,17 +1,27 @@
 import type { Action, PlayerView } from "@hexdev/truco-engine";
+import type { BotStrategy, BotTier, RandomSource } from "@hexdev/platform-contract";
+import { createEasyBot } from "./easy.js";
+import { createHardBot } from "./hard.js";
+import { createNormalBot } from "./normal.js";
+
+export { createEasyBot } from "./easy.js";
+export { createNormalBot } from "./normal.js";
+export { createHardBot } from "./hard.js";
+export { sampleOpponentHand } from "./determinize.js";
+export { envidoPoints, handPower, scoreFollowingCardPlay } from "./heuristics.js";
+export { DEFAULT_THINKING_DELAY_MS, withThinkingDelay } from "./latency.js";
+export type { Sleep } from "./latency.js";
 
 /**
- * PLACEHOLDER for Phase 6 (PR11): a single, tier-agnostic strategy that
- * always picks the first legal action. Real easy/normal/hard heuristics and
- * ISMCTS search land in that slice; this exists only so `truco-module`'s
- * `createBot` has something legitimate to return today, satisfying
- * `platform-contract`'s conformance suite ("a bot always chooses one of the
- * legal actions it is offered") without pretending tiers are implemented.
+ * The one place that maps a `BotTier` onto a real, instant (no artificial
+ * delay — see `latency.ts`) strategy. `rng` is required for every tier's
+ * signature even though only `hard` consults it (design: real determinism
+ * needs real entropy, injected — never `Math.random`), so a caller can
+ * construct all three tiers identically without a tier-specific branch of
+ * its own.
  */
-export function chooseFirstLegalAction(_view: PlayerView, legalActions: readonly Action[]): Action {
-  const [first] = legalActions;
-  if (first === undefined) {
-    throw new Error("chooseFirstLegalAction called with no legal actions to choose from");
-  }
-  return first;
+export function createBotStrategy(tier: BotTier, rng: RandomSource): BotStrategy<PlayerView, Action> {
+  if (tier === "easy") return createEasyBot();
+  if (tier === "normal") return createNormalBot();
+  return createHardBot(rng);
 }
