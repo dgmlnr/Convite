@@ -1,8 +1,17 @@
 import { createServer } from "node:http";
 import type { RandomSource } from "@hexdev/platform-contract";
-import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import {
+  GLOBAL_POOL_KEY,
+  createGameModuleRegistry,
+  createJtiReplayGuard,
+  createMatchmakingPool,
+  createRateLimiter,
+  createSessionTokenIssuer,
+  createStaticTenantRepository,
+} from "@hexdev/platform-core";
 import type { SystemActionRequester } from "@hexdev/platform-core";
-import { createMatchServer } from "@hexdev/transport-colyseus";
+import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
+import type { PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
 import { requestSystemAction, trucoModule } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
 import { handleEmbedRequest } from "./embed-handler.js";
@@ -30,6 +39,10 @@ const registry = createGameModuleRegistry([{ module: trucoModule, requestSystemA
 // The server is where entropy lives (design §4): the engine never
 // randomizes itself. A real CSPRNG, not `Math.random`.
 const rng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+// Lobby presence (design §8): ONE process-wide pool, `GLOBAL_POOL_KEY`
+// (cross-tenant matchmaking, the v1 default) — flipping to per-tenant is a
+// config value passed here, never a redesign.
+const presencePool = createMatchmakingPool();
 
 const httpServer = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -55,7 +68,10 @@ const httpServer = createServer((req, res) => {
   res.end();
 });
 
-createMatchServer({ httpServer, registry, auth: { issuer, repository, replayGuard, joinRateLimiter: joinIpLimiter }, rng });
+const gameServer = createMatchServer({ httpServer, registry, auth: { issuer, repository, replayGuard, joinRateLimiter: joinIpLimiter }, rng });
+// `gameId` is deliberately absent here — the client supplies it at
+// createRoom time, same as `MatchRoom`'s own `defaultOptions` pattern.
+gameServer.define("presence", PresenceRoom, { registry, pool: presencePool, poolKey: GLOBAL_POOL_KEY } as PresenceRoomCreateOptions);
 
 httpServer.listen(config.port, () => {
   console.log(`hexdev-gamify server listening on :${config.port}`);

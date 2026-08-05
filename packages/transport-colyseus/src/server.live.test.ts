@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { boot, type ColyseusTestServer } from "@colyseus/testing";
+import { ColyseusTestServer } from "@colyseus/testing";
 import type { GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
@@ -70,6 +70,15 @@ async function waitFor(views: readonly LiveState[], matches: (view: LiveState) =
 
 describe("createMatchServer — live WebSocket integration (the composition root's own runtime proof)", () => {
   let testServer: ColyseusTestServer;
+  // `boot()` SILENTLY IGNORES its `port` argument when given a `Server`
+  // instance directly — it always calls `gameServer.listen(2568)` internally
+  // (verified reading @colyseus/testing's own source, not assumed). Reusing
+  // that one fixed port across this file's two sequential tests, and now
+  // ALSO against `presence-room.live.test.ts` running in the same suite,
+  // caused a real EADDRINUSE found running `pnpm test` from clean. Fix:
+  // listen on our OWN chosen port first, then wrap directly — bypassing
+  // `boot()`'s buggy re-listen for this call shape entirely.
+  let nextPort = 2570;
 
   beforeEach(async () => {
     const issuer = createSessionTokenIssuer("live-test-secret");
@@ -85,7 +94,8 @@ describe("createMatchServer — live WebSocket integration (the composition root
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
     };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
-    testServer = await boot(gameServer);
+    await gameServer.listen(nextPort++);
+    testServer = new ColyseusTestServer(gameServer);
   });
 
   afterEach(async () => {
