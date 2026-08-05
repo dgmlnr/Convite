@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
 import type { PlayerId } from "./ids.js";
-import { createHeadToHeadMatch, rotateDealer, startHand } from "./match.js";
+import { createHeadToHeadMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
@@ -67,6 +67,20 @@ describe("startHand", () => {
     const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
 
     expect(() => startHand(state, [handOf(1)])).toThrow();
+  });
+});
+
+describe("getMatchWinner (spec: 'Match and Hand Termination')", () => {
+  it("returns null while every team's score is below the target", () => {
+    const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    expect(getMatchWinner(state)).toBeNull();
+  });
+
+  it("returns the team id once its score reaches the target", () => {
+    const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const winning = { ...state, teams: [{ ...state.teams[0]!, score: 15 }, state.teams[1]!] };
+
+    expect(getMatchWinner(winning)).toBe(state.teams[0]!.id);
   });
 });
 

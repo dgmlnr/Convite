@@ -19,7 +19,7 @@ export type {
   TrucoCallLevel,
   TrucoState,
 } from "./match.js";
-export { createHeadToHeadMatch, manoSeatFor, rotateDealer, startHand } from "./match.js";
+export { createHeadToHeadMatch, getMatchWinner, manoSeatFor, rotateDealer, startHand } from "./match.js";
 export type { PlayedCard, TrickOutcome } from "./trick.js";
 export { resolveTrick } from "./trick.js";
 export type { Action, ApplyResult, CallTrucoAction, RespondTrucoAction, TrucoAction } from "./truco-chain.js";

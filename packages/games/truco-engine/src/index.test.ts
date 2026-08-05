@@ -4,6 +4,7 @@ import {
   calculateEnvidoPoints,
   createHeadToHeadMatch,
   getLegalActions,
+  getMatchWinner,
   getViewFor,
   resolveTrick,
   resolveHandWinner,
@@ -77,5 +78,19 @@ describe("truco-engine public API (node)", () => {
 
     expect(view.self.hand).toEqual([{ suit: "espada", rank: 1 }]);
     expect(view.opponents).toEqual([{ playerId: playerB, teamId: hand.teams[1]!.id, cardsRemaining: 1 }]);
+  });
+
+  it("reports the match winner once a team's score reaches the target through the package's public entry point", () => {
+    const playerA = "player-a" as PlayerId;
+    const playerB = "player-b" as PlayerId;
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const oneCallFromTarget = { ...match, teams: [{ ...match.teams[0]!, score: 14 }, match.teams[1]!] };
+    const hand = startHand(oneCallFromTarget, [[], []]);
+    const called = applyAction(hand, { type: "call-truco", playerId: playerA, level: "truco" });
+    if (!called.ok) throw new Error("expected ok");
+    const declined = applyAction(called.state, { type: "respond-truco", playerId: playerB, response: "no-quiero" });
+    if (!declined.ok) throw new Error("expected ok");
+
+    expect(getMatchWinner(declined.state)).toBe(declined.state.teams[0]!.id);
   });
 });

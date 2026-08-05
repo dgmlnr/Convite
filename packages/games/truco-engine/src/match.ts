@@ -129,6 +129,15 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
   };
 }
 
+/**
+ * The winning team once a score has reached the target, or `null` while the
+ * match is still in progress (spec: "Match and Hand Termination"). Derived
+ * from `teams` rather than stored, so it can never drift out of sync.
+ */
+export function getMatchWinner(state: MatchState): TeamId | null {
+  return state.teams.find((team) => team.score >= state.config.pointsToWin)?.id ?? null;
+}
+
 /** Advances the dealer to the next seat, which rotates mano for the next hand. */
 export function rotateDealer(state: MatchState): MatchState {
   return { ...state, dealerSeat: (state.dealerSeat + 1) % state.players.length };

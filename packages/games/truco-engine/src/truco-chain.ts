@@ -1,6 +1,7 @@
 import { applyEnvidoAction, getLegalEnvidoActions } from "./envido-chain.js";
 import type { EnvidoAction } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
+import { getMatchWinner } from "./match.js";
 import type { MatchState, Player, TrucoCallLevel, TrucoState } from "./match.js";
 
 export interface CallTrucoAction {
@@ -100,8 +101,13 @@ function getLegalTrucoActions(state: MatchState, playerId: PlayerId): readonly T
   return []; // "declined" — hand is over, nothing further is legal.
 }
 
-/** Merged legal-action surface (truco + envido); `applyAction` rejects anything not present here. */
+/** Merged legal-action surface (truco + envido); `applyAction` rejects
+ * anything not present here. Once the match has a winner, nothing further is
+ * legal for either player (spec: "Match and Hand Termination"). */
 export function getLegalActions(state: MatchState, playerId: PlayerId): readonly Action[] {
+  if (getMatchWinner(state) !== null) {
+    return [];
+  }
   return [...getLegalTrucoActions(state, playerId), ...getLegalEnvidoActions(state, playerId)];
 }
 

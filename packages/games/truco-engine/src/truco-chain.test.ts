@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerId } from "./ids.js";
-import { createHeadToHeadMatch, startHand } from "./match.js";
+import { createHeadToHeadMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
 import type { MatchState, TrucoCallLevel } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { TrucoAction } from "./truco-chain.js";
@@ -122,6 +122,32 @@ describe("applyAction — decline terminates the hand (spec: truco-rules)", () =
 
     expect(state.teams[0]!.score).toBe(0);
     expect(state.teams[1]!.score).toBe(0);
+  });
+});
+
+describe("applyAction/getLegalActions — match termination (spec: 'Match and Hand Termination')", () => {
+  it("a decline that reaches the target ends the match: no further action is legal for either player", () => {
+    const almostWonMatch = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const oneCallFromTarget: MatchState = {
+      ...almostWonMatch,
+      teams: [{ ...almostWonMatch.teams[0]!, score: 14 }, almostWonMatch.teams[1]!],
+    };
+    const called = apply(startHand(oneCallFromTarget, [[], []]), { type: "call-truco", playerId: playerA, level: "truco" });
+    const declined = apply(called, { type: "respond-truco", playerId: playerB, response: "no-quiero" });
+
+    expect(getMatchWinner(declined)).toBe(declined.teams[0]!.id);
+    expect(getLegalActions(declined, playerA)).toEqual([]);
+    expect(getLegalActions(declined, playerB)).toEqual([]);
+  });
+
+  it("a decline that does not reach the target leaves the match open for a fresh, mano-rotated hand", () => {
+    const declined = apply(pendingAt("truco"), { type: "respond-truco", playerId: playerB, response: "no-quiero" });
+    expect(getMatchWinner(declined)).toBeNull();
+
+    const nextHand = startHand(rotateDealer(declined), [[], []]);
+
+    expect(nextHand.hand?.manoSeat).not.toBe(declined.hand?.manoSeat);
+    expect(getLegalActions(nextHand, playerA).length).toBeGreaterThan(0);
   });
 });
 
