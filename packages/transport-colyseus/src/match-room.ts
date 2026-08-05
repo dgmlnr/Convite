@@ -1,15 +1,31 @@
-import { Room, type Client } from "colyseus";
+import { Room, type AuthContext, type Client } from "colyseus";
 import type { GameId, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import type { GameModuleRegistry } from "@hexdev/platform-core";
+import type { GameModuleRegistry, JtiReplayGuard, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
+
+/** Everything `onAuth` needs to verify a join, injected per-room instead of
+ * imported directly: `transport-colyseus` must not know HOW tokens are
+ * signed or tenants are stored, only that it can ask. */
+export interface MatchRoomAuthOptions {
+  readonly issuer: SessionTokenIssuer;
+  readonly repository: TenantRepository;
+  readonly replayGuard: JtiReplayGuard;
+}
 
 export interface MatchRoomCreateOptions {
   readonly gameId: GameId;
   readonly config: unknown;
   readonly registry: GameModuleRegistry;
+  readonly auth: MatchRoomAuthOptions;
 }
 
 interface MatchRoomJoinOptions {
-  readonly playerId: string;
+  readonly token?: string;
+}
+
+/** What `onAuth` resolves and colyseus attaches to `client.auth` — the
+ * ONLY source `onJoin` trusts for identity. Never `options.playerId`. */
+interface MatchRoomAuth {
+  readonly playerId: PlayerId;
 }
 
 interface SeatedClient {
@@ -54,6 +70,7 @@ export class MatchRoom extends Room {
   private module: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> | undefined;
   private config: unknown;
   private matchState: unknown;
+  private auth: MatchRoomAuthOptions | undefined;
   private readonly seats: SeatedClient[] = [];
 
   override onCreate(options: MatchRoomCreateOptions): void {
@@ -63,16 +80,63 @@ export class MatchRoom extends Room {
     }
     this.module = module;
     this.config = options.config;
+    this.auth = options.auth;
     this.maxClients = module.metadata.seatCount;
     this.onMessage("action", (client, message: unknown) => this.handleAction(client, message));
   }
 
-  override onJoin(client: Client, options: MatchRoomJoinOptions): void {
+  /**
+   * The join-time authentication gate (spec: origin allowlist + entitlement
+   * catalog, BOTH server-enforced; design §7's token flow). Runs BEFORE
+   * `onJoin`; colyseus attaches whatever this returns to `client.auth`,
+   * which `onJoin` below treats as the ONLY source of the joining player's
+   * identity — `options.playerId` no longer exists on the wire at all.
+   * Every rejection throws (colyseus turns a thrown `onAuth` into a denied
+   * connection) and is fail-closed: an unresolvable tenant, an origin
+   * mismatch, and a missing entitlement all reject identically to a bad
+   * signature, so a client cannot distinguish WHY a join failed.
+   */
+  override async onAuth(_client: Client, options: MatchRoomJoinOptions, context: AuthContext): Promise<MatchRoomAuth> {
+    const module = this.module;
+    const auth = this.auth;
+    if (module === undefined || auth === undefined) {
+      throw new Error("MatchRoom: onAuth called before onCreate registered a module");
+    }
+    if (typeof options.token !== "string") {
+      throw new Error("MatchRoom: join rejected, no session token presented");
+    }
+    const claims = await auth.issuer.verify(options.token);
+    if (claims === undefined) {
+      throw new Error("MatchRoom: join rejected, invalid or expired session token");
+    }
+    // Origin re-validation, spec-mandated and explicitly NOT redundant with
+    // the mint-time check: a captured token could be replayed from a page
+    // the tenant never allowlisted. `Origin` is spoofable by a hand-rolled
+    // WS client — this raises the bar, it is not a cryptographic boundary
+    // (see apply-progress security posture).
+    const tenant = auth.repository.findById(claims.tenantId);
+    const origin = context.headers.get("origin");
+    if (tenant === undefined || origin === null || !tenant.allowedOrigins.includes(origin)) {
+      throw new Error("MatchRoom: join rejected, origin not allowed for this tenant");
+    }
+    if (!tenant.entitledGames.includes(module.id)) {
+      throw new Error("MatchRoom: join rejected, tenant is not entitled to this game");
+    }
+    if (!auth.replayGuard.consume(claims.jti)) {
+      throw new Error("MatchRoom: join rejected, session token already used");
+    }
+    return { playerId: claims.playerId };
+  }
+
+  override onJoin(client: Client & { auth?: MatchRoomAuth }): void {
     const module = this.module;
     if (module === undefined) {
       throw new Error("MatchRoom: onJoin called before onCreate registered a module");
     }
-    const playerId = options.playerId as PlayerId;
+    const playerId = client.auth?.playerId;
+    if (playerId === undefined) {
+      throw new Error("MatchRoom: onJoin called without a resolved onAuth identity");
+    }
     this.seats.push({ client, playerId });
     if (this.seats.length === module.metadata.seatCount) {
       const seatAssignments: SeatAssignment[] = this.seats.map((seated, seat) => ({ seat, playerId: seated.playerId }));

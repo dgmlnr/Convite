@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Client } from "colyseus";
 import type { ApplyResult, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { createGameModuleRegistry } from "@hexdev/platform-core";
+import {
+  createGameModuleRegistry,
+  createJtiReplayGuard,
+  createSessionTokenIssuer,
+  createStaticTenantRepository,
+} from "@hexdev/platform-core";
+import type { SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
 import { MatchRoom } from "./match-room.js";
+import type { MatchRoomAuthOptions } from "./match-room.js";
 
 /**
  * A deliberately non-truco fixture, mirroring `platform-contract`'s own
@@ -56,90 +63,203 @@ const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> 
   createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
 };
 
+const TENANT_ID = "tenant-fixture" as TenantId;
+const OTHER_TENANT_ID = "tenant-other" as TenantId;
+const ALLOWED_ORIGIN = "https://tenant.example";
+const SECRET = "fixture-secret-key";
+const P0 = "seat-0-player" as PlayerId;
+const P1 = "seat-1-player" as PlayerId;
+
+function createAuth(): MatchRoomAuthOptions {
+  const issuer = createSessionTokenIssuer(SECRET);
+  const repository = createStaticTenantRepository([
+    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret"] },
+    { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
+  ]);
+  return { issuer, repository, replayGuard: createJtiReplayGuard() };
+}
+
+function mintToken(issuer: SessionTokenIssuer, playerId: PlayerId, overrides: { tenantId?: TenantId; ttlSeconds?: number } = {}) {
+  return issuer.mint({ tenantId: overrides.tenantId ?? TENANT_ID, playerId, entitlements: [] }, overrides.ttlSeconds ?? 60);
+}
+
+/** See `tenant-auth.test.ts` for why a middle-character flip, not the last
+ * character, is required for a reliable (non-flaky) tamper proof. */
+function corruptSignature(token: string): string {
+  const dot = token.indexOf(".");
+  const signature = token.slice(dot + 1);
+  const mid = Math.floor(signature.length / 2);
+  const replacement = signature[mid] === "a" ? "b" : "a";
+  return `${token.slice(0, dot + 1 + mid)}${replacement}${signature.slice(mid + 1)}`;
+}
+
 function fakeClient(sessionId: string) {
   const sent: Array<{ type: string; message: unknown }> = [];
   const client = {
     sessionId,
     id: sessionId,
+    auth: undefined as unknown,
     send: (type: string, message?: unknown) => {
       sent.push({ type, message });
     },
-  } as unknown as Client;
+  } as unknown as Client & { auth: unknown };
   return { client, sent };
 }
 
-function createJoinedRoom() {
-  const registry = createGameModuleRegistry([fixtureModule]);
-  const room = new MatchRoom();
-  room.onCreate({ gameId: "fixture-secret", config: undefined, registry });
-  const seat0 = fakeClient("s0");
-  const seat1 = fakeClient("s1");
-  room.onJoin(seat0.client, { playerId: P0 });
-  room.onJoin(seat1.client, { playerId: P1 });
-  return { room, seat0, seat1 };
+async function joinWithToken(room: MatchRoom, client: Client & { auth: unknown }, token: string | undefined, origin = ALLOWED_ORIGIN) {
+  const options = { token };
+  const auth = await room.onAuth(client, options, { headers: new Headers({ origin }), ip: "127.0.0.1" });
+  client.auth = auth;
+  room.onJoin(client);
 }
 
-const P0 = "seat-0-player" as PlayerId;
-const P1 = "seat-1-player" as PlayerId;
+async function createJoinedRoom() {
+  const auth = createAuth();
+  const registry = createGameModuleRegistry([fixtureModule]);
+  const room = new MatchRoom();
+  room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth });
+  const seat0 = fakeClient("s0");
+  const seat1 = fakeClient("s1");
+  await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+  await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+  return { room, seat0, seat1, auth };
+}
 
 describe("MatchRoom", () => {
   it("refuses to create when no module is registered for the requested gameId", () => {
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
-    expect(() => room.onCreate({ gameId: "does-not-exist", config: undefined, registry })).toThrow(/no GameModule registered/);
+    expect(() => room.onCreate({ gameId: "does-not-exist", config: undefined, registry, auth: createAuth() })).toThrow(/no GameModule registered/);
   });
 
-  it("delegates match creation to the registered module only once every seat has joined", () => {
-    const registry = createGameModuleRegistry([fixtureModule]);
-    const room = new MatchRoom();
-    room.onCreate({ gameId: "fixture-secret", config: undefined, registry });
-    const seat0 = fakeClient("s0");
-    room.onJoin(seat0.client, { playerId: P0 });
-    expect(seat0.sent).toHaveLength(0);
-    const seat1 = fakeClient("s1");
-    room.onJoin(seat1.client, { playerId: P1 });
+  it("delegates match creation to the registered module only once every seat has joined", async () => {
+    const { seat0, seat1 } = await createJoinedRoom();
     expect(seat0.sent).toHaveLength(1);
     expect(seat1.sent).toHaveLength(1);
   });
 
-  it("sends each client only its own per-seat view — the opponent's secret never appears", () => {
-    const { seat0, seat1 } = createJoinedRoom();
+  it("sends each client only its own per-seat view — the opponent's secret never appears", async () => {
+    const { seat0, seat1 } = await createJoinedRoom();
     expect(seat0.sent[0]).toEqual({ type: "view", message: { ownSecret: 11, turnSeat: 0 } });
     expect(seat1.sent[0]).toEqual({ type: "view", message: { ownSecret: 22, turnSeat: 0 } });
     expect(JSON.stringify(seat1.sent[0]?.message)).not.toContain("11");
   });
 
-  it("applies a legal, in-turn action and broadcasts the resulting view to both seats", () => {
-    const { room, seat0, seat1 } = createJoinedRoom();
+  it("applies a legal, in-turn action and broadcasts the resulting view to both seats", async () => {
+    const { room, seat0, seat1 } = await createJoinedRoom();
     room.handleAction(seat0.client, { type: "advance", playerId: P0 });
     expect(seat0.sent).toHaveLength(2);
     expect(seat1.sent).toHaveLength(2);
     expect(seat0.sent[1]).toEqual({ type: "view", message: { ownSecret: 11, turnSeat: 1 } });
   });
 
-  it("rejects an out-of-turn action and leaves state unchanged (server-authoritative)", () => {
-    const { room, seat0, seat1 } = createJoinedRoom();
+  it("rejects an out-of-turn action and leaves state unchanged (server-authoritative)", async () => {
+    const { room, seat0, seat1 } = await createJoinedRoom();
     room.handleAction(seat1.client, { type: "advance", playerId: P1 });
     expect(seat1.sent).toHaveLength(2);
     expect(seat1.sent[1]?.type).toBe("action-rejected");
     expect(seat0.sent).toHaveLength(1); // no new view broadcast: nothing changed
   });
 
-  it("rejects an action whose claimed playerId does not match the authenticated seat, without invoking the module", () => {
-    const { room, seat0 } = createJoinedRoom();
+  it("rejects an action whose claimed playerId does not match the authenticated seat, without invoking the module", async () => {
+    const { room, seat0 } = await createJoinedRoom();
     room.handleAction(seat0.client, { type: "advance", playerId: P1 });
     expect(seat0.sent[1]).toMatchObject({ type: "action-rejected" });
     expect((seat0.sent[1]?.message as { code: string }).code).toBe("actor-mismatch");
     expect(seat0.sent).toHaveLength(2);
   });
 
-  it("catches a throwing module and rejects the action instead of crashing the room", () => {
-    const { room, seat0, seat1 } = createJoinedRoom();
+  it("catches a throwing module and rejects the action instead of crashing the room", async () => {
+    const { room, seat0, seat1 } = await createJoinedRoom();
     room.handleAction(seat0.client, { type: "detonate", playerId: P0 });
     expect(seat0.sent[1]).toMatchObject({ type: "action-rejected", message: { code: "malformed-action" } });
     expect(seat1.sent).toHaveLength(1); // the crash never reached a broadcast
     // the room survives: a legal action still works afterward
     room.handleAction(seat0.client, { type: "advance", playerId: P0 });
     expect(seat0.sent).toHaveLength(3);
+  });
+});
+
+describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
+  function freshRoom() {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([fixtureModule]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth });
+    return { room, auth };
+  }
+
+  it("derives playerId from the verified token, never from client-declared options", async () => {
+    const { room, auth } = freshRoom();
+    const seat0 = fakeClient("s0");
+    // The client attempts the exact PR10a-era attack: claim to be P1 via a
+    // field the room no longer reads for identity. `options.token` is the
+    // ONLY source of truth now.
+    const token = await mintToken(auth.issuer, P0);
+    const resolvedAuth = await room.onAuth(seat0.client, { token, playerId: P1 } as never, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" });
+    expect(resolvedAuth).toEqual({ playerId: P0 });
+  });
+
+  it("end-to-end: onJoin seats the token's identity, not a forged options.playerId (the PR10a-era attack, closed)", async () => {
+    const { room, auth } = freshRoom();
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    // seat0 holds a token minted for P0 but ALSO claims playerId: P1 in its
+    // join options — the exact shape of the old, now-impossible attack.
+    const forgedOptions = { token: await mintToken(auth.issuer, P0), playerId: P1 };
+    seat0.client.auth = await room.onAuth(seat0.client, forgedOptions as never, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" });
+    room.onJoin(seat0.client);
+    seat1.client.auth = await room.onAuth(seat1.client, { token: await mintToken(auth.issuer, P1) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "2.2.2.2" });
+    room.onJoin(seat1.client);
+    // seat0 can only successfully act AS P0 if the room recorded its seat
+    // identity as P0 (from the token). If the forged options.playerId (P1)
+    // had won instead, this would be rejected as "actor-mismatch".
+    room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+    expect(seat0.sent[1]).toMatchObject({ type: "view" });
+  });
+
+  it("rejects a join with no token presented", async () => {
+    const { room } = freshRoom();
+    const seat0 = fakeClient("s0");
+    await expect(room.onAuth(seat0.client, {}, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" })).rejects.toThrow(/no session token/);
+  });
+
+  it("rejects a forged token (signature does not verify)", async () => {
+    const { room, auth } = freshRoom();
+    const seat0 = fakeClient("s0");
+    const valid = await mintToken(auth.issuer, P0);
+    const forged = corruptSignature(valid);
+    await expect(
+      room.onAuth(seat0.client, { token: forged }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" }),
+    ).rejects.toThrow(/invalid or expired/);
+  });
+
+  it("rejects a replayed token: a captured, already-consumed token cannot authenticate a second connection", async () => {
+    const { room, auth } = freshRoom();
+    const token = await mintToken(auth.issuer, P0);
+    const first = fakeClient("s0");
+    await room.onAuth(first.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" });
+    const second = fakeClient("s0b");
+    await expect(
+      room.onAuth(second.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "2.2.2.2" }),
+    ).rejects.toThrow(/already used/);
+  });
+
+  it("re-validates origin at join time, independent of the origin checked at mint time (spec: NOT redundant)", async () => {
+    const { room, auth } = freshRoom();
+    const seat0 = fakeClient("s0");
+    const token = await mintToken(auth.issuer, P0);
+    await expect(
+      room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: "https://replayed-from-elsewhere.example" }), ip: "9.9.9.9" }),
+    ).rejects.toThrow(/origin/);
+  });
+
+  it("rejects a join for a non-entitled game, server-side, even with an otherwise-valid token (crafted request)", async () => {
+    const { room, auth } = freshRoom();
+    const seat0 = fakeClient("s0");
+    const token = await mintToken(auth.issuer, P0, { tenantId: OTHER_TENANT_ID }); // OTHER_TENANT_ID is not entitled to "fixture-secret"
+    await expect(
+      room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" }),
+    ).rejects.toThrow(/not entitled/);
   });
 });
