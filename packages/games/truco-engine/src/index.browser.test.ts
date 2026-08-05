@@ -4,6 +4,7 @@ import {
   calculateEnvidoPoints,
   createHeadToHeadMatch,
   getLegalActions,
+  getViewFor,
   resolveTrick,
   resolveHandWinner,
   startHand,
@@ -60,5 +61,16 @@ describe("truco-engine public API (browser)", () => {
 
     expect(getLegalActions(hand, playerA)).toContainEqual({ type: "call-envido", playerId: playerA, level: "envido" });
     expect(calculateEnvidoPoints([{ suit: "espada", rank: 4 }])).toBe(4);
+  });
+
+  it("projects a redacted per-player view identically in a real browser", () => {
+    const playerA = "player-a" as PlayerId;
+    const playerB = "player-b" as PlayerId;
+    const hand = startHand(
+      createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 }),
+      [[{ suit: "espada", rank: 1 }], [{ suit: "oro", rank: 12 }]],
+    );
+
+    expect(JSON.stringify(getViewFor(hand, playerA))).not.toContain(JSON.stringify({ suit: "oro", rank: 12 }));
   });
 });

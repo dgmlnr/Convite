@@ -4,6 +4,7 @@ import {
   calculateEnvidoPoints,
   createHeadToHeadMatch,
   getLegalActions,
+  getViewFor,
   resolveTrick,
   resolveHandWinner,
   startHand,
@@ -64,5 +65,17 @@ describe("truco-engine public API (node)", () => {
 
     expect(called.ok && called.state.hand?.envido.status).toBe("pending");
     expect(calculateEnvidoPoints([{ suit: "oro", rank: 7 }])).toBe(7);
+  });
+
+  it("projects a redacted per-player view through the package's public entry point", () => {
+    const playerA = "player-a" as PlayerId;
+    const playerB = "player-b" as PlayerId;
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const hand = startHand(match, [[{ suit: "espada", rank: 1 }], [{ suit: "oro", rank: 12 }]]);
+
+    const view = getViewFor(hand, playerA);
+
+    expect(view.self.hand).toEqual([{ suit: "espada", rank: 1 }]);
+    expect(view.opponents).toEqual([{ playerId: playerB, teamId: hand.teams[1]!.id, cardsRemaining: 1 }]);
   });
 });

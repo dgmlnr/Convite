@@ -24,3 +24,5 @@ export type { PlayedCard, TrickOutcome } from "./trick.js";
 export { resolveTrick } from "./trick.js";
 export type { Action, ApplyResult, CallTrucoAction, RespondTrucoAction, TrucoAction } from "./truco-chain.js";
 export { applyAction, getLegalActions } from "./truco-chain.js";
+export type { HandView, OpponentView, PlayerView, TeammateView } from "./view.js";
+export { getViewFor } from "./view.js";
