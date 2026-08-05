@@ -47,6 +47,14 @@ describe("startHand", () => {
     expect(next.hand?.manoSeat).toBe(1);
   });
 
+  it("starts a fresh hand with no truco call pending, even after a prior hand's decline", () => {
+    const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+
+    const next = startHand(state, [handOf(1), handOf(2)]);
+
+    expect(next.hand?.truco).toEqual({ status: "none" });
+  });
+
   it("throws when the deal does not supply a hand for every seat", () => {
     const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
 

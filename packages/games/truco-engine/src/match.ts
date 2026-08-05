@@ -18,9 +18,26 @@ export interface MatchConfig {
   readonly pointsToWin: 15 | 30;
 }
 
+export type TrucoCallLevel = "truco" | "retruco" | "valeCuatro";
+
+/** Truco call-chain state for the current hand (spec: "Truco Call Chain").
+ * `pending`: the other team must respond. `accepted`: only the accepting
+ * team may escalate. `declined`: hand over, nothing further is legal. */
+export type TrucoState =
+  | { readonly status: "none" }
+  | { readonly status: "pending"; readonly level: TrucoCallLevel; readonly callingTeamId: TeamId }
+  | { readonly status: "accepted"; readonly level: TrucoCallLevel; readonly callingTeamId: TeamId }
+  | {
+      readonly status: "declined";
+      readonly level: TrucoCallLevel;
+      readonly callingTeamId: TeamId;
+      readonly decliningTeamId: TeamId;
+    };
+
 /** State materialized once a hand's deal has been dealt (design §4). */
 export interface HandState {
   readonly manoSeat: number;
+  readonly truco: TrucoState;
 }
 
 export interface MatchState {
@@ -91,7 +108,10 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
   return {
     ...state,
     players,
-    hand: { manoSeat: manoSeatFor(state.dealerSeat, state.players.length) },
+    hand: {
+      manoSeat: manoSeatFor(state.dealerSeat, state.players.length),
+      truco: { status: "none" },
+    },
   };
 }
 

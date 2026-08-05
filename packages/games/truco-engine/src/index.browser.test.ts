@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAction,
+  createHeadToHeadMatch,
+  getLegalActions,
   resolveTrick,
   resolveHandWinner,
+  startHand,
   type PlayedCard,
+  type PlayerId,
   type TeamId,
 } from "./index.js";
 
@@ -27,5 +32,21 @@ describe("truco-engine public API (browser)", () => {
     );
 
     expect(result).toEqual({ decided: true, winnerTeamId: teamB });
+  });
+
+  it("escalates the truco chain identically in a real browser", () => {
+    const playerA = "player-a" as PlayerId;
+    const playerB = "player-b" as PlayerId;
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    const hand = startHand(match, [[], []]);
+
+    const called = applyAction(hand, { type: "call-truco", playerId: playerA, level: "truco" });
+    expect(called.ok).toBe(true);
+    if (!called.ok) throw new Error("expected ok");
+
+    expect(getLegalActions(called.state, playerB)).toEqual([
+      { type: "respond-truco", playerId: playerB, response: "quiero" },
+      { type: "respond-truco", playerId: playerB, response: "no-quiero" },
+    ]);
   });
 });
