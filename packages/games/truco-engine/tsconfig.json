@@ -3,8 +3,13 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "lib": ["ES2022"],
-    "types": []
+    "lib": [
+      "ES2022"
+    ],
+    "types": [],
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run",
+    "test": "tsc -b && vitest run",
     "test:watch": "vitest watch",
     "typecheck": "tsc -b",
     "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs"
