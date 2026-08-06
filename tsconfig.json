@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/platform-contract" },
     { "path": "packages/widget-protocol" },
+    { "path": "packages/spanish-deck-ui" },
     { "path": "packages/platform-core" },
     { "path": "packages/games/truco-engine" },
     { "path": "packages/games/truco-bot" },

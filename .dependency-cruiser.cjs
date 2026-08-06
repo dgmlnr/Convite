@@ -24,6 +24,14 @@ module.exports = {
       to: { path: "^(packages|apps)/", pathNot: "^packages/games/truco-engine/src" },
     },
     {
+      name: "l0-spanish-deck-ui-no-workspace-deps",
+      severity: "error",
+      comment:
+        "spanish-deck-ui is pure L0 and must not depend on any other workspace package. The Spanish deck (oro/copa/espada/basto) is shared by every Spanish-deck game (truco today, escoba de 15 next per the roadmap) — it must not know truco exists, exactly like truco-engine must not know the platform exists.",
+      from: { path: "^packages/spanish-deck-ui/src" },
+      to: { path: "^(packages|apps)/", pathNot: "^packages/spanish-deck-ui/src" },
+    },
+    {
       name: "l1-no-l2-l3",
       severity: "error",
       comment: "L1 packages (platform-core, truco-bot, truco-ui) must not depend on L2 adapters or L3 apps.",
