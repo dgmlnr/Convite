@@ -6,8 +6,15 @@ import { initWidget } from "./loader.js";
  * coordinated migration for every tenant's already-pasted `<script>` tag
  * (design "Expensive to reverse" table) — kept as a single named constant
  * so that cost stays visible rather than buried in a URL literal elsewhere.
+ *
+ * Overridable at IIFE BUILD time only (never at runtime) via `vite.config.ts`'s
+ * `define`, so a real deployment's `loader.js` can point at its real widget
+ * origin without a source edit per environment — see `globals.d.ts`.
  */
-export const WIDGET_ORIGIN = parseTargetOrigin("https://play.hexdev.example");
+const DEFAULT_WIDGET_ORIGIN = "https://play.hexdev.example";
+export const WIDGET_ORIGIN = parseTargetOrigin(
+  typeof __HEXDEV_WIDGET_ORIGIN__ === "string" ? __HEXDEV_WIDGET_ORIGIN__ : DEFAULT_WIDGET_ORIGIN,
+);
 
 /**
  * The auto-init entry point a bundler wraps into the distributable IIFE

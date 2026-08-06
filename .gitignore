@@ -4,6 +4,8 @@ node_modules/
 
 # Build output
 dist/
+dist-iife/
+dist-app/
 build/
 *.tsbuildinfo
 

@@ -6,5 +6,8 @@
   "dependencies": {
     "@hexdev/widget-protocol": "workspace:*",
     "@hexdev/widget-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.2.0"
   }
 }

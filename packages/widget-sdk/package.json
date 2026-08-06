@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -11,5 +14,8 @@
   },
   "dependencies": {
     "@hexdev/widget-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.2.0"
   }
 }

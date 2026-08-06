@@ -66,6 +66,10 @@ importers:
       '@hexdev/widget-sdk':
         specifier: workspace:*
         version: link:../../packages/widget-sdk
+    devDependencies:
+      vite:
+        specifier: ^8.2.0
+        version: 8.2.0(@types/node@26.1.2)
 
   packages/games/truco-bot:
     dependencies:
@@ -140,6 +144,10 @@ importers:
       '@hexdev/widget-protocol':
         specifier: workspace:*
         version: link:../widget-protocol
+    devDependencies:
+      vite:
+        specifier: ^8.2.0
+        version: 8.2.0(@types/node@26.1.2)
 
 packages:
 
