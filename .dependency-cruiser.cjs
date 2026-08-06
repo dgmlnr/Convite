@@ -49,9 +49,9 @@ module.exports = {
       name: "no-colyseus-outside-transport",
       severity: "error",
       comment:
-        "colyseus (and its @colyseus/* internals) may only be imported from transport-colyseus. pnpm's isolated node_modules already makes an undeclared import fail to resolve elsewhere; this is a second, orthogonal, non-overlapping mechanical check on the same invariant, per design §1.",
-      from: { pathNot: "^packages/transport-colyseus/src" },
-      to: { path: "(^colyseus(/|$)|^@colyseus/|node_modules/(colyseus|@colyseus)/)" },
+        "Both the server SDK (colyseus) and the client SDK (@colyseus/sdk), plus every obsolete/internal @colyseus/* package (colyseus.js included — the frozen, misaligned browser client this workspace deliberately does NOT use), may only be imported from the two transport packages. FIXED (was inverted): the previous regex required `colyseus` to be followed immediately by `/` or end-of-string, which matches the bare `colyseus` package but NOT `colyseus.js` (an entirely different npm package name with a literal `.js` before the boundary) — so it silently let the obsolete client through while still correctly blocking the aligned one, since `@colyseus/sdk`'s resolved path already contained `node_modules/@colyseus/` and was blocked everywhere, transport packages included. `(\\.js)?` now covers both package names uniformly. pnpm's isolated node_modules already makes an undeclared import fail to resolve elsewhere; this is a second, orthogonal, non-overlapping mechanical check on the same invariant, per design §1.",
+      from: { pathNot: "^packages/(transport-colyseus|transport-colyseus-client)/src" },
+      to: { path: "(^colyseus(\\.js)?(/|$)|^@colyseus/|node_modules/(colyseus(\\.js)?|@colyseus)(/|$))" },
     },
   ],
   options: {
