@@ -4,7 +4,15 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**"],
+    // `**/dist/**` alone misses Vite's own output dirs for this project's
+    // two non-tsc builds: `dist-app` (apps/widget-app, app-mode) and
+    // `dist-iife` (packages/widget-sdk, lib-mode IIFE) — see obs 2940 for
+    // why `tsc -b`'s own `dist/` is deliberately a different name. A real,
+    // previously-undiscovered gap: `pnpm exec eslint .` run AFTER building
+    // both (this unit's own from-clean verification, not assumed) flagged
+    // 607 errors in minified/bundled output that was never meant to be
+    // linted as source.
+    ignores: ["**/dist/**", "**/dist-app/**", "**/dist-iife/**", "**/node_modules/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

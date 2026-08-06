@@ -73,6 +73,11 @@ describe("transport-colyseus-client — real production code over a real WebSock
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      // The real client here connects with `Origin: ALLOWED_ORIGIN` too (both
+      // `createTransportClient` calls below pass it as a header) — this
+      // fixture's "our own widget origin" is the same constant, matching the
+      // real fix's semantic (see MatchRoomAuthOptions's own docstring).
+      allowedWidgetOrigins: [ALLOWED_ORIGIN],
     };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     gameServer.define("presence", PresenceRoom, { registry, pool } as never);

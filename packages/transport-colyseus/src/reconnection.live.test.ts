@@ -84,6 +84,7 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [ALLOWED_ORIGIN],
     };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     await gameServer.listen(nextPort++);

@@ -84,6 +84,10 @@ function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoo
     repository,
     replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), // matches this fixture's default mintToken ttlSeconds
     joinRateLimiter: overrides.joinRateLimiter ?? createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+    // This fixture's "our own widget origin" — deliberately the SAME
+    // constant every test's WS `origin` header uses (`ALLOWED_ORIGIN`), the
+    // real fix's own semantic: this is no longer per-tenant.
+    allowedWidgetOrigins: [ALLOWED_ORIGIN],
   };
 }
 
@@ -258,7 +262,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
     ).rejects.toThrow(/already used/);
   });
 
-  it("re-validates origin at join time, independent of the origin checked at mint time (spec: NOT redundant)", async () => {
+  it("re-validates origin at join time against the server's OWN known widget origins (spec: NOT redundant with the mint-time tenant-page check — see MatchRoomAuthOptions's own docstring for why this is not per-tenant)", async () => {
     const { room, auth } = freshRoom();
     const seat0 = fakeClient("s0");
     const token = await mintToken(auth.issuer, P0);

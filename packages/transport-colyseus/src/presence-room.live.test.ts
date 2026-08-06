@@ -61,6 +61,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
       repository: createStaticTenantRepository([]),
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [],
     };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     gameServer.define("presence", PresenceRoom, { registry, pool } as never);
@@ -207,6 +208,7 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [ALLOWED_ORIGIN],
     };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     gameServer.define("presence", PresenceRoom, { registry, pool } as never);
