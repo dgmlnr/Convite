@@ -1,0 +1,21 @@
+{
+  "name": "@hexdev/transport-colyseus",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/platform-core": "workspace:*",
+    "colyseus": "^0.17.10"
+  },
+  "devDependencies": {
+    "@colyseus/testing": "^0.17.11",
+    "@types/node": "^26.1.2"
+  }
+}

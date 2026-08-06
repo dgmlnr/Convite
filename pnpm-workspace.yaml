@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "packages/games/*"
+  - "apps/*"
+allowBuilds:
+  # msgpackr-extract is colyseus's native msgpack addon (via @colyseus/schema).
+  # It has a pure-JS fallback, but the widely-used, actively maintained native
+  # build is what a real deployment would run. Approved deliberately, not blanket.
+  msgpackr-extract: true

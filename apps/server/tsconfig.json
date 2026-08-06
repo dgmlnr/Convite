@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": false,
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/platform-contract"
+    },
+    {
+      "path": "../../packages/platform-core"
+    },
+    {
+      "path": "../../packages/transport-colyseus"
+    },
+    {
+      "path": "../../packages/games/truco-module"
+    }
+  ]
+}
