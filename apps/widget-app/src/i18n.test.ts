@@ -18,4 +18,9 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
     expect(STRINGS.waitingCount(1)).toBe("1 jugador esperando");
     expect(STRINGS.waitingCount(3)).toBe("3 jugadores esperando");
   });
+
+  it("offers plain, warm, jargon-free copy for a failed join, plus a retry label (bug: today the UI does nothing at all when a join is rejected)", () => {
+    expect(STRINGS.joinFailed).toBe("No pudimos conectarte a la partida. Probá de nuevo.");
+    expect(STRINGS.retry).toBe("Reintentar");
+  });
 });

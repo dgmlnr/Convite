@@ -41,6 +41,12 @@ export const STRINGS = {
   botHard: "Difícil",
   searchingOpponent: "Buscando rival…",
   pairingFailed: (message: string): string => `No se pudo emparejar: ${message}`,
+  // Plain, warm, jargon-free (bug fix, obs 2968: a rejected join used to
+  // leave the UI doing nothing at all — the player pressed a button and
+  // nothing happened, looking broken). Never an error code, never the raw
+  // server reason: a player reads none of that meaningfully.
+  joinFailed: "No pudimos conectarte a la partida. Probá de nuevo.",
+  retry: "Reintentar",
   matchConnected: "Conectado a la partida.",
   // Deliberately generic, not real gameplay copy: the in-match game table
   // (design's own explicit scope boundary, unchanged by this unit) is what
