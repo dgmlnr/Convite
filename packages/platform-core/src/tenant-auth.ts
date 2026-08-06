@@ -172,6 +172,14 @@ export function createJtiReplayGuard(options: JtiReplayGuardOptions): JtiReplayG
 
 export type EmbedMintResult = { readonly ok: true; readonly token: string } | { readonly ok: false; readonly reason: "unknown-tenant" | "origin-not-allowed" };
 
+async function mintForTenant(
+  tenant: TenantRecord,
+  args: { readonly issuer: SessionTokenIssuer; readonly playerId: PlayerId; readonly ttlSeconds: number },
+): Promise<EmbedMintResult> {
+  const token = await args.issuer.mint({ tenantId: tenant.id, playerId: args.playerId, entitlements: tenant.entitledGames }, args.ttlSeconds);
+  return { ok: true, token };
+}
+
 /**
  * Core logic of design §7's `/embed` HTTP entry point, framework-agnostic:
  * resolve tenant by embed key, re-validate origin server-side (spec:
@@ -190,6 +198,48 @@ export async function mintSessionForEmbed(args: {
   const tenant = args.repository.findByEmbedKey(args.embedKey);
   if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
   if (!tenant.allowedOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
-  const token = await args.issuer.mint({ tenantId: tenant.id, playerId: args.playerId, entitlements: tenant.entitledGames }, args.ttlSeconds);
-  return { ok: true, token };
+  return mintForTenant(tenant, args);
+}
+
+/**
+ * Renews a session with a FRESH, short-TTL token, called immediately before
+ * a join rather than carrying the page-load bootstrap token around (obs
+ * 2968): `/embed` mints a token when the iframe first LOADS, but the real
+ * product flow is "load the page, read for a while, THEN decide to play" —
+ * in a widget embedded inside someone else's content, that gap is normal,
+ * often minutes long. A short TTL is still the RIGHT security property (a
+ * stolen, unused token expires fast); the fix is renewing right before it is
+ * actually needed, never lengthening the TTL itself.
+ *
+ * The origin check here is deliberately against `allowedWidgetOrigins`
+ * (THIS server's own known widget origin(s)), never `tenant.allowedOrigins`
+ * — the exact same reasoning already established for
+ * `MatchRoomAuthOptions.allowedWidgetOrigins` on the WebSocket side. A
+ * renewal call always originates from JS running INSIDE the already-mounted
+ * iframe (a same-origin request back to this server); the tenant's host-page
+ * origin was already the thing checked, for real, once — at the original
+ * `/embed` navigation that put this iframe on the page in the first place.
+ * Re-checking the WIDGET's own origin here re-validates that this specific
+ * renewal call genuinely comes from OUR iframe script, not an arbitrary
+ * caller replaying a leaked (non-secret, "publishable-key"-shaped) embed key
+ * from somewhere else — it does not, and structurally could not, re-derive
+ * the tenant's page origin a second time (see `MatchRoomAuthOptions`'s own
+ * docstring for the identical argument). Tenant lookup, rate limiting (the
+ * caller passes the SAME limiters `/embed` already uses), and
+ * current-entitlements scoping are all the SAME mechanisms `mintSessionForEmbed`
+ * already enforces — this is not a side door around either.
+ */
+export async function renewSessionForWidget(args: {
+  readonly repository: TenantRepository;
+  readonly issuer: SessionTokenIssuer;
+  readonly embedKey: string;
+  readonly origin: string;
+  readonly allowedWidgetOrigins: readonly string[];
+  readonly playerId: PlayerId;
+  readonly ttlSeconds: number;
+}): Promise<EmbedMintResult> {
+  const tenant = args.repository.findByEmbedKey(args.embedKey);
+  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
+  if (!args.allowedWidgetOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
+  return mintForTenant(tenant, args);
 }

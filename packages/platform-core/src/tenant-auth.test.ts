@@ -5,6 +5,7 @@ import {
   createSessionTokenIssuer,
   createStaticTenantRepository,
   mintSessionForEmbed,
+  renewSessionForWidget,
 } from "./tenant-auth.js";
 import type { TenantId } from "./tenant-auth.js";
 
@@ -159,5 +160,74 @@ describe("mintSessionForEmbed", () => {
       ttlSeconds: 120,
     });
     expect(result).toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+});
+
+describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE-LOAD time but only used at PLAY time — a player who reads for minutes before clicking play needs a FRESH token, not a longer-lived one)", () => {
+  const WIDGET_ORIGIN = "https://play.hexdev.example";
+
+  it("mints a fresh, verifiable token for a known tenant when the request's own origin is an allowed WIDGET origin (never the tenant's host-page allowlist)", async () => {
+    const repository = createStaticTenantRepository([record]);
+    const issuer = createSessionTokenIssuer("test-secret");
+    const result = await renewSessionForWidget({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: WIDGET_ORIGIN,
+      allowedWidgetOrigins: [WIDGET_ORIGIN],
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result.ok).toBe(true);
+    const claims = result.ok ? await issuer.verify(result.token) : undefined;
+    expect(claims?.tenantId).toBe(tenantId);
+    expect(claims?.entitlements).toEqual(["truco-argentino"]);
+  });
+
+  it("rejects a request whose origin is NOT one of this server's own widget origins, even though it exactly matches the tenant's host-page allowlist", async () => {
+    const repository = createStaticTenantRepository([record]);
+    const issuer = createSessionTokenIssuer("test-secret");
+    const result = await renewSessionForWidget({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: record.allowedOrigins[0]!, // the TENANT's page origin — must NOT be accepted here
+      allowedWidgetOrigins: [WIDGET_ORIGIN],
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "origin-not-allowed" });
+  });
+
+  it("rejects an unknown embed key", async () => {
+    const repository = createStaticTenantRepository([record]);
+    const issuer = createSessionTokenIssuer("test-secret");
+    const result = await renewSessionForWidget({
+      repository,
+      issuer,
+      embedKey: "pk_does_not_exist",
+      origin: WIDGET_ORIGIN,
+      allowedWidgetOrigins: [WIDGET_ORIGIN],
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+
+  it("mints against CURRENT tenant entitlements, not any stale copy — same freshness guarantee mintSessionForEmbed already has", async () => {
+    const currentRecord = { ...record, entitledGames: ["truco-argentino", "escoba"] };
+    const repository = createStaticTenantRepository([currentRecord]);
+    const issuer = createSessionTokenIssuer("test-secret");
+    const result = await renewSessionForWidget({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: WIDGET_ORIGIN,
+      allowedWidgetOrigins: [WIDGET_ORIGIN],
+      playerId,
+      ttlSeconds: 120,
+    });
+    const claims = result.ok ? await issuer.verify(result.token) : undefined;
+    expect(claims?.entitlements).toEqual(["truco-argentino", "escoba"]);
   });
 });

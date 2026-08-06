@@ -19,5 +19,6 @@ export {
   createSessionTokenIssuer,
   createStaticTenantRepository,
   mintSessionForEmbed,
+  renewSessionForWidget,
 } from "./tenant-auth.js";
 

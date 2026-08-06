@@ -17,6 +17,7 @@ import { requestSystemAction, trucoModule } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
 import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
+import { handleSessionRenewRequest } from "./session-renew-handler.js";
 import { refererOrigin } from "./referer-origin.js";
 import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
@@ -118,6 +119,38 @@ const registerCustomRoutes: ExpressAppCallback = (app) => {
           res.end(renderEmbedShell(bootstrap));
           return;
         }
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(body);
+      })
+      .catch(() => {
+        res.writeHead(500);
+        res.end();
+      });
+  });
+
+  // Renews a session token immediately before a join (obs 2968), instead of
+  // the widget carrying the `/embed` page-load bootstrap token around until
+  // the player finally decides to play — reads the SAME Origin/Referer
+  // evidence `/embed` does (a real browser fetch from inside the iframe
+  // carries no `Origin` header on a same-origin GET either, same discovery
+  // as `/embed`'s own; POST is used here specifically because it reliably
+  // does), but checks it against THIS server's own widget origins, not a
+  // tenant's page origin — see `handleSessionRenewRequest`'s own docstring.
+  // Reuses the SAME rate limiters `/embed` already enforces: not a fresh,
+  // separately-budgeted surface.
+  app.post("/session/renew", (req, res) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const origin = req.headers.origin ?? refererOrigin(req.headers.referer);
+
+    handleSessionRenewRequest(url, origin, req.socket.remoteAddress, {
+      repository,
+      issuer,
+      ttlSeconds: config.sessionTtlSeconds,
+      allowedWidgetOrigins: config.allowedWidgetOrigins,
+      ipLimiter: embedIpLimiter,
+      keyLimiter: embedKeyLimiter,
+    })
+      .then(({ status, body }) => {
         res.writeHead(status, { "content-type": "application/json" });
         res.end(body);
       })
