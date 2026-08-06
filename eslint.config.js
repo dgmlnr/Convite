@@ -9,7 +9,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["*.cjs", "*.config.js", "*.config.ts", "**/scripts/**/*.mjs"],
+    files: ["*.cjs", "*.config.js", "*.config.ts", "**/{scripts,tools}/**/*.mjs"],
     languageOptions: { globals: globals.node },
   },
   {
