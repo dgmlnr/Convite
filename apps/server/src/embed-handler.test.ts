@@ -1,17 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import { createGameModuleRegistry, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
+import type { GameId, GameModule, PlayerId } from "@hexdev/platform-contract";
 import { handleEmbedRequest } from "./embed-handler.js";
 
 const TENANT_ID = "tenant-a" as TenantId;
 const ALLOWED_ORIGIN = "https://tenant-a.example";
 const CLIENT_IP = "203.0.113.1";
+const TRUCO_ID = "truco-argentino" as GameId;
+
+function fakeTrucoModule(): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
+  return {
+    id: TRUCO_ID,
+    metadata: { seatCount: 2, displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
+    configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
+    createMatch: () => ({}),
+    applyAction: () => ({ ok: true, state: {} }),
+    getLegalActions: () => [],
+    getViewFor: () => ({}),
+    getOutcome: () => null,
+    serialize: () => null,
+    deserialize: () => ({}),
+    createBot: () => ({ chooseAction: () => ({ playerId: "bot" as PlayerId }) }),
+  };
+}
 
 /** Generous limits by default so unrelated tests never trip rate limiting
  * — the dedicated describe block below overrides with tight limits. */
-function deps(overrides: { ipLimit?: number; keyLimit?: number } = {}) {
+function deps(overrides: { ipLimit?: number; keyLimit?: number; entitledGames?: readonly GameId[] } = {}) {
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["truco-argentino"] },
+    { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: overrides.entitledGames ?? [TRUCO_ID] },
   ]);
   const issuer = createSessionTokenIssuer("test-secret");
   return {
@@ -20,6 +38,7 @@ function deps(overrides: { ipLimit?: number; keyLimit?: number } = {}) {
     ttlSeconds: 120,
     ipLimiter: createRateLimiter({ limit: overrides.ipLimit ?? 1000, windowMs: 60_000 }),
     keyLimiter: createRateLimiter({ limit: overrides.keyLimit ?? 1000, windowMs: 60_000 }),
+    registry: createGameModuleRegistry([fakeTrucoModule()]),
   };
 }
 
@@ -49,6 +68,29 @@ describe("handleEmbedRequest (spec: tenant-catalog — origin allowlist enforcem
     const url = new URL("https://play.hexdev/embed?k=pk_does_not_exist");
     const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, deps());
     expect(result.status).toBe(403);
+  });
+});
+
+describe("handleEmbedRequest — catalog (spec: tenant-catalog — server-enforced per-tenant game catalog)", () => {
+  it("includes a catalog entry for each of the tenant's entitled, registered games", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, deps());
+    const body = JSON.parse(result.body) as { catalog: readonly { id: string }[] };
+    expect(body.catalog).toEqual([
+      {
+        id: TRUCO_ID,
+        displayNameKey: "games.truco.name",
+        seatCount: 2,
+        configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
+      },
+    ]);
+  });
+
+  it("returns an empty catalog when the tenant has no entitlements", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, deps({ entitledGames: [] }));
+    const body = JSON.parse(result.body) as { catalog: readonly unknown[] };
+    expect(body.catalog).toEqual([]);
   });
 });
 

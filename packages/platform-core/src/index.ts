@@ -2,8 +2,8 @@ export type { GameModuleRegistration, GameModuleRegistry, SystemActionRequester 
 export { createGameModuleRegistry } from "./registry.js";
 export type { RateLimiter, RateLimiterOptions } from "./rate-limiter.js";
 export { createRateLimiter } from "./rate-limiter.js";
-export type { LobbyDisplayEntry, MatchmakingPool, ModalityConfig, Pairing, PresenceSweeper, PresenceSweeperOptions, WaitingPlayer } from "./presence.js";
-export { GLOBAL_POOL_KEY, createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveModalities, modalityKey } from "./presence.js";
+export type { LobbyDisplayEntry, MatchmakingPool, ModalityConfig, Pairing, PresenceSweeper, PresenceSweeperOptions, RawModalityCount, WaitingPlayer } from "./presence.js";
+export { GLOBAL_POOL_KEY, createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveLobbyDisplayFromCounts, deriveModalities, modalityKey } from "./presence.js";
 export type {
   EmbedMintResult,
   JtiReplayGuard,
@@ -19,5 +19,6 @@ export {
   createSessionTokenIssuer,
   createStaticTenantRepository,
   mintSessionForEmbed,
+  renewSessionForWidget,
 } from "./tenant-auth.js";
 

@@ -39,6 +39,16 @@ describe("loadServerConfig", () => {
     expect(config.joinIpRateLimit.limit).toBeGreaterThan(0);
   });
 
+  it("defaults allowedWidgetOrigins to this server's own dev origin (MatchRoom.onAuth's re-validation target — see MatchRoomAuthOptions's own docstring for why this is the WIDGET's origin, not a tenant's)", () => {
+    const config = loadServerConfig({ ...DEV_OPT_IN, PORT: "4001" });
+    expect(config.allowedWidgetOrigins).toContain("http://localhost:4001");
+  });
+
+  it("reads HEXDEV_WIDGET_ORIGIN as a comma-separated list when set, overriding the port-derived default", () => {
+    const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_WIDGET_ORIGIN: "https://play.hexdev.example,https://play-staging.hexdev.example" });
+    expect(config.allowedWidgetOrigins).toEqual(["https://play.hexdev.example", "https://play-staging.hexdev.example"]);
+  });
+
   it("reads rate-limit settings from the environment when set", () => {
     const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_EMBED_IP_RATE_LIMIT: "5", HEXDEV_EMBED_IP_RATE_WINDOW_MS: "1000" });
     expect(config.embedIpRateLimit).toEqual({ limit: 5, windowMs: 1000 });

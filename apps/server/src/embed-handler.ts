@@ -1,6 +1,7 @@
 import { mintSessionForEmbed } from "@hexdev/platform-core";
-import type { RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
+import type { GameModuleRegistry, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 import type { PlayerId } from "@hexdev/platform-contract";
+import { buildCatalog } from "./catalog.js";
 
 export interface EmbedRequestDeps {
   readonly repository: TenantRepository;
@@ -8,6 +9,7 @@ export interface EmbedRequestDeps {
   readonly ttlSeconds: number;
   readonly ipLimiter: RateLimiter;
   readonly keyLimiter: RateLimiter;
+  readonly registry: GameModuleRegistry;
 }
 
 export interface EmbedRequestResult {
@@ -49,5 +51,14 @@ export async function handleEmbedRequest(url: URL, origin: string | undefined, c
   if (!result.ok) {
     return { status: 403, body: JSON.stringify({ error: result.reason }) };
   }
-  return { status: 200, body: JSON.stringify({ token: result.token, playerId }) };
+  // Re-lookup rather than plumbing the tenant record out of `mintSessionForEmbed`
+  // (which intentionally returns only a token, see design §7): the mint above
+  // already proved this embed key resolves to a tenant, so this is a second
+  // cheap map read, not a second trust decision. Catalog here is the DATA the
+  // client-side selection screen filters from (spec: "Client-side catalog
+  // filtering is UX-only") — `MatchRoom.onAuth`'s entitlement check remains
+  // the real gate, unchanged by this addition.
+  const tenant = deps.repository.findByEmbedKey(embedKey);
+  const catalog = tenant !== undefined ? buildCatalog(tenant.entitledGames, deps.registry) : [];
+  return { status: 200, body: JSON.stringify({ token: result.token, playerId, catalog }) };
 }

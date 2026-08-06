@@ -16,6 +16,8 @@
   },
   "devDependencies": {
     "@colyseus/testing": "^0.17.11",
-    "@types/node": "^26.1.2"
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "express": "^5.2.1"
   }
 }

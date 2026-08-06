@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Request, Response } from "express";
 import { ColyseusTestServer } from "@colyseus/testing";
 import type { GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
@@ -92,6 +93,7 @@ describe("createMatchServer — live WebSocket integration (the composition root
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), // matches this fixture's mint() ttlSeconds
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [ALLOWED_ORIGIN],
     };
     const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
     await gameServer.listen(nextPort++);
@@ -129,5 +131,68 @@ describe("createMatchServer — live WebSocket integration (the composition root
   it("rejects a real client connecting over a real websocket with no token", async () => {
     const room = await testServer.createRoom("match", { gameId: "fixture-live", config: undefined });
     await expect(testServer.connectTo(room, {})).rejects.toBeDefined();
+  });
+});
+
+/**
+ * THE REAL BUG this unit found running a genuine browser join (not
+ * assumed): a composition root sharing its own `http.Server` with colyseus
+ * (design's own documented pattern, `createMatchServer`'s docstring) needs a
+ * way to add custom routes (`/embed`, `/loader.js`) WITHOUT racing colyseus's
+ * own matchmake routes for the same request — two separate plain
+ * `server.on("request", ...)` listeners on one socket both try to respond,
+ * and whichever finishes second crashes with `ERR_HTTP_HEADERS_SENT`. Real
+ * @colyseus/core supports exactly this via `Server`'s own `express` option
+ * (verified in its installed `.d.ts`'s own documented example) — this
+ * threads it through `createMatchServer` instead of reinventing a second
+ * request-routing mechanism.
+ */
+describe("createMatchServer — the express option (custom routes coexisting with colyseus's own matchmake routes on ONE shared server)", () => {
+  let httpServer: ReturnType<typeof createServer>;
+  let gameServer: Awaited<ReturnType<typeof createMatchServer>>;
+  let port: number;
+
+  afterEach(async () => {
+    await gameServer.gracefullyShutdown(false);
+  });
+
+  it("a custom route added via express responds, AND colyseus's own real HTTP matchmake route still works on the same server", async () => {
+    port = 2780 + Math.floor(Math.random() * 200);
+    const registry = createGameModuleRegistry([liveModule]);
+    const auth = {
+      issuer: createSessionTokenIssuer("express-option-secret"),
+      repository: createStaticTenantRepository([]),
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [],
+    };
+    httpServer = createServer();
+    gameServer = createMatchServer({
+      httpServer,
+      registry,
+      auth,
+      rng: () => 0.5,
+      express: (app) => {
+        app.get("/custom-route", (_req: Request, res: Response) => res.json({ ok: true }));
+      },
+    });
+    await gameServer.listen(port);
+
+    const customResponse = await fetch(`http://localhost:${port}/custom-route`);
+    expect(customResponse.status).toBe(200);
+    expect(await customResponse.json()).toEqual({ ok: true });
+
+    // A REAL HTTP request, not @colyseus/testing's own SDK-shortcut
+    // connectTo — the exact request shape a real browser's
+    // joinOrCreate/create performs before upgrading to a WebSocket.
+    const matchmakeResponse = await fetch(`http://localhost:${port}/matchmake/joinOrCreate/match`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ gameId: "fixture-live", config: undefined }),
+    });
+    const responseText = await matchmakeResponse.text();
+    expect(matchmakeResponse.status, responseText).toBe(200);
+    const body = JSON.parse(responseText) as { roomId?: string };
+    expect(body.roomId).toBeDefined();
   });
 });

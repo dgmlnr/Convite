@@ -13,6 +13,28 @@ export interface MatchRoomAuthOptions {
    * limiting at all). Checked BEFORE token verification, so even a flood of
    * token-less connection attempts from one address is bounded. */
   readonly joinRateLimiter: RateLimiter;
+  /**
+   * THE FIX for a real bug found running a genuine browser join, not
+   * assumed: this used to be `tenant.allowedOrigins.includes(origin)` — but
+   * the WebSocket handshake this room's `onAuth` sees is opened by code
+   * running INSIDE the widget's own iframe, whose origin is ALWAYS this
+   * server's own widget origin, NEVER the tenant's host page origin (that
+   * page never opens the socket at all — only `/embed`'s HTTP navigation,
+   * already correctly checked at mint time via `referer-origin.ts`, sees
+   * it). Comparing the WS origin against `tenant.allowedOrigins` therefore
+   * could never succeed for ANY real tenant — every real multiplayer join
+   * failed with "origin not allowed", invisible to every prior test because
+   * they all hand-constructed the `AuthContext.headers` directly with
+   * whatever origin the assertion wanted, never through an actual browser.
+   * Re-validating against the SERVER's OWN known widget origin(s) instead
+   * still defends against a raw hand-rolled WebSocket client asserting an
+   * arbitrary or absent origin (the bar the spec's "re-validate at
+   * room-join time" requirement is actually able to raise here) — it does
+   * NOT, and never could, distinguish "this tenant" from "that tenant",
+   * since by the time a request reaches this room, that distinction no
+   * longer lives in the transport-level origin at all.
+   */
+  readonly allowedWidgetOrigins: readonly string[];
 }
 
 export interface MatchRoomCreateOptions {
@@ -175,14 +197,21 @@ export class MatchRoom extends Room {
       throw new Error("MatchRoom: join rejected, invalid or expired session token");
     }
     // Origin re-validation, spec-mandated and explicitly NOT redundant with
-    // the mint-time check: a captured token could be replayed from a page
-    // the tenant never allowlisted. `Origin` is spoofable by a hand-rolled
-    // WS client — this raises the bar, it is not a cryptographic boundary
-    // (see apply-progress security posture).
-    const tenant = auth.repository.findById(claims.tenantId);
+    // the mint-time check: a captured token could be replayed by something
+    // other than a genuine browser session running inside our own widget.
+    // Checked against `auth.allowedWidgetOrigins` (this server's OWN known
+    // origins), NOT `tenant.allowedOrigins` — see `MatchRoomAuthOptions`'s
+    // own docstring for why the tenant's page origin is structurally
+    // unobservable at this point. `Origin` is spoofable by a hand-rolled WS
+    // client — this raises the bar, it is not a cryptographic boundary (see
+    // apply-progress security posture).
     const origin = context.headers.get("origin");
-    if (tenant === undefined || origin === null || !tenant.allowedOrigins.includes(origin)) {
-      throw new Error("MatchRoom: join rejected, origin not allowed for this tenant");
+    if (origin === null || !auth.allowedWidgetOrigins.includes(origin)) {
+      throw new Error("MatchRoom: join rejected, origin not allowed");
+    }
+    const tenant = auth.repository.findById(claims.tenantId);
+    if (tenant === undefined) {
+      throw new Error("MatchRoom: join rejected, unknown tenant");
     }
     if (!tenant.entitledGames.includes(module.id)) {
       throw new Error("MatchRoom: join rejected, tenant is not entitled to this game");

@@ -21,7 +21,13 @@ export interface PresenceRoomCreateOptions {
 }
 
 interface PresenceJoinOptions {
-  readonly modality: ModalityConfig;
+  /** Omitted entirely = watch-only (spec: the selection screen must show
+   * live counts for every modality of a game BEFORE a player has committed
+   * to any one of them). Present = queue for that exact modality, unchanged
+   * behavior. `@hexdev/transport-colyseus-client`'s `watchPresence`/
+   * `joinMatchmakingQueue` are the two client-side callers of these two
+   * shapes respectively — never the same join call. */
+  readonly modality?: ModalityConfig;
   readonly playerId: string;
   /** The player's own session token (design §7), forwarded UNVALIDATED into
    * the eventual `MatchRoom` seat reservation so `MatchRoom.onAuth` — not
@@ -85,6 +91,13 @@ export class PresenceRoom extends Room {
     const pool = this.pool;
     const gameId = this.gameId;
     if (pool === undefined || gameId === undefined) return;
+    // Watch-only: broadcast the CURRENT snapshot so a freshly-connected
+    // watcher does not wait for someone else's queue activity to see its
+    // first "counts" message, but never track/enqueue/pair this client.
+    if (options.modality === undefined) {
+      this.broadcastCounts();
+      return;
+    }
     pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
     this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId, token: options.token });
     this.broadcastCounts();

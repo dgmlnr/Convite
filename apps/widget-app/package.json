@@ -3,8 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
   "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/platform-core": "workspace:*",
+    "@hexdev/transport-colyseus-client": "workspace:*",
     "@hexdev/widget-protocol": "workspace:*",
     "@hexdev/widget-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.2.0"
   }
 }

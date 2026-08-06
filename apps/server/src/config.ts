@@ -14,6 +14,14 @@ export interface ServerConfig {
   readonly embedIpRateLimit: RateLimitConfig;
   readonly embedKeyRateLimit: RateLimitConfig;
   readonly joinIpRateLimit: RateLimitConfig;
+  /** `MatchRoom.onAuth`'s WS-join origin re-validation target (see
+   * `MatchRoomAuthOptions`'s own docstring for the real bug this closes: it
+   * is THIS server's own widget origin(s), never a tenant's page origin —
+   * the WebSocket is always opened from code running inside our own
+   * iframe). Defaults to this process's own `http://localhost:<port>` for a
+   * zero-setup dev run; a real deployment sets `HEXDEV_WIDGET_ORIGIN`
+   * (comma-separated for multiple environments) to its real public origin. */
+  readonly allowedWidgetOrigins: readonly string[];
 }
 
 const DEFAULT_PORT = 2567;
@@ -86,13 +94,15 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   }
   const tenants: readonly TenantRecord[] =
     env.HEXDEV_TENANTS_JSON !== undefined ? (JSON.parse(env.HEXDEV_TENANTS_JSON) as readonly TenantRecord[]) : [DEV_TENANT];
+  const port = env.PORT !== undefined ? Number(env.PORT) : DEFAULT_PORT;
   return {
-    port: env.PORT !== undefined ? Number(env.PORT) : DEFAULT_PORT,
+    port,
     sessionSecret: sessionSecret ?? DEV_SESSION_SECRET,
     sessionTtlSeconds: env.HEXDEV_SESSION_TTL_SECONDS !== undefined ? Number(env.HEXDEV_SESSION_TTL_SECONDS) : DEFAULT_TTL_SECONDS,
     tenants,
     embedIpRateLimit: readRateLimit(env, "HEXDEV_EMBED_IP_RATE_LIMIT", "HEXDEV_EMBED_IP_RATE_WINDOW_MS", DEFAULT_EMBED_IP_LIMIT),
     embedKeyRateLimit: readRateLimit(env, "HEXDEV_EMBED_KEY_RATE_LIMIT", "HEXDEV_EMBED_KEY_RATE_WINDOW_MS", DEFAULT_EMBED_KEY_LIMIT),
     joinIpRateLimit: readRateLimit(env, "HEXDEV_JOIN_IP_RATE_LIMIT", "HEXDEV_JOIN_IP_RATE_WINDOW_MS", DEFAULT_JOIN_IP_LIMIT),
+    allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${port}`],
   };
 }
