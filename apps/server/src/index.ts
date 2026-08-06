@@ -18,7 +18,7 @@ import { loadServerConfig } from "./config.js";
 import { renderEmbedShell } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
 import { handlePresenceRequest } from "./presence-handler.js";
-import { serveWidgetAppAsset } from "./static-widget-app.js";
+import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
 // The composition root: wires existing pieces (registry, auth primitives,
 // the generic MatchRoom, the deal factory) together. No game rules live
@@ -52,6 +52,9 @@ const presencePool = createMatchmakingPool();
 // APP-mode build's own output dir, deliberately distinct from every
 // package's `tsc -b` `dist/` — see apps/widget-app/vite.config.ts).
 const widgetAppDistDir = fileURLToPath(new URL("../../widget-app/dist-app", import.meta.url));
+// `apps/server/dist/index.js` -> `packages/widget-sdk/dist-iife` (the Vite
+// lib-mode IIFE build's own output dir — see packages/widget-sdk/vite.config.ts).
+const widgetSdkDistDir = fileURLToPath(new URL("../../../packages/widget-sdk/dist-iife", import.meta.url));
 
 const httpServer = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -102,6 +105,24 @@ const httpServer = createServer((req, res) => {
     serveWidgetAppAsset(widgetAppDistDir)
       .then(({ status, contentType, body }) => {
         res.writeHead(status, { "content-type": contentType });
+        res.end(body);
+      })
+      .catch(() => {
+        res.writeHead(500);
+        res.end();
+      });
+    return;
+  }
+
+  if (url.pathname === "/loader.js") {
+    // The literal URL a tenant's <script src> fetches (design §7's own
+    // example snippet: `https://cdn.hexdev/gamify/loader.js`) — served from
+    // the SAME origin as `/embed` in this composition root, matching the
+    // production intent that WIDGET_ORIGIN and the loader's own host are one
+    // and the same origin.
+    serveLoaderAsset(widgetSdkDistDir)
+      .then(({ status, contentType, body }) => {
+        res.writeHead(status, { "content-type": contentType, "cache-control": "public, max-age=300" });
         res.end(body);
       })
       .catch(() => {
