@@ -1,0 +1,22 @@
+{
+  "name": "@hexdev/transport-colyseus-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@colyseus/sdk": "^0.17.43",
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/platform-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@colyseus/testing": "^0.17.11",
+    "@hexdev/transport-colyseus": "workspace:*",
+    "@types/node": "^26.1.2"
+  }
+}

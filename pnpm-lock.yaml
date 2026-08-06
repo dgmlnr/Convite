@@ -143,6 +143,28 @@ importers:
         specifier: ^26.1.2
         version: 26.1.2
 
+  packages/transport-colyseus-client:
+    dependencies:
+      '@colyseus/sdk':
+        specifier: ^0.17.43
+        version: 0.17.43(@colyseus/core@0.17.46)(typescript@6.0.3)
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../platform-contract
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../platform-core
+    devDependencies:
+      '@colyseus/testing':
+        specifier: ^0.17.11
+        version: 0.17.11(@colyseus/core@0.17.46)(@colyseus/sdk@0.17.43(@colyseus/core@0.17.46)(typescript@6.0.3))(@colyseus/tools@0.17.19(@colyseus/core@0.17.46)(@colyseus/ws-transport@0.17.13))
+      '@hexdev/transport-colyseus':
+        specifier: workspace:*
+        version: link:../transport-colyseus
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
   packages/widget-protocol: {}
 
   packages/widget-sdk:

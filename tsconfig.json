@@ -10,6 +10,7 @@
     { "path": "packages/games/truco-ui" },
     { "path": "packages/games/truco-module" },
     { "path": "packages/transport-colyseus" },
+    { "path": "packages/transport-colyseus-client" },
     { "path": "packages/widget-sdk" },
     { "path": "apps/server" },
     { "path": "apps/widget-app" }
