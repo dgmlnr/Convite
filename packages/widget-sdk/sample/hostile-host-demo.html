@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>hexdev-gamify widget loader — hostile-host demo</title>
+    <style>
+      /* 1. THE AGGRESSIVE HOST RESET the apply prompt asked for. This is
+         real host-page CSS, not a mock — it applies to the whole document,
+         including whatever the loader mounts, EXCEPT the iframe's own
+         content (a separate document is immune to this by construction). */
+      * {
+        all: unset;
+        display: revert;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: monospace;
+        padding: 2rem;
+        background: #111;
+        color: #0f0;
+      }
+      h1,
+      h2 {
+        display: block;
+        margin: 1rem 0;
+        color: #0f0;
+      }
+      p {
+        display: block;
+        margin: 0.5rem 0;
+      }
+      .callout {
+        display: block;
+        border: 2px dashed #0f0;
+        padding: 1rem;
+        margin: 1rem 0;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "@hexdev/widget-protocol": "../../widget-protocol/dist/index.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>hexdev-gamify widget loader — hostile-host demo</h1>
+    <p>
+      This page runs the loader's real, built code (`dist/`, not a mock) against three
+      hostile conditions at once, per the apply prompt: an aggressive global CSS reset
+      (<code>* { all: unset }</code>, applied above — notice this text still renders legibly),
+      the host's own unrelated <code>message</code> listener, and a colliding
+      <code>window.hexdevGamify</code> global defined BEFORE the loader ever runs.
+    </p>
+
+    <div class="callout">
+      <h2>Tenant's own script tag (real shape, inert placeholder body)</h2>
+      <script id="tenant-embed-script" data-embed-key="pk_live_demo_abc123"></script>
+      <p>
+        Mount status: <span id="mount-status">not mounted yet</span>
+      </p>
+      <p>
+        Sandbox attribute read back from the real mounted iframe:
+        <code id="sandbox-readback">(none)</code>
+      </p>
+      <p>
+        <code>window.hexdevGamify</code> after mounting (must be untouched):
+        <code id="global-readback">(none)</code>
+      </p>
+    </div>
+
+    <div class="callout">
+      <h2>What the mounted iframe actually looks like</h2>
+      <p>
+        Its content below uses <code>srcdoc</code> ONLY so this static demo can show
+        something visible without a real widget-app server (design/apply-progress
+        disclose this explicitly — production always uses a real cross-origin
+        <code>src</code> URL, never <code>srcdoc</code>). What matters here: its red
+        serif text is UNAFFECTED by this page's own <code>* { all: unset }</code> reset,
+        because it lives in a separate document — that boundary is what the design
+        relies on, not anything this loader code does itself.
+      </p>
+    </div>
+
+    <script>
+      // 3. The conflicting global namespace — some OTHER, unrelated script
+      // on this host page already owns this name before our loader runs.
+      window.hexdevGamify = "some-unrelated-hostile-value";
+
+      // 2. The host's own, unrelated postMessage listener.
+      let hostileListenerHits = 0;
+      window.addEventListener("message", () => {
+        hostileListenerHits += 1;
+      });
+    </script>
+
+    <script type="module">
+      import { parseTargetOrigin } from "@hexdev/widget-protocol";
+      import { initWidget } from "../dist/index.js";
+
+      const scriptTag = document.getElementById("tenant-embed-script");
+      const widgetOrigin = parseTargetOrigin(window.location.origin);
+
+      const handle = initWidget(scriptTag, document, window, {
+        widgetOrigin,
+        readyTimeoutMs: 999999, // demo only: never auto-remove while you're looking at it
+      });
+
+      document.getElementById("mount-status").textContent = handle ? "mounted" : "FAILED TO MOUNT";
+      if (handle) {
+        document.getElementById("sandbox-readback").textContent = handle.iframe.getAttribute("sandbox");
+        document.getElementById("global-readback").textContent = window.hexdevGamify;
+
+        handle.iframe.style.height = "160px";
+        handle.iframe.style.border = "2px solid #0f0";
+        handle.iframe.srcdoc =
+          '<p style="color: rgb(200,0,0); font-family: serif; font-size: 20px;">' +
+          "This text is styled by the IFRAME's own document — the host's " +
+          '"* { all: unset }" reset never crosses in.</p>';
+      }
+    </script>
+  </body>
+</html>
