@@ -43,8 +43,11 @@ export function composeCardSvg(card: Card): string {
   const inset = 4;
   const frame = `<rect x="${inset}" y="${inset}" width="${CARD_WIDTH - inset * 2}" height="${CARD_HEIGHT - inset * 2}" rx="${CARD_RADIUS}" fill="var(--deck-card-bg)" stroke="var(--deck-border)" stroke-width="4" />`;
 
+  // y=66, not 54: leaves clearance between the corner index (bottom ~62) and
+  // the court figure's head/crown (top ~14 in its local box) so a king's
+  // crown never collides with the corner rank letter above it.
   const body = isCourtRank(card.rank)
-    ? `<g transform="translate(40,54)">${courtFigureMarkup(card.suit, card.rank)}</g>`
+    ? `<g transform="translate(40,66)">${courtFigureMarkup(card.suit, card.rank)}</g>`
     : pipsMarkup(card);
 
   const topLeftIndex = `<g transform="translate(18,14)">${cornerIndexMarkup(card)}</g>`;
