@@ -146,6 +146,33 @@ export interface LobbyDisplayEntry {
   readonly promoteBotFallback: boolean;
 }
 
+/** Raw per-modality count, exactly the shape `PresenceRoom.broadcastCounts`
+ * already sends over the wire (design §8: the wire protocol carries the true
+ * count, including zero — UX policy is applied by a consumer, never encoded
+ * on the wire itself). */
+export interface RawModalityCount {
+  readonly modality: ModalityConfig;
+  readonly waitingCount: number;
+}
+
+/**
+ * The zero-counter UX rule (spec: "Zero-Counter UX Rule"), as a single
+ * source of truth applicable to EITHER a server-side `MatchmakingPool` read
+ * (`deriveLobbyDisplay` below, used by the polled `/presence` HTTP snapshot)
+ * OR a live WebSocket `"counts"` broadcast a client only ever receives as
+ * raw `{modality, waitingCount}[]` JSON, never a `MatchmakingPool` instance
+ * (`@hexdev/transport-colyseus-client`'s presence connection). Extracting
+ * this keeps the rule encoded exactly once, per its own prior docstring's
+ * instruction not to re-decide it per consumer.
+ */
+export function deriveLobbyDisplayFromCounts(counts: readonly RawModalityCount[]): readonly LobbyDisplayEntry[] {
+  return counts.map(({ modality, waitingCount }) => ({
+    modality,
+    waitingCount: waitingCount === 0 ? undefined : waitingCount,
+    promoteBotFallback: waitingCount === 0,
+  }));
+}
+
 /**
  * Pure presentation derivation, deliberately NOT wired into any wire
  * protocol broadcast (design §8: "the server always publishes the true
@@ -154,8 +181,5 @@ export interface LobbyDisplayEntry {
  * to apply the zero-counter rule locally.
  */
 export function deriveLobbyDisplay(gameId: GameId, configOptions: readonly ConfigOption[], pool: MatchmakingPool, poolKey?: string): readonly LobbyDisplayEntry[] {
-  return deriveModalities(configOptions).map((modality) => {
-    const count = pool.count(gameId, modality, poolKey);
-    return { modality, waitingCount: count === 0 ? undefined : count, promoteBotFallback: count === 0 };
-  });
+  return deriveLobbyDisplayFromCounts(deriveModalities(configOptions).map((modality) => ({ modality, waitingCount: pool.count(gameId, modality, poolKey) })));
 }

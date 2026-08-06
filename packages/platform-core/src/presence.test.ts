@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConfigOption } from "@hexdev/platform-contract";
-import { createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveModalities, modalityKey } from "./presence.js";
+import { createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveLobbyDisplayFromCounts, deriveModalities, modalityKey } from "./presence.js";
 
 // Truco-shaped option, used ONLY to prove the mechanism handles it — never
 // hardcoded as a special case (roadmap constraint, obs 2943).
@@ -170,5 +170,28 @@ describe("deriveLobbyDisplay — zero-counter UX rule (obs 2919: decided product
     expect(display).toHaveLength(2);
     expect(display.find((entry) => entry.modality.pointsToWin === 15)?.waitingCount).toBe(2);
     expect(display.find((entry) => entry.modality.pointsToWin === 30)?.waitingCount).toBeUndefined();
+  });
+});
+
+describe("deriveLobbyDisplayFromCounts — the same zero-counter rule, extracted for a raw-counts consumer (transport-colyseus-client: a live WebSocket broadcast has no MatchmakingPool to read, only the raw {modality,waitingCount}[] payload PresenceRoom already sends)", () => {
+  it("applies the identical rule deriveLobbyDisplay itself now delegates to, given raw counts instead of a pool", () => {
+    const display = deriveLobbyDisplayFromCounts([
+      { modality: { pointsToWin: 15 }, waitingCount: 2 },
+      { modality: { pointsToWin: 30 }, waitingCount: 0 },
+    ]);
+    expect(display).toEqual([
+      { modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false },
+      { modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true },
+    ]);
+  });
+
+  it("is the exact function deriveLobbyDisplay calls internally: identical output for the same pool-derived counts", () => {
+    const pool = createMatchmakingPool();
+    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    const viaPool = deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
+    const viaRawCounts = deriveLobbyDisplayFromCounts(
+      deriveModalities([POINTS_TO_WIN]).map((modality) => ({ modality, waitingCount: pool.count("truco-argentino", modality) })),
+    );
+    expect(viaRawCounts).toEqual(viaPool);
   });
 });

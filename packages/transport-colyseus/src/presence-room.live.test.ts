@@ -106,6 +106,41 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(paired0).toHaveLength(0);
   });
+
+  /**
+   * The selection screen (spec: "Lobby Presence Counters Per Point-Target
+   * Room") must show live counts for EVERY modality of a game BEFORE a
+   * player has committed to any one of them — but `onJoin` above enqueues
+   * the instant a `modality` is supplied. A join with `modality` OMITTED is
+   * the watch-only path: this client still receives every `"counts"`
+   * broadcast (design §8: the server always publishes the true count to
+   * everyone in the room) but is never added to any queue and can never be
+   * paired — closing the gap `@hexdev/transport-colyseus-client`'s
+   * `watchPresence` needed and this room's own onJoin contract did not yet
+   * support (the recurring "wiring a real consumer reveals the primitive
+   * doesn't fully fit" pattern, tasks obs 2925 PLAN CORRECTION history).
+   */
+  it("a watch-only join (no modality) receives live counts but is never enqueued or paired", async () => {
+    const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
+    const watcher = await testServer.connectTo(room, {});
+    const counts: unknown[] = [];
+    watcher.onMessage("counts", (message) => counts.push(message));
+    const paired: unknown[] = [];
+    watcher.onMessage("paired", (message) => paired.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const before = counts[counts.length - 1] as Array<{ modality: { roundLength: number }; waitingCount: number }>;
+    expect(before.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(0);
+
+    // A real queued client joins the SAME modality: the watcher must see the
+    // count change (it is genuinely subscribed) without ever being a
+    // candidate for pairing itself.
+    await testServer.connectTo(room, { modality: { roundLength: 15 }, playerId: "p0" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const after = counts[counts.length - 1] as Array<{ modality: { roundLength: number }; waitingCount: number }>;
+    expect(after.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
+    expect(paired).toHaveLength(0);
+  });
 });
 
 /**
