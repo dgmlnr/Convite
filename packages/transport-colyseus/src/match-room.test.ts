@@ -123,7 +123,7 @@ async function joinWithToken(room: MatchRoom, client: Client & { auth: unknown }
   const options = { token };
   const auth = await room.onAuth(client, options, { headers: new Headers({ origin }), ip: "127.0.0.1" });
   client.auth = auth;
-  room.onJoin(client);
+  await room.onJoin(client);
 }
 
 async function createJoinedRoom() {
@@ -373,5 +373,36 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
     expect(seat0.sent).toHaveLength(1); // stuck: no second broadcast ever arrives
     expect(seat0.sent[0]).toEqual({ type: "view", message: { dealt: false } });
+  });
+});
+
+describe("MatchRoom + single-player vs bot (spec: Single-Player vs Bot Mode)", () => {
+  async function createSinglePlayerRoom() {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([fixtureModule]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });
+    const seat0 = fakeClient("s0");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    return { room, seat0, auth };
+  }
+
+  it("starts the match the moment the single human seat joins — no second client, no lobby wait", async () => {
+    const { seat0 } = await createSinglePlayerRoom();
+    expect(seat0.sent).toHaveLength(1);
+    expect(seat0.sent[0]).toMatchObject({ type: "view", message: { ownSecret: 11 } });
+  });
+
+  it("the bot acts on its own turn with no client ever occupying its seat — createBot's first live caller", async () => {
+    const { room, seat0 } = await createSinglePlayerRoom();
+    await room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+    // [0] initial view, [1] the human's own move, [2] the bot's automatic reply
+    expect(seat0.sent).toHaveLength(3);
+    expect(seat0.sent[2]).toMatchObject({ type: "view", message: { turnSeat: 0 } });
+  });
+
+  it("rejects a second real client trying to occupy the bot's seat: maxClients already accounts for it", async () => {
+    const { room } = await createSinglePlayerRoom();
+    expect(room.maxClients).toBe(1);
   });
 });

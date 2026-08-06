@@ -1,5 +1,5 @@
 import { Room, type AuthContext, type Client } from "colyseus";
-import type { GameId, GameModule, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { BotStrategy, BotTier, GameId, GameModule, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
@@ -24,6 +24,13 @@ export interface MatchRoomCreateOptions {
    * §4: "the engine never randomizes" — this is where randomness enters).
    * `apps/server` supplies a real CSPRNG; tests supply a fixed source. */
   readonly rng: RandomSource;
+  /** Single-player mode (spec: "Single-Player vs Bot Mode"): when present,
+   * the LAST seat is filled with a bot controller of this tier BEFORE any
+   * human joins, and `maxClients` shrinks to the remaining human seat(s) —
+   * the match starts the moment they fill, with no lobby wait (design §9:
+   * bot substitution is a seat-controller concept, not a second code path;
+   * this is the same mechanism a disconnect-takeover mutates later). */
+  readonly botTier?: BotTier;
 }
 
 interface MatchRoomJoinOptions {
@@ -36,10 +43,28 @@ interface MatchRoomAuth {
   readonly playerId: PlayerId;
 }
 
-interface SeatedClient {
-  readonly client: Client;
-  readonly playerId: PlayerId;
-}
+/** The erased action shape every conformant `GameModule` requires
+ * structurally (`platform-contract`'s `TAction extends {playerId}` bound) —
+ * named here so `MatchRoom`'s own generic-registry field, the bot strategy
+ * field, and every call site agree on one shape instead of repeating it. */
+type ErasedAction = { readonly playerId: PlayerId };
+
+/**
+ * "Who drives this seat when there is no person behind it?" (design §9) —
+ * a seat is EITHER a live client OR a bot strategy, and swapping which one
+ * never touches `matchState`. Single-player mode populates a `bot` entry at
+ * `onCreate`; disconnect-takeover mutates a `human` entry into a `bot` one
+ * later — the SAME map, the SAME two variants, never a second turn loop.
+ */
+type Controller =
+  | { readonly kind: "human"; readonly playerId: PlayerId; readonly client: Client }
+  | { readonly kind: "bot"; readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> };
+
+/** A bot's own `chooseAction` budget — no strategy in this codebase reads it
+ * today (`truco-bot`'s tiers ignore it; `withThinkingDelay` enforces its own
+ * ~1s pause independently, design §9), kept as a real, named constant rather
+ * than a magic number at each call site. */
+const BOT_BUDGET_MS = 1000;
 
 /** Reads a claimed actor identity off an otherwise-opaque action arriving
  * over the wire as `unknown`. FORMERLY relied on an unenforced convention
@@ -75,14 +100,14 @@ function actorOf(action: unknown): PlayerId | undefined {
  * view), with no Schema/StateView machinery and no per-game room subclass.
  */
 export class MatchRoom extends Room {
-  private module: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> | undefined;
+  private module: GameModule<unknown, ErasedAction, unknown, unknown> | undefined;
   private config: unknown;
   private matchState: unknown;
   private auth: MatchRoomAuthOptions | undefined;
   private registry: GameModuleRegistry | undefined;
   private gameId: GameId | undefined;
   private rng: RandomSource | undefined;
-  private readonly seats: SeatedClient[] = [];
+  private readonly controllers = new Map<number, Controller>();
 
   override onCreate(options: MatchRoomCreateOptions): void {
     const module = options.registry.get(options.gameId);
@@ -95,7 +120,15 @@ export class MatchRoom extends Room {
     this.registry = options.registry;
     this.gameId = options.gameId;
     this.rng = options.rng;
-    this.maxClients = module.metadata.seatCount;
+    if (options.botTier !== undefined) {
+      // Unguessable on purpose: `/embed?p=` is client-suppliable (design
+      // §7), so a fixed or predictable bot id would be an identity a client
+      // could pre-claim a token for. A fresh random UUID, generated only
+      // once this room exists, never can be.
+      const seat = module.metadata.seatCount - 1;
+      this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: module.createBot(options.botTier) });
+    }
+    this.maxClients = module.metadata.seatCount - this.controllers.size;
     this.onMessage("action", (client, message: unknown) => this.handleAction(client, message));
   }
 
@@ -146,7 +179,7 @@ export class MatchRoom extends Room {
     return { playerId: claims.playerId };
   }
 
-  override onJoin(client: Client & { auth?: MatchRoomAuth }): void {
+  override async onJoin(client: Client & { auth?: MatchRoomAuth }): Promise<void> {
     const module = this.module;
     if (module === undefined) {
       throw new Error("MatchRoom: onJoin called before onCreate registered a module");
@@ -155,13 +188,30 @@ export class MatchRoom extends Room {
     if (playerId === undefined) {
       throw new Error("MatchRoom: onJoin called without a resolved onAuth identity");
     }
-    this.seats.push({ client, playerId });
-    if (this.seats.length === module.metadata.seatCount) {
-      const seatAssignments: SeatAssignment[] = this.seats.map((seated, seat) => ({ seat, playerId: seated.playerId }));
+    this.controllers.set(this.freeSeat(module.metadata.seatCount), { kind: "human", playerId, client });
+    if (this.controllers.size === module.metadata.seatCount) {
+      const seatAssignments: SeatAssignment[] = [...this.controllers.entries()].map(([seat, controller]) => ({ seat, playerId: controller.playerId }));
       this.matchState = module.createMatch(this.config, seatAssignments);
       this.broadcastViews();
-      this.maybeAdvanceSystemAction();
+      await this.advance();
     }
+  }
+
+  /** The lowest seat index not already occupied by a bot (from `onCreate`)
+   * or an earlier human join — human seats fill in join order around
+   * whichever seats single-player mode pre-claimed for a bot. */
+  private freeSeat(seatCount: number): number {
+    for (let seat = 0; seat < seatCount; seat += 1) {
+      if (!this.controllers.has(seat)) return seat;
+    }
+    throw new Error("MatchRoom: onJoin called with no free seat");
+  }
+
+  private controllerFor(client: Client): Controller | undefined {
+    for (const controller of this.controllers.values()) {
+      if (controller.kind === "human" && controller.client === client) return controller;
+    }
+    return undefined;
   }
 
   /**
@@ -172,15 +222,15 @@ export class MatchRoom extends Room {
    * method is invoked directly in tests instead of over a live WebSocket
    * transport — same behavior, no framing/socket layer to fake.
    */
-  handleAction(client: Client, action: unknown): void {
+  handleAction(client: Client, action: unknown): Promise<void> | void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) {
       client.send("action-rejected", { code: "match-not-started", message: "the match has not started yet" });
       return;
     }
-    const seated = this.seats.find((seat) => seat.client === client);
+    const controller = this.controllerFor(client);
     const claimedActor = actorOf(action);
-    if (seated === undefined || claimedActor !== seated.playerId) {
+    if (controller === undefined || claimedActor !== controller.playerId) {
       client.send("action-rejected", { code: "actor-mismatch", message: "action does not belong to the authenticated seat" });
       return; // never reaches the module: state deliberately untouched
     }
@@ -189,7 +239,7 @@ export class MatchRoom extends Room {
     try {
       // Safe cast: the actor-mismatch check above already proved `action`
       // structurally carries a `playerId` matching the authenticated seat.
-      result = module.applyAction(this.matchState, action as { readonly playerId: PlayerId });
+      result = module.applyAction(this.matchState, action as ErasedAction);
     } catch (error) {
       client.send("action-rejected", { code: "malformed-action", message: error instanceof Error ? error.message : String(error) });
       return; // state deliberately untouched
@@ -200,27 +250,41 @@ export class MatchRoom extends Room {
     }
     this.matchState = result.state;
     this.broadcastViews();
-    this.maybeAdvanceSystemAction();
+    return this.advance();
   }
 
   /**
-   * "Nobody can act, but the match must advance" (design's system-action
-   * note): fires whenever every seated player is legal-action-less AND the
-   * match has not ended. Delegates entirely to `registry.getSystemAction`
-   * (paired with the module by whoever registered it, e.g. `truco-module`'s
-   * deal factory) — this room stays ignorant of WHAT the action is or WHY
-   * it was needed, same as `handleAction`'s ordinary path. A `null` result
-   * (no requestSystemAction registered, or the module decides none is
-   * needed right now) is a legitimate no-op, not an error.
+   * Drives the match through every step nobody at a keyboard needs to
+   * trigger: a bot's own turn, then (design's system-action note) "nobody
+   * can act, but the match must advance". Recurses so one step can unblock
+   * the next — a bot's move can reveal the next system action, exactly the
+   * loop a disconnect-takeover bot reuses to resolve a pending call before
+   * further human play (spec 6.4): takeover only ever mutates ONE
+   * `controllers` entry; this loop is what makes that entry actually play.
    */
-  private maybeAdvanceSystemAction(): void {
+  private async advance(): Promise<void> {
     const module = this.module;
     const registry = this.registry;
     const gameId = this.gameId;
     const rng = this.rng;
     if (module === undefined || registry === undefined || gameId === undefined || rng === undefined || this.matchState === undefined) return;
     if (module.getOutcome(this.matchState) !== null) return;
-    const anySeatCanAct = this.seats.some((seated) => module.getLegalActions(this.matchState, seated.playerId).length > 0);
+
+    const actingBot = this.findActingBot();
+    if (actingBot !== undefined) {
+      const view = module.getViewFor(this.matchState, actingBot.playerId);
+      const legal = module.getLegalActions(this.matchState, actingBot.playerId);
+      const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS);
+      const result = module.applyAction(this.matchState, action);
+      if (result.ok) {
+        this.matchState = result.state;
+        this.broadcastViews();
+      }
+      await this.advance();
+      return;
+    }
+
+    const anySeatCanAct = [...this.controllers.values()].some((controller) => module.getLegalActions(this.matchState, controller.playerId).length > 0);
     if (anySeatCanAct) return;
     const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
     if (systemAction === null) return;
@@ -228,13 +292,23 @@ export class MatchRoom extends Room {
     if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
     this.matchState = result.state;
     this.broadcastViews();
+    await this.advance();
+  }
+
+  private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> } | undefined {
+    const module = this.module;
+    if (module === undefined || this.matchState === undefined) return undefined;
+    for (const controller of this.controllers.values()) {
+      if (controller.kind === "bot" && module.getLegalActions(this.matchState, controller.playerId).length > 0) return controller;
+    }
+    return undefined;
   }
 
   private broadcastViews(): void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) return;
-    for (const seated of this.seats) {
-      seated.client.send("view", module.getViewFor(this.matchState, seated.playerId));
+    for (const controller of this.controllers.values()) {
+      if (controller.kind === "human") controller.client.send("view", module.getViewFor(this.matchState, controller.playerId));
     }
   }
 }
