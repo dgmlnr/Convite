@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseTargetOrigin, PROTOCOL_NAMESPACE, type ReadyMessage } from "@hexdev/widget-protocol";
+
+// Cross-origin is the only configuration the loader accepts: a same-origin
+// frame with `allow-scripts allow-same-origin` can strip its own sandbox.
+const WIDGET_ORIGIN = "https://widget.hexdev.test";
 import { initWidget, type WidgetHandle } from "./loader.js";
 
 /**
@@ -54,7 +58,7 @@ describe("widget survives a hostile host page", () => {
     scriptTag = document.createElement("script");
     scriptTag.setAttribute("data-embed-key", "pk_live_t_abc");
     document.body.appendChild(scriptTag);
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
 
     handle = initWidget(scriptTag, document, window, { widgetOrigin });
 
@@ -66,7 +70,7 @@ describe("widget survives a hostile host page", () => {
     scriptTag = document.createElement("script");
     scriptTag.setAttribute("data-embed-key", "pk_live_t_abc");
     document.body.appendChild(scriptTag);
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
 
     handle = initWidget(scriptTag, document, window, { widgetOrigin });
 
@@ -77,7 +81,7 @@ describe("widget survives a hostile host page", () => {
     scriptTag = document.createElement("script");
     scriptTag.setAttribute("data-embed-key", "pk_live_t_abc");
     document.body.appendChild(scriptTag);
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
     handle = initWidget(scriptTag, document, window, { widgetOrigin });
     const mounted = handle!;
 
@@ -103,7 +107,7 @@ describe("widget survives a hostile host page", () => {
     scriptTag = document.createElement("script");
     scriptTag.setAttribute("data-embed-key", "pk_live_t_abc");
     document.body.appendChild(scriptTag);
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
     handle = initWidget(scriptTag, document, window, { widgetOrigin });
     const mounted = handle!;
     const postSpy = vi.spyOn(mounted.iframe.contentWindow!, "postMessage");

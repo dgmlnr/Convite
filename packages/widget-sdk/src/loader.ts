@@ -42,6 +42,17 @@ export function initWidget(
   if (config === null) return undefined;
 
   const hostOrigin = win.location.origin;
+
+  // The isolation this widget depends on comes from the iframe being a
+  // SEPARATE ORIGIN, not from `sandbox`. With `allow-scripts allow-same-origin`
+  // on a SAME-origin frame, the framed document can reach its parent and strip
+  // the sandbox attribute outright — the boundary silently stops existing.
+  //
+  // That is a misconfiguration, not an attack: a tenant proxying the widget
+  // under their own domain, or a dev pointing at the host's own origin, gets
+  // there by accident. So refuse to mount rather than mount something that
+  // merely looks isolated. Fail closed.
+  if (options.widgetOrigin === hostOrigin) return undefined;
   const src = buildEmbedUrl(options.widgetOrigin, config, hostOrigin);
   const mount = mountIframe(doc, scriptTag, src);
   const readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;

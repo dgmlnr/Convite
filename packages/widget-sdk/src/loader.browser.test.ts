@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseTargetOrigin, PROTOCOL_NAMESPACE, type ReadyMessage } from "@hexdev/widget-protocol";
 import { initWidget } from "./loader.js";
 
+// The widget MUST be served from a different origin than the host: with
+// `allow-scripts allow-same-origin` on a same-origin frame the framed
+// document can strip its own sandbox. Every test mounts cross-origin
+// because that is the only configuration the loader accepts.
+const WIDGET_ORIGIN = "https://widget.hexdev.test";
+
 let scriptTag: HTMLScriptElement | undefined;
 
 afterEach(() => {
@@ -24,7 +30,7 @@ function readyMessage(protocolVersions: readonly number[]): ReadyMessage {
 describe("initWidget", () => {
   it("mounts an iframe whose src carries the tenant embed key and the real host origin", () => {
     const el = mountScriptTag();
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
 
     const handle = initWidget(el, document, window, { widgetOrigin });
 
@@ -33,17 +39,31 @@ describe("initWidget", () => {
     handle?.dispose();
   });
 
+  it("REFUSES to mount when the widget origin equals the host origin, because the sandbox would be escapable", () => {
+    const el = mountScriptTag();
+
+    const handle = initWidget(el, document, window, { widgetOrigin: parseTargetOrigin(window.location.origin) });
+
+    // Fail closed: `allow-scripts allow-same-origin` on a same-origin frame
+    // lets the framed document reach its parent and remove the sandbox
+    // attribute, so the isolation this widget relies on would silently not
+    // exist. Mounting something that merely looks isolated is worse than
+    // mounting nothing.
+    expect(handle).toBeUndefined();
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
   it("mounts nothing and returns undefined when data-embed-key is missing", () => {
     const el = mountScriptTag({});
 
-    const handle = initWidget(el, document, window, { widgetOrigin: parseTargetOrigin(window.location.origin) });
+    const handle = initWidget(el, document, window, { widgetOrigin: parseTargetOrigin(WIDGET_ORIGIN) });
 
     expect(handle).toBeUndefined();
   });
 
-  it("sends host-hello through the sanctioned wrapper after a same-origin ready with an overlapping version", () => {
+  it("sends host-hello through the sanctioned wrapper after a ready from the widget origin with an overlapping version", () => {
     const el = mountScriptTag();
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
     const handle = initWidget(el, document, window, { widgetOrigin });
     const postSpy = vi.spyOn(handle!.iframe.contentWindow!, "postMessage");
 
@@ -58,7 +78,7 @@ describe("initWidget", () => {
 
   it("REJECTS a ready message posted from an untrusted origin — never sends host-hello for it", () => {
     const el = mountScriptTag();
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
     const handle = initWidget(el, document, window, { widgetOrigin });
     const postSpy = vi.spyOn(handle!.iframe.contentWindow!, "postMessage");
 
@@ -70,7 +90,7 @@ describe("initWidget", () => {
 
   it("removes the iframe when ready never arrives within the configured timeout", async () => {
     const el = mountScriptTag();
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
     const handle = initWidget(el, document, window, { widgetOrigin, readyTimeoutMs: 20 });
     expect(document.body.contains(handle!.container)).toBe(true);
 
@@ -81,7 +101,7 @@ describe("initWidget", () => {
 
   it("renders no host UI on a version mismatch — just removes the iframe, per the minimal-loader rule", () => {
     const el = mountScriptTag();
-    const widgetOrigin = parseTargetOrigin(window.location.origin);
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
     const handle = initWidget(el, document, window, { widgetOrigin });
 
     window.dispatchEvent(new MessageEvent("message", { origin: widgetOrigin, data: readyMessage([999]) }));
