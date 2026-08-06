@@ -7,6 +7,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Generated review artifacts (regenerate via each package's own generator script)
+packages/spanish-deck-ui/sample/
+
 # Test output
 coverage/
 test-results/

@@ -108,6 +108,8 @@ importers:
         specifier: workspace:*
         version: link:../platform-contract
 
+  packages/spanish-deck-ui: {}
+
   packages/transport-colyseus:
     dependencies:
       '@hexdev/platform-contract':
