@@ -15,9 +15,10 @@ import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
 import { requestSystemAction, trucoModule } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
-import { renderEmbedShell } from "./embed-shell.js";
+import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
 import { handlePresenceRequest } from "./presence-handler.js";
+import { refererOrigin } from "./referer-origin.js";
 import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
 // The composition root: wires existing pieces (registry, auth primitives,
@@ -60,17 +61,16 @@ const httpServer = createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (url.pathname === "/embed") {
-    // Content negotiation on ONE path (design's own `/embed` URL contract,
-    // "Expensive to reverse"): a real browser navigating the iframe's `src`
-    // sends `Accept: text/html` and gets the static shell; the widget-app
-    // bundle then calls back into this SAME path with an explicit
-    // `Accept: application/json` to mint its session token and catalog.
-    if (req.method === "GET" && (req.headers.accept ?? "").includes("text/html")) {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(renderEmbedShell());
-      return;
-    }
-    handleEmbedRequest(url, req.headers.origin, req.socket.remoteAddress, {
+    // A plain GET navigation to a cross-origin URL — exactly what happens
+    // when the loader sets the sandboxed iframe's `src` here — carries NO
+    // `Origin` header at all (discovered via a real two-origin Playwright
+    // run, not assumed; see referer-origin.ts). `Referer` DOES carry it, and
+    // the default `strict-origin-when-cross-origin` policy trims it to
+    // exactly the origin for a cross-origin request — this fallback is what
+    // makes the origin allowlist check actually reachable by a real browser.
+    const origin = req.headers.origin ?? refererOrigin(req.headers.referer);
+
+    handleEmbedRequest(url, origin, req.socket.remoteAddress, {
       repository,
       issuer,
       ttlSeconds: config.sessionTtlSeconds,
@@ -79,6 +79,19 @@ const httpServer = createServer((req, res) => {
       registry,
     })
       .then(({ status, body }) => {
+        // Content negotiation on ONE path (design's own `/embed` URL
+        // contract, "Expensive to reverse"): a real browser navigating the
+        // iframe's `src` sends `Accept: text/html` and gets the shell with
+        // the mint result INLINED (a same-origin fetch from inside the
+        // iframe back to this same server would carry no origin evidence at
+        // all — see embed-shell.ts). A programmatic caller sending an
+        // explicit `Accept: application/json` still gets the plain JSON API.
+        if (req.method === "GET" && (req.headers.accept ?? "").includes("text/html")) {
+          const bootstrap: EmbedBootstrap | undefined = status === 200 ? (JSON.parse(body) as EmbedBootstrap) : undefined;
+          res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+          res.end(renderEmbedShell(bootstrap));
+          return;
+        }
         res.writeHead(status, { "content-type": "application/json" });
         res.end(body);
       })

@@ -32,6 +32,7 @@ export const STRINGS = {
   selectionTitle: "Elegí un juego",
   loadingCatalog: "Cargando…",
   emptyCatalog: "Este sitio todavía no tiene juegos habilitados.",
+  loadError: "No se pudo cargar el juego.",
   waitingCount: (count: number): string => `${count} ${count === 1 ? "jugador esperando" : "jugadores esperando"}`,
   playVsPerson: "Jugar contra otra persona",
   playVsBot: "Jugar contra la máquina",

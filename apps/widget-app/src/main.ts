@@ -1,7 +1,7 @@
 import { parseTargetOrigin } from "@hexdev/widget-protocol";
 import type { GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
-import { fetchBootstrap, fetchPresence, type CatalogEntry } from "./bootstrap-data.js";
+import { fetchPresence, readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
 import { connectToHost } from "./handshake.js";
 import { STRINGS } from "./i18n.js";
 import { applyThemeToRoot } from "./theme.js";
@@ -36,6 +36,11 @@ function main(): void {
     void boot();
   });
 
+  // Not a network call: the browser's own navigation to this URL is what
+  // minted this session server-side (see readInlineBootstrap's doc comment
+  // for why a second same-origin fetch cannot carry origin evidence).
+  const bootstrap = readInlineBootstrap(window);
+
   const resizeObserver = new ResizeObserver(() => {
     handshake.sendResize(document.documentElement.scrollHeight);
   });
@@ -57,9 +62,11 @@ function main(): void {
   }
 
   async function boot(): Promise<void> {
-    const bootstrap = await fetchBootstrap(window.fetch.bind(window), window.location.search);
     if (bootstrap === undefined) {
-      renderError(STRINGS.emptyCatalog);
+      // Defense in depth only: in practice the server never even loads this
+      // script when the mint fails (embed-shell.ts omits the app script tag
+      // entirely on failure), so this branch should be unreachable.
+      renderError(STRINGS.loadError);
       return;
     }
     await renderSelection(bootstrap.catalog);

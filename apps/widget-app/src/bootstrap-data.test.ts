@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchBootstrap, fetchPresence } from "./bootstrap-data.js";
+import { fetchPresence, readInlineBootstrap } from "./bootstrap-data.js";
 
 function fakeResponse(ok: boolean, body: unknown): Response {
   return {
@@ -8,23 +8,23 @@ function fakeResponse(ok: boolean, body: unknown): Response {
   } as unknown as Response;
 }
 
-describe("fetchBootstrap (widget-embed: the iframe mints its own session via /embed)", () => {
-  it("calls /embed with the current query string and an explicit JSON Accept header", async () => {
-    const body = { token: "t1", playerId: "p1", catalog: [] };
-    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse(true, body));
+describe("readInlineBootstrap (widget-embed: the mint result arrives inlined in the HTML, not via a second fetch)", () => {
+  // DISCOVERED via a real two-origin Playwright run (see apply-progress): a
+  // SAME-ORIGIN fetch from inside the iframe back to its own server carries
+  // no `Origin` header at all in a real browser, so the server cannot
+  // validate tenant origin on that second request. The server now inlines
+  // the already-minted result into the HTML response instead — this reads
+  // that inlined global rather than making a network call at all.
+  it("reads the bootstrap object the server inlined onto window", () => {
+    const bootstrap = { token: "t1", playerId: "p1", catalog: [] };
 
-    const result = await fetchBootstrap(fetchImpl, "?k=pk_dev_local&o=https%3A%2F%2Ftenant.example");
+    const result = readInlineBootstrap({ __HEXDEV_BOOTSTRAP__: bootstrap });
 
-    expect(fetchImpl).toHaveBeenCalledWith("/embed?k=pk_dev_local&o=https%3A%2F%2Ftenant.example", {
-      headers: { Accept: "application/json" },
-    });
-    expect(result).toEqual(body);
+    expect(result).toEqual(bootstrap);
   });
 
-  it("returns undefined when the server rejects the request (e.g. 403 disallowed origin)", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse(false, { error: "origin-not-allowed" }));
-
-    const result = await fetchBootstrap(fetchImpl, "?k=pk_dev_local&o=https%3A%2F%2Fevil.example");
+  it("returns undefined when the server minted nothing (mint failed — nothing was inlined)", () => {
+    const result = readInlineBootstrap({});
 
     expect(result).toBeUndefined();
   });
