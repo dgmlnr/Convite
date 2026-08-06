@@ -1,18 +1,7 @@
-import { RANKS, SUITS, cardId, type Card } from "./card.js";
-import { composeCardSvg } from "./card-svg.js";
+import { RANKS, SUITS, type Card } from "./card.js";
 
+// `getCardArt` used to live here too, memoized, because composing an SVG
+// front was real work worth caching. Front art is now a URL lookup
+// (front-image.ts) — cheap enough that memoization would add complexity for
+// no measurable benefit, so it was dropped rather than carried over unused.
 export const ALL_CARDS: readonly Card[] = SUITS.flatMap((suit) => RANKS.map((rank) => ({ suit, rank })));
-
-const artCache = new Map<string, string>();
-
-/** Front-face SVG markup for a card, memoized by card id. */
-export function getCardArt(card: Card): string {
-  const id = cardId(card);
-  const cached = artCache.get(id);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const art = composeCardSvg(card);
-  artCache.set(id, art);
-  return art;
-}

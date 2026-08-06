@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { cardBackSvg } from "./card-back.js";
-import { suitSymbolMarkup } from "./suit-symbols.js";
 import { SUITS } from "./card.js";
 
 describe("card-back", () => {
@@ -10,10 +9,18 @@ describe("card-back", () => {
     expect(markup).toContain("</svg>");
   });
 
-  it("is visually separable from every card front: it never embeds a suit symbol's markup", () => {
+  // Previously verified separability by asserting the back never contains a
+  // hand-drawn suit symbol's markup — moot now that fronts are Fournier 1878
+  // WebP photographs (front-image.ts), not generated SVG with markup to leak.
+  // The meaningful separability claim today is that the back never embeds a
+  // reference to any front image asset either — it stays a self-contained
+  // SVG, not a wrapper around a front image.
+  it("is separable from the card fronts: it never references a front image asset", () => {
     const back = cardBackSvg();
+    expect(back).not.toContain(".webp");
+    expect(back).not.toContain("assets/fronts");
     for (const suit of SUITS) {
-      expect(back).not.toContain(suitSymbolMarkup(suit));
+      expect(back).not.toContain(`data-corner-index="${suit}"`);
     }
   });
 

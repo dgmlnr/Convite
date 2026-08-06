@@ -1,19 +1,13 @@
-// Two independent theme surfaces, matching the product decision (obs 2955):
-// the FRONT stays truco's own identity (fixed by default, never bound to a
-// tenant's brand — a card must stay legible under any brand), the BACK is
-// the tenant-themeable surface, since it is what the opponent's hand shows
-// and it is always on screen. Both are still expressed as CSS custom
-// properties with sensible defaults here, never as inline hex, so a future
-// consumer (truco-ui, an escoba-ui) can override either surface without
-// touching a single SVG path.
+// Two theme surfaces were originally planned here (front + back), matching
+// the product decision (obs 2955): the FRONT stays fixed identity, the BACK
+// is the tenant-themeable surface. The front is now a real Fournier 1878
+// photograph (front-image.ts) rather than generated SVG, and a raster image
+// can't respond to a CSS custom property — so the front tokens
+// (`--deck-card-bg`/`--deck-border`/`--deck-ink`/`--deck-suit-*`) are gone,
+// not renamed. Only the back remains themeable, exactly as obs 2955 always
+// intended it to be the ONE branding surface: it's what the opponent's hand
+// shows, and it's always on screen.
 export const DECK_THEME_DEFAULTS = {
-  "--deck-card-bg": "#f7ecd4",
-  "--deck-border": "#3a2b1a",
-  "--deck-ink": "#241a10",
-  "--deck-suit-oro": "#b8860b",
-  "--deck-suit-copa": "#7a1f2b",
-  "--deck-suit-espada": "#2b3a4a",
-  "--deck-suit-basto": "#4a3520",
   "--deck-back-bg": "#123b2e",
   "--deck-back-accent": "#d8b45a",
 } as const;
