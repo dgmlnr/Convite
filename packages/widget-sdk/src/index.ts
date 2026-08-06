@@ -1,3 +1,5 @@
+export { WIDGET_ORIGIN, bootstrap } from "./bootstrap.js";
+export { initWidget, type InitWidgetOptions, type WidgetHandle } from "./loader.js";
 export {
   applyLayoutMode,
   applyResizeHeight,
