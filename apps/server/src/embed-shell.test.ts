@@ -25,3 +25,15 @@ describe("renderEmbedShell (spec: widget-embed — the iframe needs real content
     expect(html).toContain("No se pudo cargar el juego");
   });
 });
+
+describe("renderEmbedShell — opaque background (bug: html/body computed to rgba(0,0,0,0) with no stylesheet at all, so an expanded widget let the host page's own content show through, overlapping and unreadable)", () => {
+  it("gives html and body an explicit, non-transparent background-color", () => {
+    const html = renderEmbedShell(BOOTSTRAP);
+    expect(html).toMatch(/html\s*,\s*body\s*\{[^}]*background-color:\s*[^;]+;/);
+  });
+
+  it("still renders the opaque background even on the mint-failure error page — the transparent-iframe bug applies before any token exists", () => {
+    const html = renderEmbedShell(undefined);
+    expect(html).toMatch(/html\s*,\s*body\s*\{[^}]*background-color:\s*[^;]+;/);
+  });
+});

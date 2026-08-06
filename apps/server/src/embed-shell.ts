@@ -35,6 +35,19 @@ export function renderEmbedShell(bootstrap: EmbedBootstrap | undefined): string 
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>hexdev-gamify</title>
+<style>
+/* BUG (found running a real two-origin session, verified with
+ * getComputedStyle): with no stylesheet at all, html and body both compute
+ * to background-color: rgba(0, 0, 0, 0) — fully transparent. Once the widget
+ * expands to fullscreen (design's "inline that expands"), the HOST page's
+ * own content shows through, overlapping and unreadable. This must apply
+ * from the very first paint, before any theme handshake — hence a plain
+ * fallback, not something only set later via applyThemeToRoot's inline
+ * style. It still honors a tenant's own surface color once
+ * applyThemeToRoot sets --gx-color-surface on the root element.
+ */
+html, body { margin: 0; background-color: var(--gx-color-surface, #ffffff); }
+</style>
 </head>
 <body>
 ${body}
