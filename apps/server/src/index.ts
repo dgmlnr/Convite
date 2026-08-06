@@ -17,7 +17,6 @@ import { requestSystemAction, trucoModule } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
 import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
-import { handlePresenceRequest } from "./presence-handler.js";
 import { refererOrigin } from "./referer-origin.js";
 import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
@@ -37,7 +36,6 @@ const replayGuard = createJtiReplayGuard({ ttlMs: config.sessionTtlSeconds * 100
 // deployment to tune once real traffic data exists.
 const embedIpLimiter = createRateLimiter(config.embedIpRateLimit);
 const embedKeyLimiter = createRateLimiter(config.embedKeyRateLimit);
-const presenceIpLimiter = createRateLimiter(config.presenceIpRateLimit);
 const joinIpLimiter = createRateLimiter(config.joinIpRateLimit);
 // The registry erases per-module state types (same documented boundary as
 // `platform-core/registry.ts` itself); this is that one spot for the pairing.
@@ -99,18 +97,6 @@ const httpServer = createServer((req, res) => {
         res.writeHead(500);
         res.end();
       });
-    return;
-  }
-
-  if (url.pathname === "/presence") {
-    const { status, body } = handlePresenceRequest(url, req.socket.remoteAddress, {
-      registry,
-      pool: presencePool,
-      poolKey: GLOBAL_POOL_KEY,
-      ipLimiter: presenceIpLimiter,
-    });
-    res.writeHead(status, { "content-type": "application/json" });
-    res.end(body);
     return;
   }
 

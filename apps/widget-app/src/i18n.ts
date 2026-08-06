@@ -39,5 +39,13 @@ export const STRINGS = {
   botEasy: "Fácil",
   botNormal: "Normal",
   botHard: "Difícil",
-  matchPlaceholder: "La mesa de juego se abre en la próxima etapa.",
+  searchingOpponent: "Buscando rival…",
+  pairingFailed: (message: string): string => `No se pudo emparejar: ${message}`,
+  matchConnected: "Conectado a la partida.",
+  // Deliberately generic, not real gameplay copy: the in-match game table
+  // (design's own explicit scope boundary, unchanged by this unit) is what
+  // would render actual hand/table state. This proves the connection itself
+  // is live — every real message the server sends bumps the counter — without
+  // this package pretending to know what any specific game's view looks like.
+  liveUpdatesReceived: (count: number): string => `Actualizaciones recibidas: ${count}`,
 } as const;

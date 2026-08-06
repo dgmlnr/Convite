@@ -1,12 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { fetchPresence, readInlineBootstrap } from "./bootstrap-data.js";
-
-function fakeResponse(ok: boolean, body: unknown): Response {
-  return {
-    ok,
-    json: () => Promise.resolve(body),
-  } as unknown as Response;
-}
+import { describe, expect, it } from "vitest";
+import { readInlineBootstrap } from "./bootstrap-data.js";
 
 describe("readInlineBootstrap (widget-embed: the mint result arrives inlined in the HTML, not via a second fetch)", () => {
   // DISCOVERED via a real two-origin Playwright run (see apply-progress): a
@@ -27,25 +20,5 @@ describe("readInlineBootstrap (widget-embed: the mint result arrives inlined in 
     const result = readInlineBootstrap({});
 
     expect(result).toBeUndefined();
-  });
-});
-
-describe("fetchPresence (spec: game-session — lobby presence counters)", () => {
-  it("calls /presence with the given gameId and returns the parsed display entries", async () => {
-    const entries = [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }];
-    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse(true, entries));
-
-    const result = await fetchPresence(fetchImpl, "truco-argentino");
-
-    expect(fetchImpl).toHaveBeenCalledWith("/presence?gameId=truco-argentino");
-    expect(result).toEqual(entries);
-  });
-
-  it("returns an empty array when the request fails, so the UI degrades instead of crashing", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse(false, { error: "unknown game" }));
-
-    const result = await fetchPresence(fetchImpl, "not-a-real-game");
-
-    expect(result).toEqual([]);
   });
 });

@@ -32,11 +32,10 @@ describe("loadServerConfig", () => {
     expect(config.tenants).toEqual(tenants);
   });
 
-  it("defaults the rate-limit settings for /embed (IP and key), /presence, and room join", () => {
+  it("defaults the rate-limit settings for /embed (IP and key) and room join", () => {
     const config = loadServerConfig(DEV_OPT_IN);
     expect(config.embedIpRateLimit.limit).toBeGreaterThan(0);
     expect(config.embedKeyRateLimit.limit).toBeGreaterThan(0);
-    expect(config.presenceIpRateLimit.limit).toBeGreaterThan(0);
     expect(config.joinIpRateLimit.limit).toBeGreaterThan(0);
   });
 

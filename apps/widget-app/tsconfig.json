@@ -16,6 +16,9 @@
       "path": "../../packages/platform-core"
     },
     {
+      "path": "../../packages/transport-colyseus-client"
+    },
+    {
       "path": "../../packages/widget-protocol"
     },
     {

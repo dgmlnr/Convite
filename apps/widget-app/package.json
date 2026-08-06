@@ -9,6 +9,7 @@
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
+    "@hexdev/transport-colyseus-client": "workspace:*",
     "@hexdev/widget-protocol": "workspace:*",
     "@hexdev/widget-sdk": "workspace:*"
   },

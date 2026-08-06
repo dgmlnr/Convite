@@ -66,6 +66,9 @@ importers:
       '@hexdev/platform-core':
         specifier: workspace:*
         version: link:../../packages/platform-core
+      '@hexdev/transport-colyseus-client':
+        specifier: workspace:*
+        version: link:../../packages/transport-colyseus-client
       '@hexdev/widget-protocol':
         specifier: workspace:*
         version: link:../../packages/widget-protocol

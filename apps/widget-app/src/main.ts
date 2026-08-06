@@ -1,20 +1,25 @@
 import { parseTargetOrigin } from "@hexdev/widget-protocol";
 import type { GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
-import { fetchPresence, readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
+import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, startBotMatch, watchPresence } from "@hexdev/transport-colyseus-client";
+import type { MatchConnection } from "@hexdev/transport-colyseus-client";
+import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
 import { connectToHost } from "./handshake.js";
 import { STRINGS } from "./i18n.js";
+import { deriveWsEndpoint } from "./match-flow.js";
 import { applyThemeToRoot } from "./theme.js";
 import { renderGameSelection } from "./game-selection.js";
 
 /**
  * The widget-app composition root — wires the pieces every other module in
  * this package already tests in isolation (`handshake.ts`, `theme.ts`,
- * `bootstrap-data.ts`, `game-selection.ts`) into the one thing that actually
- * runs inside the iframe. Like `apps/server/src/index.ts`, this file is
- * deliberately thin and verified live (the manual end-to-end run in
- * apply-progress), not by a dedicated unit test of its own — there is no
- * production LOGIC here that isn't already covered where it lives.
+ * `bootstrap-data.ts`, `match-flow.ts`, `game-selection.ts`, and
+ * `@hexdev/transport-colyseus-client`'s own extensively-tested connection
+ * logic) into the one thing that actually runs inside the iframe. Like
+ * `apps/server/src/index.ts`, this file is deliberately thin and verified
+ * live (the two-origin Playwright run in apply-progress), not by a
+ * dedicated unit test of its own — there is no production LOGIC here that
+ * isn't already covered where it lives.
  */
 function main(): void {
   const app = document.getElementById("hexdev-gamify-app");
@@ -53,12 +58,36 @@ function main(): void {
     app!.appendChild(el);
   }
 
-  function renderMatchPlaceholder(): void {
-    handshake.sendLayout("fullscreen");
+  function renderStatus(message: string): void {
     app!.replaceChildren();
     const el = document.createElement("p");
-    el.textContent = STRINGS.matchPlaceholder;
+    el.textContent = message;
     app!.appendChild(el);
+  }
+
+  /**
+   * The real join succeeded — a genuine `MatchConnection` from
+   * `@hexdev/transport-colyseus-client`, either the bot path (immediate) or
+   * the human-pairing path (after `onPaired`). The actual in-match game
+   * table (design's own explicit scope boundary, unchanged by this unit) is
+   * NOT built here: this renders the smallest HONEST proof that the
+   * connection is live and receiving real server-pushed state, generic
+   * across any game (never inspects the view's shape — the port is
+   * game-agnostic, per this unit's own requirement).
+   */
+  function enterMatch(connection: MatchConnection<unknown>): void {
+    handshake.sendLayout("fullscreen");
+    app!.replaceChildren();
+    const title = document.createElement("p");
+    title.textContent = STRINGS.matchConnected;
+    const counter = document.createElement("p");
+    let updates = 0;
+    counter.textContent = STRINGS.liveUpdatesReceived(updates);
+    app!.append(title, counter);
+    connection.onView(() => {
+      updates += 1;
+      counter.textContent = STRINGS.liveUpdatesReceived(updates);
+    });
   }
 
   async function boot(): Promise<void> {
@@ -69,23 +98,43 @@ function main(): void {
       renderError(STRINGS.loadError);
       return;
     }
-    await renderSelection(bootstrap.catalog);
+    const client = createTransportClient(deriveWsEndpoint(window.location));
+    await renderSelection(client, bootstrap.catalog, bootstrap.playerId, bootstrap.token);
   }
 
-  async function renderSelection(catalog: readonly CatalogEntry[]): Promise<void> {
-    const presenceEntries = await Promise.all(catalog.map((entry) => fetchPresence(window.fetch.bind(window), entry.id)));
-    const presenceByGame = new Map<GameId, readonly LobbyDisplayEntry[]>(catalog.map((entry, index) => [entry.id, presenceEntries[index] ?? []]));
-    renderGameSelection(app!, catalog, presenceByGame, {
-      // The in-match game UI (table, hand, calls) is explicitly NOT in this
-      // unit — real room-joining needs the colyseus.js browser client, which
-      // cannot be added here without putting colyseus in a second
-      // package.json (a hard architectural rule this unit honors). Both
-      // callbacks prove the ONE piece of real, buildable behavior available
-      // right now: the "inline that expands" layout transition (design
-      // §6/obs 2955), disclosed honestly rather than faked as a working join.
-      onPlayVsPerson: () => renderMatchPlaceholder(),
-      onPlayVsBot: () => renderMatchPlaceholder(),
-    });
+  async function renderSelection(client: ReturnType<typeof createTransportClient>, catalog: readonly CatalogEntry[], playerId: string, token: string): Promise<void> {
+    const presenceByGame = new Map<GameId, readonly LobbyDisplayEntry[]>();
+
+    function rerender(): void {
+      renderGameSelection(app!, catalog, presenceByGame, {
+        onPlayVsPerson: (gameId, modality) => {
+          renderStatus(STRINGS.searchingOpponent);
+          void joinMatchmakingQueue(client, { gameId, modality, playerId, token }).then((queue) => {
+            queue.onPaired((pairing) => {
+              void joinMatchFromReservation(client, pairing.reservation).then(enterMatch);
+            });
+            queue.onPairingFailed((message) => renderError(STRINGS.pairingFailed(message)));
+          });
+        },
+        onPlayVsBot: (gameId, modality, tier) => {
+          void startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }).then(enterMatch);
+        },
+      });
+    }
+
+    // Real websocket presence, replacing HTTP polling (spec: "Lobby
+    // Presence Counters Per Point-Target Room" delivered live). One
+    // watch-only connection per catalog game — never enqueued, never
+    // paired (transport-colyseus's companion fix) — updates re-render the
+    // whole selection screen on every live "counts" broadcast.
+    for (const entry of catalog) {
+      const watcher = await watchPresence(client, { gameId: entry.id, playerId });
+      watcher.onCounts((display) => {
+        presenceByGame.set(entry.id, display);
+        rerender();
+      });
+    }
+    rerender();
   }
 }
 
