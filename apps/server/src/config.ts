@@ -13,6 +13,7 @@ export interface ServerConfig {
   readonly tenants: readonly TenantRecord[];
   readonly embedIpRateLimit: RateLimitConfig;
   readonly embedKeyRateLimit: RateLimitConfig;
+  readonly presenceIpRateLimit: RateLimitConfig;
   readonly joinIpRateLimit: RateLimitConfig;
 }
 
@@ -29,6 +30,11 @@ const DEFAULT_RATE_WINDOW_MS = 60_000;
 const DEFAULT_EMBED_IP_LIMIT = 20;
 const DEFAULT_EMBED_KEY_LIMIT = 60;
 const DEFAULT_JOIN_IP_LIMIT = 10;
+// `/presence` is polled repeatedly by an idle selection screen (not a
+// page-load-time GET like `/embed`), so its default is deliberately the
+// most generous of the three — still bounded, per the same hardening
+// lesson (obs 2945: a real endpoint with no limit at all is a gap).
+const DEFAULT_PRESENCE_IP_LIMIT = 120;
 
 function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: string, defaultLimit: number): RateLimitConfig {
   return {
@@ -93,6 +99,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
     tenants,
     embedIpRateLimit: readRateLimit(env, "HEXDEV_EMBED_IP_RATE_LIMIT", "HEXDEV_EMBED_IP_RATE_WINDOW_MS", DEFAULT_EMBED_IP_LIMIT),
     embedKeyRateLimit: readRateLimit(env, "HEXDEV_EMBED_KEY_RATE_LIMIT", "HEXDEV_EMBED_KEY_RATE_WINDOW_MS", DEFAULT_EMBED_KEY_LIMIT),
+    presenceIpRateLimit: readRateLimit(env, "HEXDEV_PRESENCE_IP_RATE_LIMIT", "HEXDEV_PRESENCE_IP_RATE_WINDOW_MS", DEFAULT_PRESENCE_IP_LIMIT),
     joinIpRateLimit: readRateLimit(env, "HEXDEV_JOIN_IP_RATE_LIMIT", "HEXDEV_JOIN_IP_RATE_WINDOW_MS", DEFAULT_JOIN_IP_LIMIT),
   };
 }
