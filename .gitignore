@@ -42,3 +42,4 @@ pnpm-debug.log*
 .codegraph/
 .turbo/
 .cache/
+.playwright-mcp/

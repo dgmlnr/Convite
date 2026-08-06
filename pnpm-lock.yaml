@@ -108,7 +108,11 @@ importers:
         specifier: workspace:*
         version: link:../platform-contract
 
-  packages/spanish-deck-ui: {}
+  packages/spanish-deck-ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
 
   packages/transport-colyseus:
     dependencies:
