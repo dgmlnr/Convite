@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Client } from "colyseus";
-import type { ApplyResult, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotTier, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
   createGameModuleRegistry,
   createJtiReplayGuard,
@@ -404,5 +404,53 @@ describe("MatchRoom + single-player vs bot (spec: Single-Player vs Bot Mode)", (
   it("rejects a second real client trying to occupy the bot's seat: maxClients already accounts for it", async () => {
     const { room } = await createSinglePlayerRoom();
     expect(room.maxClients).toBe(1);
+  });
+});
+
+describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal' is the decided default)", () => {
+  function moduleWithTierSpy() {
+    const tiers: BotTier[] = [];
+    const module: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+      ...fixtureModule,
+      createBot: (tier) => {
+        tiers.push(tier);
+        return fixtureModule.createBot(tier);
+      },
+    };
+    return { module, tiers };
+  }
+
+  async function twoJoinedSeats(module: GameModule<FixtureState, FixtureAction, FixtureView, void>, overrides: { reconnectionWindowSeconds?: number; takeoverTier?: BotTier } = {}) {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([module]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, reconnectionWindowSeconds: overrides.reconnectionWindowSeconds ?? 0.01, takeoverTier: overrides.takeoverTier });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    return { room, seat0, seat1 };
+  }
+
+  it("takes over with the 'normal' tier by default once the window expires", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    const { room, seat0 } = await twoJoinedSeats(module);
+    await room.onLeave(seat0.client);
+    expect(tiers).toEqual(["normal"]);
+  });
+
+  it("honors a configured takeoverTier override", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    const { room, seat0 } = await twoJoinedSeats(module, { takeoverTier: "hard" });
+    await room.onLeave(seat0.client);
+    expect(tiers).toEqual(["hard"]);
+  });
+
+  it("never takes over a seat that reconnects within the window", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    const { room, seat0 } = await twoJoinedSeats(module, { reconnectionWindowSeconds: 30 });
+    void room.onLeave(seat0.client); // window left open; not awaited on purpose
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(tiers).toEqual([]); // still human: no takeover fired
   });
 });
