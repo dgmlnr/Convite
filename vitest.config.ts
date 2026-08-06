@@ -18,6 +18,7 @@ export default defineConfig({
           include: [
             "packages/games/truco-engine/**/*.browser.test.ts",
             "packages/widget-sdk/**/*.browser.test.ts",
+            "apps/widget-app/**/*.browser.test.ts",
           ],
           exclude: ["**/node_modules/**"],
           browser: {
