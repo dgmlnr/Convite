@@ -1,5 +1,5 @@
 import { Room, type AuthContext, type Client } from "colyseus";
-import type { BotStrategy, BotTier, GameId, GameModule, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { BotStrategy, BotTier, GameId, GameModule, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
@@ -442,19 +442,26 @@ export class MatchRoom extends Room {
   }
 
   /**
-   * The "view" message's wire shape: the redacted view AND that seat's own
-   * legal actions, together. Without `legalActions` on the wire, the widget
-   * would have no honest way to know what is legal for the local player —
-   * it only ever has this seat's own REDACTED view, never the full
-   * `matchState` `getLegalActions` needs, so it structurally cannot
-   * re-derive legality client-side (architectural rule: legality comes from
-   * the engine's own `getLegalActions`, never re-derived in the UI). Sent as
-   * one message, not two, so a client's own view and its own legal actions
-   * are always in sync with each other by construction — there is no
-   * intermediate state where one has updated and the other hasn't.
+   * The "view" message's wire shape: the redacted view, that seat's own
+   * legal actions, AND the match's own outcome, together. Same rationale as
+   * `legalActions` extends to `outcome`: a client only ever has its own
+   * REDACTED view, never the full `matchState` `getOutcome` needs, so it
+   * structurally cannot re-derive "has this match ended, and who won" from
+   * `view.teams`/`view.config.pointsToWin` (architectural rule: match
+   * termination comes from the module's own `getOutcome`, never re-derived
+   * in the UI). Sent as one message, not separate ones, so a client's view,
+   * legal actions, and outcome are always in sync with each other by
+   * construction.
    */
-  private viewMessageFor(module: GameModule<unknown, ErasedAction, unknown, unknown>, playerId: PlayerId): { readonly view: unknown; readonly legalActions: readonly ErasedAction[] } {
-    return { view: module.getViewFor(this.matchState, playerId), legalActions: module.getLegalActions(this.matchState, playerId) };
+  private viewMessageFor(
+    module: GameModule<unknown, ErasedAction, unknown, unknown>,
+    playerId: PlayerId,
+  ): { readonly view: unknown; readonly legalActions: readonly ErasedAction[]; readonly outcome: MatchOutcome | null } {
+    return {
+      view: module.getViewFor(this.matchState, playerId),
+      legalActions: module.getLegalActions(this.matchState, playerId),
+      outcome: module.getOutcome(this.matchState),
+    };
   }
 
   private broadcastViews(): void {

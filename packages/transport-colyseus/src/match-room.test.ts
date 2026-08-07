@@ -74,7 +74,7 @@ const P1 = "seat-1-player" as PlayerId;
 function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoomAuthOptions {
   const issuer = createSessionTokenIssuer(SECRET);
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck"] },
+    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal"] },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
   // Generous default so unrelated tests never accidentally trip the limit —
@@ -157,8 +157,8 @@ describe("MatchRoom", () => {
 
   it("sends each client only its own per-seat view — the opponent's secret never appears", async () => {
     const { seat0, seat1 } = await createJoinedRoom();
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }] } });
-    expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [] } });
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null } });
+    expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null } });
     expect(JSON.stringify(seat1.sent[0]?.message)).not.toContain("11");
   });
 
@@ -167,7 +167,7 @@ describe("MatchRoom", () => {
     room.handleAction(seat0.client, { type: "advance", playerId: P0 });
     expect(seat0.sent).toHaveLength(2);
     expect(seat1.sent).toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 1 }, legalActions: [] } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 1 }, legalActions: [], outcome: null } });
   });
 
   it("rejects an out-of-turn action and leaves state unchanged (server-authoritative)", async () => {
@@ -200,6 +200,58 @@ describe("MatchRoom", () => {
     const { seat0, seat1 } = await createJoinedRoom();
     expect((seat0.sent[0]?.message as { legalActions: unknown }).legalActions).toEqual([{ type: "advance", playerId: P0 }]);
     expect((seat1.sent[0]?.message as { legalActions: unknown }).legalActions).toEqual([]); // not seat1's turn yet
+  });
+});
+
+describe("MatchRoom — outcome on the wire (spec: 'a real ending' needs the module's own getOutcome, never re-derived client-side)", () => {
+  interface TerminalState {
+    readonly players: readonly [PlayerId, PlayerId];
+    readonly over: boolean;
+  }
+  type TerminalAction = { readonly type: "finish"; readonly playerId: PlayerId };
+
+  const terminalModule: GameModule<TerminalState, TerminalAction, TerminalState, void> = {
+    id: "fixture-terminal",
+    metadata: { seatCount: 2, displayNameKey: "fixture.name", assetBase: "/fixture" },
+    configOptions: [],
+    createMatch: (_config, seats: readonly SeatAssignment[]) => {
+      const sorted = [...seats].sort((a, b) => a.seat - b.seat);
+      return { players: [sorted[0]!.playerId, sorted[1]!.playerId], over: false };
+    },
+    applyAction: (state): ApplyResult<TerminalState> => ({ ok: true, state: { ...state, over: true } }),
+    getLegalActions: (state, playerId) => (state.over ? [] : [{ type: "finish", playerId }]),
+    getViewFor: (state) => state,
+    getOutcome: (state) => (state.over ? { winnerIds: [state.players[0]] } : null),
+    serialize: (state) => state as never,
+    deserialize: (json) => json as unknown as TerminalState,
+    createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+  };
+
+  async function createTerminalRoom() {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([terminalModule]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-terminal", config: undefined, registry, auth, rng: DEFAULT_RNG });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    return { room, seat0, seat1 };
+  }
+
+  it("carries outcome: null while the match is still in progress", async () => {
+    const { seat0 } = await createTerminalRoom();
+
+    expect((seat0.sent[0]?.message as { outcome: unknown }).outcome).toBeNull();
+  });
+
+  it("carries the module's own outcome once it reports one, straight through — never guessed client-side", async () => {
+    const { room, seat0 } = await createTerminalRoom();
+
+    room.handleAction(seat0.client, { type: "finish", playerId: P0 });
+
+    expect(seat0.sent).toHaveLength(2);
+    expect((seat0.sent[1]?.message as { outcome: unknown }).outcome).toEqual({ winnerIds: [P0] });
   });
 });
 
@@ -368,8 +420,8 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     // system action's resulting (dealt) view — applied without any client
     // ever sending an "action" message.
     expect(seat0.sent).toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [] } });
-    expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [] } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null } });
+    expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null } });
   });
 
   it("never advances a module with no requestSystemAction registered, even with zero legal actions", async () => {
@@ -382,7 +434,7 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
     await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
     expect(seat0.sent).toHaveLength(1); // stuck: no second broadcast ever arrives
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [] } });
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [], outcome: null } });
   });
 });
 

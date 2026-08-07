@@ -78,7 +78,7 @@ function main(): void {
    * gets its real table; anything else falls back to the smallest HONEST
    * proof the connection is live, never a broken blank screen.
    */
-  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>): void {
+  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onPlayAgain: () => void): void {
     handshake.sendLayout("fullscreen");
     app!.replaceChildren();
 
@@ -98,7 +98,7 @@ function main(): void {
     }
 
     const render = entry.createRenderer();
-    connection.onView((payload) => render(app!, payload as GameUiPayload, (action) => connection.sendAction(action as ErasedAction)));
+    connection.onView((payload) => render(app!, payload as GameUiPayload, (action) => connection.sendAction(action as ErasedAction), onPlayAgain));
   }
 
   async function boot(): Promise<void> {
@@ -137,6 +137,21 @@ function main(): void {
     // own docstring).
     const departureGate = createDepartureGate();
 
+    // The moment someone most wants another match is right after finishing
+    // one (spec) — leaves the just-ended connection (fire-and-forget: the
+    // server's own reconnection window is irrelevant to a genuine, consented
+    // exit, same `leave(false)` default `match-connection.ts` already
+    // documents), un-departs the gate so live presence updates resume
+    // redrawing the selection screen, and redraws it immediately with
+    // whatever counts are already known — never a re-fetch, never a second
+    // `/embed` round trip.
+    function returnToSelection(connection: MatchConnection<unknown>): void {
+      void connection.leave();
+      handshake.sendLayout("inline"); // design §3: "inline that expands" — collapses back once there is no match to fill the screen with
+      departureGate.reset();
+      rerender();
+    }
+
     function rerender(): void {
       renderGameSelection(app!, catalog, presenceByGame, {
         onPlayVsPerson: (gameId, modality) => {
@@ -147,7 +162,7 @@ function main(): void {
               .then((queue) => {
                 queue.onPaired((pairing) => {
                   void joinMatchFromReservation(client, pairing.reservation)
-                    .then((connection) => enterMatch(gameId, connection))
+                    .then((connection) => enterMatch(gameId, connection, () => returnToSelection(connection)))
                     .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
                 });
                 queue.onPairingFailed((message) => renderErrorWithRetry(app!, STRINGS.pairingFailed(message), attempt));
@@ -164,7 +179,7 @@ function main(): void {
           const attempt = (): void => {
             renderStatusMessage(app!, STRINGS.searchingOpponent);
             void withFreshToken(renewToken, (token) => startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }))
-              .then((connection) => enterMatch(gameId, connection))
+              .then((connection) => enterMatch(gameId, connection, () => returnToSelection(connection)))
               .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
           };
           attempt();

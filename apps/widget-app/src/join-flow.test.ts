@@ -35,4 +35,13 @@ describe("createDepartureGate (bug, found live: a presence 'counts' broadcast ke
     gate.markDeparted();
     expect(gate.hasDeparted()).toBe(true);
   });
+
+  it("reset() returns to un-departed — the play-again path returns to the selection screen and live presence updates should resume redrawing it", () => {
+    const gate = createDepartureGate();
+    gate.markDeparted();
+
+    gate.reset();
+
+    expect(gate.hasDeparted()).toBe(false);
+  });
 });

@@ -16,6 +16,11 @@ export async function withFreshToken<T>(renewToken: () => Promise<string>, actio
 export interface DepartureGate {
   hasDeparted(): boolean;
   markDeparted(): void;
+  /** The play-again path (spec: "a way to play again without hunting"):
+   * once a finished match returns the player to the selection screen, live
+   * presence updates should resume redrawing it exactly as they did before
+   * the player ever departed. */
+  reset(): void;
 }
 
 /**
@@ -35,6 +40,9 @@ export function createDepartureGate(): DepartureGate {
     hasDeparted: () => departed,
     markDeparted: () => {
       departed = true;
+    },
+    reset: () => {
+      departed = false;
     },
   };
 }

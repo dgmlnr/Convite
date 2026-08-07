@@ -47,4 +47,18 @@ describe("truco's registered renderer — the real wiring boundary from a generi
 
     expect(dispatch).toHaveBeenCalledExactlyOnceWith(legalActions[0]);
   });
+
+  it("forwards the payload's outcome and the given onPlayAgain callback into the real match-over overlay", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const onPlayAgain = vi.fn();
+
+    render(container, { view, legalActions: [], outcome: { winnerIds: [SELF] } }, () => {}, onPlayAgain);
+    container.querySelector<HTMLButtonElement>('button[data-action="play-again"]')!.click();
+
+    expect(container.querySelector(".hexdev-truco-match-over")?.textContent).toContain("¡Ganaste la partida!");
+    expect(onPlayAgain).toHaveBeenCalledOnce();
+  });
 });
