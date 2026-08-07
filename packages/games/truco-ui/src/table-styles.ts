@@ -131,9 +131,19 @@ export function buildTableStylesheet(): string {
   transform: translateY(-10%);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.45);
 }
+/* A card you cannot play right now must read as waiting, not as broken.
+ *
+ * Deliberately NOT opacity: this sits on green cloth, and opacity lets the
+ * cloth through, so the card comes out tinted green rather than dimmed — it
+ * reads as a colour problem with the artwork, which is exactly how it was
+ * first reported. brightness and saturate dim the card's own pixels and
+ * never blend the surface behind it.
+ *
+ * The previous values (0.55 opacity plus 40% grayscale) also went far past
+ * "not now" into "this card is disabled forever". The point is only to make
+ * the playable ones stand out. */
 .hexdev-truco-card--locked {
-  opacity: 0.55;
-  filter: grayscale(40%);
+  filter: brightness(0.86) saturate(0.9);
   cursor: default;
 }
 
