@@ -149,12 +149,131 @@ describe("createMatchTableRenderer — four anchors, always relative to the loca
     expect(document.head.querySelectorAll("#hexdev-truco-table-styles")).toHaveLength(1);
   });
 
-  it("stamps the seat count on the table so CSS can lay out 2 vs. 4 seats differently (the columnless-vs-side-gutters tradeoff)", () => {
+  it("stamps the seat count on the felt so CSS can lay out 2 vs. 4 seats differently (the columnless-vs-side-gutters tradeoff)", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
 
     render(el, baseView(), [], () => {});
 
-    expect(el.dataset.seatCount).toBe("2");
+    expect(el.querySelector<HTMLElement>(".hexdev-truco-table")!.dataset.seatCount).toBe("2");
+  });
+
+  it("mounts the scoreboard panel as a sibling of the felt, never inside it — the tanteador is chrome, beside the play (Change 2)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    const felt = el.querySelector(".hexdev-truco-table")!;
+    const panel = el.querySelector(".hexdev-truco-scoreboard-panel")!;
+    expect(panel.contains(felt)).toBe(false);
+    expect(felt.contains(panel)).toBe(false);
+    expect(panel.querySelectorAll(".hexdev-truco-scoreboard")).toHaveLength(2);
+  });
+});
+
+describe("createMatchTableRenderer — the pending call stays on the table until it is answered", () => {
+  it("shows nothing when no call is open", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-pending-call")!.children).toHaveLength(0);
+  });
+
+  it("shows what was called, who called it, and that it is MY turn to answer when a respond action is legal", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
+    const legal: readonly Action[] = [{ type: "respond-truco", playerId: SELF, response: "quiero" }];
+
+    render(el, view, legal, () => {});
+
+    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!;
+    expect(banner.textContent).toContain("Truco");
+    expect(banner.textContent).toContain("Ellos");
+    expect(banner.dataset.turn).toBe("mine");
+  });
+
+  it("marks 'waiting on the opponent' when I am NOT the one who must answer", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: MY_TEAM } } });
+
+    render(el, view, [], () => {}); // no respond-* legal for the calling team
+
+    expect(el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!.dataset.turn).toBe("theirs");
+  });
+
+  it("stays across renders until the call is resolved, then clears", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const pending = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
+
+    render(el, pending, [], () => {});
+    render(el, pending, [], () => {}); // still pending on a second render
+    expect(el.querySelector(".hexdev-truco-pending-call")!.children.length).toBeGreaterThan(0);
+
+    render(el, baseView(), [], () => {}); // resolved — truco back to "none"
+    expect(el.querySelector(".hexdev-truco-pending-call")!.children).toHaveLength(0);
+  });
+
+  it("an escalation REPLACES the pending call, never appends to it", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const retruco = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "retruco", callingTeamId: OPPONENT_TEAM } } });
+
+    render(el, retruco, [], () => {});
+
+    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!;
+    expect(banner.textContent).toContain("Retruco");
+    expect(banner.textContent).not.toContain("Vale cuatro");
+  });
+
+  it("suppresses the generic card-play turn indicator while a call is pending — play stops for a call", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
+
+    render(el, view, [], () => {});
+
+    expect(el.querySelector<HTMLElement>(".hexdev-truco-turn-indicator")!.hidden).toBe(true);
+  });
+
+  it("highlights the RESPONDING team's anchor while a call is pending, not the frozen turnSeat", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    // turnSeat is still 0 (mine) from before the call, but the OPPONENT's
+    // team (seat 1) called truco, so seat 1 owes the answer, not seat 0.
+    const view = baseView({ hand: { ...baseView().hand!, turnSeat: 0, truco: { status: "pending", level: "truco", callingTeamId: MY_TEAM } } });
+
+    render(el, view, [], () => {});
+
+    expect(el.querySelector('[data-position="bottom"]')!.classList.contains("hexdev-truco-anchor--active")).toBe(false);
+    expect(el.querySelector('[data-position="top"]')!.classList.contains("hexdev-truco-anchor--active")).toBe(true);
+  });
+});
+
+describe("createMatchTableRenderer — whose turn it is must be unmistakable (Change 3)", () => {
+  it("renders a turn badge on the active anchor, not just text in the center", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    const bottom = el.querySelector('[data-position="bottom"]')!;
+    const badge = bottom.querySelector(".hexdev-truco-turn-badge")!;
+    expect(badge.textContent).toBe("Tu turno");
+  });
+
+  it("the badge follows the active seat — the opponent's anchor gets it when it's their turn", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView({ hand: { ...baseView().hand!, turnSeat: 1 } }), [], () => {});
+
+    expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-badge')).toBeNull();
+    expect(el.querySelector('[data-position="top"] .hexdev-truco-turn-badge')!.textContent).toBe("Turno del rival");
   });
 });

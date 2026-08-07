@@ -30,7 +30,7 @@ describe("truco's registered renderer — the real wiring boundary from a generi
 
     render(container, { view, legalActions: [] }, () => {});
 
-    expect(container.className).toBe("hexdev-truco-table");
+    expect(container.className).toBe("hexdev-truco-table-shell");
     expect(container.querySelector('[data-position="bottom"]')).not.toBeNull();
   });
 

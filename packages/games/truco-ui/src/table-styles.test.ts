@@ -26,4 +26,29 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
   it("exposes a stable element id for idempotent injection", () => {
     expect(TABLE_STYLE_ID).toBe("hexdev-truco-table-styles");
   });
+
+  it("lays the shell out with a CSS container query, not a viewport media query — the widget's own available width may differ from the host viewport (Change 2: works narrow AND wide)", () => {
+    const css = buildTableStylesheet();
+
+    expect(css).toMatch(/\.hexdev-truco-table-shell\s*\{[^}]*container-type:\s*inline-size/);
+    expect(css).toContain("@container");
+  });
+
+  it("never dims the pending-call banner or the turn badge with the CSS opacity property — both sit on the cloth, and opacity there tints toward the felt instead of dimming", () => {
+    const css = buildTableStylesheet();
+    const pendingCallBlock = css.match(/\.hexdev-truco-pending-call\s*\{[^}]*\}/)?.[0] ?? "";
+    const turnBadgeBlock = css.match(/\.hexdev-truco-turn-badge\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(pendingCallBlock).not.toMatch(/opacity\s*:/);
+    expect(turnBadgeBlock).not.toMatch(/opacity\s*:/);
+    expect(css).toContain(".hexdev-truco-pending-call");
+    expect(css).toContain(".hexdev-truco-turn-badge");
+  });
+
+  it("visually differentiates the response calls group from the opening/escalation group", () => {
+    const css = buildTableStylesheet();
+
+    expect(css).toContain(".hexdev-truco-calls-group--response");
+    expect(css).toContain(".hexdev-truco-calls-group--opening");
+  });
 });

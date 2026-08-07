@@ -39,6 +39,41 @@ export function buildTableStylesheet(): string {
   ${cssDeclarations(MATCHSTICK_THEME_DEFAULTS)}
   --truco-table-cloth: #1e5c43;
 }
+/* The outer shell owns the shell-level layout (felt beside/above its own
+ * chrome scoreboard panel — Change 2), and establishes an inline-size
+ * containment context so the panel/felt split can be tested against a REAL
+ * geometry breakpoint independent of the actual browser viewport: an
+ * embedded widget's available width is its OWN container's width, which can
+ * legitimately differ from the top-level page's viewport (it sits inside a
+ * host page's layout, not full-bleed). A container query answers "is MY box
+ * narrow or wide", which is the honest question here — an ordinary viewport
+ * media query can only answer "is the whole browser window narrow or wide". */
+/* A size container cannot itself be styled by its OWN container query rules
+ * — only its descendants (a real, documented CSS Containment limitation, not
+ * a typo: verified live, a self-targeting rule on the shell class itself is
+ * silently ignored). The container therefore stays a plain, unstyled box;
+ * the inner shell-layout element beneath it is the actual flex row/column
+ * that the container query below switches. */
+.hexdev-truco-table-shell {
+  container-type: inline-size;
+  container-name: hexdev-truco-shell;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  font-family: var(--gx-font-family, system-ui, sans-serif);
+}
+.hexdev-truco-shell-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+.hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; min-height: 0; }
+
 .hexdev-truco-table {
   --truco-card-width: 60px;
   position: relative;
@@ -53,7 +88,6 @@ export function buildTableStylesheet(): string {
   padding: 8px;
   background: var(--truco-table-cloth);
   color: var(--gx-color-on-surface, #f2f2f2);
-  font-family: var(--gx-font-family, system-ui, sans-serif);
   overflow: hidden;
 }
 .hexdev-truco-table * { box-sizing: border-box; }
@@ -77,16 +111,66 @@ export function buildTableStylesheet(): string {
   .hexdev-truco-table { --truco-card-width: 100px; }
 }
 
-.hexdev-truco-anchor { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 0; }
+/* Change 2: a side panel that works wide does not fit narrow, so the two
+ * widths get genuinely different treatments rather than one compromise.
+ * Narrow (< 640 CONTAINER px, e.g. 320/375 phones): the panel is a slim
+ * chrome strip stacked ABOVE the felt — no room for a real side column, but
+ * still clearly its own boxed space, never inside the play area. Wide: the
+ * panel becomes a real side column, beside the felt, matching a real
+ * table's tanteador sitting off to one side. */
+@container hexdev-truco-shell (min-width: 640px) {
+  .hexdev-truco-shell-layout { flex-direction: row; align-items: stretch; }
+  .hexdev-truco-scoreboard-panel {
+    order: 0;
+    flex: 0 0 auto;
+    width: 168px;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+}
+
+.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 0; }
 [data-position="top"] { grid-area: top; align-items: flex-start; }
 [data-position="bottom"] { grid-area: bottom; flex-direction: column; }
 [data-position="left"] { grid-area: left; flex-direction: column; }
 [data-position="right"] { grid-area: right; flex-direction: column; }
 .hexdev-truco-anchor:empty { display: none; }
+/* Change 3: whose turn it is must be unmistakable at a glance, not just
+ * readable in text. A stronger, fully OPAQUE ring (box-shadow paints on top,
+ * it never blends the felt through the anchor's own content the way the
+ * opacity property would) plus a real, solid-background badge chip
+ * pointing at the exact active seat — the piece that keeps meaning "a
+ * specific seat" once a fourth anchor exists. */
 .hexdev-truco-anchor--active {
-  box-shadow: inset 0 0 0 2px var(--gx-color-accent, #ffd166);
+  box-shadow: inset 0 0 0 3px var(--gx-color-accent, #ffd166), 0 0 0 6px rgba(255, 209, 102, 0.28);
   border-radius: var(--gx-radius, 12px);
 }
+.hexdev-truco-turn-badge {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+[data-position="top"] .hexdev-truco-turn-badge { top: auto; bottom: -11px; }
+[data-position="left"] .hexdev-truco-turn-badge,
+[data-position="right"] .hexdev-truco-turn-badge {
+  top: 50%;
+  left: auto;
+  right: -6px;
+  transform: translate(50%, -50%);
+}
+[data-position="left"] .hexdev-truco-turn-badge { right: auto; left: -6px; transform: translate(-50%, -50%); }
 
 .hexdev-truco-center {
   grid-area: center;
@@ -160,11 +244,56 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-played--left { left: 15%; }
 .hexdev-truco-played--right { right: 15%; }
 
-.hexdev-truco-score-row { display: flex; gap: 16px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+/* Change 2: the tanteador's own home — chrome, not felt. Its own solid
+ * background (a real box, distinct from the play surface) is what makes a
+ * 0-0 score read as "an intentional, present scoreboard" rather than loose
+ * text floating on cloth; hybrid theming by zone (design §10) means this
+ * background/label take the tenant's --gx- tokens, while the matchsticks
+ * drawn inside keep their own fixed identity. */
+.hexdev-truco-scoreboard-panel {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+  background: var(--gx-color-surface, #26433a);
+  color: var(--gx-color-on-surface, #f2f2f2);
+  border-radius: var(--gx-radius, 12px);
+  padding: 8px 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.hexdev-truco-scoreboard-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .hexdev-truco-team-label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gx-color-accent, #ffd166); text-align: center; }
 .hexdev-truco-score-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .hexdev-truco-score-label { font-size: 0.65rem; opacity: 0.8; }
 .hexdev-truco-score-sticks { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; }
+
+/* Change 1: the pending call is the single most important thing on screen
+ * while it is open — an opaque, solid-background block in normal document
+ * flow (never a modal-style overlay, never anything translucent over the
+ * cloth behind it). The data-turn attribute gives "waiting on me" a visibly
+ * stronger treatment than "waiting on the opponent", never relying on text alone. */
+.hexdev-truco-pending-call:empty { display: none; }
+.hexdev-truco-pending-call {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 22px;
+  border-radius: var(--gx-radius, 12px);
+  background: var(--gx-color-primary, #2f6f4f);
+  color: var(--gx-color-on-primary, #ffffff);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  text-align: center;
+}
+.hexdev-truco-pending-call[data-turn="mine"] {
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.5), 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.hexdev-truco-pending-call-level { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
+.hexdev-truco-pending-call-caller { font-size: 0.75rem; }
+.hexdev-truco-pending-call-turn { font-size: 0.8rem; font-weight: 700; }
 
 .hexdev-truco-trick-feedback, .hexdev-truco-turn-indicator {
   margin: 0;
@@ -173,14 +302,21 @@ export function buildTableStylesheet(): string {
   font-size: 0.85rem;
 }
 .hexdev-truco-turn-indicator { font-weight: 700; color: var(--gx-color-accent, #ffd166); }
+.hexdev-truco-turn-indicator[hidden] { display: none; }
 
 .hexdev-truco-calls-row, [data-position="bottom"] > div:first-child {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
-  justify-content: center;
+  align-items: center;
   min-height: 0;
 }
+/* Change 4: answering a pending call reads as a different decision from
+ * opening or escalating one — response buttons take the accent treatment
+ * (matches the pending-call banner's own "mine" state), opening/escalation
+ * buttons stay on the table's primary colour, and the two groups never
+ * interleave in one undifferentiated row. */
+.hexdev-truco-calls-group { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .hexdev-truco-call {
   min-height: 40px;
   padding: 6px 16px;
@@ -192,8 +328,18 @@ export function buildTableStylesheet(): string {
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 .hexdev-truco-call:hover, .hexdev-truco-call:focus-visible { filter: brightness(1.1); }
+.hexdev-truco-calls-group--response .hexdev-truco-call {
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+}
+.hexdev-truco-calls-group--opening .hexdev-truco-call {
+  background: transparent;
+  border: 2px solid var(--gx-color-primary, #2f6f4f);
+  color: var(--gx-color-on-surface, #f2f2f2);
+}
 `.trim();
 }
 
