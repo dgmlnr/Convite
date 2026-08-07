@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
+import { CHROME_STYLE_ID } from "./chrome-styles.js";
 import { renderGameSelection } from "./game-selection.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
@@ -17,6 +18,7 @@ let container: HTMLElement;
 
 afterEach(() => {
   container.remove();
+  document.getElementById(CHROME_STYLE_ID)?.remove();
 });
 
 function freshContainer(): HTMLElement {
@@ -95,5 +97,39 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
     el.querySelector<HTMLButtonElement>('button[data-action="vs-bot"][data-tier="hard"]')?.click();
 
     expect(onPlayVsBot).toHaveBeenCalledWith(TRUCO_ID, { pointsToWin: 15 }, "hard");
+  });
+});
+
+describe("renderGameSelection — chrome styling (design §10: this screen takes the tenant's brand, obs 2955)", () => {
+  it("styles the screen as chrome and injects the chrome stylesheet exactly once", () => {
+    const el = freshContainer();
+
+    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.className).toBe("hexdev-gamify-chrome");
+    expect(el.querySelector("h1")?.className).toBe("hexdev-chrome-title");
+    expect(document.head.querySelectorAll(`#${CHROME_STYLE_ID}`)).toHaveLength(1);
+  });
+
+  it("marks the prominent action as vs-person when real players are waiting (non-zero counter)", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
+    ]);
+
+    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelector(".hexdev-modality")?.getAttribute("data-prominent")).toBe("person");
+  });
+
+  it("marks the prominent action as vs-bot when the zero-counter UX rule applies", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true }]],
+    ]);
+
+    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelector(".hexdev-modality")?.getAttribute("data-prominent")).toBe("bot");
   });
 });
