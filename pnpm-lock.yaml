@@ -109,9 +109,16 @@ importers:
 
   packages/games/truco-ui:
     dependencies:
+      '@hexdev/spanish-deck-ui':
+        specifier: workspace:*
+        version: link:../../spanish-deck-ui
       '@hexdev/truco-engine':
         specifier: workspace:*
         version: link:../truco-engine
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
 
   packages/platform-contract: {}
 
