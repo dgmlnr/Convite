@@ -294,3 +294,120 @@ describe("createMatchTableRenderer — whose turn it is must be unmistakable (Ch
     expect(el.querySelector('[data-position="top"] .hexdev-truco-turn-badge')!.textContent).toBe("Turno del rival");
   });
 });
+
+describe("createMatchTableRenderer — end of a hand gets a clear acknowledgement (spec: 'who won it and how many points')", () => {
+  it("announces nothing on the very first render", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-hand-outcome")!.textContent).toBe("");
+  });
+
+  it("announces a hand won by card play, with the point delta read from the view's own score change", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, baseView(), [], () => {}); // mount: hand still undecided
+
+    render(
+      el,
+      baseView({
+        hand: { ...baseView().hand!, outcome: { decided: true, winnerTeamId: MY_TEAM } },
+        teams: [
+          { id: MY_TEAM, score: 6 },
+          { id: OPPONENT_TEAM, score: 2 },
+        ],
+      }),
+      [],
+      () => {},
+    );
+
+    const banner = el.querySelector(".hexdev-truco-hand-outcome")!;
+    expect(banner.textContent).toContain("Ganaste la mano");
+    expect(banner.textContent).toContain("+2 tantos");
+  });
+
+  it("announces a hand lost by the opponent's card play, reading as a loss not an error", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, baseView(), [], () => {});
+
+    render(
+      el,
+      baseView({
+        hand: { ...baseView().hand!, outcome: { decided: true, winnerTeamId: OPPONENT_TEAM } },
+        teams: [
+          { id: MY_TEAM, score: 4 },
+          { id: OPPONENT_TEAM, score: 3 },
+        ],
+      }),
+      [],
+      () => {},
+    );
+
+    const banner = el.querySelector(".hexdev-truco-hand-outcome")!;
+    expect(banner.textContent).toContain("Perdiste la mano");
+    expect(banner.getAttribute("data-result")).toBe("lost");
+  });
+
+  it("stays visible across an immediate next-hand render, then self-clears after its own duration — never relies on another broadcast arriving", async () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ handOutcomeBannerMs: 20 });
+    render(el, baseView(), [], () => {});
+
+    render(
+      el,
+      baseView({
+        hand: { ...baseView().hand!, outcome: { decided: true, winnerTeamId: MY_TEAM } },
+        teams: [
+          { id: MY_TEAM, score: 6 },
+          { id: OPPONENT_TEAM, score: 2 },
+        ],
+      }),
+      [],
+      () => {},
+    );
+    // The very next broadcast is usually the freshly-dealt next hand
+    // (dealerSeat rotated) — the banner must survive it rather than vanish
+    // the instant play moves on.
+    render(el, baseView({ dealerSeat: 0, teams: [{ id: MY_TEAM, score: 6 }, { id: OPPONENT_TEAM, score: 2 }] }), [], () => {});
+    expect(el.querySelector(".hexdev-truco-hand-outcome")!.textContent).toContain("Ganaste la mano");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(el.querySelector(".hexdev-truco-hand-outcome")!.textContent).toBe("");
+  });
+});
+
+describe("createMatchTableRenderer — a real ending, once the match is over (spec: 'a way to play again without hunting')", () => {
+  it("renders nothing extra while the match is still in progress", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {}, { outcome: null });
+
+    expect(el.querySelector(".hexdev-truco-match-over")!.textContent).toBe("");
+  });
+
+  it("shows the winner, the final score, and a working play-again button once outcome is present", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const onPlayAgain = vi.fn();
+
+    render(
+      el,
+      baseView({ teams: [{ id: MY_TEAM, score: 30 }, { id: OPPONENT_TEAM, score: 18 }] }),
+      [],
+      () => {},
+      { outcome: { winnerIds: [SELF] }, onPlayAgain },
+    );
+
+    const overlay = el.querySelector(".hexdev-truco-match-over")!;
+    expect(overlay.textContent).toContain("¡Ganaste la partida!");
+    expect(overlay.textContent).toContain("30");
+    expect(overlay.textContent).toContain("18");
+    overlay.querySelector<HTMLButtonElement>('button[data-action="play-again"]')!.click();
+    expect(onPlayAgain).toHaveBeenCalledOnce();
+  });
+});

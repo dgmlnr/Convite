@@ -1,6 +1,10 @@
 export { renderCalls } from "./calls.js";
+export { deriveHandOutcomeEvent, renderHandOutcomeBanner } from "./hand-outcome.js";
+export type { HandOutcomeBannerProps, HandOutcomeEvent } from "./hand-outcome.js";
 export { renderHand } from "./hand.js";
 export type { HandCallbacks } from "./hand.js";
+export { renderMatchOverOverlay } from "./match-outcome.js";
+export type { MatchOutcomeInfo, MatchOverProps } from "./match-outcome.js";
 export { renderOpponentHand } from "./opponent-hand.js";
 export { derivePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
 export type { PendingCallBannerProps, PendingCallInfo } from "./pending-call.js";
@@ -13,6 +17,7 @@ export { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 export type { SeatPositionInput, TableAnchor } from "./seat-position.js";
 export { CALL_LABELS, TABLE_STRINGS } from "./strings.js";
 export { createMatchTableRenderer } from "./table.js";
+export type { MatchEndInfo, MatchTableRendererOptions } from "./table.js";
 export { buildTableStylesheet, ensureTableStyles, TABLE_STYLE_ID } from "./table-styles.js";
 export { describeTrickOutcome } from "./trick-feedback.js";
 export { describeTurn, isMyTurn } from "./turn.js";

@@ -1,6 +1,10 @@
 import type { Action, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { renderCalls } from "./calls.js";
+import { deriveHandOutcomeEvent, renderHandOutcomeBanner } from "./hand-outcome.js";
+import type { HandOutcomeEvent } from "./hand-outcome.js";
 import { renderHand } from "./hand.js";
+import type { MatchOutcomeInfo } from "./match-outcome.js";
+import { renderMatchOverOverlay } from "./match-outcome.js";
 import { renderOpponentHand } from "./opponent-hand.js";
 import { renderPlayedCards } from "./played-cards.js";
 import { derivePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
@@ -12,6 +16,28 @@ import { TABLE_STRINGS } from "./strings.js";
 import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
 import { describeTurn } from "./turn.js";
+
+/** "Long enough to register, short enough not to be in the way" (spec) —
+ * tunable via `createMatchTableRenderer`'s own options, the same
+ * clock/duration-injection discipline `truco-bot`'s `withThinkingDelay`
+ * already established in this codebase, so this module's own tests never
+ * need to wait multiple seconds in real time. */
+const DEFAULT_HAND_OUTCOME_BANNER_MS = 2600;
+
+export interface MatchTableRendererOptions {
+  readonly handOutcomeBannerMs?: number;
+}
+
+/** `outcome === null` while the match is still in progress — the ONLY
+ * authoritative signal that a match has ended (from the module's own
+ * `getOutcome`, carried over the wire alongside the view — see
+ * `transport-colyseus`'s `viewMessageFor`). Never re-derived from
+ * `view.teams`/`view.config.pointsToWin` here: that would silently
+ * reimplement `getMatchWinner`'s own rule client-side. */
+export interface MatchEndInfo {
+  readonly outcome: MatchOutcomeInfo | null;
+  readonly onPlayAgain?: () => void;
+}
 
 function anchorShell(position: TableAnchor): HTMLElement {
   const el = document.createElement("div");
@@ -43,13 +69,45 @@ function appendTurnBadge(anchor: HTMLElement, text: string): void {
  * (the engine resolves a trick's second card and clears the trick in the
  * same atomic transition — there is no in-between snapshot to observe).
  */
-export function createMatchTableRenderer(): (container: HTMLElement, view: PlayerView, legalActions: readonly Action[], dispatch: (action: Action) => void) => void {
+export function createMatchTableRenderer(
+  options?: MatchTableRendererOptions,
+): (container: HTMLElement, view: PlayerView, legalActions: readonly Action[], dispatch: (action: Action) => void, matchEnd?: MatchEndInfo) => void {
   let previousTrickCount = 0;
   let trickFeedback = "";
+  let previousView: PlayerView | null = null;
+  let handOutcomeEvent: HandOutcomeEvent | null = null;
+  let handOutcomeTimer: ReturnType<typeof setTimeout> | undefined;
+  // The DOM node currently showing the banner — read by the timer AT FIRE
+  // TIME, not captured at schedule time, so whichever render is CURRENTLY
+  // mounted gets cleared, however many intervening renders happened first.
+  let mountedHandOutcomeEl: HTMLElement | null = null;
+  const handOutcomeBannerMs = options?.handOutcomeBannerMs ?? DEFAULT_HAND_OUTCOME_BANNER_MS;
 
-  return function render(container: HTMLElement, view: PlayerView, legalActions: readonly Action[], dispatch: (action: Action) => void): void {
+  return function render(
+    container: HTMLElement,
+    view: PlayerView,
+    legalActions: readonly Action[],
+    dispatch: (action: Action) => void,
+    matchEnd?: MatchEndInfo,
+  ): void {
     ensureMatchstickDefs(container.ownerDocument);
     ensureTableStyles(container.ownerDocument);
+
+    // A hand ending is a POINT-IN-TIME event, not an ongoing view field — it
+    // must survive past the very next broadcast (usually the freshly-dealt
+    // next hand) for a minimum duration (spec: "before play moves on ...
+    // short enough not to be in the way"), so its own timer — not the next
+    // render — is what eventually clears it.
+    const newHandOutcomeEvent = deriveHandOutcomeEvent(previousView, view);
+    if (newHandOutcomeEvent !== null) {
+      handOutcomeEvent = newHandOutcomeEvent;
+      if (handOutcomeTimer !== undefined) clearTimeout(handOutcomeTimer);
+      handOutcomeTimer = setTimeout(() => {
+        handOutcomeEvent = null;
+        if (mountedHandOutcomeEl !== null) renderHandOutcomeBanner(mountedHandOutcomeEl, null);
+      }, handOutcomeBannerMs);
+    }
+    previousView = view;
 
     const others = [
       ...view.teammates.map((teammate) => ({ ...teammate, teamId: view.self.teamId })),
@@ -135,6 +193,13 @@ export function createMatchTableRenderer(): (container: HTMLElement, view: Playe
           },
     );
 
+    const handOutcomeBanner = center.appendChild(document.createElement("div"));
+    mountedHandOutcomeEl = handOutcomeBanner;
+    renderHandOutcomeBanner(
+      handOutcomeBanner,
+      handOutcomeEvent === null ? null : { event: handOutcomeEvent, wonBySelf: handOutcomeEvent.winnerTeamId === view.self.teamId },
+    );
+
     const trickArea = center.appendChild(document.createElement("div"));
     renderPlayedCards(trickArea, view.hand?.currentTrickPlays ?? [], positions);
 
@@ -173,5 +238,25 @@ export function createMatchTableRenderer(): (container: HTMLElement, view: Playe
     layout.appendChild(felt);
     layout.appendChild(panel);
     container.appendChild(layout);
+
+    // A real ending, mounted as a sibling of `layout` so it overlays the
+    // whole shell (design: "losing should feel like a loss, not like an
+    // error message") — the final trick and score stay visible underneath,
+    // never a blank replace. `outcome` is the one authoritative signal a
+    // match has ended; absent/null here just means the overlay stays empty.
+    const matchOver = document.createElement("div");
+    renderMatchOverOverlay(
+      matchOver,
+      matchEnd?.outcome == null
+        ? null
+        : {
+            outcome: matchEnd.outcome,
+            selfPlayerId: view.self.playerId,
+            teams: view.teams,
+            selfTeamId: view.self.teamId,
+            onPlayAgain: matchEnd.onPlayAgain ?? ((): void => undefined),
+          },
+    );
+    container.appendChild(matchOver);
   };
 }

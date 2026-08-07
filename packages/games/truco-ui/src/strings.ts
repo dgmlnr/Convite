@@ -29,4 +29,12 @@ export const TABLE_STRINGS = {
   calledBy: "Cantó:",
   yourTurnToAnswer: "Tu turno de responder",
   waitingOnOpponent: "Esperando al rival",
+  wonHand: "Ganaste la mano",
+  lostHand: "Perdiste la mano",
+  handPoints: (n: number): string => `+${n} ${n === 1 ? "tanto" : "tantos"}`,
+  matchWon: "¡Ganaste la partida!",
+  matchLost: "Perdiste la partida",
+  matchOverNeutral: "Partida finalizada",
+  finalScore: "Resultado final",
+  playAgain: "Jugar de nuevo",
 } as const;

@@ -57,6 +57,7 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-table-shell {
   container-type: inline-size;
   container-name: hexdev-truco-shell;
+  position: relative;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -354,6 +355,77 @@ export function buildTableStylesheet(): string {
   background: transparent;
   border: 2px solid var(--gx-color-primary, #2f6f4f);
   color: var(--gx-color-on-surface, #f2f2f2);
+}
+
+/* Change: a hand ending gets a clear, transient acknowledgement — who won it
+ * and how many points, before play moves on (spec). A real, SOLID-background
+ * chip, same anti-opacity discipline as everything else that sits on the
+ * cloth: opacity here would tint toward the felt instead of standing out.
+ * table.ts owns the timed clear; this stylesheet only owns how it looks
+ * while present. The :empty selector hides it, matching the pending-call
+ * banner's own convention. */
+.hexdev-truco-hand-outcome:empty { display: none; }
+.hexdev-truco-hand-outcome {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: var(--gx-radius, 999px);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.hexdev-truco-hand-outcome[data-result="won"] {
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+}
+.hexdev-truco-hand-outcome[data-result="lost"] {
+  background: #3a3a3a;
+  color: #f2f2f2;
+}
+.hexdev-truco-hand-outcome-headline { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.02em; }
+.hexdev-truco-hand-outcome-points { font-size: 0.85rem; opacity: 0.85; }
+
+/* Change: a real ending, not a blank error state (spec: "losing should feel
+ * like a loss, not like an error message"). A full, SOLID-background overlay
+ * over the whole shell — never translucent over the cloth (the exact trap
+ * that already caught this project once) — showing who won, the final
+ * score, and the play-again path right where the player is looking. */
+.hexdev-truco-match-over:empty { display: none; }
+.hexdev-truco-match-over {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: var(--gx-color-surface, #1c1c1c);
+  color: var(--gx-color-on-surface, #f2f2f2);
+}
+.hexdev-truco-match-over[data-result="won"] {
+  background: var(--gx-color-primary, #1e5c43);
+  color: var(--gx-color-on-primary, #ffffff);
+}
+.hexdev-truco-match-over-headline { margin: 0; font-size: 1.6rem; font-weight: 800; }
+.hexdev-truco-match-over-score { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.hexdev-truco-match-over button[data-action="play-again"] {
+  min-height: 46px;
+  padding: 10px 28px;
+  border: none;
+  border-radius: var(--gx-radius, 999px);
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.hexdev-truco-match-over button[data-action="play-again"]:hover,
+.hexdev-truco-match-over button[data-action="play-again"]:focus-visible {
+  filter: brightness(1.08);
 }
 `.trim();
 }

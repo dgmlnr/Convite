@@ -51,4 +51,24 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
     expect(css).toContain(".hexdev-truco-calls-group--response");
     expect(css).toContain(".hexdev-truco-calls-group--opening");
   });
+
+  it("acknowledges a hand ending with a solid, non-opacity banner distinguishing won from lost", () => {
+    const css = buildTableStylesheet();
+    const wonBlock = css.match(/\.hexdev-truco-hand-outcome\[data-result="won"\]\s*\{[^}]*\}/)?.[0] ?? "";
+    const lostBlock = css.match(/\.hexdev-truco-hand-outcome\[data-result="lost"\]\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(wonBlock).not.toMatch(/opacity\s*:/);
+    expect(lostBlock).not.toMatch(/opacity\s*:/);
+    expect(wonBlock.length).toBeGreaterThan(0);
+    expect(lostBlock.length).toBeGreaterThan(0);
+  });
+
+  it("gives the match-over overlay a full, solid-background covering the whole table (a real ending, not a modest inline note)", () => {
+    const css = buildTableStylesheet();
+    const overlayBlock = css.match(/\.hexdev-truco-match-over\[data-result[^\]]*\]\s*\{[^}]*\}/)?.[0] ?? css.match(/\.hexdev-truco-match-over\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(css).toContain(".hexdev-truco-match-over");
+    expect(css).toMatch(/\.hexdev-truco-match-over[^{]*\{[^}]*position:\s*absolute/);
+    expect(overlayBlock).not.toMatch(/opacity\s*:/);
+  });
 });
