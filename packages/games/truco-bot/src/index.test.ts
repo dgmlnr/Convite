@@ -7,7 +7,7 @@ const SELF = "player-a" as PlayerId;
 const SELF_TEAM = "player-a:team" as TeamId;
 
 const fixtureView: PlayerView = {
-  self: { playerId: SELF, teamId: SELF_TEAM, hand: [] },
+  self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: [] },
   teammates: [],
   opponents: [],
   teams: [],

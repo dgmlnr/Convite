@@ -77,7 +77,7 @@ describe("truco-engine public API (node)", () => {
     const view = getViewFor(hand, playerA);
 
     expect(view.self.hand).toEqual([{ suit: "espada", rank: 1 }]);
-    expect(view.opponents).toEqual([{ playerId: playerB, teamId: hand.teams[1]!.id, cardsRemaining: 1 }]);
+    expect(view.opponents).toEqual([{ playerId: playerB, teamId: hand.teams[1]!.id, seat: 1, cardsRemaining: 1 }]);
   });
 
   it("plays a card through the package's public entry point and records it as a legal, wired-up trick play", () => {

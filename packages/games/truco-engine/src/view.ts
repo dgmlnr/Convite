@@ -12,6 +12,12 @@ import type { TrickOutcome } from "./trick.js";
 export interface OpponentView {
   readonly playerId: PlayerId;
   readonly teamId: TeamId;
+  /** Seat is public table geometry, never hidden information (unlike
+   * `hand`) — the UI needs it to place opponents at the correct anchor
+   * (bottom/top/left/right) relative to the local player (obs 2970: "the
+   * table is never shown from outside"). Safe to expose without weakening
+   * the redaction guarantee this file's own docstring describes. */
+  readonly seat: number;
   readonly cardsRemaining: number;
 }
 
@@ -19,6 +25,7 @@ export interface OpponentView {
  * data without changing this type or re-auditing the projection (design §4). */
 export interface TeammateView {
   readonly playerId: PlayerId;
+  readonly seat: number;
   readonly cardsRemaining: number;
 }
 
@@ -34,7 +41,7 @@ export interface HandView {
 }
 
 export interface PlayerView {
-  readonly self: { readonly playerId: PlayerId; readonly teamId: TeamId; readonly hand: readonly Card[] };
+  readonly self: { readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly hand: readonly Card[] };
   readonly teammates: readonly TeammateView[];
   readonly opponents: readonly OpponentView[];
   readonly teams: readonly { readonly id: TeamId; readonly score: number }[];
@@ -60,14 +67,14 @@ export function getViewFor(state: MatchState, playerId: PlayerId): PlayerView {
   for (const player of state.players) {
     if (player.id === self.id) continue;
     if (player.teamId === self.teamId) {
-      teammates.push({ playerId: player.id, cardsRemaining: player.hand.length });
+      teammates.push({ playerId: player.id, seat: player.seat, cardsRemaining: player.hand.length });
     } else {
-      opponents.push({ playerId: player.id, teamId: player.teamId, cardsRemaining: player.hand.length });
+      opponents.push({ playerId: player.id, teamId: player.teamId, seat: player.seat, cardsRemaining: player.hand.length });
     }
   }
 
   return {
-    self: { playerId: self.id, teamId: self.teamId, hand: self.hand },
+    self: { playerId: self.id, teamId: self.teamId, seat: self.seat, hand: self.hand },
     teammates,
     opponents,
     teams: state.teams.map((team) => ({ id: team.id, score: team.score })),
