@@ -87,14 +87,40 @@ async function pickStrongestPlayableCard(table: FrameLocator): Promise<string | 
 
 /**
  * Accept anything pending on us, otherwise play the strongest legal card.
- * Deliberately never calls "truco"/"envido" (see MATCH_TIMEOUT_MS's own doc
- * comment for why). Every action taken is read straight off the DOM the
- * real widget rendered — nothing here re-decides legality client-side.
+ * Deliberately never CALLS "truco"/"envido" itself (see MATCH_TIMEOUT_MS's
+ * own doc comment for why) — but it MUST still answer a call the BOT opens,
+ * envido included: the easy bot's own fallback ("a proactive truco/envido
+ * call is NEVER volunteered, only ever taken when it is the sole legal
+ * action left" — `truco-bot/easy.ts`) genuinely calls envido on its own
+ * during ordinary play, same as it calls truco, whenever a still-open first
+ * trick leaves it with only a proactive call — not a rare edge case, both
+ * MUST be treated as ordinary parts of the match this spec is playing.
+ * THE FIX for a real, root-caused stall (not fixed by chance): this
+ * function checked ONLY `respond-truco`, never `respond-envido` — the ONE
+ * button the widget correctly renders and offers to a real human, but this
+ * script had no code path to click. Once the bot called envido (proven via
+ * server-side `MatchRoom.advance()` tracing: a genuine overlapping-decision
+ * race — see apply-progress — that end the truco call before the bot's
+ * OWN queued decision resolved, leaving envido as the bot's next "sole
+ * legal action"), the match froze from THIS SCRIPT's perspective forever:
+ * envido stayed `pending`, targeted at the human, and nothing here ever
+ * answered it. Every action taken is read straight off the DOM the real
+ * widget rendered — nothing here re-decides legality client-side.
  */
 async function playOneTurnIfAvailable(table: FrameLocator): Promise<void> {
-  const quiero = table.locator('[data-action="respond-truco"]', { hasText: "Quiero" });
-  if ((await quiero.count()) > 0) {
-    await quiero.first().click();
+  const quieroTruco = table.locator('[data-action="respond-truco"]', { hasText: "Quiero" });
+  if ((await quieroTruco.count()) > 0) {
+    await quieroTruco.first().click();
+    return;
+  }
+  const quieroEnvido = table.locator('[data-action="respond-envido"]', { hasText: "Quiero" });
+  if ((await quieroEnvido.count()) > 0) {
+    await quieroEnvido.first().click();
+    return;
+  }
+  const reveal = table.locator('[data-action="reveal-envido"]');
+  if ((await reveal.count()) > 0) {
+    await reveal.first().click();
     return;
   }
   const strongestCardId = await pickStrongestPlayableCard(table);
