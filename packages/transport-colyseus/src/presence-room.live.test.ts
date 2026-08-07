@@ -240,7 +240,7 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
 
     const matchRoom0 = await testServer.sdk.consumeSeatReservation<HandoffState>(paired0[0]!.matchReservation as never);
     const views0: HandoffState[] = [];
-    matchRoom0.onMessage("view", (view) => views0.push(view));
+    matchRoom0.onMessage("view", (message: { view: HandoffState }) => views0.push(message.view));
     const matchRoom1 = await testServer.sdk.consumeSeatReservation<HandoffState>(paired1[0]!.matchReservation as never);
 
     expect(matchRoom0.roomId).toBe(matchRoom1.roomId); // same real MatchRoom, not two different ones

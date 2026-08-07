@@ -92,7 +92,7 @@ describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single
     const token0 = await issuer.mint({ tenantId: TENANT_ID, playerId: P0, entitlements: ["fixture-solo"] }, 60);
     const client0 = await testServer.connectTo(room, { token: token0 });
     const views: SoloState[] = [];
-    client0.onMessage("view", (view) => views.push(view));
+    client0.onMessage("view", (message: { view: SoloState }) => views.push(message.view));
 
     // Plays a full match to its outcome: the human submits ONLY its own two
     // turns (movesLeft 4 -> 3, then 2 -> 1); the bot answers automatically

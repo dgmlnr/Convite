@@ -327,7 +327,7 @@ export class MatchRoom extends Room {
     const controller = seat !== undefined ? this.controllers.get(seat) : undefined;
     if (module === undefined || this.matchState === undefined || seat === undefined || controller === undefined || controller.kind !== "human") return;
     this.controllers.set(seat, { kind: "human", playerId: controller.playerId, client });
-    client.send("view", module.getViewFor(this.matchState, controller.playerId));
+    client.send("view", this.viewMessageFor(module, controller.playerId));
   }
 
   /**
@@ -441,11 +441,27 @@ export class MatchRoom extends Room {
     return undefined;
   }
 
+  /**
+   * The "view" message's wire shape: the redacted view AND that seat's own
+   * legal actions, together. Without `legalActions` on the wire, the widget
+   * would have no honest way to know what is legal for the local player —
+   * it only ever has this seat's own REDACTED view, never the full
+   * `matchState` `getLegalActions` needs, so it structurally cannot
+   * re-derive legality client-side (architectural rule: legality comes from
+   * the engine's own `getLegalActions`, never re-derived in the UI). Sent as
+   * one message, not two, so a client's own view and its own legal actions
+   * are always in sync with each other by construction — there is no
+   * intermediate state where one has updated and the other hasn't.
+   */
+  private viewMessageFor(module: GameModule<unknown, ErasedAction, unknown, unknown>, playerId: PlayerId): { readonly view: unknown; readonly legalActions: readonly ErasedAction[] } {
+    return { view: module.getViewFor(this.matchState, playerId), legalActions: module.getLegalActions(this.matchState, playerId) };
+  }
+
   private broadcastViews(): void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) return;
     for (const controller of this.controllers.values()) {
-      if (controller.kind === "human") controller.client.send("view", module.getViewFor(this.matchState, controller.playerId));
+      if (controller.kind === "human") controller.client.send("view", this.viewMessageFor(module, controller.playerId));
     }
   }
 }

@@ -53,9 +53,9 @@ const P1 = "live-seat-1" as PlayerId;
  * broadcasts in a row, so a one-shot wait is racy. A collector registered on
  * an ALREADY-JOINED client cannot miss anything: no broadcast is possible
  * before both seats exist. */
-function collectViews(client: { onMessage(type: string, callback: (message: LiveState) => void): void }): LiveState[] {
+function collectViews(client: { onMessage(type: string, callback: (message: { view: LiveState }) => void): void }): LiveState[] {
   const views: LiveState[] = [];
-  client.onMessage("view", (view) => views.push(view));
+  client.onMessage("view", (message) => views.push(message.view));
   return views;
 }
 
