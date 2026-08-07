@@ -9,5 +9,6 @@ export { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 export type { SeatPositionInput, TableAnchor } from "./seat-position.js";
 export { CALL_LABELS, TABLE_STRINGS } from "./strings.js";
 export { createMatchTableRenderer } from "./table.js";
+export { buildTableStylesheet, ensureTableStyles, TABLE_STYLE_ID } from "./table-styles.js";
 export { describeTrickOutcome } from "./trick-feedback.js";
 export { describeTurn, isMyTurn } from "./turn.js";

@@ -10,6 +10,7 @@ let container: HTMLElement;
 afterEach(() => {
   container.remove();
   document.getElementById("hexdev-truco-matchstick-defs")?.remove();
+  document.getElementById("hexdev-truco-table-styles")?.remove();
 });
 
 function freshContainer(): HTMLElement {
@@ -137,7 +138,7 @@ describe("createMatchTableRenderer — four anchors, always relative to the loca
     expect(el.querySelector(".hexdev-truco-trick-feedback")?.textContent).toBe("Ganaste la baza");
   });
 
-  it("is idempotent to call repeatedly on the same container without accumulating duplicate matchstick defs", () => {
+  it("is idempotent to call repeatedly on the same container without accumulating duplicate matchstick defs or stylesheets", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
 
@@ -145,5 +146,15 @@ describe("createMatchTableRenderer — four anchors, always relative to the loca
     render(el, baseView(), [], () => {});
 
     expect(document.querySelectorAll("#hexdev-truco-matchstick-defs")).toHaveLength(1);
+    expect(document.head.querySelectorAll("#hexdev-truco-table-styles")).toHaveLength(1);
+  });
+
+  it("stamps the seat count on the table so CSS can lay out 2 vs. 4 seats differently (the columnless-vs-side-gutters tradeoff)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    expect(el.dataset.seatCount).toBe("2");
   });
 });

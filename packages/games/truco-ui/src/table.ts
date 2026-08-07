@@ -7,6 +7,7 @@ import { ensureMatchstickDefs, renderScoreboard } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 import type { TableAnchor } from "./seat-position.js";
 import { TABLE_STRINGS } from "./strings.js";
+import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
 import { describeTurn, isMyTurn } from "./turn.js";
 
@@ -34,6 +35,7 @@ export function createMatchTableRenderer(): (container: HTMLElement, view: Playe
 
   return function render(container: HTMLElement, view: PlayerView, legalActions: readonly Action[], dispatch: (action: Action) => void): void {
     ensureMatchstickDefs(container.ownerDocument);
+    ensureTableStyles(container.ownerDocument);
 
     const others = [...view.teammates, ...view.opponents];
     const seatCount = 1 + others.length;
@@ -51,6 +53,7 @@ export function createMatchTableRenderer(): (container: HTMLElement, view: Playe
 
     container.replaceChildren();
     container.className = "hexdev-truco-table";
+    container.dataset.seatCount = String(seatCount);
 
     const anchors = new Map<TableAnchor, HTMLElement>();
     for (const anchor of ANCHOR_ORDER) anchors.set(anchor, anchorShell(anchor));
@@ -64,6 +67,7 @@ export function createMatchTableRenderer(): (container: HTMLElement, view: Playe
     const bottom = anchors.get("bottom")!;
     if (turnSeat !== null && isMyTurn(view.self.seat, turnSeat)) bottom.classList.add("hexdev-truco-anchor--active");
     const callsRow = bottom.appendChild(document.createElement("div"));
+    callsRow.className = "hexdev-truco-calls-row";
     renderCalls(callsRow, legalActions, dispatch);
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
