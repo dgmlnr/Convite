@@ -26,10 +26,20 @@ function cssDeclarations(defaults: Readonly<Record<string, string>>): string {
  */
 export function buildTableStylesheet(): string {
   return `
-.hexdev-truco-table {
+/* Declared on :root, NOT .hexdev-truco-table: the shared matchstick <defs>
+ * block (ensureMatchstickDefs) is appended directly to <body>, a SIBLING of
+ * .hexdev-truco-table, not a descendant of it — a custom property scoped
+ * only to .hexdev-truco-table would never inherit into that sibling, and an
+ * SVG gradient stop's var() reference that resolves to nothing falls back to
+ * plain black (Chromium's initial value for 'fill') instead of the intended
+ * wood/head colours. Root-scoped avoids that regardless of where any given
+ * caller mounts the defs or the table relative to each other. */
+:root {
   ${cssDeclarations(DECK_THEME_DEFAULTS)}
   ${cssDeclarations(MATCHSTICK_THEME_DEFAULTS)}
   --truco-table-cloth: #1e5c43;
+}
+.hexdev-truco-table {
   --truco-card-width: 60px;
   position: relative;
   box-sizing: border-box;
@@ -127,11 +137,18 @@ export function buildTableStylesheet(): string {
   cursor: default;
 }
 
-.hexdev-truco-trick { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; min-height: calc(var(--truco-card-width) * 336 / 220); }
-.hexdev-truco-played--top { align-self: flex-start; }
-.hexdev-truco-played--bottom { align-self: flex-end; }
-.hexdev-truco-played--left { margin-right: auto; }
-.hexdev-truco-played--right { margin-left: auto; }
+/* A single view snapshot never carries more than ONE in-progress-trick play
+ * (the engine resolves a trick's second card and clears it atomically — see
+ * table.ts's own docstring), so absolute positioning per play is safe: there
+ * is never a second card to collide with. The extra height (vs. exactly one
+ * card) is what gives the top/bottom offset room to actually read as "closer
+ * to that seat" instead of sitting dead-centre regardless of who played it. */
+.hexdev-truco-trick { position: relative; display: flex; align-items: center; justify-content: center; min-height: calc(var(--truco-card-width) * 336 / 220 * 1.7); width: 100%; }
+.hexdev-truco-played { position: absolute; }
+.hexdev-truco-played--top { top: 0; }
+.hexdev-truco-played--bottom { bottom: 0; }
+.hexdev-truco-played--left { left: 15%; }
+.hexdev-truco-played--right { right: 15%; }
 
 .hexdev-truco-score-row { display: flex; gap: 16px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
 .hexdev-truco-team-label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gx-color-accent, #ffd166); text-align: center; }

@@ -24,4 +24,6 @@ export const TABLE_STRINGS = {
   opponentTurn: "Turno del rival",
   malas: "Malas",
   buenas: "Buenas",
+  us: "Nosotros",
+  them: "Ellos",
 } as const;
