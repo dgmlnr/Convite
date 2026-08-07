@@ -1,9 +1,8 @@
 import { chromium, type Browser, type BrowserContext, type FrameLocator, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { attachConsoleGuard, type ConsoleGuard } from "./support/console-guard.js";
-import { readHarnessInfo } from "./support/harness-info.js";
+import { startSystem, type SystemHandle } from "./support/system.js";
 
-const info = readHarnessInfo();
 const PAIRING_TIMEOUT_MS = 30_000;
 const ACTOR_WAIT_TIMEOUT_MS = 15_000;
 
@@ -14,11 +13,11 @@ interface Side {
   readonly guard: ConsoleGuard;
 }
 
-async function mountAndOpenSelection(browser: Browser): Promise<Side> {
+async function mountAndOpenSelection(browser: Browser, hostOrigin: string): Promise<Side> {
   const context = await browser.newContext();
   const page = await context.newPage();
   const guard = attachConsoleGuard(page);
-  await page.goto(info.hostOrigin, { waitUntil: "load" });
+  await page.goto(hostOrigin, { waitUntil: "load" });
   await page.waitForSelector("iframe", { timeout: 15_000 });
   const table = page.frameLocator("iframe");
   await table.locator('[data-action="vs-person"]').first().waitFor({ state: "visible", timeout: 15_000 });
@@ -39,20 +38,25 @@ async function mountAndOpenSelection(browser: Browser): Promise<Side> {
  */
 describe("two real browsers pair and one real action is observed by the other side", () => {
   let browser: Browser;
+  let system: SystemHandle;
 
   beforeAll(async () => {
+    // A fresh, isolated server process for THIS file only — see
+    // `support/system.ts`'s own doc comment.
+    system = await startSystem();
     browser = await chromium.launch();
   });
 
   afterAll(async () => {
     await browser?.close();
+    await system?.stop();
   });
 
   it(
     "two independent browser contexts both requesting a person match land in the same room, and a played card propagates",
     async () => {
-      const a = await mountAndOpenSelection(browser);
-      const b = await mountAndOpenSelection(browser);
+      const a = await mountAndOpenSelection(browser, system.hostOrigin);
+      const b = await mountAndOpenSelection(browser, system.hostOrigin);
 
       await a.table.locator('[data-action="vs-person"]').first().click();
       await b.table.locator('[data-action="vs-person"]').first().click();

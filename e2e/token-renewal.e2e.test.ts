@@ -2,7 +2,14 @@ import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { attachConsoleGuard } from "./support/console-guard.js";
 import { readHarnessInfo } from "./support/harness-info.js";
+import { startSystem, type SystemHandle } from "./support/system.js";
 
+// The session TTL is fixed at build/global-setup time (see
+// global-setup.ts), so it is safe to read here at module scope — this value
+// only drives this spec's own title/timeout, never a network call. The
+// actual running server for THIS file is started fresh in `beforeAll` below
+// (see `support/system.ts`'s own doc comment for why every file gets its
+// own isolated process).
 const info = readHarnessInfo();
 
 /**
@@ -17,13 +24,16 @@ const info = readHarnessInfo();
  */
 describe("a session token minted at page load survives a real wait past its TTL", () => {
   let browser: Browser;
+  let system: SystemHandle;
 
   beforeAll(async () => {
+    system = await startSystem();
     browser = await chromium.launch();
   });
 
   afterAll(async () => {
     await browser?.close();
+    await system?.stop();
   });
 
   const realWaitMs = (info.sessionTtlSeconds + 4) * 1000;
@@ -35,7 +45,7 @@ describe("a session token minted at page load survives a real wait past its TTL"
       const page = await context.newPage();
       const guard = attachConsoleGuard(page);
 
-      await page.goto(info.hostOrigin, { waitUntil: "load" });
+      await page.goto(system.hostOrigin, { waitUntil: "load" });
       await page.waitForSelector("iframe", { timeout: 15_000 });
       const table = page.frameLocator("iframe");
       await table.locator('[data-tier="easy"]').first().waitFor({ state: "visible", timeout: 15_000 });
