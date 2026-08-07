@@ -19,6 +19,7 @@ import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
 import { handleSessionRenewRequest } from "./session-renew-handler.js";
 import { refererOrigin } from "./referer-origin.js";
+import { serveCardFrontAsset } from "./static-deck-assets.js";
 import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
 // The composition root: wires existing pieces (registry, auth primitives,
@@ -55,6 +56,13 @@ const widgetAppDistDir = fileURLToPath(new URL("../../widget-app/dist-app", impo
 // `apps/server/dist/index.js` -> `packages/widget-sdk/dist-iife` (the Vite
 // lib-mode IIFE build's own output dir — see packages/widget-sdk/vite.config.ts).
 const widgetSdkDistDir = fileURLToPath(new URL("../../../packages/widget-sdk/dist-iife", import.meta.url));
+// `apps/server/dist/index.js` -> `packages/spanish-deck-ui/assets/fronts`
+// (checked into the repo directly, never generated/copied — see that
+// package's own `front-image.ts` docstring). The widget-app bundle resolves
+// card art at RUNTIME relative to wherever it itself is served from
+// (`/assets/widget-app.js`), landing on `/assets/fronts/<cardId>.webp` —
+// see `static-deck-assets.ts`'s own docstring for the full chain.
+const deckFrontsDir = fileURLToPath(new URL("../../../packages/spanish-deck-ui/assets/fronts", import.meta.url));
 
 /**
  * A bare socket — NO custom `request` listener of our own. THE REAL BUG
@@ -162,6 +170,18 @@ const registerCustomRoutes: ExpressAppCallback = (app) => {
 
   app.get("/assets/widget-app.js", (_req, res) => {
     serveWidgetAppAsset(widgetAppDistDir)
+      .then(({ status, contentType, body }) => {
+        res.writeHead(status, { "content-type": contentType });
+        res.end(body);
+      })
+      .catch(() => {
+        res.writeHead(500);
+        res.end();
+      });
+  });
+
+  app.get("/assets/fronts/:file", (req, res) => {
+    serveCardFrontAsset(deckFrontsDir, req.params.file ?? "")
       .then(({ status, contentType, body }) => {
         res.writeHead(status, { "content-type": contentType });
         res.end(body);
