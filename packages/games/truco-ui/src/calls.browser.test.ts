@@ -74,7 +74,38 @@ describe("renderCalls (spec: calls shown ONLY when legal, from getLegalActions �
 
     renderCalls(el, legal, () => {});
 
+    // Grouped: every "respond-*" answer to an already-open call renders
+    // FIRST, as its own cluster — answering is a different kind of decision
+    // from opening/escalating a new one (spec), so the two never interleave.
     const labels = [...el.querySelectorAll<HTMLButtonElement>("button")].map((b) => b.textContent);
-    expect(labels).toEqual(["Retruco", "Vale cuatro", "No quiero", "Envido envido", "Real envido", "Falta envido", "Mostrar envido"]);
+    expect(labels).toEqual(["No quiero", "Retruco", "Vale cuatro", "Envido envido", "Real envido", "Falta envido", "Mostrar envido"]);
+  });
+});
+
+describe("renderCalls — grouped so answering a call reads distinctly from opening one", () => {
+  it("puts respond-truco/respond-envido in their own 'response' group, separate from calls/escalations", () => {
+    const el = freshContainer();
+    const legal: readonly Action[] = [
+      { type: "respond-truco", playerId: PLAYER, response: "quiero" },
+      { type: "call-truco", playerId: PLAYER, level: "retruco" },
+    ];
+
+    renderCalls(el, legal, () => {});
+
+    const response = el.querySelector(".hexdev-truco-calls-group--response")!;
+    const opening = el.querySelector(".hexdev-truco-calls-group--opening")!;
+    expect(response.querySelectorAll("button")).toHaveLength(1);
+    expect(response.querySelector("button")!.textContent).toBe("Quiero");
+    expect(opening.querySelectorAll("button")).toHaveLength(1);
+    expect(opening.querySelector("button")!.textContent).toBe("Retruco");
+  });
+
+  it("renders no empty group container when a group has no legal actions", () => {
+    const el = freshContainer();
+
+    renderCalls(el, [{ type: "call-truco", playerId: PLAYER, level: "truco" }], () => {});
+
+    expect(el.querySelector(".hexdev-truco-calls-group--response")).toBeNull();
+    expect(el.querySelector(".hexdev-truco-calls-group--opening")).not.toBeNull();
   });
 });
