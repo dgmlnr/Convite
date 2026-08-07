@@ -26,4 +26,7 @@ export const TABLE_STRINGS = {
   buenas: "Buenas",
   us: "Nosotros",
   them: "Ellos",
+  calledBy: "Cantó:",
+  yourTurnToAnswer: "Tu turno de responder",
+  waitingOnOpponent: "Esperando al rival",
 } as const;
