@@ -143,13 +143,19 @@ export function createMatchTableRenderer(): (container: HTMLElement, view: Playe
     feedback.textContent = trickFeedback;
     center.appendChild(feedback);
 
-    // The generic card-play turn line is meaningless while a call is open
-    // (nobody can play a card — `callsAreSettled` blocks it) — the banner
-    // above already carries the correct "who owes input" message, so this
-    // line is hidden rather than shown alongside a contradictory one.
+    // Whose turn it is, once, in the middle of the table. NOT alongside the
+    // per-anchor badge: the badge already names the state AND points at the
+    // seat, so a second line saying the same thing two centimetres below is
+    // noise — it read as duplicated on a 320px screen, where vertical space
+    // is the scarcest thing there is.
+    //
+    // The badge wins because it carries strictly more information (which
+    // seat), and it is the piece that keeps working once a fourth anchor
+    // exists and "whose turn" stops being a two-way question. This line
+    // survives only as the accessible announcement, off-screen but read out.
     const turnIndicator = document.createElement("p");
     turnIndicator.className = "hexdev-truco-turn-indicator";
-    turnIndicator.hidden = pendingCall !== null;
+    turnIndicator.setAttribute("aria-live", "polite");
     turnIndicator.textContent = pendingCall === null ? describeTurn(view.self.seat, turnSeat) : "";
     center.appendChild(turnIndicator);
 

@@ -28,8 +28,8 @@ export const MATCHSTICK_THEME_DEFAULTS = {
    * shape instead of just reading as muted (the exact card-dimming trap this
    * project already hit once; see table-styles.ts's own note on `filter`
    * vs. `opacity`). */
-  "--truco-match-ghost-wood": "rgba(255, 255, 255, 0.18)",
-  "--truco-match-ghost-head": "rgba(255, 255, 255, 0.24)",
+  "--truco-match-ghost-wood": "rgba(255, 255, 255, 0.085)",
+  "--truco-match-ghost-head": "rgba(255, 255, 255, 0.11)",
 } as const;
 
 const DEFS_ID = "hexdev-truco-matchstick-defs";

@@ -295,14 +295,29 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-pending-call-caller { font-size: 0.75rem; }
 .hexdev-truco-pending-call-turn { font-size: 0.8rem; font-weight: 700; }
 
-.hexdev-truco-trick-feedback, .hexdev-truco-turn-indicator {
+.hexdev-truco-trick-feedback {
   margin: 0;
   min-height: 1.2em;
   text-align: center;
   font-size: 0.85rem;
 }
-.hexdev-truco-turn-indicator { font-weight: 700; color: var(--gx-color-accent, #ffd166); }
-.hexdev-truco-turn-indicator[hidden] { display: none; }
+/* Visually hidden, still announced. The per-anchor badge is what a sighted
+ * player reads — it says the state and points at the seat — so this line is
+ * removed from the visual layout instead of repeating it. Screen readers
+ * still get it, and its aria-live means a turn change is spoken rather than
+ * silently swapping a badge somewhere on the table. */
+.hexdev-truco-turn-indicator {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  min-height: 0;
+}
 
 .hexdev-truco-calls-row, [data-position="bottom"] > div:first-child {
   display: flex;

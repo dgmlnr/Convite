@@ -231,14 +231,31 @@ describe("createMatchTableRenderer — the pending call stays on the table until
     expect(banner.textContent).not.toContain("Vale cuatro");
   });
 
-  it("suppresses the generic card-play turn indicator while a call is pending — play stops for a call", () => {
+  it("says nothing about a card-play turn while a call is pending — play stops for a call", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
 
     render(el, view, [], () => {});
 
-    expect(el.querySelector<HTMLElement>(".hexdev-truco-turn-indicator")!.hidden).toBe(true);
+    // The indicator is now permanently hidden from sight (the per-anchor
+    // badge is what a sighted player reads) and exists only as the live
+    // announcement — so what matters is that it ANNOUNCES nothing that
+    // contradicts the banner, not that it is display-hidden.
+    expect(el.querySelector<HTMLElement>(".hexdev-truco-turn-indicator")!.textContent).toBe("");
+  });
+
+  it("announces whose turn it is for screen readers even though the line is not painted", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    const indicator = el.querySelector<HTMLElement>(".hexdev-truco-turn-indicator")!;
+    expect(indicator.textContent).not.toBe("");
+    expect(indicator.getAttribute("aria-live")).toBe("polite");
+    // Removed from the visual layout, not from the accessibility tree.
+    expect(indicator.getBoundingClientRect().width).toBeLessThan(2);
   });
 
   it("highlights the RESPONDING team's anchor while a call is pending, not the frozen turnSeat", () => {
