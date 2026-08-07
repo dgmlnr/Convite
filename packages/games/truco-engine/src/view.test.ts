@@ -24,7 +24,8 @@ describe("getViewFor — per-player redaction (spec: 'Per-Player View Redaction'
     const viewA = getViewFor(state, playerA);
 
     expect(viewA.self.hand).toEqual([{ suit: "espada", rank: 1 }]);
-    expect(viewA.opponents).toEqual([{ playerId: playerB, teamId: state.teams[1]!.id, cardsRemaining: 1 }]);
+    expect(viewA.self.seat).toBe(0);
+    expect(viewA.opponents).toEqual([{ playerId: playerB, teamId: state.teams[1]!.id, seat: 1, cardsRemaining: 1 }]);
     expect(JSON.stringify(viewA)).not.toContain(cardId({ suit: "oro", rank: 12 }));
   });
 

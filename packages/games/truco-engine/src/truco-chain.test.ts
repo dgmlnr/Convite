@@ -221,3 +221,22 @@ describe("applyAction — full purity property over the combined truco+envido ac
     );
   });
 });
+
+describe("declining a truco ends the hand", () => {
+  it("marks the hand decided in favour of the calling team, so the next hand can be dealt", () => {
+    // A no-quiero ends the hand — that is the whole point of declining. The
+    // engine awarded the points but left `hand.outcome` untouched, so
+    // `truco-module`'s re-deal gate (`state.hand.outcome.decided`) never
+    // opened and the match stalled with nobody able to act. Found while
+    // wiring the end-of-hand UI, never triggered live only because the easy
+    // bot always accepts.
+    const state = pendingAt("truco");
+    const caller = state.players.find((p) => p.id === playerA)!;
+
+    const result = applyAction(state, { type: "respond-truco", playerId: playerB, response: "no-quiero" });
+
+    expect(result.ok).toBe(true);
+    const hand = result.ok ? result.state.hand! : null;
+    expect(hand!.outcome).toEqual({ decided: true, winnerTeamId: caller.teamId });
+  });
+});

@@ -31,6 +31,13 @@ interface FixtureState {
 type FixtureAction = { readonly type: "move"; readonly playerId: PlayerId };
 const GAME_ID = "fixture-adapter" as GameId;
 
+/** The real "view" wire shape `MatchRoom` now sends (view + that seat's own
+ * legal actions, together) — see `match-room.ts`'s `viewMessageFor`. */
+interface FixtureViewMessage {
+  readonly view: FixtureState;
+  readonly legalActions: readonly unknown[];
+}
+
 const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureState, unknown> = {
   id: GAME_ID,
   metadata: { seatCount: 2, displayNameKey: "fixture.adapter", assetBase: "/fixture" },
@@ -116,10 +123,10 @@ describe("transport-colyseus-client — real production code over a real WebSock
     expect(paired0[0]?.opponentPlayerId).toBe(P1);
     expect(paired1[0]?.opponentPlayerId).toBe(P0);
 
-    const match0 = await joinMatchFromReservation<FixtureState>(client0, paired0[0]!.reservation);
+    const match0 = await joinMatchFromReservation<FixtureViewMessage>(client0, paired0[0]!.reservation);
     const views0: FixtureState[] = [];
-    match0.onView((view) => views0.push(view));
-    const match1 = await joinMatchFromReservation<FixtureState>(client1, paired1[0]!.reservation);
+    match0.onView((message) => views0.push(message.view));
+    const match1 = await joinMatchFromReservation<FixtureViewMessage>(client1, paired1[0]!.reservation);
     expect(match0.roomId).toBe(match1.roomId); // same real MatchRoom for both, via this package's own join call
 
     match0.sendAction({ type: "move", playerId: P0 });
@@ -136,9 +143,9 @@ describe("transport-colyseus-client — real production code over a real WebSock
     const token = await issuer.mint({ tenantId: TENANT_ID, playerId: P0, entitlements: [GAME_ID] }, 60);
     const client = createTransportClient(`ws://localhost:${port}`, { headers: { origin: ALLOWED_ORIGIN } });
 
-    const match = await startBotMatch<FixtureState>(client, { gameId: GAME_ID, config: { roundLength: 15 }, botTier: "easy", playerId: P0, token });
+    const match = await startBotMatch<FixtureViewMessage>(client, { gameId: GAME_ID, config: { roundLength: 15 }, botTier: "easy", playerId: P0, token });
     const views: FixtureState[] = [];
-    match.onView((view) => views.push(view));
+    match.onView((message) => views.push(message.view));
 
     match.sendAction({ type: "move", playerId: P0 });
     const deadline = Date.now() + 3000;

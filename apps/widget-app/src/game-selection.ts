@@ -1,5 +1,6 @@
 import type { BotTier, GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry, ModalityConfig } from "@hexdev/platform-core";
+import { ensureChromeStyles } from "./chrome-styles.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
@@ -52,6 +53,7 @@ function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions:
 
   const personSection = document.createElement("div");
   const countText = document.createElement("p");
+  countText.className = "hexdev-modality-count";
   const personButton = document.createElement("button");
   personButton.type = "button";
   personButton.dataset.action = "vs-person";
@@ -60,12 +62,17 @@ function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions:
 
   if (entry.waitingCount !== undefined) {
     // Non-zero: vs-person is the prominent path, real count shown.
+    wrapper.dataset.prominent = "person";
     countText.textContent = STRINGS.waitingCount(entry.waitingCount);
     personSection.append(countText, personButton);
     wrapper.append(personSection, botLabel, botButtonsRow(gameId, entry.modality, callbacks));
   } else {
     // Zero-counter UX rule (spec): never render a "0 waiting" text — the bot
-    // CTA becomes the prominent path instead, rendered FIRST.
+    // CTA becomes the prominent path instead, rendered FIRST, AND styled as
+    // the prominent action (table-styles.ts's own precedent: presentation
+    // reads the same value the derivation already computed, never re-decides
+    // it — see deriveLobbyDisplayFromCounts's promoteBotFallback).
+    wrapper.dataset.prominent = "bot";
     personSection.appendChild(personButton);
     wrapper.append(botLabel, botButtonsRow(gameId, entry.modality, callbacks), personSection);
   }
@@ -83,6 +90,7 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
 
   if (presence === undefined || presence.length === 0) {
     const loading = document.createElement("p");
+    loading.className = "hexdev-chrome-loading";
     loading.textContent = STRINGS.loadingCatalog;
     card.appendChild(loading);
     return card;
@@ -106,14 +114,18 @@ export function renderGameSelection(
   presenceByGame: ReadonlyMap<GameId, readonly LobbyDisplayEntry[]>,
   callbacks: GameSelectionCallbacks,
 ): void {
+  ensureChromeStyles(container.ownerDocument);
   container.replaceChildren();
+  container.className = "hexdev-gamify-chrome";
 
   const title = document.createElement("h1");
+  title.className = "hexdev-chrome-title";
   title.textContent = STRINGS.selectionTitle;
   container.appendChild(title);
 
   if (catalog.length === 0) {
     const empty = document.createElement("p");
+    empty.className = "hexdev-chrome-empty";
     empty.textContent = STRINGS.emptyCatalog;
     container.appendChild(empty);
     return;

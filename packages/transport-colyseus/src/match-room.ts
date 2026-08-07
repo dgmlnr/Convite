@@ -1,5 +1,5 @@
 import { Room, type AuthContext, type Client } from "colyseus";
-import type { BotStrategy, BotTier, GameId, GameModule, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { BotStrategy, BotTier, GameId, GameModule, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
@@ -327,7 +327,7 @@ export class MatchRoom extends Room {
     const controller = seat !== undefined ? this.controllers.get(seat) : undefined;
     if (module === undefined || this.matchState === undefined || seat === undefined || controller === undefined || controller.kind !== "human") return;
     this.controllers.set(seat, { kind: "human", playerId: controller.playerId, client });
-    client.send("view", module.getViewFor(this.matchState, controller.playerId));
+    client.send("view", this.viewMessageFor(module, controller.playerId));
   }
 
   /**
@@ -441,11 +441,34 @@ export class MatchRoom extends Room {
     return undefined;
   }
 
+  /**
+   * The "view" message's wire shape: the redacted view, that seat's own
+   * legal actions, AND the match's own outcome, together. Same rationale as
+   * `legalActions` extends to `outcome`: a client only ever has its own
+   * REDACTED view, never the full `matchState` `getOutcome` needs, so it
+   * structurally cannot re-derive "has this match ended, and who won" from
+   * `view.teams`/`view.config.pointsToWin` (architectural rule: match
+   * termination comes from the module's own `getOutcome`, never re-derived
+   * in the UI). Sent as one message, not separate ones, so a client's view,
+   * legal actions, and outcome are always in sync with each other by
+   * construction.
+   */
+  private viewMessageFor(
+    module: GameModule<unknown, ErasedAction, unknown, unknown>,
+    playerId: PlayerId,
+  ): { readonly view: unknown; readonly legalActions: readonly ErasedAction[]; readonly outcome: MatchOutcome | null } {
+    return {
+      view: module.getViewFor(this.matchState, playerId),
+      legalActions: module.getLegalActions(this.matchState, playerId),
+      outcome: module.getOutcome(this.matchState),
+    };
+  }
+
   private broadcastViews(): void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) return;
     for (const controller of this.controllers.values()) {
-      if (controller.kind === "human") controller.client.send("view", module.getViewFor(this.matchState, controller.playerId));
+      if (controller.kind === "human") controller.client.send("view", this.viewMessageFor(module, controller.playerId));
     }
   }
 }

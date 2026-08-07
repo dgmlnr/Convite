@@ -2,8 +2,9 @@ import { parseTargetOrigin } from "@hexdev/widget-protocol";
 import type { GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, startBotMatch, watchPresence } from "@hexdev/transport-colyseus-client";
-import type { MatchConnection } from "@hexdev/transport-colyseus-client";
+import type { ErasedAction, MatchConnection } from "@hexdev/transport-colyseus-client";
 import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
+import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
 import { connectToHost } from "./handshake.js";
 import { STRINGS } from "./i18n.js";
 import { createDepartureGate, withFreshToken } from "./join-flow.js";
@@ -65,29 +66,39 @@ function main(): void {
     app!.appendChild(el);
   }
 
+  const gameUiRegistry = createGameUiRegistry();
+
   /**
    * The real join succeeded — a genuine `MatchConnection` from
    * `@hexdev/transport-colyseus-client`, either the bot path (immediate) or
-   * the human-pairing path (after `onPaired`). The actual in-match game
-   * table (design's own explicit scope boundary, unchanged by this unit) is
-   * NOT built here: this renders the smallest HONEST proof that the
-   * connection is live and receiving real server-pushed state, generic
-   * across any game (never inspects the view's shape — the port is
-   * game-agnostic, per this unit's own requirement).
+   * the human-pairing path (after `onPaired`). `gameUiRegistry` is the ONLY
+   * place this composition root knows a specific game's id (design §5's own
+   * `GameUiRegistry` concept, the UI-side mirror of
+   * `platform-core/registry.ts`'s `GameModuleRegistry`): a registered game
+   * gets its real table; anything else falls back to the smallest HONEST
+   * proof the connection is live, never a broken blank screen.
    */
-  function enterMatch(connection: MatchConnection<unknown>): void {
+  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onPlayAgain: () => void): void {
     handshake.sendLayout("fullscreen");
     app!.replaceChildren();
-    const title = document.createElement("p");
-    title.textContent = STRINGS.matchConnected;
-    const counter = document.createElement("p");
-    let updates = 0;
-    counter.textContent = STRINGS.liveUpdatesReceived(updates);
-    app!.append(title, counter);
-    connection.onView(() => {
-      updates += 1;
+
+    const entry = gameUiRegistry.get(gameId);
+    if (entry === undefined) {
+      const title = document.createElement("p");
+      title.textContent = STRINGS.matchConnected;
+      const counter = document.createElement("p");
+      let updates = 0;
       counter.textContent = STRINGS.liveUpdatesReceived(updates);
-    });
+      app!.append(title, counter);
+      connection.onView(() => {
+        updates += 1;
+        counter.textContent = STRINGS.liveUpdatesReceived(updates);
+      });
+      return;
+    }
+
+    const render = entry.createRenderer();
+    connection.onView((payload) => render(app!, payload as GameUiPayload, (action) => connection.sendAction(action as ErasedAction), onPlayAgain));
   }
 
   async function boot(): Promise<void> {
@@ -126,6 +137,21 @@ function main(): void {
     // own docstring).
     const departureGate = createDepartureGate();
 
+    // The moment someone most wants another match is right after finishing
+    // one (spec) — leaves the just-ended connection (fire-and-forget: the
+    // server's own reconnection window is irrelevant to a genuine, consented
+    // exit, same `leave(false)` default `match-connection.ts` already
+    // documents), un-departs the gate so live presence updates resume
+    // redrawing the selection screen, and redraws it immediately with
+    // whatever counts are already known — never a re-fetch, never a second
+    // `/embed` round trip.
+    function returnToSelection(connection: MatchConnection<unknown>): void {
+      void connection.leave();
+      handshake.sendLayout("inline"); // design §3: "inline that expands" — collapses back once there is no match to fill the screen with
+      departureGate.reset();
+      rerender();
+    }
+
     function rerender(): void {
       renderGameSelection(app!, catalog, presenceByGame, {
         onPlayVsPerson: (gameId, modality) => {
@@ -136,7 +162,7 @@ function main(): void {
               .then((queue) => {
                 queue.onPaired((pairing) => {
                   void joinMatchFromReservation(client, pairing.reservation)
-                    .then(enterMatch)
+                    .then((connection) => enterMatch(gameId, connection, () => returnToSelection(connection)))
                     .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
                 });
                 queue.onPairingFailed((message) => renderErrorWithRetry(app!, STRINGS.pairingFailed(message), attempt));
@@ -153,7 +179,7 @@ function main(): void {
           const attempt = (): void => {
             renderStatusMessage(app!, STRINGS.searchingOpponent);
             void withFreshToken(renewToken, (token) => startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }))
-              .then(enterMatch)
+              .then((connection) => enterMatch(gameId, connection, () => returnToSelection(connection)))
               .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
           };
           attempt();

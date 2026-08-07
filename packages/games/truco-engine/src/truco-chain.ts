@@ -157,7 +157,21 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
     team.id === pending.callingTeamId ? { ...team, score: team.score + awardedPoints } : team,
   );
 
-  return { ok: true, state: { ...state, teams, hand: { ...hand, truco: nextTruco } } };
+  // Declining ENDS the hand — that is what a no-quiero is. The points were
+  // already being awarded here, but `hand.outcome` was left untouched, so
+  // nothing downstream could tell the hand was over: the re-deal gate in
+  // `truco-module` waits on `outcome.decided`, so an isolated decline left
+  // the match with a finished hand nobody could act in and no next hand
+  // ever dealt. Found while wiring the end-of-hand UI; it never surfaced in
+  // play because the easy bot always accepts.
+  return {
+    ok: true,
+    state: {
+      ...state,
+      teams,
+      hand: { ...hand, truco: nextTruco, outcome: { decided: true, winnerTeamId: pending.callingTeamId } },
+    },
+  };
 }
 
 /** Pure reducer for the whole engine. Never mutates `state`; dispatches to the

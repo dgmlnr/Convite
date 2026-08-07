@@ -109,7 +109,7 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
 
     const reconnected = await testServer.sdk.reconnect(reconnectionToken);
     const views: ReconnectState[] = [];
-    reconnected.onMessage("view", (view) => views.push(view));
+    reconnected.onMessage("view", (message: { view: ReconnectState }) => views.push(message.view));
     await waitFor(views, () => true); // onReconnect resends the current view unprompted
     expect(views[0]).toMatchObject({ turnSeat: 0 });
 
@@ -126,7 +126,7 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
     const client0 = await testServer.connectTo(room, { token: token0 });
     const client1 = await testServer.connectTo(room, { token: token1 });
     const views1: ReconnectState[] = [];
-    client1.onMessage("view", (view) => views1.push(view));
+    client1.onMessage("view", (message: { view: ReconnectState }) => views1.push(message.view));
 
     client0.leave(false); // seat 0 drops abruptly
     await new Promise((resolve) => setTimeout(resolve, 400)); // past the 0.2s window: takeover fires

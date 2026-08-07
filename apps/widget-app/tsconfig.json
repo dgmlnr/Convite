@@ -19,6 +19,12 @@
       "path": "../../packages/transport-colyseus-client"
     },
     {
+      "path": "../../packages/games/truco-engine"
+    },
+    {
+      "path": "../../packages/games/truco-ui"
+    },
+    {
       "path": "../../packages/widget-protocol"
     },
     {

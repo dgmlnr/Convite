@@ -17,6 +17,7 @@ export default defineConfig({
           name: "browser",
           include: [
             "packages/games/truco-engine/**/*.browser.test.ts",
+            "packages/games/truco-ui/**/*.browser.test.ts",
             "packages/widget-sdk/**/*.browser.test.ts",
             "apps/widget-app/**/*.browser.test.ts",
           ],
