@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureMatchstickDefs, renderCasita, renderScoreboard } from "./scoreboard.js";
+import { ensureMatchstickDefs, renderCasita, renderGhostCasita, renderScoreboard } from "./scoreboard.js";
 
 let container: HTMLElement;
 
@@ -85,6 +85,36 @@ describe("ensureMatchstickDefs — the shared gradient/filter defs block", () =>
     ensureMatchstickDefs(document);
 
     expect(document.querySelectorAll("#hexdev-truco-matchstick-defs")).toHaveLength(1);
+  });
+});
+
+describe("renderGhostCasita — zero has to look intentional, not empty", () => {
+  it("draws all 5 pieces, distinctly marked as a ghost, never a blank box", () => {
+    const el = freshContainer();
+    el.innerHTML = renderGhostCasita(64);
+
+    const svg = el.querySelector("svg")!;
+    expect(svg.dataset.ghostCasita).toBe("true");
+    expect(svg.querySelectorAll("g > g")).toHaveLength(5);
+  });
+
+  it("never uses the CSS opacity property to fade a piece — a literal muted fill, not a blend with whatever sits behind it", () => {
+    const el = freshContainer();
+    el.innerHTML = renderGhostCasita(64);
+
+    expect(el.innerHTML).not.toMatch(/style="[^"]*opacity/);
+    expect(el.querySelectorAll("rect, ellipse")[0]!.getAttribute("fill")).toBe("var(--truco-match-ghost-wood)");
+  });
+
+  it("renderScoreboard falls back to the ghost casita for a group with zero points, instead of rendering nothing", () => {
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 0, target: 30 });
+
+    const malas = el.querySelector<HTMLElement>('[data-score-group="malas"]')!;
+    const buenas = el.querySelector<HTMLElement>('[data-score-group="buenas"]')!;
+    expect(malas.querySelector("svg")?.dataset.ghostCasita).toBe("true");
+    expect(buenas.querySelector("svg")?.dataset.ghostCasita).toBe("true");
   });
 });
 

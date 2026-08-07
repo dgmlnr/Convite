@@ -23,6 +23,13 @@ export const MATCHSTICK_THEME_DEFAULTS = {
   "--truco-match-head-2": "#ff7a55",
   "--truco-match-head-3": "#c62a17",
   "--truco-match-head-4": "#5a0e06",
+  /** A literal, fixed muted tone for the zero-score "ghost" casita — NOT the
+   * CSS `opacity` property, which would blend with whatever sits behind the
+   * shape instead of just reading as muted (the exact card-dimming trap this
+   * project already hit once; see table-styles.ts's own note on `filter`
+   * vs. `opacity`). */
+  "--truco-match-ghost-wood": "rgba(255, 255, 255, 0.18)",
+  "--truco-match-ghost-head": "rgba(255, 255, 255, 0.24)",
 } as const;
 
 const DEFS_ID = "hexdev-truco-matchstick-defs";
@@ -105,9 +112,49 @@ export function renderCasita(points: 0 | 1 | 2 | 3 | 4 | 5, size: number): strin
   return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}"><g filter="url(#hexdev-truco-stick-shadow)">${drawn}</g></svg>`;
 }
 
+/** A single ghost matchstick: same geometry as `matchstick`, but filled with
+ * a flat, fixed muted tone instead of the wood/head gradients — never the
+ * `opacity` property, so it never blends toward whatever sits behind it. */
+function ghostMatchstick(x: number, y: number, length: number, rotationDeg: number): string {
+  const stickLength = length - HEAD_RX;
+  return `<g transform="translate(${x} ${y}) rotate(${rotationDeg})">
+    <rect x="0" y="${-STICK_THICKNESS / 2}" width="${stickLength}" height="${STICK_THICKNESS}" rx="${STICK_THICKNESS / 2}" fill="var(--truco-match-ghost-wood)"/>
+    <ellipse cx="${stickLength}" cy="0" rx="${HEAD_RX}" ry="${HEAD_RY}" fill="var(--truco-match-ghost-head)"/>
+  </g>`;
+}
+
+/**
+ * A full, un-lit "casita" — all 5 pieces drawn in the muted ghost tone,
+ * never omitted entirely. Rendered exactly when a score group has ZERO
+ * points, so zero reads as an intentionally empty tally slot rather than
+ * missing content (spec: "zero-zero has to look intentional, not empty").
+ * `data-ghost-casita` marks it distinctly from a scored (solid,
+ * wood/head-gradient) casita.
+ */
+export function renderGhostCasita(size: number): string {
+  const margin = HEAD_RX + 4;
+  const box = size + margin * 2;
+  const side = size - AIR * 2;
+  const diagonalFull = size * Math.SQRT2;
+  const diagonal = diagonalFull - AIR * 2;
+  const diagonalOffset = AIR / Math.SQRT2;
+
+  const pieces = [
+    ghostMatchstick(margin + AIR, margin, side, 0),
+    ghostMatchstick(margin + size, margin + AIR, side, 90),
+    ghostMatchstick(margin + size - AIR, margin + size, side, 180),
+    ghostMatchstick(margin, margin + size - AIR, side, 270),
+    ghostMatchstick(margin + diagonalOffset, margin + diagonalOffset, diagonal, 45),
+  ].join("");
+
+  return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}" data-ghost-casita="true"><g>${pieces}</g></svg>`;
+}
+
 /** A run of casitas representing `count` points, 5 per casita — mirrors the
- * approved prototype's own `tanteador()`. */
+ * approved prototype's own `tanteador()`. Falls back to a single ghost
+ * casita for a zero-point group instead of rendering nothing at all. */
 function renderMatchstickRun(count: number, size: number): string {
+  if (count === 0) return renderGhostCasita(size);
   const casitaCount = Math.ceil(count / 5);
   let remaining = count;
   let html = "";

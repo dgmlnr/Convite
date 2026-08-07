@@ -2,6 +2,8 @@ export { renderCalls } from "./calls.js";
 export { renderHand } from "./hand.js";
 export type { HandCallbacks } from "./hand.js";
 export { renderOpponentHand } from "./opponent-hand.js";
+export { derivePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
+export type { PendingCallBannerProps, PendingCallInfo } from "./pending-call.js";
 export { renderPlayedCards } from "./played-cards.js";
 export { ensureMatchstickDefs, MATCHSTICK_THEME_DEFAULTS, renderCasita, renderScoreboard, splitMalasBuenas } from "./scoreboard.js";
 export type { ScoreboardOptions } from "./scoreboard.js";
