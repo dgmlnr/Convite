@@ -10,6 +10,8 @@
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "@hexdev/transport-colyseus-client": "workspace:*",
+    "@hexdev/truco-engine": "workspace:*",
+    "@hexdev/truco-ui": "workspace:*",
     "@hexdev/widget-protocol": "workspace:*",
     "@hexdev/widget-sdk": "workspace:*"
   },

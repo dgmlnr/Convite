@@ -69,6 +69,12 @@ importers:
       '@hexdev/transport-colyseus-client':
         specifier: workspace:*
         version: link:../../packages/transport-colyseus-client
+      '@hexdev/truco-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/truco-engine
+      '@hexdev/truco-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/truco-ui
       '@hexdev/widget-protocol':
         specifier: workspace:*
         version: link:../../packages/widget-protocol
