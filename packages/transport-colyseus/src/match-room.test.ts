@@ -74,7 +74,7 @@ const P1 = "seat-1-player" as PlayerId;
 function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoomAuthOptions {
   const issuer = createSessionTokenIssuer(SECRET);
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal"] },
+    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race"] },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
   // Generous default so unrelated tests never accidentally trip the limit —
@@ -571,5 +571,243 @@ describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal'
     void room.onLeave(seat0.client); // window left open; not awaited on purpose
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(tiers).toEqual([]); // still human: no takeover fired
+  });
+});
+
+describe("MatchRoom.advance() — structural serialization against overlap (closes the disclosed debt, apply-progress obs 2927/2925)", () => {
+  /**
+   * A "race" fixture, deliberately non-truco (same anti-truco-shape
+   * discipline as every other fixture in this file): two actions per seat,
+   * one turn-gated (`move`), one NOT turn-gated (`call`, legal exactly
+   * once per seat regardless of whose turn it is) — mirroring truco's own
+   * proactive calls, which the PR19 investigation (apply-progress obs
+   * 2927) confirmed do not depend on turn order. This turn-independence is
+   * exactly what lets a human's own legal action arrive while the bot's
+   * decision on ITS turn-independent `call` is still in flight — the real
+   * shape of the disclosed debt, not a contrived one.
+   */
+  interface RaceState {
+    readonly players: readonly [PlayerId, PlayerId];
+    readonly turnSeat: 0 | 1;
+    readonly called: readonly [boolean, boolean];
+  }
+  type RaceAction = { readonly type: "move"; readonly playerId: PlayerId } | { readonly type: "call"; readonly playerId: PlayerId };
+  interface RaceView {
+    readonly turnSeat: 0 | 1;
+    readonly called: readonly [boolean, boolean];
+  }
+
+  function raceSeatOf(state: RaceState, playerId: PlayerId): 0 | 1 | -1 {
+    const index = state.players.indexOf(playerId);
+    return index === 0 || index === 1 ? index : -1;
+  }
+
+  const raceModule: GameModule<RaceState, RaceAction, RaceView, void> = {
+    id: "fixture-race",
+    metadata: { seatCount: 2, displayNameKey: "fixture.race", assetBase: "/fixture" },
+    configOptions: [],
+    createMatch: (_config, seats: readonly SeatAssignment[]) => {
+      const sorted = [...seats].sort((a, b) => a.seat - b.seat);
+      return { players: [sorted[0]!.playerId, sorted[1]!.playerId], turnSeat: 0, called: [false, false] };
+    },
+    applyAction: (state, action): ApplyResult<RaceState> => {
+      const seat = raceSeatOf(state, action.playerId);
+      if (seat === -1) return { ok: false, violation: { code: "unknown-player", message: "no such seat" } };
+      if (action.type === "call") {
+        if (state.called[seat]) return { ok: false, violation: { code: "already-called", message: "this seat already called" } };
+        const called = [...state.called] as [boolean, boolean];
+        called[seat] = true;
+        return { ok: true, state: { ...state, called } };
+      }
+      if (seat !== state.turnSeat) return { ok: false, violation: { code: "not-your-turn", message: `seat ${seat} acted out of turn` } };
+      return { ok: true, state: { ...state, turnSeat: state.turnSeat === 0 ? 1 : 0 } };
+    },
+    // `call` listed first on purpose: the controllable bot below always
+    // picks `legal[0]`, and this ordering is what makes the bot pick its
+    // turn-independent `call` FIRST (reproducing the real race), then its
+    // turn-gated `move` once `call` is spent and it is genuinely its turn.
+    getLegalActions: (state, playerId) => {
+      const seat = raceSeatOf(state, playerId);
+      if (seat === -1) return [];
+      const actions: RaceAction[] = [];
+      if (!state.called[seat]) actions.push({ type: "call", playerId });
+      if (seat === state.turnSeat) actions.push({ type: "move", playerId });
+      return actions;
+    },
+    getViewFor: (state) => ({ turnSeat: state.turnSeat, called: state.called }),
+    getOutcome: () => null,
+    serialize: (state) => state as never,
+    deserialize: (json) => json as unknown as RaceState,
+    createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+  };
+
+  /** Flushes pending work deterministically before the next assertion — no
+   * arbitrary real delay, no flakiness. Token verification
+   * (`SessionTokenIssuer.verify`) does real signature-checking crypto,
+   * which Node schedules on the libuv threadpool rather than settling on a
+   * pure microtask — a `Promise.resolve()` loop alone never observes it
+   * complete. A couple of macrotask boundaries (`setTimeout`) give that
+   * real async work an actual event-loop turn to finish, and the
+   * surrounding microtask flushes drain everything chained off it
+   * (`advance()`'s own `.then()` link, an async fixture body). */
+  async function flush(): Promise<void> {
+    for (let i = 0; i < 3; i += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      for (let j = 0; j < 5; j += 1) await Promise.resolve();
+    }
+  }
+
+  /** A bot whose `chooseAction` is held open until the test explicitly
+   * releases it — this is what makes the overlap deterministic instead of
+   * probabilistic: the real `withThinkingDelay` ~1s pause is replaced with
+   * a promise this test fully controls. */
+  function controllableRaceModule() {
+    const pendingReleases: Array<() => void> = [];
+    let concurrentCalls = 0;
+    let maxConcurrentCalls = 0;
+    let totalCalls = 0;
+    const module: GameModule<RaceState, RaceAction, RaceView, void> = {
+      ...raceModule,
+      createBot: () => ({
+        chooseAction: async (_view, legal): Promise<RaceAction> => {
+          totalCalls += 1;
+          concurrentCalls += 1;
+          maxConcurrentCalls = Math.max(maxConcurrentCalls, concurrentCalls);
+          await new Promise<void>((resolve) => {
+            pendingReleases.push(resolve);
+          });
+          concurrentCalls -= 1;
+          return legal[0]!;
+        },
+      }),
+    };
+    return {
+      module,
+      releaseNextBotDecision: (): void => {
+        const resolve = pendingReleases.shift();
+        if (resolve === undefined) throw new Error("test setup error: no pending bot decision to release");
+        resolve();
+      },
+      pendingCount: () => pendingReleases.length,
+      totalCalls: () => totalCalls,
+      maxConcurrentCalls: () => maxConcurrentCalls,
+    };
+  }
+
+  async function createRaceRoom(module: GameModule<RaceState, RaceAction, RaceView, void>) {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([module]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-race", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });
+    const seat0 = fakeClient("s0");
+    return { room, seat0, auth };
+  }
+
+  it("never lets a second advance() chain start while the first is still awaiting a bot decision — RED before the fix, GREEN after (deterministic, no timers)", async () => {
+    const { module, releaseNextBotDecision, pendingCount, totalCalls, maxConcurrentCalls } = controllableRaceModule();
+    const { room, seat0, auth } = await createRaceRoom(module);
+
+    // The single human seat joining fills the match (seat1 is the bot).
+    // `onJoin`'s own `await this.advance()` immediately finds the bot has
+    // a legal `call` action — turn-independent, legal from turn zero — and
+    // parks on the held-open `chooseAction`. Deliberately NOT awaited: the
+    // whole point is to act again while this is still in flight.
+    const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await flush();
+    expect(totalCalls()).toBe(1);
+    expect(pendingCount()).toBe(1);
+
+    // The human's OWN move is legal right now (turnSeat is still seat0's) —
+    // this is the exact trigger the debt describes: a real, legal human
+    // action arriving while the bot's decision is mid-flight.
+    const handlePromise = room.handleAction(seat0.client, { type: "move", playerId: P0 });
+    await flush();
+
+    // THE assertion: no second `chooseAction` was invoked while the first
+    // is still unresolved. Before the fix, `handleAction`'s own
+    // fire-and-forget `return this.advance()` started a fully independent
+    // second chain, which called `findActingBot()` again and invoked
+    // `chooseAction` a SECOND time on the very same still-pending
+    // decision — `totalCalls()` would already be 2 here.
+    expect(totalCalls()).toBe(1);
+    expect(maxConcurrentCalls()).toBe(1);
+
+    // Release the bot's `call` decision: the FIRST chain's own loop
+    // continues (turnSeat already flipped by the human's move above) and
+    // discovers the bot's `move` is now legal too — a second, SEQUENTIAL
+    // (not concurrent) decision, still within the same serialized chain.
+    releaseNextBotDecision();
+    await flush();
+    expect(totalCalls()).toBe(2);
+    expect(pendingCount()).toBe(1);
+    expect(maxConcurrentCalls()).toBe(1); // still never overlapped
+
+    releaseNextBotDecision();
+    await joinPromise;
+    await handlePromise;
+
+    // Settled: no third bot decision ever happened — the queued second
+    // chain (from `handleAction`) ran to completion and correctly found
+    // nothing left to do, instead of erroneously re-triggering the bot.
+    expect(totalCalls()).toBe(2);
+    expect(maxConcurrentCalls()).toBe(1);
+  });
+
+  it("still drives the advance() that arrived mid-flight to completion — nothing is silently dropped (liveness)", async () => {
+    const { module, releaseNextBotDecision, totalCalls } = controllableRaceModule();
+    const { room, seat0, auth } = await createRaceRoom(module);
+
+    const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await flush();
+    const handlePromise = room.handleAction(seat0.client, { type: "move", playerId: P0 });
+    await flush();
+
+    releaseNextBotDecision(); // bot's `call`
+    await flush();
+    releaseNextBotDecision(); // bot's `move`
+
+    // Both the request that was already in flight AND the one that
+    // arrived mid-flight resolve — neither promise hangs forever, which is
+    // what a naive "if busy, return" guard risks (the busy caller's own
+    // needed work simply never happens).
+    await joinPromise;
+    await handlePromise;
+
+    expect(totalCalls()).toBe(2);
+    // Final broadcast reflects a FULLY settled state: the bot's `call`
+    // happened, the bot's `move` happened, and the human's own `move`
+    // (dispatched mid-flight) was applied too — turn is back on the human
+    // (0 -> 1 -> 0), who still has both a fresh `move` and their own
+    // never-used `call` available. Nothing is stuck half-driven: if the
+    // mid-flight request had been silently dropped, the bot's own `move`
+    // (which depends on the human's move having flipped the turn) would
+    // never have happened, and this would still show only `call`.
+    const lastMessage = seat0.sent.at(-1)?.message as { legalActions: readonly RaceAction[] };
+    expect(lastMessage.legalActions).toEqual([
+      { type: "call", playerId: P0 },
+      { type: "move", playerId: P0 },
+    ]);
+  });
+
+  it("onDispose() waits for any in-flight or queued advance() work to settle before the room finishes disposing", async () => {
+    const { module, releaseNextBotDecision } = controllableRaceModule();
+    const { room, seat0, auth } = await createRaceRoom(module);
+
+    const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await flush();
+
+    let disposeSettled = false;
+    const disposePromise = Promise.resolve(room.onDispose()).then(() => {
+      disposeSettled = true;
+    });
+    await flush();
+    // The bot's decision is still held open — disposal must not have
+    // resolved yet, or a chain would be left running past teardown.
+    expect(disposeSettled).toBe(false);
+
+    releaseNextBotDecision();
+    await joinPromise;
+    await disposePromise;
+    expect(disposeSettled).toBe(true);
   });
 });
