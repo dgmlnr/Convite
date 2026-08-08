@@ -1,13 +1,22 @@
 import { parseTargetOrigin } from "@hexdev/widget-protocol";
 import type { GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
-import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, startBotMatch, watchPresence } from "@hexdev/transport-colyseus-client";
+import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, reconnectMatch, startBotMatch, watchPresence } from "@hexdev/transport-colyseus-client";
 import type { ErasedAction, MatchConnection } from "@hexdev/transport-colyseus-client";
 import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
 import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
 import { connectToHost } from "./handshake.js";
+import {
+  clearPersistedMatchSession,
+  getBrowserStorage,
+  persistMatchSession,
+  persistPlayerId,
+  readPersistedMatchSession,
+  readPersistedPlayerId,
+  type StorageLike,
+} from "./identity-storage.js";
 import { STRINGS } from "./i18n.js";
-import { createDepartureGate, withFreshToken } from "./join-flow.js";
+import { createDepartureGate, tryResumeSession, withFreshToken } from "./join-flow.js";
 import { deriveWsEndpoint } from "./match-flow.js";
 import { renewSessionToken } from "./session-renewal.js";
 import { renderErrorWithRetry, renderStatusMessage } from "./status-view.js";
@@ -110,10 +119,32 @@ function main(): void {
       return;
     }
     const client = createTransportClient(deriveWsEndpoint(window.location));
-    await renderSelection(client, bootstrap.catalog, bootstrap.playerId, embedKey);
+    const storage = getBrowserStorage(window);
+    // Player identity survives a reload within THIS browser's own storage
+    // partition (design §7: partitioned per top-level TENANT site by every
+    // modern browser — the same anonymous person on two different tenants'
+    // sites correctly stays two different players, storage partitioning's
+    // own guarantee, not a bug this works around). Falls back to the fresh,
+    // server-minted id THIS load's own `/embed` mint already produced when no
+    // persisted id exists yet (first-ever visit) or storage is
+    // blocked/unavailable — identical to today's behavior in either case.
+    // The server remains sole authority either way: reusing an old id here
+    // only changes WHICH already-permitted `/session/renew` call this load
+    // makes later, never grants anything a fresh id could not already ask
+    // for (see embed-handler.ts's own doc comment on why a client-supplied
+    // id "names no privilege").
+    const playerId = readPersistedPlayerId(storage) ?? bootstrap.playerId;
+    persistPlayerId(storage, playerId);
+    await renderSelection(client, bootstrap.catalog, playerId, embedKey, storage);
   }
 
-  async function renderSelection(client: ReturnType<typeof createTransportClient>, catalog: readonly CatalogEntry[], playerId: string, embedKey: string): Promise<void> {
+  async function renderSelection(
+    client: ReturnType<typeof createTransportClient>,
+    catalog: readonly CatalogEntry[],
+    playerId: string,
+    embedKey: string,
+    storage: StorageLike | undefined,
+  ): Promise<void> {
     const presenceByGame = new Map<GameId, readonly LobbyDisplayEntry[]>();
 
     // A FRESH token minted right before the join it is for (obs 2968), never
@@ -147,6 +178,12 @@ function main(): void {
     // `/embed` round trip.
     function returnToSelection(connection: MatchConnection<unknown>): void {
       void connection.leave();
+      // The match this session's own reload-resume would otherwise try to
+      // rejoin is over (a real ending, or a deliberate leave) — leaving the
+      // entry behind would only cost one doomed `reconnectMatch` attempt on
+      // a later boot (it fails closed, see the resume attempt below), never
+      // a correctness issue, but there is no reason to keep it around.
+      clearPersistedMatchSession(storage);
       handshake.sendLayout("inline"); // design §3: "inline that expands" — collapses back once there is no match to fill the screen with
       departureGate.reset();
       rerender();
@@ -162,7 +199,10 @@ function main(): void {
               .then((queue) => {
                 queue.onPaired((pairing) => {
                   void joinMatchFromReservation(client, pairing.reservation)
-                    .then((connection) => enterMatch(gameId, connection, () => returnToSelection(connection)))
+                    .then((connection) => {
+                      persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });
+                      enterMatch(gameId, connection, () => returnToSelection(connection));
+                    })
                     .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
                 });
                 queue.onPairingFailed((message) => renderErrorWithRetry(app!, STRINGS.pairingFailed(message), attempt));
@@ -179,13 +219,40 @@ function main(): void {
           const attempt = (): void => {
             renderStatusMessage(app!, STRINGS.searchingOpponent);
             void withFreshToken(renewToken, (token) => startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }))
-              .then((connection) => enterMatch(gameId, connection, () => returnToSelection(connection)))
+              .then((connection) => {
+                persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });
+                enterMatch(gameId, connection, () => returnToSelection(connection));
+              })
               .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
           };
           attempt();
         },
       });
     }
+
+    // Identity survives a reload (apply prompt): a match this SAME browser
+    // was seated in before a reload gets ONE attempt to resume, BEFORE the
+    // catalog is ever shown — a returning player mid-match should never see
+    // the lobby flash by first. `reconnectMatch` is colyseus's OWN
+    // reconnection-window path (`ClientLike.reconnect`), the exact SAME
+    // server-side verification `MatchRoom.onLeave`'s `allowReconnection`
+    // already requires for an in-tab network blip (spec "Disconnect,
+    // Reconnection Window, and Bot Takeover") — this only widens WHEN that
+    // proof can be presented (surviving a reload via storage, not merely a
+    // live tab's own memory), never WHO can present it or what proves it: a
+    // rejection (window expired, a bot already took the seat, the room is
+    // gone) is not transient, so `tryResumeSession` swallows it and this
+    // falls through to the ordinary catalog below, exactly as if no
+    // persisted session had ever existed.
+    const pendingSession = readPersistedMatchSession(storage);
+    const resumed = await tryResumeSession(pendingSession, (session) => reconnectMatch(client, session.reconnectionToken));
+    if (resumed !== undefined && pendingSession !== undefined) {
+      departureGate.markDeparted();
+      persistMatchSession(storage, { gameId: pendingSession.gameId, reconnectionToken: resumed.reconnectionToken });
+      enterMatch(pendingSession.gameId as GameId, resumed, () => returnToSelection(resumed));
+      return;
+    }
+    if (pendingSession !== undefined) clearPersistedMatchSession(storage);
 
     // Real websocket presence, replacing HTTP polling (spec: "Lobby
     // Presence Counters Per Point-Target Room" delivered live). One
