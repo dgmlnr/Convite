@@ -9,7 +9,11 @@ export default defineConfig({
           name: "node",
           environment: "node",
           include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
-          exclude: ["**/*.browser.test.ts", "**/dist/**", "**/node_modules/**"],
+          // `.redis.test.ts` files require a real Redis (Docker container)
+          // and run only via the separate `pnpm test:redis` project
+          // (`vitest.redis.config.ts`) — the default unit suite stays
+          // genuinely Redis-free, matching the in-memory default deployment.
+          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/dist/**", "**/node_modules/**"],
         },
       },
       {

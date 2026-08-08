@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRateLimiter } from "./rate-limiter.js";
+import { describeRateLimiterContract } from "./rate-limiter.contract.js";
 
 function fakeClock(startMs = 0) {
   let now = startMs;
@@ -47,3 +48,21 @@ describe("createRateLimiter (hardening: /embed + room join, obs 2945)", () => {
     expect(await limiter.size()).toBe(1); // the 3 stale entries were evicted, only the fresh one remains
   });
 });
+
+// The shared conformance suite (rate-limiter.contract.ts), run here against
+// THIS adapter — the same suite `redis-rate-limiter.live.test.ts` runs
+// against the Redis adapter (apply prompt: "an adapter that passes the
+// in-memory adapter's own contract tests is worth more than bespoke tests").
+// ONE shared fake clock backs every `create()` call in the contract: each
+// test still gets a FRESH limiter (fresh internal Map), but `advance` must
+// mutate the exact clock that limiter reads from.
+{
+  const sharedClock = fakeClock();
+  describeRateLimiterContract(
+    "in-memory",
+    (limit, windowMs) => createRateLimiter({ limit, windowMs, clock: sharedClock.now }),
+    async (ms) => {
+      sharedClock.advance(ms);
+    },
+  );
+}
