@@ -469,6 +469,63 @@ describe("MatchRoom + single-player vs bot (spec: Single-Player vs Bot Mode)", (
   });
 });
 
+describe("MatchRoom.advance() — a misbehaving bot strategy must not crash the room (root cause of the disclosed intermittent single-player stall, obs 2973/2925)", () => {
+  /**
+   * NOT a hypothetical: `truco-bot`'s `easy`/`normal`/`hard` tiers ALL throw
+   * `"no legal actions to choose from"` when handed an empty list — a real,
+   * currently-shipping code path. This fixture reproduces that exact shape
+   * generically (never truco-specific), matching the same anti-truco-shape
+   * discipline the rest of this file already applies.
+   */
+  function moduleWithThrowingBot() {
+    const module: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+      ...fixtureModule,
+      createBot: () => ({
+        chooseAction: async (): Promise<FixtureAction> => {
+          throw new Error("boom: a misbehaving bot strategy (e.g. truco-bot's own empty-legal-actions guard)");
+        },
+      }),
+    };
+    return module;
+  }
+
+  async function createSinglePlayerRoomWithThrowingBot() {
+    const auth = createAuth();
+    const registry = createGameModuleRegistry([moduleWithThrowingBot()]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });
+    const seat0 = fakeClient("s0");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    return { room, seat0, auth };
+  }
+
+  it("does not let the bot's thrown exception escape handleAction's returned promise as a rejection", async () => {
+    const { room, seat0 } = await createSinglePlayerRoomWithThrowingBot();
+
+    // The human's move hands the turn to the bot, whose own chooseAction
+    // throws mid-decision. BEFORE the fix, `advance()`'s promise chain
+    // propagated this as a rejection all the way out of `handleAction` —
+    // exactly what Colyseus's own `onMessage` dispatch never catches
+    // (verified in the installed `@colyseus/core` source: a listener's
+    // return value is never awaited unless the room defines its own
+    // `onUncaughtException`, which this room deliberately does not), which
+    // is a FATAL unhandled rejection under Node's default behavior since
+    // v15 — the entire server process, not just this match.
+    await expect(room.handleAction(seat0.client, { type: "advance", playerId: P0 })).resolves.toBeUndefined();
+  });
+
+  it("survives the bot's exception: the room keeps accepting legal actions afterward instead of being permanently abandoned", async () => {
+    const { room, seat0 } = await createSinglePlayerRoomWithThrowingBot();
+
+    await room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+    // The room is still alive and its state is exactly what the human's own
+    // legal move produced — the bot's own aborted turn is the ONLY thing
+    // abandoned, not the whole room. [0] initial view, [1] the human's move.
+    expect(seat0.sent).toHaveLength(2);
+    expect(seat0.sent[1]).toMatchObject({ type: "view", message: { view: { turnSeat: 1 } } });
+  });
+});
+
 describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal' is the decided default)", () => {
   function moduleWithTierSpy() {
     const tiers: BotTier[] = [];

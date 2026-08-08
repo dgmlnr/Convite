@@ -45,3 +45,7 @@ pnpm-debug.log*
 .turbo/
 .cache/
 .playwright-mcp/
+
+# E2E harness runtime handoff (written by e2e/global-setup.ts, read by the
+# e2e test files — see vitest.e2e.config.ts)
+e2e/.harness/

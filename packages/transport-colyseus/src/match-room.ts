@@ -387,6 +387,10 @@ export class MatchRoom extends Room {
     }
     this.matchState = result.state;
     this.broadcastViews();
+    // `advance()` never rejects (see its own doc comment) — this fire-and-
+    // forget return is safe: Colyseus's `onMessage` dispatch never awaits or
+    // catches a handler's return value unless this room defines its own
+    // `onUncaughtException`, which it deliberately does not.
     return this.advance();
   }
 
@@ -398,38 +402,74 @@ export class MatchRoom extends Room {
    * loop a disconnect-takeover bot reuses to resolve a pending call before
    * further human play (spec 6.4): takeover only ever mutates ONE
    * `controllers` entry; this loop is what makes that entry actually play.
+   *
+   * THE OUTER try/catch IS THE FIX for the disclosed intermittent
+   * single-player stall (apply-progress, obs 2973/2925): a "frozen" match
+   * (score/turn/hand byte-identical for the FULL multi-minute E2E timeout,
+   * not merely slow) was never a stuck game-state — it was a CRASHED SERVER
+   * PROCESS. Every caller of this method treats its returned promise as
+   * fire-and-forget: `handleAction` returns it uncaught to Colyseus's
+   * `onMessage` dispatch (verified in the installed `@colyseus/core` source,
+   * `Room.mjs`'s `_onMessage`/`onMessageEvents.emit`: a registered listener's
+   * return value is never awaited, and it is only ever wrapped in a
+   * try/catch when a room defines its OWN `onUncaughtException` — this room
+   * deliberately does not, matching every other room this framework ships);
+   * `takeOverSeat` explicitly discards it via `void`. Node.js has treated an
+   * unhandled promise rejection as FATAL by default since v15 (prints the
+   * error and calls `process.exit(1)`) — so ANY exception anywhere in this
+   * method's own async chain (a bot strategy's `chooseAction`, most
+   * concretely: `truco-bot`'s `easy`/`normal`/`hard` tiers all THROW when
+   * handed an empty legal-action list, a real and current code path, not a
+   * hypothetical one) took down the ENTIRE server process, not just this one
+   * match. That is why the E2E's own diagnostic saw state frozen for the
+   * FULL timeout rather than merely delayed: nothing was left running to
+   * ever answer. This method already applied the identical defensive
+   * contract to ONE failure mode below (a misbehaving `requestSystemAction`
+   * "must not crash the room") — the outer try/catch extends that SAME
+   * contract to every other failure mode in this method, closing the gap.
    */
   private async advance(): Promise<void> {
-    const module = this.module;
-    const registry = this.registry;
-    const gameId = this.gameId;
-    const rng = this.rng;
-    if (module === undefined || registry === undefined || gameId === undefined || rng === undefined || this.matchState === undefined) return;
-    if (module.getOutcome(this.matchState) !== null) return;
+    try {
+      const module = this.module;
+      const registry = this.registry;
+      const gameId = this.gameId;
+      const rng = this.rng;
+      if (module === undefined || registry === undefined || gameId === undefined || rng === undefined || this.matchState === undefined) return;
+      if (module.getOutcome(this.matchState) !== null) return;
 
-    const actingBot = this.findActingBot();
-    if (actingBot !== undefined) {
-      const view = module.getViewFor(this.matchState, actingBot.playerId);
-      const legal = module.getLegalActions(this.matchState, actingBot.playerId);
-      const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS);
-      const result = module.applyAction(this.matchState, action);
-      if (result.ok) {
-        this.matchState = result.state;
-        this.broadcastViews();
+      const actingBot = this.findActingBot();
+      if (actingBot !== undefined) {
+        const view = module.getViewFor(this.matchState, actingBot.playerId);
+        const legal = module.getLegalActions(this.matchState, actingBot.playerId);
+        const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS);
+        const result = module.applyAction(this.matchState, action);
+        if (result.ok) {
+          this.matchState = result.state;
+          this.broadcastViews();
+        }
+        await this.advance();
+        return;
       }
-      await this.advance();
-      return;
-    }
 
-    const anySeatCanAct = [...this.controllers.values()].some((controller) => module.getLegalActions(this.matchState, controller.playerId).length > 0);
-    if (anySeatCanAct) return;
-    const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
-    if (systemAction === null) return;
-    const result = module.applyAction(this.matchState, systemAction);
-    if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
-    this.matchState = result.state;
-    this.broadcastViews();
-    await this.advance();
+      const anySeatCanAct = [...this.controllers.values()].some((controller) => module.getLegalActions(this.matchState, controller.playerId).length > 0);
+      if (anySeatCanAct) return;
+      const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
+      if (systemAction === null) return;
+      const result = module.applyAction(this.matchState, systemAction);
+      if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
+      this.matchState = result.state;
+      this.broadcastViews();
+      await this.advance();
+    } catch (error) {
+      // NEVER re-throw: an exception escaping here becomes a fatal,
+      // whole-process-crashing unhandled rejection (see this method's own
+      // doc comment above), not merely a rejected `handleAction` call. This
+      // turn's own driving step is abandoned, but the room (and every OTHER
+      // in-flight match on this process) survives; the next real client
+      // action or reconnection still calls `advance()` again from a fresh,
+      // consistent `this.matchState`.
+      console.error("MatchRoom.advance(): caught an exception mid-turn — the room stays alive, only this turn's own driving step is abandoned:", error);
+    }
   }
 
   private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> } | undefined {

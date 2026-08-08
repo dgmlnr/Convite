@@ -68,6 +68,36 @@ describe("getLegalActions/applyAction — play-card turn validation", () => {
     expect(getLegalActions(called, playerA).some((a) => a.type === "play-card")).toBe(false);
     expect(getLegalActions(called, playerB).some((a) => a.type === "play-card")).toBe(false);
   });
+
+  /** Real Truco Argentino rule: envido tantos are counted and awarded
+   * IMMEDIATELY after a "quiero", before card play resumes — reveal is not
+   * optional bookkeeping deferred to hand-end. If card play stayed legal
+   * while envido sits "accepted" (quiero'd but not yet revealed), a hand that
+   * gets decided by cards before anyone reveals would permanently lose the
+   * envido points: `getLegalEnvidoActions` stops offering `reveal-envido`
+   * the instant `hand.outcome.decided` flips (card-play.ts's own decided
+   * gate), so a deferred reveal becomes unreachable once the hand ends.
+   * `callsAreSettled` (card-play.ts) already gates on `envido.status ===
+   * "accepted"` alongside "pending" — this proves that gate holds for the
+   * ACCEPTED (not just pending) case specifically, closing the gap a partial
+   * read of `getLegalCardPlayActions`'s first guard clause (only
+   * `hand.outcome.decided` / `hand.truco.status === "declined"`) could miss. */
+  it("blocks card play while envido is accepted but not yet revealed (tantos must be counted before play resumes)", () => {
+    const state = freshHand([{ suit: "espada", rank: 1 }], [{ suit: "espada", rank: 4 }]);
+    const accepted = apply(
+      apply(state, { type: "call-envido", playerId: playerA, level: "envido" }),
+      { type: "respond-envido", playerId: playerB, response: "quiero" },
+    );
+
+    expect(accepted.hand?.envido.status).toBe("accepted");
+    expect(getLegalActions(accepted, playerA).some((a) => a.type === "play-card")).toBe(false);
+    expect(getLegalActions(accepted, playerB).some((a) => a.type === "play-card")).toBe(false);
+    // The only thing legal for anyone is resolving the reveal — never a raw play-card.
+    expect(getLegalActions(accepted, playerA)).toEqual([{ type: "reveal-envido", playerId: playerA }]);
+
+    const result = applyAction(accepted, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("applyAction — trick advancement wired through resolveTrick", () => {
