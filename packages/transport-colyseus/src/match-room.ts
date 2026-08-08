@@ -142,6 +142,16 @@ export class MatchRoom extends Room {
   private reconnectionWindowSeconds = DEFAULT_RECONNECTION_WINDOW_SECONDS;
   private takeoverTier: BotTier = DEFAULT_TAKEOVER_TIER;
   private readonly controllers = new Map<number, Controller>();
+  /**
+   * The serialization boundary for `advance()` (closes the disclosed
+   * overlap debt, apply-progress obs 2927/2925). Every external trigger —
+   * `handleAction`, the seat-fill in `onJoin`, `takeOverSeat` — chains onto
+   * this promise instead of calling the stepping logic directly. Always
+   * settled (never left rejected): `advance()` below always replaces it
+   * with a `.catch()`-guarded link, so a later caller's `.then()` is never
+   * attached to a promise that will reject.
+   */
+  private advanceChain: Promise<void> = Promise.resolve();
 
   override onCreate(options: MatchRoomCreateOptions): void {
     const module = options.registry.get(options.gameId);
@@ -395,19 +405,75 @@ export class MatchRoom extends Room {
   }
 
   /**
-   * Drives the match through every step nobody at a keyboard needs to
-   * trigger: a bot's own turn, then (design's system-action note) "nobody
-   * can act, but the match must advance". Recurses so one step can unblock
-   * the next — a bot's move can reveal the next system action, exactly the
-   * loop a disconnect-takeover bot reuses to resolve a pending call before
-   * further human play (spec 6.4): takeover only ever mutates ONE
-   * `controllers` entry; this loop is what makes that entry actually play.
+   * The `advance()` entry point every trigger calls (`handleAction`,
+   * `onJoin`'s seat-fill, `takeOverSeat`). Closes the disclosed overlap
+   * debt (apply-progress obs 2927/2925): "a human action arriving while a
+   * bot decision is in flight ... starts a second, concurrent `advance()`
+   * chain on the same room." Every call is appended to `advanceChain` via
+   * `.then()` — not gated by a checked-then-set boolean flag, which is the
+   * shape that invites the classic "two calls interleave in the same
+   * instant" bug. Promise chaining instead makes the ordering a property
+   * of the promise graph itself: `runAdvanceOnce()` for call N+1 is not
+   * even CONSTRUCTED as a pending job until call N's `runAdvanceOnce()`
+   * promise has settled, because `.then()`'s callback cannot run before
+   * its receiver settles. At most one `runAdvanceOnce()` body is ever
+   * executing at a time — this makes overlap structurally IMPOSSIBLE, not
+   * merely unlikely, given the current single-process, single-event-loop
+   * deployment (see this method's own return value note on multi-process
+   * deployments).
+   *
+   * Liveness (the property a naive "if busy, return" guard risks losing):
+   * every call still gets its OWN link appended to the chain, so its own
+   * `runAdvanceOnce()` invocation WILL run — only ever deferred until its
+   * predecessor finishes, never dropped. The trigger that arrived while a
+   * bot was mid-decision still gets driven; it simply runs after.
+   *
+   * `advanceChain` is reassigned synchronously (before this method returns
+   * to its caller, no `await` in between) with a `.catch()`-guarded copy of
+   * the same promise, so a later caller's own `.then()` is never chained
+   * onto a promise that could reject — `runAdvanceOnce()` itself never
+   * throws past its own boundary (see its doc comment), and this is a
+   * second, defensive layer in case that contract is ever violated by a
+   * future edit.
+   *
+   * Scope note: this guarantee holds for THIS room instance within ONE
+   * Node.js process/event loop, which is this project's actual deployment
+   * shape (design §1: a single generic `MatchRoom`, no cross-process
+   * sharding of one match). It says nothing about two different processes
+   * racing on the same match — not a real risk here, since a Colyseus room
+   * always lives in exactly one process for its whole lifetime.
+   */
+  private advance(): Promise<void> {
+    const scheduled = this.advanceChain.then(() => this.runAdvanceOnce());
+    this.advanceChain = scheduled.catch(() => {
+      // Nothing to do here: `runAdvanceOnce()` already logs and swallows
+      // every exception itself. This catch exists purely so a violation of
+      // that contract can never poison the chain for callers queued after
+      // it.
+    });
+    return scheduled;
+  }
+
+  /**
+   * The actual stepping logic: a bot's own turn, then (design's
+   * system-action note) "nobody can act, but the match must advance".
+   * Loops so one step can unblock the next — a bot's move can reveal the
+   * next system action, exactly the sequence a disconnect-takeover bot
+   * reuses to resolve a pending call before further human play (spec 6.4).
+   * Deliberately a `for(;;)` loop rather than the recursive `await
+   * this.advance()` this method used to use: recursing into the PUBLIC
+   * `advance()` from here would re-enter the promise chain above and
+   * deadlock — call N would await a link that cannot settle until call N's
+   * OWN `runAdvanceOnce()` (the thing doing the awaiting) finishes. Looping
+   * locally keeps every step of one triggered advance in a single
+   * uninterrupted execution, which is exactly the serialization guarantee
+   * `advance()` promises its callers.
    *
    * THE OUTER try/catch IS THE FIX for the disclosed intermittent
    * single-player stall (apply-progress, obs 2973/2925): a "frozen" match
    * (score/turn/hand byte-identical for the FULL multi-minute E2E timeout,
    * not merely slow) was never a stuck game-state — it was a CRASHED SERVER
-   * PROCESS. Every caller of this method treats its returned promise as
+   * PROCESS. Every caller of `advance()` treats its returned promise as
    * fire-and-forget: `handleAction` returns it uncaught to Colyseus's
    * `onMessage` dispatch (verified in the installed `@colyseus/core` source,
    * `Room.mjs`'s `_onMessage`/`onMessageEvents.emit`: a registered listener's
@@ -428,38 +494,38 @@ export class MatchRoom extends Room {
    * "must not crash the room") — the outer try/catch extends that SAME
    * contract to every other failure mode in this method, closing the gap.
    */
-  private async advance(): Promise<void> {
+  private async runAdvanceOnce(): Promise<void> {
     try {
-      const module = this.module;
-      const registry = this.registry;
-      const gameId = this.gameId;
-      const rng = this.rng;
-      if (module === undefined || registry === undefined || gameId === undefined || rng === undefined || this.matchState === undefined) return;
-      if (module.getOutcome(this.matchState) !== null) return;
+      for (;;) {
+        const module = this.module;
+        const registry = this.registry;
+        const gameId = this.gameId;
+        const rng = this.rng;
+        if (module === undefined || registry === undefined || gameId === undefined || rng === undefined || this.matchState === undefined) return;
+        if (module.getOutcome(this.matchState) !== null) return;
 
-      const actingBot = this.findActingBot();
-      if (actingBot !== undefined) {
-        const view = module.getViewFor(this.matchState, actingBot.playerId);
-        const legal = module.getLegalActions(this.matchState, actingBot.playerId);
-        const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS);
-        const result = module.applyAction(this.matchState, action);
-        if (result.ok) {
-          this.matchState = result.state;
-          this.broadcastViews();
+        const actingBot = this.findActingBot();
+        if (actingBot !== undefined) {
+          const view = module.getViewFor(this.matchState, actingBot.playerId);
+          const legal = module.getLegalActions(this.matchState, actingBot.playerId);
+          const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS);
+          const result = module.applyAction(this.matchState, action);
+          if (result.ok) {
+            this.matchState = result.state;
+            this.broadcastViews();
+          }
+          continue;
         }
-        await this.advance();
-        return;
-      }
 
-      const anySeatCanAct = [...this.controllers.values()].some((controller) => module.getLegalActions(this.matchState, controller.playerId).length > 0);
-      if (anySeatCanAct) return;
-      const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
-      if (systemAction === null) return;
-      const result = module.applyAction(this.matchState, systemAction);
-      if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
-      this.matchState = result.state;
-      this.broadcastViews();
-      await this.advance();
+        const anySeatCanAct = [...this.controllers.values()].some((controller) => module.getLegalActions(this.matchState, controller.playerId).length > 0);
+        if (anySeatCanAct) return;
+        const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
+        if (systemAction === null) return;
+        const result = module.applyAction(this.matchState, systemAction);
+        if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
+        this.matchState = result.state;
+        this.broadcastViews();
+      }
     } catch (error) {
       // NEVER re-throw: an exception escaping here becomes a fatal,
       // whole-process-crashing unhandled rejection (see this method's own
@@ -470,6 +536,23 @@ export class MatchRoom extends Room {
       // consistent `this.matchState`.
       console.error("MatchRoom.advance(): caught an exception mid-turn — the room stays alive, only this turn's own driving step is abandoned:", error);
     }
+  }
+
+  /**
+   * Spec-adjacent hardening, not a spec requirement by name: room disposal
+   * must not leave an `advance()` chain running past teardown, or its
+   * promise dangling with no one awaiting it. Colyseus's own `#_dispose()`
+   * (verified in the installed `@colyseus/core` source, `Room.mjs`) awaits
+   * exactly `onDispose() ?? Promise.resolve()` BEFORE clearing this room's
+   * clock/intervals — returning `advanceChain` here means any `advance()`
+   * work queued or in flight at the moment of disposal is given the chance
+   * to finish first, instead of continuing to run against a room the
+   * framework already considers torn down. `advanceChain` is always a
+   * settled-eventually, `.catch()`-guarded promise (see `advance()`'s own
+   * doc comment), so this can never hang disposal indefinitely.
+   */
+  override onDispose(): Promise<void> {
+    return this.advanceChain;
   }
 
   private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> } | undefined {
