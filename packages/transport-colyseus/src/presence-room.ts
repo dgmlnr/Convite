@@ -21,6 +21,23 @@ export interface PresenceRoomCreateOptions {
 }
 
 interface PresenceJoinOptions {
+  /** THE DEFENSE-IN-DEPTH HALF of this unit's fix (apply-progress obs
+   * 2925/2927, roadmap obs 2943). `apps/server`'s own `gameServer.define`
+   * registers this room with `.filterBy(["gameId"])`, which is what steers a
+   * REAL client's `joinOrCreate` to the right already-open room in the first
+   * place — but `filterBy` only governs colyseus's own room SELECTION; it
+   * says nothing about a client that already targets a specific `roomId`
+   * directly (`joinById`, a stale client from a future refactor, or a
+   * hand-crafted join). `onJoin` below compares this field against the
+   * room's OWN `gameId` (fixed at `onCreate`, never client-suppliable at
+   * that point) and rejects a mismatch outright — the same "fails closed"
+   * convention `MatchRoom.onAuth` already established, not a new one
+   * invented here. Previously this field was never even read (the disclosed
+   * defect this unit closes): every real client already sends it
+   * (`@hexdev/transport-colyseus-client`'s `watchPresence`/
+   * `joinMatchmakingQueue`), so making it load-bearing costs nothing on the
+   * wire, only in this room's own trust boundary. */
+  readonly gameId: GameId;
   /** Omitted entirely = watch-only (spec: the selection screen must show
    * live counts for every modality of a game BEFORE a player has committed
    * to any one of them). Present = queue for that exact modality, unchanged
@@ -62,6 +79,17 @@ interface PairedSeat {
  *
  * Deliberately no join-time auth (unlike `MatchRoom`): this room reveals
  * only aggregate counts and pairs anonymous connections, never game state.
+ *
+ * GAME ISOLATION (this unit, apply-progress obs 2925/2927): a real client's
+ * `joinOrCreate` is steered to the correct already-open room by
+ * `.filterBy(["gameId"])` on this room's registration (`apps/server`'s
+ * composition root) — that is colyseus's own SELECTION mechanism, necessary
+ * but not sufficient. `onJoin` below is the second, independent layer: it
+ * compares a joining client's CLAIMED `gameId` against this room's OWN
+ * `gameId` (fixed at `onCreate`, never client-suppliable at that point) and
+ * rejects any mismatch, so a join that bypasses `filterBy` entirely (a
+ * specific `roomId` targeted directly, a stale client, a hand-crafted join)
+ * still cannot silently inherit the wrong game.
  */
 export class PresenceRoom extends Room {
   private gameId: GameId | undefined;
@@ -91,6 +119,18 @@ export class PresenceRoom extends Room {
     const pool = this.pool;
     const gameId = this.gameId;
     if (pool === undefined || gameId === undefined) return;
+    // Defense in depth (see `PresenceJoinOptions.gameId`'s own docstring):
+    // this room's OWN gameId, fixed at `onCreate`, is the only trusted
+    // source — a joining client's CLAIMED gameId is checked against it and
+    // rejected on any mismatch, BEFORE it can ever reach the pool/queue
+    // below. Thrown here, `onJoin` throwing disconnects the client with an
+    // error (verified in the installed `@colyseus/core` source, `Room.ts`'s
+    // `_onJoin`: an exception here calls `_onLeave` and re-throws), the exact
+    // same fail-closed shape `MatchRoom.onAuth` already uses for every
+    // rejection.
+    if (options.gameId !== gameId) {
+      throw new Error(`PresenceRoom: join rejected, claimed gameId "${options.gameId}" does not match this room's game "${gameId}"`);
+    }
     // Watch-only: broadcast the CURRENT snapshot so a freshly-connected
     // watcher does not wait for someone else's queue activity to see its
     // first "counts" message, but never track/enqueue/pair this client.

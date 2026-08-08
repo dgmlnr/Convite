@@ -34,12 +34,15 @@ export async function watchPresence(client: ClientLike, options: WatchPresenceOp
   // joinOrCreate, deliberately NOT join: no PresenceRoom instance exists
   // for a gameId until the FIRST client shows up for it — `client.join`
   // requires an ALREADY-EXISTING room and rejects with "no rooms found"
-  // otherwise (found running this live, not assumed). A pre-existing,
-  // disclosed gap this call site inherits: `gameServer.define("presence",
-  // PresenceRoom, ...)` has no `filterBy`, so a SECOND game's watcher could
-  // in principle be handed a FIRST game's already-open room — today's single
-  // -game catalog never exercises this; closing it is `transport-colyseus`
-  // scope, out of this unit's boundary, and is reported as a residual risk.
+  // otherwise (found running this live, not assumed). CLOSED (apply-progress
+  // obs 2925/2927, `transport-colyseus` scope, per this file's own prior
+  // disclosure): `gameServer.define("presence", PresenceRoom, ...)` now
+  // registers `.filterBy(["gameId"])` — a SECOND game's watcher can no longer
+  // be handed a FIRST game's already-open room. `PresenceRoom.onJoin` also
+  // now defensively rejects a join whose claimed `gameId` disagrees with the
+  // room's own, even for a path that bypasses `filterBy` selection entirely
+  // (a hand-crafted join, a stale client). This call site's `gameId` field
+  // was ALWAYS sent on the wire; it is what both layers of that fix consume.
   const room = await client.joinOrCreate(PRESENCE_ROOM_NAME, { gameId: options.gameId, playerId: options.playerId, token: options.token });
   return {
     onCounts(callback) {
@@ -84,8 +87,8 @@ interface PairedMessage {
  */
 export async function joinMatchmakingQueue(client: ClientLike, options: JoinMatchmakingQueueOptions): Promise<MatchmakingQueueConnection> {
   // joinOrCreate for the same reason as watchPresence above — see that
-  // function's comment for the full explanation and the disclosed filterBy
-  // gap this call site also inherits.
+  // function's comment for the full explanation; the filterBy gap it
+  // describes is now closed and covers this call site identically.
   const room = await client.joinOrCreate(PRESENCE_ROOM_NAME, {
     gameId: options.gameId,
     playerId: options.playerId,

@@ -219,7 +219,16 @@ const gameServer = createMatchServer({
 });
 // `gameId` is deliberately absent here — the client supplies it at
 // createRoom time, same as `MatchRoom`'s own `defaultOptions` pattern.
-gameServer.define("presence", PresenceRoom, { registry, pool: presencePool, poolKey: GLOBAL_POOL_KEY } as PresenceRoomCreateOptions);
+// `.filterBy(["gameId"])`: THE SEGREGATION HALF of this unit's fix
+// (apply-progress obs 2925/2927, roadmap obs 2943's "PresenceRoom/MatchRoom
+// need filterBy before Escoba/Generala ship a second gameId"). Without this,
+// colyseus's own matchmaker ignores `gameId` when selecting among already-
+// open "presence" rooms for a `joinOrCreate` — a real client asking for game
+// B could be handed game A's already-open room. `PresenceRoom.onJoin`'s own
+// defense-in-depth check (`presence-room.ts`, this same unit) covers the
+// join paths this server-registration mechanism does not (a specific roomId
+// targeted directly, bypassing selection entirely).
+gameServer.define("presence", PresenceRoom, { registry, pool: presencePool, poolKey: GLOBAL_POOL_KEY } as PresenceRoomCreateOptions).filterBy(["gameId"]);
 
 // gameServer.listen, DELIBERATELY not httpServer.listen — THE SECOND REAL
 // BUG this unit found running a genuine browser join, not assumed. Colyseus's
