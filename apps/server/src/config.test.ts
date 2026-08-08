@@ -53,6 +53,15 @@ describe("loadServerConfig", () => {
     const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_EMBED_IP_RATE_LIMIT: "5", HEXDEV_EMBED_IP_RATE_WINDOW_MS: "1000" });
     expect(config.embedIpRateLimit).toEqual({ limit: 5, windowMs: 1000 });
   });
+
+  it("defaults redisUrl to undefined — no Redis, no new required config for a single-instance deploy", () => {
+    expect(loadServerConfig(DEV_OPT_IN).redisUrl).toBeUndefined();
+  });
+
+  it("reads HEXDEV_REDIS_URL when set — the ONE knob that switches every port to its Redis-backed adapter together", () => {
+    const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_REDIS_URL: "redis://localhost:6379" });
+    expect(config.redisUrl).toBe("redis://localhost:6379");
+  });
 });
 
 describe("loadServerConfig — fail-loud by default (hardening: public surface, obs 2945)", () => {

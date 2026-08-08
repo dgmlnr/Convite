@@ -14,7 +14,8 @@
     "@colyseus/redis-presence": "^0.17.7",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
-    "colyseus": "^0.17.10"
+    "colyseus": "^0.17.10",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@colyseus/testing": "^0.17.11",
