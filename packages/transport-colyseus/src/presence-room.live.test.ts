@@ -75,7 +75,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
 
   it("pairs two real waiting clients in the same modality and removes both from the live counter", async () => {
     const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
-    const client0 = await testServer.connectTo(room, { modality: { roundLength: 15 }, playerId: "p0" });
+    const client0 = await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p0" });
     const counts0: unknown[] = [];
     client0.onMessage("counts", (message) => counts0.push(message));
     const paired0: unknown[] = [];
@@ -83,7 +83,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
 
     await new Promise((resolve) => setTimeout(resolve, 30)); // let the first "counts" broadcast land
 
-    const client1 = await testServer.connectTo(room, { modality: { roundLength: 15 }, playerId: "p1" });
+    const client1 = await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p1" });
     const paired1: unknown[] = [];
     client1.onMessage("paired", (message) => paired1.push(message));
 
@@ -99,10 +99,10 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
 
   it("keeps two different modalities independent: a lone waiting client in a different modality is never paired", async () => {
     const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
-    const client0 = await testServer.connectTo(room, { modality: { roundLength: 15 }, playerId: "p0" });
+    const client0 = await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p0" });
     const paired0: unknown[] = [];
     client0.onMessage("paired", (message) => paired0.push(message));
-    await testServer.connectTo(room, { modality: { roundLength: 30 }, playerId: "p1" });
+    await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 30 }, playerId: "p1" });
 
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(paired0).toHaveLength(0);
@@ -123,7 +123,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
    */
   it("a watch-only join (no modality) receives live counts but is never enqueued or paired", async () => {
     const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
-    const watcher = await testServer.connectTo(room, {});
+    const watcher = await testServer.connectTo(room, { gameId: "fixture-lobby" });
     const counts: unknown[] = [];
     watcher.onMessage("counts", (message) => counts.push(message));
     const paired: unknown[] = [];
@@ -136,7 +136,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     // A real queued client joins the SAME modality: the watcher must see the
     // count change (it is genuinely subscribed) without ever being a
     // candidate for pairing itself.
-    await testServer.connectTo(room, { modality: { roundLength: 15 }, playerId: "p0" });
+    await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p0" });
     await new Promise((resolve) => setTimeout(resolve, 30));
     const after = counts[counts.length - 1] as Array<{ modality: { roundLength: number }; waitingCount: number }>;
     expect(after.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
@@ -226,10 +226,10 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
     const token1 = await issuer.mint({ tenantId: TENANT_ID, playerId: P1, entitlements: [HANDOFF_GAME_ID] }, 60);
 
     const presenceRoom = await testServer.createRoom("presence", { gameId: HANDOFF_GAME_ID });
-    const client0 = await testServer.connectTo(presenceRoom, { modality: { roundLength: 15 }, playerId: P0, token: token0 });
+    const client0 = await testServer.connectTo(presenceRoom, { gameId: HANDOFF_GAME_ID, modality: { roundLength: 15 }, playerId: P0, token: token0 });
     const paired0: Array<{ opponentPlayerId: string; matchReservation: unknown }> = [];
     client0.onMessage("paired", (message) => paired0.push(message));
-    const client1 = await testServer.connectTo(presenceRoom, { modality: { roundLength: 15 }, playerId: P1, token: token1 });
+    const client1 = await testServer.connectTo(presenceRoom, { gameId: HANDOFF_GAME_ID, modality: { roundLength: 15 }, playerId: P1, token: token1 });
     const paired1: Array<{ opponentPlayerId: string; matchReservation: unknown }> = [];
     client1.onMessage("paired", (message) => paired1.push(message));
 
@@ -254,11 +254,11 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
     const presenceRoom = await testServer.createRoom("presence", { gameId: HANDOFF_GAME_ID });
     // client0 joins the LOBBY with NO token at all (allowed — PresenceRoom
     // itself has no join-time auth); client1 has a real one so pairing occurs.
-    const client0 = await testServer.connectTo(presenceRoom, { modality: { roundLength: 15 }, playerId: P0 });
+    const client0 = await testServer.connectTo(presenceRoom, { gameId: HANDOFF_GAME_ID, modality: { roundLength: 15 }, playerId: P0 });
     const paired0: Array<{ matchReservation: unknown }> = [];
     client0.onMessage("paired", (message) => paired0.push(message));
     const token1 = await issuer.mint({ tenantId: TENANT_ID, playerId: P1, entitlements: [HANDOFF_GAME_ID] }, 60);
-    await testServer.connectTo(presenceRoom, { modality: { roundLength: 15 }, playerId: P1, token: token1 });
+    await testServer.connectTo(presenceRoom, { gameId: HANDOFF_GAME_ID, modality: { roundLength: 15 }, playerId: P1, token: token1 });
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -266,5 +266,158 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
     // ...but the hand-off is NOT a second identity path: consuming the
     // reservation with no token still fails MatchRoom's real onAuth.
     await expect(testServer.sdk.consumeSeatReservation(paired0[0]!.matchReservation as never)).rejects.toBeDefined();
+  });
+});
+
+/**
+ * THE DISCLOSED GAP THIS UNIT CLOSES (apply-progress obs 2925/2927, roadmap
+ * obs 2943): `gameServer.define("presence", PresenceRoom, ...)` previously had
+ * no `filterBy`, so a real client's `joinOrCreate("presence", { gameId })`
+ * could be handed ANY already-open "presence" room regardless of which game
+ * it was created for — `onJoin` never even read `options.gameId` to notice.
+ * Two independent fixture `GameModule`s, deliberately sharing the SAME
+ * `configOptions` shape (`roundLength: [15, 30]`), so a false-positive "it
+ * only worked because the modality shapes differed" is impossible — isolation
+ * here can only come from `gameId`, nothing else.
+ */
+const isolationModuleA: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
+  id: "fixture-isolation-a",
+  metadata: { seatCount: 2, displayNameKey: "fixture.isolation.a", assetBase: "/fixture" },
+  configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
+  createMatch: (_config, seats: readonly SeatAssignment[]) => ({ seats }),
+  applyAction: (state) => ({ ok: true, state }),
+  getLegalActions: () => [],
+  getViewFor: (state) => state,
+  getOutcome: () => null,
+  serialize: (state) => state as never,
+  deserialize: (json) => json,
+  createBot: () => ({ chooseAction: async () => ({ playerId: "bot" as PlayerId }) }),
+};
+
+const isolationModuleB: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
+  ...isolationModuleA,
+  id: "fixture-isolation-b",
+  metadata: { seatCount: 2, displayNameKey: "fixture.isolation.b", assetBase: "/fixture" },
+};
+
+describe("PresenceRoom — game isolation over real matchmaking (closes the disclosed filterBy gap, obs 2925/2927/2943)", () => {
+  let testServer: ColyseusTestServer;
+  // Own distinct port range, same discipline as every sibling describe block
+  // in this file (see the first block's own comment for the full rationale).
+  let nextPort = 2660;
+
+  beforeEach(async () => {
+    // BOTH fixture games share one registry and one matchmaking pool —
+    // exactly the real `apps/server` composition root shape once a second
+    // game (Escoba/Generala) ships alongside truco.
+    const registry = createGameModuleRegistry([isolationModuleA, isolationModuleB]);
+    const pool = createMatchmakingPool();
+    const httpServer = createServer();
+    const auth = {
+      issuer: createSessionTokenIssuer("isolation-secret"),
+      repository: createStaticTenantRepository([]),
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [],
+    };
+    const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
+    // THE FIX under test: without `.filterBy(["gameId"])`, colyseus's own
+    // matchmaker (`findOneRoomAvailable`) ignores `gameId` entirely when
+    // selecting among already-open "presence" rooms — see this file's own
+    // investigation of `@colyseus/core`'s installed `MatchMaker.ts`/
+    // `RegisteredHandler.ts` source (apply-progress, this unit). Verified
+    // live: removing this one line reproduces the exact disclosed bug (the
+    // very next assertion below fails: `roomA0.roomId === roomB0.roomId`).
+    gameServer.define("presence", PresenceRoom, { registry, pool } as never).filterBy(["gameId"]);
+    await gameServer.listen(nextPort++);
+    testServer = new ColyseusTestServer(gameServer);
+  });
+
+  afterEach(async () => {
+    await testServer.shutdown();
+  });
+
+  it("a client asking for game B never lands in game A's already-open room, is never enqueued/counted/paired into it, and same-game pairing still works", async () => {
+    // `sdk.joinOrCreate` — the REAL client-facing matchmaking call
+    // (`@hexdev/transport-colyseus-client`'s `watchPresence`/
+    // `joinMatchmakingQueue` wrap this exact method), never
+    // `testServer.createRoom` (which bypasses room SELECTION entirely and
+    // would prove nothing about this defect).
+    const roomA0 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-a", modality: { roundLength: 15 }, playerId: "a0" });
+    const countsA: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
+    roomA0.onMessage("counts", (message) => countsA.push(message));
+    const pairedA0: unknown[] = [];
+    roomA0.onMessage("paired", (message) => pairedA0.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // A game-B client requests the SAME modality VALUE (roundLength: 15) —
+    // if segregation were broken, colyseus would hand it game A's already-
+    // open room (the exact live bug this unit closes).
+    const roomB0 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-b", modality: { roundLength: 15 }, playerId: "b0" });
+    const countsB: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
+    roomB0.onMessage("counts", (message) => countsB.push(message));
+    const pairedB0: unknown[] = [];
+    roomB0.onMessage("paired", (message) => pairedB0.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Segregation: two genuinely different room instances, not one shared room.
+    expect(roomA0.roomId).not.toBe(roomB0.roomId);
+
+    // Never counted into the other game's queue: each room's own "counts"
+    // broadcast shows exactly its own lone waiting player, never 2.
+    const lastCountsA = countsA[countsA.length - 1]!;
+    expect(lastCountsA.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
+    const lastCountsB = countsB[countsB.length - 1]!;
+    expect(lastCountsB.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
+
+    // Never paired cross-game: neither lone client has a same-game partner.
+    expect(pairedA0).toHaveLength(0);
+    expect(pairedB0).toHaveLength(0);
+
+    // A second REAL game-A client completes a same-game pair, proving normal
+    // pairing still works after the fix and that B0's presence never
+    // contaminated A's own pool (A0 pairs with A1, not with B0).
+    const roomA1 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-a", modality: { roundLength: 15 }, playerId: "a1" });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(roomA1.roomId).toBe(roomA0.roomId); // same game, same room, real joinOrCreate reuse
+    expect(pairedA0).toHaveLength(1);
+    expect(pairedA0[0]).toMatchObject({ opponentPlayerId: "a1" });
+    // B0 is STILL alone: it was never a candidate for A's pairing.
+    expect(pairedB0).toHaveLength(0);
+  });
+
+  /**
+   * Defense in depth (necessary because `filterBy` only governs colyseus's
+   * OWN room-selection during `joinOrCreate`/`join` — it says nothing about
+   * a client that already knows a specific `roomId` and joins it directly,
+   * e.g. `sdk.joinById`, a stale client from before a future refactor, or a
+   * hand-crafted join. Without this room-level check, `onJoin` never even
+   * read `options.gameId` (the disclosed defect) and would have silently
+   * enqueued/counted/paired such a client into the WRONG game's pool.
+   */
+  it("rejects a hand-crafted join whose claimed gameId disagrees with this room's own, even when it bypasses matchmaking selection entirely", async () => {
+    // `testServer.createRoom` + `connectTo` (→ `sdk.joinById`) — deliberately
+    // bypasses `filterBy`/`joinOrCreate` selection, simulating a client that
+    // already has this specific room's id (matching the prompt's own
+    // "stale client or hand-crafted join" framing).
+    const roomA = await testServer.createRoom("presence", { gameId: "fixture-isolation-a" });
+    // Positive control FIRST, and kept connected: an empty room with zero
+    // clients auto-disposes almost immediately (verified live — reversing
+    // this order made the room vanish before the second assertion could even
+    // attempt its join), so a real honest client stays seated throughout,
+    // matching the realistic shape of this attack (a room already has a
+    // legitimate occupant; a mismatched client targets it directly).
+    await expect(
+      testServer.connectTo(roomA, { gameId: "fixture-isolation-a", modality: { roundLength: 15 }, playerId: "honest" }),
+    ).resolves.toBeDefined();
+
+    // The new check rejects a MISMATCH, not every join that bypasses
+    // `joinOrCreate` — same room, still alive, wrong claimed gameId.
+    await expect(
+      testServer.connectTo(roomA, { gameId: "fixture-isolation-b", modality: { roundLength: 15 }, playerId: "attacker" }),
+    ).rejects.toBeDefined();
   });
 });
