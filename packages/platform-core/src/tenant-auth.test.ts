@@ -8,6 +8,7 @@ import {
   renewSessionForWidget,
 } from "./tenant-auth.js";
 import type { TenantId } from "./tenant-auth.js";
+import { describeJtiReplayGuardContract } from "./jti-replay-guard.contract.js";
 
 /** Flips one character in the MIDDLE of the signature segment — not the
  * last character, whose base64url encoding can carry unused padding bits
@@ -115,6 +116,21 @@ describe("createJtiReplayGuard (bounded, obs 2945: unbounded in-memory growth wa
     expect(await guard.size()).toBe(1); // the 3 stale entries were evicted, only the fresh one remains
   });
 });
+
+// The shared conformance suite (jti-replay-guard.contract.ts), run here
+// against THIS adapter — the same suite `redis-jti-replay-guard.live.test.ts`
+// runs against the Redis adapter. See rate-limiter.test.ts's own comment for
+// why a single shared clock backs every `create()` call.
+{
+  const sharedClock = fakeClock();
+  describeJtiReplayGuardContract(
+    "in-memory",
+    (ttlMs) => createJtiReplayGuard({ ttlMs, clock: sharedClock.now }),
+    async (ms) => {
+      sharedClock.advance(ms);
+    },
+  );
+}
 
 describe("mintSessionForEmbed", () => {
   it("mints a verifiable token for a known tenant loading from an allowed origin", async () => {
