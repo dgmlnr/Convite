@@ -48,24 +48,32 @@ export interface Pairing {
 }
 
 /**
- * The authoritative in-memory waiting collection for one process (design §8:
- * single-process pairing is what makes `tryPair` safely synchronous — a
- * horizontally-scaled deployment would need a shared store instead).
+ * PORT SHAPE, widened for horizontal scaling (design §8 flagged this exact
+ * spot: "this is exactly what breaks first under horizontal scale"): every
+ * method is `async`. The in-memory adapter below still performs `tryPair`'s
+ * queue splice fully synchronously INSIDE the async function body — no
+ * `await` between reading the queue and mutating it — so its atomicity
+ * guarantee is unchanged, only the calling convention is. A Redis-backed
+ * adapter's `tryPair` cannot be synchronous: pairing across processes needs
+ * a real network round trip to a Lua script for cross-process atomicity (see
+ * `redis-matchmaking-pool.ts`).
  */
 export interface MatchmakingPool {
-  join(gameId: GameId, modality: ModalityConfig, player: WaitingPlayer, poolKey?: string): void;
-  leave(gameId: GameId, modality: ModalityConfig, connectionId: string, poolKey?: string): void;
+  join(gameId: GameId, modality: ModalityConfig, player: WaitingPlayer, poolKey?: string): Promise<void>;
+  leave(gameId: GameId, modality: ModalityConfig, connectionId: string, poolKey?: string): Promise<void>;
   /** DERIVED from the waiting collection's length on every call — never a
    * separately incremented/decremented counter, so it cannot drift. */
-  count(gameId: GameId, modality: ModalityConfig, poolKey?: string): number;
-  /** Fully synchronous — no `await` anywhere in this function. Single
-   * process + single-threaded JS makes this atomic by construction (design
-   * §8); this is exactly what breaks first under horizontal scale. */
-  tryPair(gameId: GameId, modality: ModalityConfig, poolKey?: string): Pairing | null;
+  count(gameId: GameId, modality: ModalityConfig, poolKey?: string): Promise<number>;
+  /** No `await` between reading the queue and splicing it in the in-memory
+   * adapter (design §8) — atomic by construction for that adapter. The
+   * Redis adapter achieves the same cross-process atomicity via a Lua
+   * script (`EVAL`), which Redis itself runs to completion without
+   * interleaving another client's command. */
+  tryPair(gameId: GameId, modality: ModalityConfig, poolKey?: string): Promise<Pairing | null>;
   /** Removes every waiting entry across every queue whose connection the
    * caller reports as no longer alive — the zombie-socket backstop for an
    * `onLeave` a transport never delivered. */
-  sweep(isAlive: (connectionId: string) => boolean): void;
+  sweep(isAlive: (connectionId: string) => boolean | Promise<boolean>): Promise<void>;
 }
 
 export function createMatchmakingPool(): MatchmakingPool {
@@ -82,27 +90,27 @@ export function createMatchmakingPool(): MatchmakingPool {
   }
 
   return {
-    join(gameId, modality, player, poolKey = GLOBAL_POOL_KEY) {
+    async join(gameId, modality, player, poolKey = GLOBAL_POOL_KEY) {
       const queue = queueFor(gameId, modality, poolKey);
       if (queue.some((entry) => entry.connectionId === player.connectionId)) return;
       queue.push(player);
     },
-    leave(gameId, modality, connectionId, poolKey = GLOBAL_POOL_KEY) {
+    async leave(gameId, modality, connectionId, poolKey = GLOBAL_POOL_KEY) {
       const queue = queueFor(gameId, modality, poolKey);
       const index = queue.findIndex((entry) => entry.connectionId === connectionId);
       if (index !== -1) queue.splice(index, 1);
     },
-    count: (gameId, modality, poolKey = GLOBAL_POOL_KEY) => queueFor(gameId, modality, poolKey).length,
-    tryPair(gameId, modality, poolKey = GLOBAL_POOL_KEY) {
+    count: async (gameId, modality, poolKey = GLOBAL_POOL_KEY) => queueFor(gameId, modality, poolKey).length,
+    async tryPair(gameId, modality, poolKey = GLOBAL_POOL_KEY) {
       const queue = queueFor(gameId, modality, poolKey);
       if (queue.length < 2) return null;
       const [a, b] = queue.splice(0, 2);
       return { a: a!, b: b! };
     },
-    sweep(isAlive) {
+    async sweep(isAlive) {
       for (const queue of queues.values()) {
         for (let index = queue.length - 1; index >= 0; index -= 1) {
-          if (!isAlive(queue[index]!.connectionId)) queue.splice(index, 1);
+          if (!(await isAlive(queue[index]!.connectionId))) queue.splice(index, 1);
         }
       }
     },
@@ -118,8 +126,9 @@ export interface PresenceSweeper {
   /** No-op unless at least `intervalMs` has elapsed since the last sweep —
    * driven by the injected clock, NEVER `Date.now()` directly inside this
    * logic, so a test advances a fake clock instead of waiting on a real
-   * ~10s timer (design §8's zombie-socket sweep). */
-  maybeSweep(pool: MatchmakingPool, isAlive: (connectionId: string) => boolean): void;
+   * ~10s timer (design §8's zombie-socket sweep). `async` to match
+   * `MatchmakingPool.sweep`'s own widened, horizontal-scaling-ready shape. */
+  maybeSweep(pool: MatchmakingPool, isAlive: (connectionId: string) => boolean | Promise<boolean>): Promise<void>;
 }
 
 export function createPresenceSweeper(options: PresenceSweeperOptions = {}): PresenceSweeper {
@@ -127,11 +136,11 @@ export function createPresenceSweeper(options: PresenceSweeperOptions = {}): Pre
   const intervalMs = options.intervalMs ?? 10_000;
   let lastSweepAt = clock();
   return {
-    maybeSweep(pool, isAlive) {
+    async maybeSweep(pool, isAlive) {
       const now = clock();
       if (now - lastSweepAt < intervalMs) return;
       lastSweepAt = now;
-      pool.sweep(isAlive);
+      await pool.sweep(isAlive);
     },
   };
 }
@@ -180,6 +189,14 @@ export function deriveLobbyDisplayFromCounts(counts: readonly RawModalityCount[]
  * consumer (widget-app, Phase 7) calls this with the raw counts it receives
  * to apply the zero-counter rule locally.
  */
-export function deriveLobbyDisplay(gameId: GameId, configOptions: readonly ConfigOption[], pool: MatchmakingPool, poolKey?: string): readonly LobbyDisplayEntry[] {
-  return deriveLobbyDisplayFromCounts(deriveModalities(configOptions).map((modality) => ({ modality, waitingCount: pool.count(gameId, modality, poolKey) })));
+export async function deriveLobbyDisplay(
+  gameId: GameId,
+  configOptions: readonly ConfigOption[],
+  pool: MatchmakingPool,
+  poolKey?: string,
+): Promise<readonly LobbyDisplayEntry[]> {
+  const counts = await Promise.all(
+    deriveModalities(configOptions).map(async (modality) => ({ modality, waitingCount: await pool.count(gameId, modality, poolKey) })),
+  );
+  return deriveLobbyDisplayFromCounts(counts);
 }

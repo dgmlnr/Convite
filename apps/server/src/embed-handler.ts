@@ -37,10 +37,10 @@ export async function handleEmbedRequest(url: URL, origin: string | undefined, c
   if (embedKey === null || origin === undefined) {
     return { status: 400, body: JSON.stringify({ error: "missing embed key or origin" }) };
   }
-  if (clientIp !== undefined && !deps.ipLimiter.tryConsume(clientIp)) {
+  if (clientIp !== undefined && !(await deps.ipLimiter.tryConsume(clientIp))) {
     return { status: 429, body: JSON.stringify({ error: "rate-limited" }) };
   }
-  if (!deps.keyLimiter.tryConsume(embedKey)) {
+  if (!(await deps.keyLimiter.tryConsume(embedKey))) {
     return { status: 429, body: JSON.stringify({ error: "rate-limited" }) };
   }
   // Anonymous, browser-generated (design §7) — legitimately client-supplied:

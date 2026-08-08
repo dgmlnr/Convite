@@ -10,6 +10,8 @@
     }
   },
   "dependencies": {
+    "@colyseus/redis-driver": "^0.17.7",
+    "@colyseus/redis-presence": "^0.17.7",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "colyseus": "^0.17.10"

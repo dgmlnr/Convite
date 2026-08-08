@@ -21,13 +21,22 @@ export interface RateLimiterOptions {
   readonly maxTrackedKeys?: number;
 }
 
+/**
+ * PORT SHAPE, widened for horizontal scaling: both methods are `async`
+ * (`Promise`-returning) even though this file's own in-memory adapter never
+ * awaits anything internally. A Redis-backed adapter's `tryConsume` is
+ * inherently a network round trip — there is no honest synchronous shape for
+ * a port that must also support a shared-store implementation. Every call
+ * site now `await`s these calls; the in-memory adapter's behavior and
+ * atomicity are unchanged, only the calling convention is.
+ */
 export interface RateLimiter {
   /** `true` = allowed and consumed against the key's budget; `false` = the
    * key is over its limit for the current window. */
-  tryConsume(key: string): boolean;
+  tryConsume(key: string): Promise<boolean>;
   /** Distinct keys currently tracked — exposed so the memory bound can be
    * observed directly (tests, monitoring), not just inferred from outside. */
-  size(): number;
+  size(): Promise<number>;
 }
 
 interface Bucket {
@@ -49,7 +58,7 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
   }
 
   return {
-    tryConsume(key) {
+    async tryConsume(key) {
       const now = clock();
       const existing = buckets.get(key);
       if (existing !== undefined && now - existing.windowStart < options.windowMs) {
@@ -61,6 +70,6 @@ export function createRateLimiter(options: RateLimiterOptions): RateLimiter {
       buckets.set(key, { count: 1, windowStart: now });
       return true;
     },
-    size: () => buckets.size,
+    size: () => Promise.resolve(buckets.size),
   };
 }

@@ -44,10 +44,10 @@ export async function handleSessionRenewRequest(
   if (embedKey === null || playerId === null || origin === undefined) {
     return { status: 400, body: JSON.stringify({ error: "missing embed key, player id, or origin" }) };
   }
-  if (clientIp !== undefined && !deps.ipLimiter.tryConsume(clientIp)) {
+  if (clientIp !== undefined && !(await deps.ipLimiter.tryConsume(clientIp))) {
     return { status: 429, body: JSON.stringify({ error: "rate-limited" }) };
   }
-  if (!deps.keyLimiter.tryConsume(embedKey)) {
+  if (!(await deps.keyLimiter.tryConsume(embedKey))) {
     return { status: 429, body: JSON.stringify({ error: "rate-limited" }) };
   }
   const result = await renewSessionForWidget({ ...deps, embedKey, origin, playerId: playerId as PlayerId });
