@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConfigOption } from "@hexdev/platform-contract";
 import { createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveLobbyDisplayFromCounts, deriveModalities, modalityKey } from "./presence.js";
+import { describeMatchmakingPoolContract } from "./matchmaking-pool.contract.js";
 
 // Truco-shaped option, used ONLY to prove the mechanism handles it — never
 // hardcoded as a special case (roadmap constraint, obs 2943).
@@ -195,3 +196,8 @@ describe("deriveLobbyDisplayFromCounts — the same zero-counter rule, extracted
     expect(viaRawCounts).toEqual(viaPool);
   });
 });
+
+// The shared conformance suite (matchmaking-pool.contract.ts), run here
+// against THIS adapter — the same suite `redis-matchmaking-pool.redis.
+// test.ts` runs against the Redis adapter.
+describeMatchmakingPoolContract("in-memory", () => createMatchmakingPool());

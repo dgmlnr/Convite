@@ -8,6 +8,8 @@ export type { RedisJtiReplayGuardOptions } from "./redis-jti-replay-guard.js";
 export { createRedisJtiReplayGuard } from "./redis-jti-replay-guard.js";
 export type { LobbyDisplayEntry, MatchmakingPool, ModalityConfig, Pairing, PresenceSweeper, PresenceSweeperOptions, RawModalityCount, WaitingPlayer } from "./presence.js";
 export { GLOBAL_POOL_KEY, createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveLobbyDisplayFromCounts, deriveModalities, modalityKey } from "./presence.js";
+export type { RedisMatchmakingPoolOptions } from "./redis-matchmaking-pool.js";
+export { createRedisMatchmakingPool } from "./redis-matchmaking-pool.js";
 export type {
   EmbedMintResult,
   JtiReplayGuard,
