@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDepartureGate, withFreshToken } from "./join-flow.js";
+import { createDepartureGate, tryResumeSession, withFreshToken } from "./join-flow.js";
 
 describe("withFreshToken (obs 2968: renew right before a join — the whole fix for a token minted at page-load but only used at play time)", () => {
   it("renews a token first, then performs the action WITH that fresh token", async () => {
@@ -43,5 +43,35 @@ describe("createDepartureGate (bug, found live: a presence 'counts' broadcast ke
     gate.reset();
 
     expect(gate.hasDeparted()).toBe(false);
+  });
+});
+
+describe("tryResumeSession (identity survives a reload: attempt the reconnection-window's own re-authentication, never trust a client-remembered id)", () => {
+  it("returns undefined without attempting anything when there is no persisted session to resume", async () => {
+    const resume = vi.fn(async () => "connected");
+
+    const result = await tryResumeSession(undefined, resume);
+
+    expect(result).toBeUndefined();
+    expect(resume).not.toHaveBeenCalled();
+  });
+
+  it("calls resume with the persisted session and returns its result on success", async () => {
+    const session = { gameId: "truco-argentino", reconnectionToken: "room-1:secret-token" };
+    const resume = vi.fn(async (s: typeof session) => `resumed-${s.reconnectionToken}`);
+
+    const result = await tryResumeSession(session, resume);
+
+    expect(resume).toHaveBeenCalledWith(session);
+    expect(result).toBe("resumed-room-1:secret-token");
+  });
+
+  it("swallows a rejected resume (window expired, seat already taken over) and returns undefined — never throws into the caller", async () => {
+    const session = { gameId: "truco-argentino", reconnectionToken: "room-1:secret-token" };
+    const resume = vi.fn(async () => {
+      throw new Error("MatchRoom: join rejected, invalid or expired session token");
+    });
+
+    await expect(tryResumeSession(session, resume)).resolves.toBeUndefined();
   });
 });

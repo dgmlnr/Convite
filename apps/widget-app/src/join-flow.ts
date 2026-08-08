@@ -13,6 +13,33 @@ export async function withFreshToken<T>(renewToken: () => Promise<string>, actio
   return action(token);
 }
 
+/**
+ * Player identity survives a reload (design §7, apply prompt): a persisted
+ * match session — if any — is attempted BEFORE the fresh catalog is ever
+ * shown, but ONLY as an attempt: `resume` is `reconnectMatch`, which goes
+ * through colyseus's OWN reconnection-window verification (the same
+ * server-side proof `MatchRoom.onLeave`'s `allowReconnection` already
+ * requires for an in-tab network blip, spec "Disconnect, Reconnection
+ * Window, and Bot Takeover") — a rejection here (window already expired, a
+ * bot already took the seat, the room is gone) is NOT transient and must
+ * never surface as an error to the player; it simply means there is nothing
+ * left to resume, so `main.ts` falls through to the ordinary catalog exactly
+ * as if no persisted session had ever existed. Mirrors `withFreshToken`'s own
+ * shape above: a tiny, DOM-decoupled sequencing helper, unit-testable
+ * without either a real transport or a real `localStorage`.
+ */
+export async function tryResumeSession<TSession, TResult>(
+  session: TSession | undefined,
+  resume: (session: TSession) => Promise<TResult>,
+): Promise<TResult | undefined> {
+  if (session === undefined) return undefined;
+  try {
+    return await resume(session);
+  } catch {
+    return undefined;
+  }
+}
+
 export interface DepartureGate {
   hasDeparted(): boolean;
   markDeparted(): void;
