@@ -1,7 +1,7 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy } from "@hexdev/platform-contract";
-import { envidoPoints, handPower, scoreFollowingCardPlay } from "./heuristics.js";
+import { envidoPoints, handPower, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 
 /** Heuristic thresholds (bot domain knowledge, not the engine's real point
  * values — see `heuristics.ts`). Roughly the midpoint of a 3-card hand's
@@ -27,17 +27,19 @@ function respondEnvidoChoice(view: PlayerView, group: readonly RespondEnvido[]):
 }
 
 /** Light lookahead (design/spec: "normal: weighted heuristics with light
- * lookahead"): when the opponent's card for this trick is already visible
- * (public info, `HandView.currentTrickPlays`), score exactly via
- * `scoreFollowingCardPlay`. Otherwise (leading the trick) no hidden
- * information is needed either — the static, non-guessing habit is to
- * conserve strength: play the weakest card now, save strong cards for
- * later tricks. */
+ * lookahead"): when an OPPOSING card for this trick is already visible
+ * (public info, `HandView.currentTrickPlays` — via `strongestOpposingPlay`,
+ * which correctly ignores a teammate's own earlier play in 2v2, see
+ * heuristics.ts's own docstring on the bug this fixes), score exactly via
+ * `scoreFollowingCardPlay`. Otherwise (leading the trick, OR only a
+ * teammate has played so far) no hidden information is needed either — the
+ * static, non-guessing habit is to conserve strength: play the weakest
+ * card now, save strong cards for later tricks. */
 function cardPlayChoice(view: PlayerView, group: readonly PlayCard[]): Action {
-  const opponentPlay = view.hand?.currentTrickPlays[0];
+  const opponentCard = strongestOpposingPlay(view.self.teamId, view.hand?.currentTrickPlays ?? []);
   return group.reduce((best, candidate) => {
-    const bestScore = opponentPlay === undefined ? -cardPower(best.card) : scoreFollowingCardPlay(best.card, opponentPlay.card);
-    const candidateScore = opponentPlay === undefined ? -cardPower(candidate.card) : scoreFollowingCardPlay(candidate.card, opponentPlay.card);
+    const bestScore = opponentCard === undefined ? -cardPower(best.card) : scoreFollowingCardPlay(best.card, opponentCard);
+    const candidateScore = opponentCard === undefined ? -cardPower(candidate.card) : scoreFollowingCardPlay(candidate.card, opponentCard);
     return candidateScore > bestScore ? candidate : best;
   });
 }
