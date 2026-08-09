@@ -5,6 +5,8 @@ import type { EnvidoAction } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { getMatchWinner } from "./match.js";
 import type { MatchState, Player, TrucoCallLevel, TrucoState } from "./match.js";
+import { applySenaAction, getLegalSenaActions } from "./senas.js";
+import type { SenaAction } from "./senas.js";
 import { DECLINE_VALUE } from "./truco-scoring.js";
 
 export interface CallTrucoAction {
@@ -22,8 +24,8 @@ export interface RespondTrucoAction {
 /** The truco call-chain's own actions; `Action` below is the widened union. */
 export type TrucoAction = CallTrucoAction | RespondTrucoAction;
 
-/** Every action the reducer pair accepts (spec: "Pure, Deterministic Engine API"). PR5 widened truco-only to truco+envido; this card-play slice widens it again the same way, never forking a parallel reducer. */
-export type Action = TrucoAction | EnvidoAction | PlayCardAction;
+/** Every action the reducer pair accepts (spec: "Pure, Deterministic Engine API"). PR5 widened truco-only to truco+envido; this card-play slice widens it again the same way, never forking a parallel reducer. Señas widen it once more, same convention. */
+export type Action = TrucoAction | EnvidoAction | PlayCardAction | SenaAction;
 
 export type ApplyResult =
   | { readonly ok: true; readonly state: MatchState }
@@ -107,6 +109,7 @@ export function getLegalActions(state: MatchState, playerId: PlayerId): readonly
     ...getLegalTrucoActions(state, playerId),
     ...getLegalEnvidoActions(state, playerId),
     ...getLegalCardPlayActions(state, playerId),
+    ...getLegalSenaActions(state, playerId),
   ];
 }
 
@@ -180,5 +183,6 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
 export function applyAction(state: MatchState, action: Action): ApplyResult {
   if (action.type === "call-truco" || action.type === "respond-truco") return applyTrucoAction(state, action);
   if (action.type === "play-card") return applyCardPlayAction(state, action);
+  if (action.type === "send-sena") return applySenaAction(state, action);
   return applyEnvidoAction(state, action);
 }

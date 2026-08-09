@@ -1,6 +1,7 @@
 import type { Card } from "./card.js";
 import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId, TeamId } from "./ids.js";
+import type { SenaSignal } from "./senas.js";
 import type { TrickOutcome } from "./trick.js";
 
 export interface Team {
@@ -48,6 +49,16 @@ export type EnvidoState =
   | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
   | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number };
 
+/** A recorded seña (design: closed vocabulary, a claim not a verified
+ * statement). `teamId` is carried alongside `playerId` purely so the view
+ * projection can build a teammate's exposure without a second lookup —
+ * exactly the same convention `HandPlay` already uses for card plays. */
+export interface SenaEvent {
+  readonly playerId: PlayerId;
+  readonly teamId: TeamId;
+  readonly signal: SenaSignal;
+}
+
 /** A single played card, recorded with its player/team/seat so trick
  * advancement and turn validation can be driven off it (card play is public
  * once played — the redaction constraint only covers UNPLAYED hand cards). */
@@ -72,6 +83,10 @@ export interface HandState {
   readonly trickOutcomes: readonly TrickOutcome[];
   /** Whether card play has decided the hand yet (`resolveHandWinner`'s result). */
   readonly outcome: HandOutcome;
+  /** The current señas in play this hand, latest one per player (2v2 only —
+   * always empty in a 1v1 match, since `getLegalSenaActions` never offers
+   * `send-sena` to a player without a teammate). */
+  readonly senas: readonly SenaEvent[];
 }
 
 export interface MatchState {
@@ -189,6 +204,7 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
       currentTrickPlays: [],
       trickOutcomes: [],
       outcome: { decided: false },
+      senas: [],
     },
   };
 }
