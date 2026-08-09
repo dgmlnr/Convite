@@ -8,7 +8,12 @@ export interface RateLimitConfig {
 
 export interface ServerConfig {
   readonly port: number;
-  readonly sessionSecret: string;
+  /** Base64url-encoded, 32-byte Ed25519 signing-key seed (see
+   * `@hexdev/platform-core`'s `createSessionTokenIssuer`) — NOT an arbitrary
+   * passphrase (that was the prior HMAC design, obs 2942's disclosed
+   * deviation, now resolved). Generate one with:
+   * `node -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'))"` */
+  readonly sessionSigningKey: string;
   readonly sessionTtlSeconds: number;
   readonly tenants: readonly TenantRecord[];
   readonly embedIpRateLimit: RateLimitConfig;
@@ -71,10 +76,16 @@ function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: stri
 }
 
 /** Obviously a dev-only placeholder — never a real signing credential, and
- * never reachable in production (see the throw below). Security posture:
- * the HMAC secret comes from configuration/environment, never hardcoded for
+ * never reachable in production (see the throw below). A validly-shaped
+ * (32-byte, base64url) Ed25519 seed is still required even for local dev,
+ * since `createSessionTokenIssuer` now validates the SHAPE of whatever key
+ * material it is given, not just its presence — this exact value is the
+ * SHA-256 digest of the literal string below it, base64url-encoded, chosen
+ * only for reproducibility; it carries no real secrecy and is checked
+ * straight into source control. Security posture unchanged from before:
+ * the signing key comes from configuration/environment, never hardcoded for
  * a real deployment. */
-const DEV_SESSION_SECRET = "dev-only-insecure-secret-DO-NOT-USE-IN-PRODUCTION";
+const DEV_SESSION_SIGNING_KEY = "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI"; // sha256("dev-only-insecure-signing-key-DO-NOT-USE-IN-PRODUCTION")
 
 /** A single fixture tenant so a fresh clone's server is curl-able with zero
  * setup. Not a secret — an embed key and an origin allowlist are meant to be
@@ -105,24 +116,31 @@ const DEV_TENANT: TenantRecord = {
 export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   const nodeEnv = env.NODE_ENV ?? "development";
   const allowDevDefaults = env.HEXDEV_ALLOW_DEV_DEFAULTS === "true";
-  const sessionSecret = env.HEXDEV_SESSION_SECRET;
-  if (sessionSecret === undefined) {
+  const sessionSigningKey = env.HEXDEV_SESSION_SIGNING_KEY;
+  if (sessionSigningKey === undefined) {
     if (nodeEnv === "production") {
-      throw new Error("HEXDEV_SESSION_SECRET must be set in production — refusing to start signing tokens with an insecure default.");
+      throw new Error("HEXDEV_SESSION_SIGNING_KEY must be set in production — refusing to start signing tokens with an insecure default.");
     }
     if (!allowDevDefaults) {
       throw new Error(
-        "HEXDEV_SESSION_SECRET must be set — refusing to start with an insecure default. " +
+        "HEXDEV_SESSION_SIGNING_KEY must be set — refusing to start with an insecure default. " +
           "For local development only, set HEXDEV_ALLOW_DEV_DEFAULTS=true to opt in explicitly.",
       );
     }
   }
+  // Only PRESENCE is validated here — SHAPE (a well-formed 32-byte Ed25519
+  // seed) is validated by `createSessionTokenIssuer` itself, awaited at the
+  // top of `apps/server/src/index.ts`'s composition root, same "throw,
+  // crash boot" convention `redis-client.ts`'s own fail-loud connect uses.
+  // `loadServerConfig` stays synchronous (importing a key is unavoidably
+  // async — Web Crypto has no sync digest/import) and pure (no crypto calls
+  // of its own), matching every existing test in `config.test.ts`.
   const tenants: readonly TenantRecord[] =
     env.HEXDEV_TENANTS_JSON !== undefined ? (JSON.parse(env.HEXDEV_TENANTS_JSON) as readonly TenantRecord[]) : [DEV_TENANT];
   const port = env.PORT !== undefined ? Number(env.PORT) : DEFAULT_PORT;
   return {
     port,
-    sessionSecret: sessionSecret ?? DEV_SESSION_SECRET,
+    sessionSigningKey: sessionSigningKey ?? DEV_SESSION_SIGNING_KEY,
     sessionTtlSeconds: env.HEXDEV_SESSION_TTL_SECONDS !== undefined ? Number(env.HEXDEV_SESSION_TTL_SECONDS) : DEFAULT_TTL_SECONDS,
     tenants,
     embedIpRateLimit: readRateLimit(env, "HEXDEV_EMBED_IP_RATE_LIMIT", "HEXDEV_EMBED_IP_RATE_WINDOW_MS", DEFAULT_EMBED_IP_LIMIT),
