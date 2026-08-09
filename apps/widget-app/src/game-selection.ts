@@ -40,7 +40,24 @@ function botButtonsRow(gameId: GameId, modality: ModalityConfig, callbacks: Game
   return row;
 }
 
-function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions: CatalogEntry["configOptions"], callbacks: GameSelectionCallbacks): HTMLElement {
+/** `MatchmakingPool.tryPair` only ever pairs exactly TWO waiting players
+ * (obs 2927/2925: "the matchmaking pool for four" is a NAMED, undone gap,
+ * not silently glossed over) — a queue join for any game whose module needs
+ * more than 2 seats would enqueue a player who can never be paired, a
+ * silent, permanent hang, not a fast bot-fallback path. `canQueueForPerson`
+ * is the single, honest gate that keeps a 4-seat (2v2) modality from ever
+ * showing an affordance the platform cannot fulfil. */
+function canQueueForPerson(seatCount: number): boolean {
+  return seatCount === 2;
+}
+
+function renderModality(
+  gameId: GameId,
+  entry: LobbyDisplayEntry,
+  configOptions: CatalogEntry["configOptions"],
+  seatCount: number,
+  callbacks: GameSelectionCallbacks,
+): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "hexdev-modality";
 
@@ -50,6 +67,15 @@ function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions:
 
   const botLabel = document.createElement("p");
   botLabel.textContent = STRINGS.playVsBot;
+
+  if (!canQueueForPerson(seatCount)) {
+    // No queue affordance at all for a seat count the pairing pool cannot
+    // fulfil yet — bot tiers are the ONLY path (spec's "never blocked"
+    // guarantee, honestly delivered via bot-filled seats, not a fake queue).
+    wrapper.dataset.prominent = "bot";
+    wrapper.append(botLabel, botButtonsRow(gameId, entry.modality, callbacks));
+    return wrapper;
+  }
 
   const personSection = document.createElement("div");
   const countText = document.createElement("p");
@@ -97,7 +123,7 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
   }
 
   for (const modalityEntry of presence) {
-    card.appendChild(renderModality(entry.id, modalityEntry, entry.configOptions, callbacks));
+    card.appendChild(renderModality(entry.id, modalityEntry, entry.configOptions, entry.seatCount, callbacks));
   }
   return card;
 }

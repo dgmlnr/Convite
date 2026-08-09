@@ -1,6 +1,7 @@
 import {
   applyAction as engineApplyAction,
   createHeadToHeadMatch,
+  createTeamMatch,
   getLegalActions as engineGetLegalActions,
   getMatchWinner,
   getViewFor,
@@ -10,10 +11,10 @@ import {
 import type { Action as EngineAction, MatchConfig, MatchState, PlayerView } from "@hexdev/truco-engine";
 import { createBotStrategy, withThinkingDelay } from "@hexdev/truco-bot";
 import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
-import { SYSTEM_ACTOR_ID, requestSystemAction } from "./deal.js";
+import { SYSTEM_ACTOR_ID, requestSystemAction, requestSystemAction2v2 } from "./deal.js";
 import type { StartHandAction } from "./deal.js";
 
-export { SYSTEM_ACTOR_ID, requestSystemAction };
+export { SYSTEM_ACTOR_ID, requestSystemAction, requestSystemAction2v2 };
 export type { StartHandAction };
 
 /**
@@ -43,6 +44,29 @@ function createMatch(config: MatchConfig, seats: readonly SeatAssignment[]): Mat
     playerBId: seatB.playerId,
     pointsToWin: config.pointsToWin,
   });
+}
+
+/**
+ * The 2v2 adapter's own `createMatch` — a SECOND registered `GameModule`
+ * (`trucoModule2v2` below), never a branch inside the 1v1 `createMatch`
+ * above, which stays byte-identical (obs 2927/2925's own named plan: "either
+ * a second registered module id ... or a config-driven seat count" — this
+ * unit picks the second registered id, so the 1v1 module's own createMatch,
+ * metadata, and registration are untouched). Delegates straight to the
+ * engine's own `createTeamMatch` (seats 0/2 vs 1/3, partners across the
+ * table, matching the four-anchor UI's own geometry — PR27's own decision,
+ * unchanged here).
+ */
+function createMatch2v2(config: MatchConfig, seats: readonly SeatAssignment[]): MatchState {
+  const bySeat = new Map(seats.map((seat) => [seat.seat, seat.playerId]));
+  const seat0 = bySeat.get(0);
+  const seat1 = bySeat.get(1);
+  const seat2 = bySeat.get(2);
+  const seat3 = bySeat.get(3);
+  if (seats.length !== 4 || seat0 === undefined || seat1 === undefined || seat2 === undefined || seat3 === undefined) {
+    throw new Error(`truco-argentino-2v2 requires exactly seats 0, 1, 2, and 3, got ${JSON.stringify(seats)}`);
+  }
+  return createTeamMatch({ seatOrder: [seat0, seat1, seat2, seat3], pointsToWin: config.pointsToWin });
 }
 
 function applyAction(state: MatchState, action: TrucoModuleAction): ApplyResult<MatchState> {
@@ -100,6 +124,31 @@ export const trucoModule: GameModule<MatchState, TrucoModuleAction, PlayerView, 
   metadata: { seatCount: 2, displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
   createMatch,
+  applyAction,
+  getLegalActions,
+  getViewFor,
+  getOutcome,
+  serialize: (state) => JSON.parse(JSON.stringify(state)) as JsonValue,
+  deserialize: (json) => json as unknown as MatchState,
+  createBot,
+};
+
+/**
+ * The 2v2 GameModule — a SEPARATE registered id (`truco-argentino-2v2`),
+ * additive to `trucoModule` above (obs 2927/2925's own named gap, closed
+ * here). Every member except `id`/`metadata`/`createMatch` is REUSED, not
+ * reimplemented: `applyAction`/`getLegalActions`/`getViewFor`/`getOutcome`/
+ * `createBot` were already generalized to N seats by PR27's engine work
+ * (`resolveTrick`, `card-play.ts`'s turn order, `Math.max`-per-team envido,
+ * team-scoped truco legality) — this module never re-derives any of that,
+ * it only supplies the 4-seat `createMatch` and `metadata.seatCount: 4` the
+ * generic `MatchRoom` needs to size the room and assign seats.
+ */
+export const trucoModule2v2: GameModule<MatchState, TrucoModuleAction, PlayerView, MatchConfig> = {
+  id: "truco-argentino-2v2",
+  metadata: { seatCount: 4, displayNameKey: "games.truco2v2.name", assetBase: "/games/truco-argentino" },
+  configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
+  createMatch: createMatch2v2,
   applyAction,
   getLegalActions,
   getViewFor,

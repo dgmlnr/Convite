@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { trucoModule } from "./index.js";
-import { SYSTEM_ACTOR_ID, requestSystemAction } from "./deal.js";
+import { trucoModule, trucoModule2v2 } from "./index.js";
+import { SYSTEM_ACTOR_ID, requestSystemAction, requestSystemAction2v2 } from "./deal.js";
 
 const playerAId = "player-a" as PlayerId;
 const playerBId = "player-b" as PlayerId;
+const playerCId = "player-c" as PlayerId;
+const playerDId = "player-d" as PlayerId;
 const seats: readonly SeatAssignment[] = [
   { seat: 0, playerId: playerAId },
   { seat: 1, playerId: playerBId },
+];
+const teamSeats: readonly SeatAssignment[] = [
+  { seat: 0, playerId: playerAId },
+  { seat: 1, playerId: playerBId },
+  { seat: 2, playerId: playerCId },
+  { seat: 3, playerId: playerDId },
 ];
 const config = { pointsToWin: 15 as const };
 
@@ -49,5 +57,24 @@ describe("requestSystemAction (truco-module's deal factory — never a platform-
     const state = trucoModule.createMatch(config, seats);
     const wonState = { ...state, teams: state.teams.map((team) => ({ ...team, score: config.pointsToWin })) };
     expect(requestSystemAction(wonState, fixedRng([0.5]))).toBeNull();
+  });
+});
+
+describe("requestSystemAction2v2 (4-seat dealer — same shuffle, four hands not two)", () => {
+  it("deals exactly 3 distinct cards to each of the 4 seats, drawn from the real 40-card deck", () => {
+    const state = trucoModule2v2.createMatch(config, teamSeats);
+    const action = requestSystemAction2v2(state, fixedRng([0.31, 0.62, 0.05, 0.77, 0.44, 0.9, 0.13, 0.22, 0.55, 0.66, 0.08, 0.99]));
+    if (action === null || action.type !== "start-hand") throw new Error("expected a start-hand action");
+    expect(action.deal).toHaveLength(4);
+    for (const hand of action.deal) expect(hand).toHaveLength(3);
+    const allCards = action.deal.flat();
+    const uniqueIds = new Set(allCards.map((card) => `${card.rank}-${card.suit}`));
+    expect(uniqueIds.size).toBe(12);
+  });
+
+  it("returns null once a 2v2 match already has a winner", () => {
+    const state = trucoModule2v2.createMatch(config, teamSeats);
+    const wonState = { ...state, teams: state.teams.map((team) => ({ ...team, score: config.pointsToWin })) };
+    expect(requestSystemAction2v2(wonState, fixedRng([0.5]))).toBeNull();
   });
 });
