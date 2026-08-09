@@ -1,6 +1,7 @@
 import type { Card } from "./card.js";
 import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId, TeamId } from "./ids.js";
+import type { SenaSignal } from "./senas.js";
 import type { TrickOutcome } from "./trick.js";
 
 export interface Team {
@@ -48,6 +49,16 @@ export type EnvidoState =
   | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
   | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number };
 
+/** A recorded seña (design: closed vocabulary, a claim not a verified
+ * statement). `teamId` is carried alongside `playerId` purely so the view
+ * projection can build a teammate's exposure without a second lookup —
+ * exactly the same convention `HandPlay` already uses for card plays. */
+export interface SenaEvent {
+  readonly playerId: PlayerId;
+  readonly teamId: TeamId;
+  readonly signal: SenaSignal;
+}
+
 /** A single played card, recorded with its player/team/seat so trick
  * advancement and turn validation can be driven off it (card play is public
  * once played — the redaction constraint only covers UNPLAYED hand cards). */
@@ -72,6 +83,10 @@ export interface HandState {
   readonly trickOutcomes: readonly TrickOutcome[];
   /** Whether card play has decided the hand yet (`resolveHandWinner`'s result). */
   readonly outcome: HandOutcome;
+  /** The current señas in play this hand, latest one per player (2v2 only —
+   * always empty in a 1v1 match, since `getLegalSenaActions` never offers
+   * `send-sena` to a player without a teammate). */
+  readonly senas: readonly SenaEvent[];
 }
 
 export interface MatchState {
@@ -126,6 +141,44 @@ export function createHeadToHeadMatch(params: {
 }
 
 /**
+ * 2v2. Seats are assigned 0..3 in `seatOrder`; PARTNERS SIT ACROSS THE TABLE
+ * FROM EACH OTHER, so team membership ALTERNATES by seat (0/2 vs 1/3) rather
+ * than pairing adjacent seats (0/1 vs 2/3) — the same geometry the table UI's
+ * four anchors (top/bottom/left/right) already assume. Score lives on `Team`
+ * exactly as in `createHeadToHeadMatch`; this is additive, not a rewrite of
+ * the 1v1 path (design §4's whole point).
+ */
+export function createTeamMatch(params: {
+  readonly seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId];
+  readonly pointsToWin: 15 | 30;
+  readonly dealerSeat?: number;
+}): MatchState {
+  const [seat0, seat1, seat2, seat3] = params.seatOrder;
+  const teamAId = `${seat0}:${seat2}:team` as TeamId;
+  const teamBId = `${seat1}:${seat3}:team` as TeamId;
+
+  const teams: readonly Team[] = [
+    { id: teamAId, playerIds: [seat0, seat2], score: 0 },
+    { id: teamBId, playerIds: [seat1, seat3], score: 0 },
+  ];
+
+  const players: readonly Player[] = [
+    { id: seat0, teamId: teamAId, seat: 0, hand: [] },
+    { id: seat1, teamId: teamBId, seat: 1, hand: [] },
+    { id: seat2, teamId: teamAId, seat: 2, hand: [] },
+    { id: seat3, teamId: teamBId, seat: 3, hand: [] },
+  ];
+
+  return {
+    config: { pointsToWin: params.pointsToWin },
+    teams,
+    players,
+    dealerSeat: params.dealerSeat ?? 0,
+    hand: null,
+  };
+}
+
+/**
  * Materializes a new hand from an already-dealt `deal` — the engine never
  * shuffles or randomizes (design §4). Returns a new `MatchState`; the input
  * is never mutated.
@@ -151,6 +204,7 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
       currentTrickPlays: [],
       trickOutcomes: [],
       outcome: { decided: false },
+      senas: [],
     },
   };
 }

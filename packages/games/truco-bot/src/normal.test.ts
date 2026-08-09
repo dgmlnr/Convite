@@ -9,7 +9,7 @@ const OPPONENT_TEAM = "player-b:team" as TeamId;
 
 function viewWith(overrides: { hand: readonly Card[]; currentTrickPlays?: readonly HandPlay[] }): PlayerView {
   return {
-    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand },
+    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null },
     teammates: [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 }],
     teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],

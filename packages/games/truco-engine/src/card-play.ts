@@ -1,5 +1,6 @@
 import { cardId } from "./card.js";
 import type { Card } from "./card.js";
+import { cardPower } from "./card-power.js";
 import { resolveHandWinner } from "./hand-winner.js";
 import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId } from "./ids.js";
@@ -51,10 +52,17 @@ function handValue(hand: HandState): number {
 
 /** Who leads the NEXT trick — INFERENCE, spec is silent on turn order after a
  * trick resolves. Standard Truco Argentino rule: the trick's winner leads
- * next; on a parda (tie), the same player who led the tied trick leads again. */
-function nextLeaderSeat(leaderSeat: number, outcome: TrickOutcome, state: MatchState): number {
+ * next; on a parda (tie), the same player who led the tied trick leads again.
+ * 2v2 generalization: the winning TEAM may have two members, so the leader is
+ * the specific player who played the actual winning card (the highest-power
+ * play among the winning team's own plays in this trick) — not just "any
+ * member of the winning team", which for 1v1 (exactly one play per team)
+ * always reduces to the same single player as before. */
+function nextLeaderSeat(leaderSeat: number, outcome: TrickOutcome, plays: readonly HandPlay[]): number {
   if (outcome.winnerTeamId === null) return leaderSeat;
-  return state.players.find((player) => player.teamId === outcome.winnerTeamId)!.seat;
+  const winningPlays = plays.filter((play) => play.teamId === outcome.winnerTeamId);
+  const winningPlay = winningPlays.reduce((best, candidate) => (cardPower(candidate.card) > cardPower(best.card) ? candidate : best));
+  return winningPlay.seat;
 }
 
 /** Pure reducer for card play: validates turn/ownership, advances the trick
@@ -73,20 +81,21 @@ export function applyCardPlayAction(state: MatchState, action: PlayCardAction): 
   const play: HandPlay = { playerId: player.id, teamId: player.teamId, seat: player.seat, card: action.card };
   const plays: readonly HandPlay[] = [...hand.currentTrickPlays, play];
 
-  if (plays.length < 2) {
-    const nextTurnSeat = state.players.find((p) => p.id !== player.id)!.seat;
+  // Turn order goes around the table (spec). A trick isn't resolved until
+  // every seat has played into it — 2 plays for 1v1, 4 for 2v2; generic over
+  // `state.players.length` rather than hardcoded, so this is the SAME code
+  // path for both, not a fork.
+  if (plays.length < state.players.length) {
+    const nextTurnSeat = (player.seat + 1) % state.players.length;
     return { ok: true, state: { ...state, players, hand: { ...hand, currentTrickPlays: plays, turnSeat: nextTurnSeat } } };
   }
 
-  const [first, second] = plays as readonly [HandPlay, HandPlay];
-  const outcome = resolveTrick([
-    { teamId: first.teamId, card: first.card },
-    { teamId: second.teamId, card: second.card },
-  ]);
+  const leaderSeat = plays[0]!.seat;
+  const outcome = resolveTrick(plays.map((p) => ({ teamId: p.teamId, card: p.card })));
   const trickOutcomes = [...hand.trickOutcomes, outcome];
   const manoTeamId = state.players.find((p) => p.seat === hand.manoSeat)!.teamId;
   const handOutcome: HandOutcome = resolveHandWinner(trickOutcomes, manoTeamId);
-  const nextTurnSeat = nextLeaderSeat(first.seat, outcome, state);
+  const nextTurnSeat = nextLeaderSeat(leaderSeat, outcome, plays);
   const nextHand: HandState = { ...hand, currentTrickPlays: [], trickOutcomes, turnSeat: nextTurnSeat, outcome: handOutcome };
 
   if (!handOutcome.decided) {

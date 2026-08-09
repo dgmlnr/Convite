@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
 import { calculateEnvidoPoints } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
-import { createHeadToHeadMatch, startHand } from "./match.js";
+import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
 import type { EnvidoCallLevel, MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
+const playerC = "player-c" as PlayerId;
+const playerD = "player-d" as PlayerId;
 
 /** playerA holds a strong envido (33), playerB a weak one (5) — deterministic reveal winner below. */
 function freshHand(): MatchState {
@@ -233,6 +235,54 @@ describe("applyAction — no flor in v1, and purity (spec: truco-rules)", () => 
     const before = JSON.stringify(state);
     applyAction(state, action);
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+/**
+ * 2v2 envido (design/spec: "each player has their own envido value; the
+ * team's is the best among its members"). Team A = seats 0/2 (playerA,
+ * playerC); team B = seats 1/3 (playerB, playerD).
+ */
+describe("applyAction — 2v2 envido: team value is the BEST among its members, not just the caller's own hand", () => {
+  it("awards the reveal to the team whose STRONGER hand belongs to the non-calling teammate", () => {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
+    const dealt = startHand(state, [
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }], // playerA (team A): weak, envido 4
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }], // playerB (team B): weak, envido 5
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }], // playerC (team A): strong, envido 33
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }], // playerD (team B): moderate, envido 27
+    ]);
+
+    // playerA (the WEAKER member of team A) opens and calls envido — the team's
+    // value must still be team A's BEST (playerC's 33), not the caller's own 4.
+    const pending = apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" });
+    const accepted = apply(pending, { type: "respond-envido", playerId: playerB, response: "quiero" });
+    const revealed = apply(accepted, { type: "reveal-envido", playerId: playerA });
+
+    const teamA = revealed.teams.find((t) => t.playerIds.includes(playerA))!;
+    const teamB = revealed.teams.find((t) => t.playerIds.includes(playerB))!;
+    expect(revealed.hand?.envido).toMatchObject({ status: "revealed", winningTeamId: teamA.id });
+    expect(teamA.score).toBe(2); // accepted chain value (single "envido" call)
+    expect(teamB.score).toBe(0);
+  });
+
+  it("the losing team's better hand (27) still loses to the winning team's better hand (33) — proves BOTH sides use their best, not just the caller/responder", () => {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
+    const dealt = startHand(state, [
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }], // playerA (team A): strong, envido 33
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }], // playerB (team B): moderate, envido 27
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 5 }, { suit: "copa", rank: 4 }], // playerC (team A): weak
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }], // playerD (team B): weak
+    ]);
+
+    const accepted = apply(
+      apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" }),
+      { type: "respond-envido", playerId: playerD, response: "quiero" },
+    );
+    const revealed = apply(accepted, { type: "reveal-envido", playerId: playerA });
+
+    const teamA = revealed.teams.find((t) => t.playerIds.includes(playerA))!;
+    expect(revealed.hand?.envido).toMatchObject({ winningTeamId: teamA.id });
   });
 });
 

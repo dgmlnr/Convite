@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
 import type { PlayerId } from "./ids.js";
-import { createHeadToHeadMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
+import { createHeadToHeadMatch, createTeamMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
 import type { MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
+const playerC = "player-c" as PlayerId;
+const playerD = "player-d" as PlayerId;
 
 /** dealerSeat: 1 makes playerA (seat 0) mano, so playerA leads trick 1 —
  * matches the deterministic 3-trick scenario used across this file. */
@@ -197,5 +199,139 @@ describe("applyAction — a complete three-trick hand, end to end (the reason th
     applyAction(state, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
 
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+/**
+ * 2v2 card play. Seat order 0,1,2,3 with A/C on one team and B/D on the
+ * other (createTeamMatch). Turn order goes AROUND THE TABLE (spec: "Turn
+ * order goes around the table"), so a trick only resolves once all FOUR
+ * plays are in — this is the generalization card-play.ts needed beyond the
+ * existing 1v1 "resolve after 2 plays" rule.
+ */
+function freshTeamHand(handA: readonly Card[], handB: readonly Card[], handC: readonly Card[], handD: readonly Card[]): MatchState {
+  // dealerSeat: 3 makes seat 0 (playerA) mano, so playerA leads trick 1.
+  const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15, dealerSeat: 3 });
+  return startHand(state, [handA, handB, handC, handD]);
+}
+
+describe("applyAction — 2v2 trick advancement (four plays per trick, turn order around the table)", () => {
+  it("advances turnSeat around the table 0 -> 1 -> 2 -> 3 for the first three plays of a trick", () => {
+    const state = freshTeamHand(
+      [{ suit: "espada", rank: 4 }],
+      [{ suit: "basto", rank: 4 }],
+      [{ suit: "oro", rank: 4 }],
+      [{ suit: "copa", rank: 4 }],
+    );
+    expect(state.hand?.turnSeat).toBe(0);
+
+    let s = apply(state, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 4 } });
+    expect(s.hand?.turnSeat).toBe(1);
+    expect(s.hand?.trickOutcomes).toHaveLength(0); // trick not resolved after 1 of 4 plays
+
+    s = apply(s, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 4 } });
+    expect(s.hand?.turnSeat).toBe(2);
+    expect(s.hand?.trickOutcomes).toHaveLength(0); // NOT resolved after 2 plays, unlike 1v1 — this is the real behavior change
+
+    s = apply(s, { type: "play-card", playerId: playerC, card: { suit: "oro", rank: 4 } });
+    expect(s.hand?.turnSeat).toBe(3);
+    expect(s.hand?.trickOutcomes).toHaveLength(0);
+  });
+
+  it("resolves the trick only once the fourth play lands, crediting the team of the actual winning card", () => {
+    const state = freshTeamHand(
+      [{ suit: "espada", rank: 4 }], // playerA (team A) — weak
+      [{ suit: "basto", rank: 4 }], // playerB (team B) — weak
+      [{ suit: "oro", rank: 1 }], // playerC (team A) — as de oro isn't real, use strong 7-espada instead below
+      [{ suit: "copa", rank: 4 }], // playerD (team B) — weak
+    );
+    // Replace playerC's card with a genuinely top card to make team A's win unambiguous.
+    const strongState: MatchState = { ...state, players: state.players.map((p) => (p.id === playerC ? { ...p, hand: [{ suit: "espada", rank: 1 }] } : p)) };
+
+    let s = apply(strongState, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 4 } });
+    s = apply(s, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 4 } });
+    s = apply(s, { type: "play-card", playerId: playerC, card: { suit: "espada", rank: 1 } });
+    expect(s.hand?.trickOutcomes).toHaveLength(0); // still not resolved — only 3 of 4 plays in
+    s = apply(s, { type: "play-card", playerId: playerD, card: { suit: "copa", rank: 4 } });
+
+    expect(s.hand?.trickOutcomes).toHaveLength(1);
+    expect(s.hand?.trickOutcomes[0]!.winnerTeamId).toBe(s.teams.find((t) => t.playerIds.includes(playerA))!.id);
+    // The SPECIFIC player who played the winning card (playerC, holding the as de espada) leads next —
+    // not just "any member of the winning team" (playerA would be the wrong, easier-to-get-wrong answer).
+    expect(s.hand?.turnSeat).toBe(2);
+  });
+
+  it("a parda (all four cards tie in team-best power) leaves the SAME leader to lead again", () => {
+    const state = freshTeamHand(
+      [{ suit: "espada", rank: 10 }], // playerA (team A) — best on team A
+      [{ suit: "basto", rank: 5 }], // playerB (team B) — weak
+      [{ suit: "oro", rank: 4 }], // playerC (team A) — weak
+      [{ suit: "oro", rank: 10 }], // playerD (team B) — ties playerA's power exactly
+    );
+
+    let s = apply(state, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 10 } });
+    s = apply(s, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 5 } });
+    s = apply(s, { type: "play-card", playerId: playerC, card: { suit: "oro", rank: 4 } });
+    s = apply(s, { type: "play-card", playerId: playerD, card: { suit: "oro", rank: 10 } });
+
+    expect(s.hand?.trickOutcomes).toHaveLength(1);
+    expect(s.hand?.trickOutcomes[0]!.winnerTeamId).toBeNull();
+    expect(s.hand?.turnSeat).toBe(0); // playerA (the original leader) leads again, same as the 1v1 parda rule
+  });
+
+  it("a complete 2v2 hand: tricks 1 and 2 split between the two teams, trick 3 decides (same parda rule as 1v1, run end to end through 4 players)", () => {
+    // Mirrors the 1v1 "split tricks" end-to-end test above — this is the
+    // exact case obs 2918/hand-winner.ts warns was gotten wrong once
+    // ("the team that won the first non-tied trick" is NOT the rule; a
+    // split forces trick 3 to decide). `resolveHandWinner` itself needed no
+    // change (already team-scoped), but this proves the FULL 2v2 pipeline
+    // (turn order around 4 seats, trick resolution via team-best-power,
+    // leader advancement) wires into it correctly.
+    const handA: readonly Card[] = [{ suit: "espada", rank: 1 }, { suit: "basto", rank: 4 }, { suit: "espada", rank: 3 }]; // wins trick1, weak trick2, wins trick3
+    const handB: readonly Card[] = [{ suit: "basto", rank: 5 }, { suit: "oro", rank: 1 }, { suit: "basto", rank: 6 }]; // weak trick1, moderate trick2, weak trick3
+    const handC: readonly Card[] = [{ suit: "oro", rank: 4 }, { suit: "copa", rank: 4 }, { suit: "basto", rank: 4 }]; // playerC (team A): weak all three tricks — three DISTINCT cards, as a real dealt hand always has
+    const handD: readonly Card[] = [{ suit: "copa", rank: 5 }, { suit: "basto", rank: 3 }, { suit: "copa", rank: 6 }]; // weak trick1; trick2's 3-basto wins for team B; weak trick3
+
+    const state = freshTeamHand(handA, handB, handC, handD);
+    const teamA = state.teams.find((t) => t.playerIds.includes(playerA))!.id;
+    const teamB = state.teams.find((t) => t.playerIds.includes(playerB))!.id;
+
+    // Trick 1: playerA leads (mano). Team A's best is playerA's 1-espada — wins.
+    let s = apply(state, { type: "play-card", playerId: playerA, card: handA[0]! });
+    s = apply(s, { type: "play-card", playerId: playerB, card: handB[0]! });
+    s = apply(s, { type: "play-card", playerId: playerC, card: handC[0]! });
+    s = apply(s, { type: "play-card", playerId: playerD, card: handD[0]! });
+    expect(s.hand?.trickOutcomes).toHaveLength(1);
+    expect(s.hand?.trickOutcomes[0]!.winnerTeamId).toBe(teamA);
+    expect(s.hand?.outcome).toEqual({ decided: false });
+    expect(s.hand?.turnSeat).toBe(0); // playerA (holder of the winning as de espada) leads trick 2
+
+    // Trick 2: playerA leads again. Team B's best play is playerD's 3-basto (power-ranked
+    // above playerB's 1-oro) — team B wins, splitting the tricks 1-1.
+    s = apply(s, { type: "play-card", playerId: playerA, card: handA[1]! });
+    s = apply(s, { type: "play-card", playerId: playerB, card: handB[1]! });
+    s = apply(s, { type: "play-card", playerId: playerC, card: handC[1]! });
+    s = apply(s, { type: "play-card", playerId: playerD, card: handD[1]! });
+    expect(s.hand?.trickOutcomes).toHaveLength(2);
+    expect(s.hand?.trickOutcomes[1]!.winnerTeamId).toBe(teamB);
+    // Split tricks (team A won 1, team B won 2) — NOT decided yet; trick 3 must decide.
+    expect(s.hand?.outcome).toEqual({ decided: false });
+    expect(s.hand?.turnSeat).toBe(3); // playerD (holder of the winning 3-basto) leads trick 3
+
+    // Trick 3: playerD leads; turn order goes around the table (3 -> 0 -> 1 -> 2).
+    // Team A's best play is playerA's 3-espada, decisively out-ranking team B's trick-3 cards.
+    s = apply(s, { type: "play-card", playerId: playerD, card: handD[2]! });
+    s = apply(s, { type: "play-card", playerId: playerA, card: handA[2]! });
+    s = apply(s, { type: "play-card", playerId: playerB, card: handB[2]! });
+    s = apply(s, { type: "play-card", playerId: playerC, card: handC[2]! });
+
+    expect(s.hand?.trickOutcomes).toHaveLength(3);
+    expect(s.hand?.trickOutcomes[2]!.winnerTeamId).toBe(teamA);
+    // The 1v1 hand-winner rule this project already fixed once (obs 2918: NOT
+    // "first non-tied trick winner", but the actual decider on a split) holds
+    // unchanged through the full 4-player pipeline: trick 3's winner (team A)
+    // takes the hand, even though team B won trick 2.
+    expect(s.hand?.outcome).toEqual({ decided: true, winnerTeamId: teamA });
+    expect(s.teams.find((t) => t.id === teamA)!.score).toBe(1);
   });
 });

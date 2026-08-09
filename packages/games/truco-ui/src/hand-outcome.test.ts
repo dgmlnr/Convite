@@ -7,7 +7,7 @@ const TEAM_B = "team-b" as TeamId;
 
 function view(overrides: Partial<PlayerView> & { readonly dealerSeat?: number } = {}): PlayerView {
   return {
-    self: { playerId: "p1" as never, teamId: TEAM_A, seat: 0, hand: [] },
+    self: { playerId: "p1" as never, teamId: TEAM_A, seat: 0, hand: [], lastSena: null },
     teammates: [],
     opponents: [{ playerId: "p2" as never, teamId: TEAM_B, seat: 1, cardsRemaining: 0 }],
     teams: [

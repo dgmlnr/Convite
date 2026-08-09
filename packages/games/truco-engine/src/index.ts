@@ -17,11 +17,14 @@ export type {
   MatchConfig,
   MatchState,
   Player,
+  SenaEvent,
   Team,
   TrucoCallLevel,
   TrucoState,
 } from "./match.js";
-export { createHeadToHeadMatch, getMatchWinner, manoSeatFor, rotateDealer, startHand } from "./match.js";
+export { createHeadToHeadMatch, createTeamMatch, getMatchWinner, manoSeatFor, rotateDealer, startHand } from "./match.js";
+export type { SenaAction, SenaSignal, SendSenaAction } from "./senas.js";
+export { SENA_SIGNALS } from "./senas.js";
 export type { PlayedCard, TrickOutcome } from "./trick.js";
 export { resolveTrick } from "./trick.js";
 export type { Action, ApplyResult, CallTrucoAction, RespondTrucoAction, TrucoAction } from "./truco-chain.js";
