@@ -3,7 +3,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Request, Response } from "express";
 import { ColyseusTestServer } from "@colyseus/testing";
 import type { GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import {
+  createGameModuleRegistry,
+  createJtiReplayGuard,
+  createRateLimiter,
+  createSessionTokenIssuer,
+  createSessionTokenVerifier,
+  createStaticTenantRepository,
+  deriveTestSessionSigningKey,
+} from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
 
@@ -82,14 +90,14 @@ describe("createMatchServer — live WebSocket integration (the composition root
   let nextPort = 2570;
 
   beforeEach(async () => {
-    const issuer = createSessionTokenIssuer("live-test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("live-test-secret"));
     const repository = createStaticTenantRepository([
       { id: TENANT_ID, embedKey: "pk_live", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-live"] },
     ]);
     const registry = createGameModuleRegistry([{ module: liveModule, requestSystemAction: (state) => ((state as LiveState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) }]);
     const httpServer = createServer();
     const auth = {
-      issuer,
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), // matches this fixture's mint() ttlSeconds
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
@@ -105,7 +113,7 @@ describe("createMatchServer — live WebSocket integration (the composition root
   });
 
   it("two real clients join over a real websocket with real minted tokens, the match deals automatically, and a submitted action is applied", async () => {
-    const issuer = createSessionTokenIssuer("live-test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("live-test-secret"));
     // The SDK's Node client sends no `Origin` header by default — set it so
     // this exercises the REAL origin-allowlist gate (spec: "Server-Side
     // Origin Allowlist Enforcement"), not a client that bypasses it.
@@ -159,8 +167,9 @@ describe("createMatchServer — the express option (custom routes coexisting wit
   it("a custom route added via express responds, AND colyseus's own real HTTP matchmake route still works on the same server", async () => {
     port = 2780 + Math.floor(Math.random() * 200);
     const registry = createGameModuleRegistry([liveModule]);
+    const unusedIssuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("express-option-secret"));
     const auth = {
-      issuer: createSessionTokenIssuer("express-option-secret"),
+      verifier: await createSessionTokenVerifier(unusedIssuer.publicKey),
       repository: createStaticTenantRepository([]),
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),

@@ -2,8 +2,16 @@ import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ColyseusTestServer } from "@colyseus/testing";
 import type { GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
-import type { TenantId } from "@hexdev/platform-core";
+import {
+  createGameModuleRegistry,
+  createJtiReplayGuard,
+  createRateLimiter,
+  createSessionTokenIssuer,
+  createSessionTokenVerifier,
+  createStaticTenantRepository,
+  deriveTestSessionSigningKey,
+} from "@hexdev/platform-core";
+import type { SessionTokenIssuerHandle, TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
 
 /**
@@ -70,17 +78,17 @@ async function waitFor(views: readonly ReconnectState[], matches: (view: Reconne
 
 describe("MatchRoom — disconnect, reconnection window, and bot takeover over a real WebSocket (spec: 'Disconnect, Reconnection Window, and Bot Takeover')", () => {
   let testServer: ColyseusTestServer;
-  let issuer: ReturnType<typeof createSessionTokenIssuer>;
+  let issuer: SessionTokenIssuerHandle;
   // See `server.live.test.ts`: `boot()` silently ignores `port`. Own range.
   let nextPort = 2700;
 
   beforeEach(async () => {
-    issuer = createSessionTokenIssuer("reconnect-live-secret");
+    issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("reconnect-live-secret"));
     const repository = createStaticTenantRepository([{ id: TENANT_ID, embedKey: "pk_reconnect", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-reconnect"] }]);
     const registry = createGameModuleRegistry([reconnectModule]);
     const httpServer = createServer();
     const auth = {
-      issuer,
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),

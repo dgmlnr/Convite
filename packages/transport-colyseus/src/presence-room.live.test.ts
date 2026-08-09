@@ -8,9 +8,11 @@ import {
   createMatchmakingPool,
   createRateLimiter,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
+  deriveTestSessionSigningKey,
 } from "@hexdev/platform-core";
-import type { SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
+import type { SessionTokenIssuerHandle, TenantId } from "@hexdev/platform-core";
 import { PresenceRoom } from "./presence-room.js";
 import { createMatchServer } from "./server.js";
 
@@ -56,8 +58,9 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     // minimal/unused auth stack is enough (`MatchRoom.onAuth` only runs at
     // live-join time, never at `createRoom`/`reserveSeatFor`).
     const httpServer = createServer();
+    const unusedIssuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("fixture-secret"));
     const auth = {
-      issuer: createSessionTokenIssuer("fixture-secret"),
+      verifier: await createSessionTokenVerifier(unusedIssuer.publicKey),
       repository: createStaticTenantRepository([]),
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
@@ -192,19 +195,19 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
   const P1 = "handoff-p1" as PlayerId;
 
   let testServer: ColyseusTestServer;
-  let issuer: SessionTokenIssuer;
+  let issuer: SessionTokenIssuerHandle;
   let nextPort = 2650;
 
   beforeEach(async () => {
     const registry = createGameModuleRegistry([handoffModule]);
     const pool = createMatchmakingPool();
     const httpServer = createServer();
-    issuer = createSessionTokenIssuer("handoff-live-secret");
+    issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("handoff-live-secret"));
     const repository = createStaticTenantRepository([
       { id: TENANT_ID, embedKey: "pk_handoff", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [HANDOFF_GAME_ID] },
     ]);
     const auth = {
-      issuer,
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
@@ -313,8 +316,9 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
     const registry = createGameModuleRegistry([isolationModuleA, isolationModuleB]);
     const pool = createMatchmakingPool();
     const httpServer = createServer();
+    const unusedIssuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("isolation-secret"));
     const auth = {
-      issuer: createSessionTokenIssuer("isolation-secret"),
+      verifier: await createSessionTokenVerifier(unusedIssuer.publicKey),
       repository: createStaticTenantRepository([]),
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),

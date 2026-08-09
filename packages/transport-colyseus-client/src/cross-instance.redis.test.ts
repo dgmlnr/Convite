@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { GameId, PlayerId } from "@hexdev/platform-contract";
-import { createSessionTokenIssuer } from "@hexdev/platform-core";
+import { createSessionTokenIssuer, deriveTestSessionSigningKey } from "@hexdev/platform-core";
 import type { TenantId, TenantRecord } from "@hexdev/platform-core";
 import { createTransportClient } from "./client.js";
 import { joinMatchFromReservation, startBotMatch } from "./match-connection.js";
@@ -25,7 +25,12 @@ import { readRedisUrlForOwnTests } from "./redis-test-support.js";
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const GAME_ID = "truco-argentino" as GameId;
 const TENANT_ID = "cross-instance-tenant" as TenantId;
-const SHARED_SECRET = "cross-instance-shared-secret";
+// The EXACT property this file exists to prove (apply prompt: "all instances
+// must verify each other's tokens"): every spawned instance gets this SAME
+// derived Ed25519 signing key via `HEXDEV_SESSION_SIGNING_KEY`, and a token
+// minted LOCALLY (in THIS process, never one of the spawned ones) from the
+// SAME key must verify on any of them.
+const SHARED_SIGNING_KEY = await deriveTestSessionSigningKey("cross-instance-shared-secret");
 const SESSION_TTL_SECONDS = 60;
 const TENANT_PAGE_ORIGIN = "https://cross-instance.example";
 /** A REAL load-balanced deployment puts every process behind ONE public
@@ -84,7 +89,7 @@ async function startInstance(port: number, redisUrl: string, envOverrides: NodeJ
   delete env.NODE_ENV; // never accidentally "production" in a throwaway test harness (same reasoning as e2e/support/system.ts)
   Object.assign(env, {
     HEXDEV_ALLOW_DEV_DEFAULTS: "true",
-    HEXDEV_SESSION_SECRET: SHARED_SECRET,
+    HEXDEV_SESSION_SIGNING_KEY: SHARED_SIGNING_KEY,
     HEXDEV_SESSION_TTL_SECONDS: String(SESSION_TTL_SECONDS),
     HEXDEV_TENANTS_JSON: JSON.stringify(tenants),
     // SAME shared origin on every instance — see SHARED_WIDGET_ORIGIN's own
@@ -124,7 +129,7 @@ function stopInstance(instance: Instance): Promise<void> {
 }
 
 async function mintToken(playerId: string): Promise<string> {
-  const issuer = createSessionTokenIssuer(SHARED_SECRET);
+  const issuer = await createSessionTokenIssuer(SHARED_SIGNING_KEY);
   return issuer.mint({ tenantId: TENANT_ID, playerId: playerId as PlayerId, entitlements: [GAME_ID] }, SESSION_TTL_SECONDS);
 }
 
