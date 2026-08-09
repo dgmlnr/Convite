@@ -74,20 +74,53 @@ pnpm test
 
 `pnpm test` compila antes de correr, así que no hace falta un paso previo.
 
-### Levantar el servidor en desarrollo
+### Probarlo a mano
+
+Hacen falta **dos terminales**. El widget vive embebido en un sitio ajeno, así que probarlo
+de verdad necesita un sitio que lo embeba: servirlo suelto no ejercita el camino real.
 
 ```sh
-HEXDEV_ALLOW_DEV_DEFAULTS=true pnpm --filter @hexdev/server start
+# terminal 1 — compila y levanta la plataforma en :2567
+pnpm dev:server
+
+# terminal 2 — sirve un sitio de prueba que embebe el widget, en :5173
+pnpm dev:host
 ```
 
-La variable es deliberada: sin un secreto de sesión configurado, el servidor se niega a
-arrancar. El modo de desarrollo hay que pedirlo de forma explícita, nunca se asume.
+Después abrí <http://localhost:5173>.
+
+Tres detalles que cuestan una tarde si no se saben:
+
+- **El origen de la plataforma se hornea al compilar**, no al arrancar: `loader.js` es un
+  script clásico sin acceso a variables de entorno en tiempo de ejecución, así que
+  `dev:server` define `HEXDEV_WIDGET_ORIGIN` antes de construir. Compilar sin esa variable
+  produce un loader que apunta a un dominio de producción inexistente y el widget no monta,
+  en silencio y sin error en consola.
+- **El puerto 5173 no es decorativo.** Está en la lista blanca del tenant de desarrollo
+  (`DEV_TENANT` en `apps/server/src/config.ts`). Servir la página desde otro puerto hace que
+  el servidor la rechace, que es exactamente lo que debe pasar.
+- **El navegador cachea `loader.js`.** Si cambiás algo y la página sigue vacía, recargá
+  salteando la caché antes de buscar el problema en otro lado.
+
+`HEXDEV_ALLOW_DEV_DEFAULTS=true` va incluido en `dev:server`. La variable es deliberada: sin
+una clave de firma configurada, el servidor se niega a arrancar. El modo de desarrollo hay
+que pedirlo de forma explícita, nunca se asume.
+
+Para escalar horizontalmente hace falta además `HEXDEV_REDIS_URL`. Sin ella todo corre en
+memoria, en un solo proceso. Con ella mal configurada, el servidor **no arranca**: caer en
+silencio a memoria reintroduciría justo la rotura invisible que esa variable existe para
+cerrar.
 
 ## Comandos
 
 | Comando | Qué hace |
 | --- | --- |
 | `pnpm test` | Compila y corre toda la suite, en Node y en un navegador real |
+| `pnpm test:e2e` | Partidas reales de punta a punta, en navegador y contra el servidor real |
+| `pnpm test:visual` | Regresión visual por captura de pantalla (ver `visual/README.md`) |
+| `pnpm test:redis` | Propiedades entre instancias contra un Redis real en Docker |
+| `pnpm dev:server` | Compila con el origen local y levanta la plataforma en `:2567` |
+| `pnpm dev:host` | Sirve un sitio de prueba que embebe el widget en `:5173` |
 | `pnpm typecheck` | Verificación de tipos de todo el workspace |
 | `pnpm check:boundaries` | Verifica que ningún paquete viole la dirección de dependencias |
 | `pnpm exec eslint .` | Linter, incluidas las reglas de determinismo del motor |
