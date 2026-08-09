@@ -24,7 +24,7 @@ function seededRng(seed: number): RandomSource {
 
 function baseView(overrides: { selfHand: readonly Card[]; cardsRemaining: number }): PlayerView {
   return {
-    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.selfHand },
+    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.selfHand, lastSena: null },
     teammates: [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining }],
     teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],

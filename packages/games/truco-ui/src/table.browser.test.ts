@@ -24,7 +24,7 @@ const OPPONENT_TEAM = "player-b:team" as TeamId;
 
 function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
   return {
-    self: { playerId: SELF, teamId: MY_TEAM, seat: 0, hand: [{ suit: "espada", rank: 1 }] },
+    self: { playerId: SELF, teamId: MY_TEAM, seat: 0, hand: [{ suit: "espada", rank: 1 }], lastSena: null },
     teammates: [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 }],
     teams: [

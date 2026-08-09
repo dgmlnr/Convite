@@ -12,7 +12,7 @@ afterEach(() => {
 
 const SELF = "player-a" as PlayerId;
 const view: PlayerView = {
-  self: { playerId: SELF, teamId: "player-a:team" as TeamId, seat: 0, hand: [] },
+  self: { playerId: SELF, teamId: "player-a:team" as TeamId, seat: 0, hand: [], lastSena: null },
   teammates: [],
   opponents: [],
   teams: [{ id: "player-a:team" as TeamId, score: 0 }],
