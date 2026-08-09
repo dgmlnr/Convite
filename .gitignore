@@ -49,3 +49,7 @@ pnpm-debug.log*
 # E2E harness runtime handoff (written by e2e/global-setup.ts, read by the
 # e2e test files — see vitest.e2e.config.ts)
 e2e/.harness/
+
+# Redis integration harness runtime handoff (written by
+# redis-tests/global-setup.ts — see vitest.redis.config.ts)
+redis-tests/.harness/

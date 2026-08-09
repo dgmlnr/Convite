@@ -8,6 +8,7 @@ import {
   renewSessionForWidget,
 } from "./tenant-auth.js";
 import type { TenantId } from "./tenant-auth.js";
+import { describeJtiReplayGuardContract } from "./jti-replay-guard.contract.js";
 
 /** Flips one character in the MIDDLE of the signature segment — not the
  * last character, whose base64url encoding can carry unused padding bits
@@ -80,41 +81,56 @@ function fakeClock(startMs = 0) {
 }
 
 describe("createJtiReplayGuard (bounded, obs 2945: unbounded in-memory growth was the last open memory-exhaustion vector)", () => {
-  it("accepts a jti once, then rejects the same jti as a replay", () => {
+  it("accepts a jti once, then rejects the same jti as a replay", async () => {
     const guard = createJtiReplayGuard({ ttlMs: 120_000 });
-    expect(guard.consume("jti-1")).toBe(true);
-    expect(guard.consume("jti-1")).toBe(false);
+    expect(await guard.consume("jti-1")).toBe(true);
+    expect(await guard.consume("jti-1")).toBe(false);
   });
 
-  it("still rejects a replay partway through the TTL window, not just immediately", () => {
+  it("still rejects a replay partway through the TTL window, not just immediately", async () => {
     const clock = fakeClock();
     const guard = createJtiReplayGuard({ ttlMs: 120_000, clock: clock.now });
-    expect(guard.consume("jti-1")).toBe(true);
+    expect(await guard.consume("jti-1")).toBe(true);
     clock.advance(119_999);
-    expect(guard.consume("jti-1")).toBe(false);
+    expect(await guard.consume("jti-1")).toBe(false);
   });
 
-  it("evicts a jti once its TTL elapses, using the injected clock — never real time", () => {
+  it("evicts a jti once its TTL elapses, using the injected clock — never real time", async () => {
     const clock = fakeClock();
     const guard = createJtiReplayGuard({ ttlMs: 120_000, clock: clock.now });
-    expect(guard.consume("jti-1")).toBe(true);
+    expect(await guard.consume("jti-1")).toBe(true);
     clock.advance(120_000);
     // the token this jti belonged to has itself already expired by now — a
     // jti cannot be replayed against an expired token, so re-accepting it
     // here is safe, not a regression of the replay guarantee.
-    expect(guard.consume("jti-1")).toBe(true);
+    expect(await guard.consume("jti-1")).toBe(true);
   });
 
-  it("bounds tracked-jti memory under a flood of minted-and-used tokens: stale entries are swept once maxTrackedKeys is reached", () => {
+  it("bounds tracked-jti memory under a flood of minted-and-used tokens: stale entries are swept once maxTrackedKeys is reached", async () => {
     const clock = fakeClock();
     const guard = createJtiReplayGuard({ ttlMs: 100, clock: clock.now, maxTrackedKeys: 3 });
-    for (let i = 0; i < 3; i += 1) guard.consume(`jti-${i}`);
-    expect(guard.size()).toBe(3);
+    for (let i = 0; i < 3; i += 1) await guard.consume(`jti-${i}`);
+    expect(await guard.size()).toBe(3);
     clock.advance(200); // every tracked jti's TTL has now elapsed
-    guard.consume("jti-new"); // size >= maxTrackedKeys triggers a sweep before insertion
-    expect(guard.size()).toBe(1); // the 3 stale entries were evicted, only the fresh one remains
+    await guard.consume("jti-new"); // size >= maxTrackedKeys triggers a sweep before insertion
+    expect(await guard.size()).toBe(1); // the 3 stale entries were evicted, only the fresh one remains
   });
 });
+
+// The shared conformance suite (jti-replay-guard.contract.ts), run here
+// against THIS adapter — the same suite `redis-jti-replay-guard.live.test.ts`
+// runs against the Redis adapter. See rate-limiter.test.ts's own comment for
+// why a single shared clock backs every `create()` call.
+{
+  const sharedClock = fakeClock();
+  describeJtiReplayGuardContract(
+    "in-memory",
+    (ttlMs) => createJtiReplayGuard({ ttlMs, clock: sharedClock.now }),
+    async (ms) => {
+      sharedClock.advance(ms);
+    },
+  );
+}
 
 describe("mintSessionForEmbed", () => {
   it("mints a verifiable token for a known tenant loading from an allowed origin", async () => {

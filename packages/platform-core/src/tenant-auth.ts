@@ -121,14 +121,20 @@ export function createSessionTokenIssuer(secret: string): SessionTokenIssuer {
  * token lifetime — a jti cannot be replayed after its token has itself
  * expired anyway, so holding it any longer is pure waste — plus a hard
  * `maxTrackedKeys` backstop, the SAME shape as `createRateLimiter`.
- * KNOWN LIMITATION, unchanged: still single-process, in-memory only — a
- * horizontally-scaled deployment needs a shared store to catch a replay
- * against a DIFFERENT process. */
+ * PORT SHAPE, widened for horizontal scaling: `async` even though this
+ * file's own in-memory adapter never awaits anything — a Redis-backed
+ * `consume` (atomic `SET NX PX`, see the `redis-jti-replay-guard.ts` adapter)
+ * is inherently a network round trip. Every call site now `await`s this;
+ * the in-memory adapter's behavior and atomicity are unchanged. RESOLVED,
+ * not a limitation anymore: a horizontally-scaled deployment configures the
+ * Redis adapter (composition root, `apps/server/src/config.ts`) to catch a
+ * replay against a DIFFERENT process — the in-memory adapter remains the
+ * single-process default. */
 export interface JtiReplayGuard {
-  consume(jti: string): boolean; // true = accepted (first use), false = replay
+  consume(jti: string): Promise<boolean>; // true = accepted (first use), false = replay
   /** Distinct jtis currently tracked — exposed so the memory bound can be
    * observed directly (tests, monitoring), matching `RateLimiter.size()`. */
-  size(): number;
+  size(): Promise<number>;
 }
 
 export interface JtiReplayGuardOptions {
@@ -158,7 +164,7 @@ export function createJtiReplayGuard(options: JtiReplayGuardOptions): JtiReplayG
   }
 
   return {
-    consume(jti) {
+    async consume(jti) {
       const now = clock();
       const expiresAt = seen.get(jti);
       if (expiresAt !== undefined && expiresAt > now) return false; // still within TTL: replay
@@ -166,7 +172,7 @@ export function createJtiReplayGuard(options: JtiReplayGuardOptions): JtiReplayG
       seen.set(jti, now + options.ttlMs);
       return true;
     },
-    size: () => seen.size,
+    size: () => Promise.resolve(seen.size),
   };
 }
 

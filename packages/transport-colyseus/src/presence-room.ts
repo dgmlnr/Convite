@@ -138,20 +138,20 @@ export class PresenceRoom extends Room {
       this.broadcastCounts();
       return;
     }
-    pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
+    await pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
     this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId, token: options.token });
-    this.broadcastCounts();
+    await this.broadcastCounts();
     await this.tryPair(options.modality);
   }
 
-  override onLeave(client: Client): void {
+  override async onLeave(client: Client): Promise<void> {
     const entry = this.waiting.get(client.sessionId);
     const pool = this.pool;
     const gameId = this.gameId;
     if (entry === undefined || pool === undefined || gameId === undefined) return;
-    pool.leave(gameId, entry.modality, client.sessionId, this.poolKey);
+    await pool.leave(gameId, entry.modality, client.sessionId, this.poolKey);
     this.waiting.delete(client.sessionId);
-    this.broadcastCounts();
+    await this.broadcastCounts();
   }
 
   /**
@@ -171,14 +171,14 @@ export class PresenceRoom extends Room {
     const pool = this.pool;
     const gameId = this.gameId;
     if (pool === undefined || gameId === undefined) return;
-    const pairing: Pairing | null = pool.tryPair(gameId, modality, this.poolKey);
+    const pairing: Pairing | null = await pool.tryPair(gameId, modality, this.poolKey);
     if (pairing === null) return;
     const seats: readonly PairedSeat[] = [pairing.a, pairing.b].map((player) => {
       const entry = this.waiting.get(player.connectionId);
       this.waiting.delete(player.connectionId);
       return { playerId: player.playerId, entry };
     });
-    this.broadcastCounts();
+    await this.broadcastCounts();
     await this.handOffToMatch(gameId, modality, seats);
   }
 
@@ -213,25 +213,27 @@ export class PresenceRoom extends Room {
    * connectionId this room is NOT tracking is never touched, so this only
    * ever affects entries owned by THIS presence channel, never another
    * game's queue sharing the same `pool` instance. */
-  private sweepZombies(): void {
+  private async sweepZombies(): Promise<void> {
     const pool = this.pool;
     const sweeper = this.sweeper;
     if (pool === undefined || sweeper === undefined) return;
-    sweeper.maybeSweep(pool, (connectionId) => {
+    await sweeper.maybeSweep(pool, (connectionId) => {
       if (!this.waiting.has(connectionId)) return true;
       const alive = this.clients.some((seated) => seated.sessionId === connectionId);
       if (!alive) this.waiting.delete(connectionId);
       return alive;
     });
-    this.broadcastCounts();
+    await this.broadcastCounts();
   }
 
-  private broadcastCounts(): void {
+  private async broadcastCounts(): Promise<void> {
     const gameId = this.gameId;
     const module = gameId !== undefined ? this.registry?.get(gameId) : undefined;
     const pool = this.pool;
     if (gameId === undefined || module === undefined || pool === undefined) return;
-    const counts = deriveModalities(module.configOptions).map((modality) => ({ modality, waitingCount: pool.count(gameId, modality, this.poolKey) }));
+    const counts = await Promise.all(
+      deriveModalities(module.configOptions).map(async (modality) => ({ modality, waitingCount: await pool.count(gameId, modality, this.poolKey) })),
+    );
     this.broadcast("counts", counts);
   }
 }

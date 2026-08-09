@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConfigOption } from "@hexdev/platform-contract";
 import { createMatchmakingPool, createPresenceSweeper, deriveLobbyDisplay, deriveLobbyDisplayFromCounts, deriveModalities, modalityKey } from "./presence.js";
+import { describeMatchmakingPoolContract } from "./matchmaking-pool.contract.js";
 
 // Truco-shaped option, used ONLY to prove the mechanism handles it — never
 // hardcoded as a special case (roadmap constraint, obs 2943).
@@ -37,72 +38,72 @@ describe("modalityKey", () => {
 });
 
 describe("createMatchmakingPool — derived counters (never incremented/decremented)", () => {
-  it("counts 0 for a modality nobody has joined", () => {
+  it("counts 0 for a modality nobody has joined", async () => {
     const pool = createMatchmakingPool();
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
   });
 
-  it("count reflects the length of the authoritative waiting collection after a join", () => {
+  it("count reflects the length of the authoritative waiting collection after a join", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1);
   });
 
-  it("count drops after leave — derived from the collection shrinking, not a decrement", () => {
+  it("count drops after leave — derived from the collection shrinking, not a decrement", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    pool.leave("truco-argentino", { pointsToWin: 15 }, "c1");
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    await pool.leave("truco-argentino", { pointsToWin: 15 }, "c1");
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
   });
 
-  it("keeps different modalities of the same game independent (spec: 15 and 30 point counters are independent)", () => {
+  it("keeps different modalities of the same game independent (spec: 15 and 30 point counters are independent)", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(2);
-    expect(pool.count("truco-argentino", { pointsToWin: 30 })).toBe(0);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(2);
+    expect(await pool.count("truco-argentino", { pointsToWin: 30 })).toBe(0);
   });
 
-  it("keeps different games independent even with structurally-equal modalities", () => {
+  it("keeps different games independent even with structurally-equal modalities", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", {}, { connectionId: "c1", playerId: "p1" });
-    expect(pool.count("generala", {})).toBe(0);
+    await pool.join("truco-argentino", {}, { connectionId: "c1", playerId: "p1" });
+    expect(await pool.count("generala", {})).toBe(0);
   });
 
-  it("scopes queues by poolKey — a different poolKey does not share a queue (per-tenant flip, spec: config value)", () => {
+  it("scopes queues by poolKey — a different poolKey does not share a queue (per-tenant flip, spec: config value)", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" }, "tenant-a");
-    expect(pool.count("truco-argentino", { pointsToWin: 15 }, "tenant-b")).toBe(0);
-    expect(pool.count("truco-argentino", { pointsToWin: 15 }, "tenant-a")).toBe(1);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" }, "tenant-a");
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 }, "tenant-b")).toBe(0);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 }, "tenant-a")).toBe(1);
   });
 
-  it("defaults every call to the SAME global poolKey — cross-tenant matchmaking is the v1 default", () => {
+  it("defaults every call to the SAME global poolKey — cross-tenant matchmaking is the v1 default", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1); // no poolKey passed: same default queue
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1); // no poolKey passed: same default queue
   });
 
-  it("tryPair returns null when fewer than two players are waiting", () => {
+  it("tryPair returns null when fewer than two players are waiting", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    expect(pool.tryPair("truco-argentino", { pointsToWin: 15 })).toBeNull();
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    expect(await pool.tryPair("truco-argentino", { pointsToWin: 15 })).toBeNull();
   });
 
-  it("tryPair pairs the two waiting players and removes both from the count (spec: matched players leave the waiting count)", () => {
+  it("tryPair pairs the two waiting players and removes both from the count (spec: matched players leave the waiting count)", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
-    const pairing = pool.tryPair("truco-argentino", { pointsToWin: 15 });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
+    const pairing = await pool.tryPair("truco-argentino", { pointsToWin: 15 });
     expect(pairing).toEqual({ a: { connectionId: "c1", playerId: "p1" }, b: { connectionId: "c2", playerId: "p2" } });
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
   });
 
-  it("sweep removes an entry the caller reports as no longer alive, and nothing else", () => {
+  it("sweep removes an entry the caller reports as no longer alive, and nothing else", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "alive", playerId: "p2" });
-    pool.sweep((connectionId) => connectionId !== "zombie");
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "alive", playerId: "p2" });
+    await pool.sweep((connectionId) => connectionId !== "zombie");
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1);
   });
 });
 
@@ -112,61 +113,61 @@ describe("createPresenceSweeper — Clock-injected interval, never Date.now() di
     return { now: () => now, advance: (ms: number) => (now += ms) };
   }
 
-  it("does not sweep before the configured interval has elapsed", () => {
+  it("does not sweep before the configured interval has elapsed", async () => {
     const clock = fakeClock();
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
     const sweeper = createPresenceSweeper({ intervalMs: 10_000, clock: clock.now });
     clock.advance(9_999);
-    sweeper.maybeSweep(pool, () => false);
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1); // not yet swept
+    await sweeper.maybeSweep(pool, () => false);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1); // not yet swept
   });
 
-  it("sweeps once the configured interval has elapsed, using the injected clock's value", () => {
+  it("sweeps once the configured interval has elapsed, using the injected clock's value", async () => {
     const clock = fakeClock();
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
     const sweeper = createPresenceSweeper({ intervalMs: 10_000, clock: clock.now });
     clock.advance(10_000);
-    sweeper.maybeSweep(pool, () => false);
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
+    await sweeper.maybeSweep(pool, () => false);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
   });
 
-  it("honors a DIFFERENT interval VALUE, not just a boolean elapsed/not-elapsed branch (doubling the interval doubles the wait)", () => {
+  it("honors a DIFFERENT interval VALUE, not just a boolean elapsed/not-elapsed branch (doubling the interval doubles the wait)", async () => {
     const clock = fakeClock();
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "zombie", playerId: "p1" });
     const sweeper = createPresenceSweeper({ intervalMs: 20_000, clock: clock.now });
     clock.advance(10_000); // would have swept under the 10s interval, must NOT sweep under 20s
-    sweeper.maybeSweep(pool, () => false);
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1);
+    await sweeper.maybeSweep(pool, () => false);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1);
     clock.advance(10_000); // now 20s total has elapsed
-    sweeper.maybeSweep(pool, () => false);
-    expect(pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
+    await sweeper.maybeSweep(pool, () => false);
+    expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
   });
 });
 
 describe("deriveLobbyDisplay — zero-counter UX rule (obs 2919: decided product rule, not a default)", () => {
-  it("hides the counter and flags the bot fallback when zero players are waiting", () => {
+  it("hides the counter and flags the bot fallback when zero players are waiting", async () => {
     const pool = createMatchmakingPool();
-    const display = deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
+    const display = await deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
     const thirty = display.find((entry) => entry.modality.pointsToWin === 30);
     expect(thirty).toEqual({ modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true });
   });
 
-  it("shows the real count and clears the bot fallback the moment a waiting player exists (spec: appears at 1)", () => {
+  it("shows the real count and clears the bot fallback the moment a waiting player exists (spec: appears at 1)", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 30 }, { connectionId: "c1", playerId: "p1" });
-    const display = deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
+    await pool.join("truco-argentino", { pointsToWin: 30 }, { connectionId: "c1", playerId: "p1" });
+    const display = await deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
     const thirty = display.find((entry) => entry.modality.pointsToWin === 30);
     expect(thirty).toEqual({ modality: { pointsToWin: 30 }, waitingCount: 1, promoteBotFallback: false });
   });
 
-  it("derives one display entry per modality, independent of each other (spec: 15/30 independent)", () => {
+  it("derives one display entry per modality, independent of each other (spec: 15/30 independent)", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
-    const display = deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
+    const display = await deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
     expect(display).toHaveLength(2);
     expect(display.find((entry) => entry.modality.pointsToWin === 15)?.waitingCount).toBe(2);
     expect(display.find((entry) => entry.modality.pointsToWin === 30)?.waitingCount).toBeUndefined();
@@ -185,13 +186,18 @@ describe("deriveLobbyDisplayFromCounts — the same zero-counter rule, extracted
     ]);
   });
 
-  it("is the exact function deriveLobbyDisplay calls internally: identical output for the same pool-derived counts", () => {
+  it("is the exact function deriveLobbyDisplay calls internally: identical output for the same pool-derived counts", async () => {
     const pool = createMatchmakingPool();
-    pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    const viaPool = deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
+    await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
+    const viaPool = await deriveLobbyDisplay("truco-argentino", [POINTS_TO_WIN], pool);
     const viaRawCounts = deriveLobbyDisplayFromCounts(
-      deriveModalities([POINTS_TO_WIN]).map((modality) => ({ modality, waitingCount: pool.count("truco-argentino", modality) })),
+      await Promise.all(deriveModalities([POINTS_TO_WIN]).map(async (modality) => ({ modality, waitingCount: await pool.count("truco-argentino", modality) }))),
     );
     expect(viaRawCounts).toEqual(viaPool);
   });
 });
+
+// The shared conformance suite (matchmaking-pool.contract.ts), run here
+// against THIS adapter — the same suite `redis-matchmaking-pool.redis.
+// test.ts` runs against the Redis adapter.
+describeMatchmakingPoolContract("in-memory", () => createMatchmakingPool());

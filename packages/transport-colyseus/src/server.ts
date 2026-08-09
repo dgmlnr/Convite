@@ -1,5 +1,8 @@
 import { Server, WebSocketTransport } from "colyseus";
 import type { Server as HttpServer } from "node:http";
+import type { Redis } from "ioredis";
+import { RedisDriver } from "@colyseus/redis-driver";
+import { RedisPresence } from "@colyseus/redis-presence";
 import type { GameModuleRegistry } from "@hexdev/platform-core";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { MatchRoom } from "./match-room.js";
@@ -34,6 +37,41 @@ export interface MatchServerOptions {
    * semantics — no race, no double-response.
    */
   readonly express?: ExpressAppCallback;
+  /**
+   * Horizontal scaling (apply prompt: "a half-migrated deployment where our
+   * pools are shared but Colyseus's are not is arguably worse than
+   * neither"). Undefined (default) keeps Colyseus on its own built-in
+   * `LocalPresence`/`LocalDriver` — a room created on one process is
+   * invisible to another process's matchmaker, exactly matching this
+   * repo's own `MatchmakingPool`/`RateLimiter`/`JtiReplayGuard` staying
+   * in-memory by default. Set (the composition root's ONE
+   * `HEXDEV_REDIS_URL` knob, `apps/server/src/config.ts`) switches
+   * Colyseus itself to `RedisPresence`/`RedisDriver`, sharing the SAME
+   * already-connected ioredis client this package's caller also hands to
+   * every other Redis-backed adapter — one Redis client library
+   * (`ioredis`, matching `@colyseus/redis-presence`/`@colyseus/redis-
+   * driver`'s own dependency) per process, never two.
+   */
+  readonly redis?: Redis;
+  /**
+   * This process's OWN reachable host:port (e.g. `127.0.0.1:2568`),
+   * forwarded verbatim into Colyseus's own `publicAddress` option.
+   * Meaningless without `redis`/`RedisDriver` — Colyseus records it on a
+   * room's own metadata at creation time and returns it in the seat
+   * reservation, which is what lets a client whose `joinOrCreate` HTTP
+   * request landed on THIS process's matchmake endpoint open its actual
+   * WebSocket against a DIFFERENT process's socket, when the driver
+   * discovers the target room lives there instead (verified in the
+   * installed `@colyseus/core` source: `MatchMaker.createRoom` records
+   * `publicAddress` on the room, and `reserveSeatFor` copies it onto the
+   * reservation only when set). Undefined (default, single-instance/dev)
+   * relies on the client reusing the SAME address it already used for the
+   * matchmake call — correct there, but silently wrong the moment two
+   * processes are involved, which is exactly why a horizontal-scaling
+   * deployment must set this per instance (real address, or a stable
+   * per-instance hostname behind a WS-aware load balancer).
+   */
+  readonly publicAddress?: string;
 }
 
 /**
@@ -47,7 +85,21 @@ export interface MatchServerOptions {
  * `gameId`/`config` come from whoever creates/joins a room.
  */
 export function createMatchServer(options: MatchServerOptions): Server {
-  const gameServer = new Server({ transport: new WebSocketTransport({ server: options.httpServer }), express: options.express });
+  // Both constructed from the SAME `Redis` instance when provided:
+  // `RedisPresence` internally `.duplicate()`s it for its own subscriber
+  // connection (verified in the installed `@colyseus/redis-presence`
+  // source) — this package never opens a connection of its own the caller
+  // did not already establish and verify (composition root's own boot-time
+  // fail-loud check, `apps/server/src/redis-client.ts`).
+  const presence = options.redis !== undefined ? new RedisPresence(options.redis) : undefined;
+  const driver = options.redis !== undefined ? new RedisDriver(options.redis) : undefined;
+  const gameServer = new Server({
+    transport: new WebSocketTransport({ server: options.httpServer }),
+    express: options.express,
+    presence,
+    driver,
+    publicAddress: options.publicAddress,
+  });
   // colyseus types `defaultOptions` as the FULL `onCreate` param, but at
   // runtime merges `merge({}, clientOptions, defaultOptions)` — THIS object
   // wins on collision, so a client can supply `gameId`/`config` but never

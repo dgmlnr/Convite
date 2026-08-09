@@ -196,7 +196,7 @@ export class MatchRoom extends Room {
       throw new Error("MatchRoom: onAuth called before onCreate registered a module");
     }
     const ip = Array.isArray(context.ip) ? context.ip[0] : context.ip;
-    if (ip !== undefined && !auth.joinRateLimiter.tryConsume(ip)) {
+    if (ip !== undefined && !(await auth.joinRateLimiter.tryConsume(ip))) {
       throw new Error("MatchRoom: join rejected, too many join attempts from this address");
     }
     if (typeof options.token !== "string") {
@@ -226,7 +226,7 @@ export class MatchRoom extends Room {
     if (!tenant.entitledGames.includes(module.id)) {
       throw new Error("MatchRoom: join rejected, tenant is not entitled to this game");
     }
-    if (!auth.replayGuard.consume(claims.jti)) {
+    if (!(await auth.replayGuard.consume(claims.jti))) {
       throw new Error("MatchRoom: join rejected, session token already used");
     }
     return { playerId: claims.playerId };

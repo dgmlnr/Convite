@@ -22,6 +22,31 @@ export interface ServerConfig {
    * zero-setup dev run; a real deployment sets `HEXDEV_WIDGET_ORIGIN`
    * (comma-separated for multiple environments) to its real public origin. */
   readonly allowedWidgetOrigins: readonly string[];
+  /**
+   * The single knob for horizontal scaling: `undefined` (default, no
+   * required setup) means every port stays the in-memory, single-process
+   * adapter this server has always run — a single instance or local dev
+   * deploy needs NO Redis and NO new required config. Set means ALL FOUR
+   * (`RateLimiter`, `JtiReplayGuard`, `MatchmakingPool`, and Colyseus's own
+   * `RedisPresence`/`RedisDriver`) switch to Redis-backed together — there
+   * is deliberately no way to configure only some of them. A half-migrated
+   * deployment (our pools shared, Colyseus's own matchmaking still
+   * process-local, or the reverse) would be a NEW invisible-breakage shape,
+   * not a smaller one — the exact failure class this unit exists to remove.
+   * One env var makes that combination structurally unrepresentable rather
+   * than merely discouraged.
+   */
+  readonly redisUrl: string | undefined;
+  /**
+   * This process's own reachable `host:port`, forwarded to Colyseus's own
+   * `publicAddress` option (see `MatchServerOptions.publicAddress`'s own
+   * docstring in `transport-colyseus`). Only meaningful together with
+   * `redisUrl` — a single-instance deployment never needs a second process
+   * to find this one. `undefined` by default: correct for local dev and for
+   * any deployment where every client already reaches this process at the
+   * same address it used for the matchmake HTTP call.
+   */
+  readonly publicAddress: string | undefined;
 }
 
 const DEFAULT_PORT = 2567;
@@ -104,5 +129,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
     embedKeyRateLimit: readRateLimit(env, "HEXDEV_EMBED_KEY_RATE_LIMIT", "HEXDEV_EMBED_KEY_RATE_WINDOW_MS", DEFAULT_EMBED_KEY_LIMIT),
     joinIpRateLimit: readRateLimit(env, "HEXDEV_JOIN_IP_RATE_LIMIT", "HEXDEV_JOIN_IP_RATE_WINDOW_MS", DEFAULT_JOIN_IP_LIMIT),
     allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${port}`],
+    redisUrl: env.HEXDEV_REDIS_URL,
+    publicAddress: env.HEXDEV_PUBLIC_ADDRESS,
   };
 }

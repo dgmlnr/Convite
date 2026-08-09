@@ -7,10 +7,13 @@ import {
   createJtiReplayGuard,
   createMatchmakingPool,
   createRateLimiter,
+  createRedisJtiReplayGuard,
+  createRedisMatchmakingPool,
+  createRedisRateLimiter,
   createSessionTokenIssuer,
   createStaticTenantRepository,
 } from "@hexdev/platform-core";
-import type { SystemActionRequester } from "@hexdev/platform-core";
+import type { JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { ExpressAppCallback, PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
 import { requestSystemAction, trucoModule } from "@hexdev/truco-module";
@@ -19,6 +22,7 @@ import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
 import { handleSessionRenewRequest } from "./session-renew-handler.js";
 import { refererOrigin } from "./referer-origin.js";
+import { connectRedis } from "./redis-client.js";
 import { serveCardFrontAsset } from "./static-deck-assets.js";
 import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
@@ -28,17 +32,31 @@ import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 const config = loadServerConfig(process.env);
 const repository = createStaticTenantRepository(config.tenants);
 const issuer = createSessionTokenIssuer(config.sessionSecret);
+
+// Horizontal scaling (config.ts's own docstring on `redisUrl`): ONE knob.
+// `redis` is `undefined` unless `HEXDEV_REDIS_URL` is set, and every
+// Redis-backed port below AND `createMatchServer`'s own `redis` option
+// (Colyseus's `RedisPresence`/`RedisDriver`) key off this SAME variable —
+// there is no code path that wires only some of them. `connectRedis` fails
+// loudly (throws, crashing boot) rather than silently falling back to the
+// in-memory adapters on a bad URL — see its own docstring.
+const redis = config.redisUrl !== undefined ? await connectRedis(config.redisUrl) : undefined;
+
 // TTL matches the session token lifetime (obs 2945: bounding this guard was
 // the last open memory-exhaustion vector) — a jti cannot be replayed after
 // its own token has expired anyway, so holding it any longer is pure waste.
-const replayGuard = createJtiReplayGuard({ ttlMs: config.sessionTtlSeconds * 1000 });
+const replayGuard: JtiReplayGuard =
+  redis !== undefined ? createRedisJtiReplayGuard({ redis, ttlMs: config.sessionTtlSeconds * 1000, keyPrefix: "jti" }) : createJtiReplayGuard({ ttlMs: config.sessionTtlSeconds * 1000 });
 // Rate limiting (hardening, obs 2945: /embed is now a REAL public endpoint
 // with none). Per-IP + per-key on /embed, per-IP on room join. GUESSED
 // defaults, disclosed in config.ts — configurable via env for a real
 // deployment to tune once real traffic data exists.
-const embedIpLimiter = createRateLimiter(config.embedIpRateLimit);
-const embedKeyLimiter = createRateLimiter(config.embedKeyRateLimit);
-const joinIpLimiter = createRateLimiter(config.joinIpRateLimit);
+const embedIpLimiter: RateLimiter =
+  redis !== undefined ? createRedisRateLimiter({ redis, ...config.embedIpRateLimit, keyPrefix: "rl:embed-ip" }) : createRateLimiter(config.embedIpRateLimit);
+const embedKeyLimiter: RateLimiter =
+  redis !== undefined ? createRedisRateLimiter({ redis, ...config.embedKeyRateLimit, keyPrefix: "rl:embed-key" }) : createRateLimiter(config.embedKeyRateLimit);
+const joinIpLimiter: RateLimiter =
+  redis !== undefined ? createRedisRateLimiter({ redis, ...config.joinIpRateLimit, keyPrefix: "rl:join-ip" }) : createRateLimiter(config.joinIpRateLimit);
 // The registry erases per-module state types (same documented boundary as
 // `platform-core/registry.ts` itself); this is that one spot for the pairing.
 const registry = createGameModuleRegistry([{ module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester }]);
@@ -47,8 +65,11 @@ const registry = createGameModuleRegistry([{ module: trucoModule, requestSystemA
 const rng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
 // Lobby presence (design §8): ONE process-wide pool, `GLOBAL_POOL_KEY`
 // (cross-tenant matchmaking, the v1 default) — flipping to per-tenant is a
-// config value passed here, never a redesign.
-const presencePool = createMatchmakingPool();
+// config value passed here, never a redesign. Redis-backed when horizontal
+// scaling is configured: closes the residual room-creation race
+// `RedisDriver`/`RedisPresence` alone do not eliminate (see
+// `redis-matchmaking-pool.ts`'s own docstring for the full argument).
+const presencePool: MatchmakingPool = redis !== undefined ? createRedisMatchmakingPool({ redis, keyPrefix: "pool" }) : createMatchmakingPool();
 // `apps/server/dist/index.js` -> `apps/widget-app/dist-app` (the Vite
 // APP-mode build's own output dir, deliberately distinct from every
 // package's `tsc -b` `dist/` — see apps/widget-app/vite.config.ts).
@@ -216,6 +237,12 @@ const gameServer = createMatchServer({
   auth: { issuer, repository, replayGuard, joinRateLimiter: joinIpLimiter, allowedWidgetOrigins: config.allowedWidgetOrigins },
   rng,
   express: registerCustomRoutes,
+  // Same `redis` as every port above: Colyseus's OWN room selection/lookup
+  // (`.filterBy(["gameId"])` below, `MatchRoom`'s reconnection-by-roomId)
+  // becomes cluster-aware together with our own adapters, never separately
+  // — config.ts's own "no partial configuration" docstring.
+  redis,
+  publicAddress: config.publicAddress,
 });
 // `gameId` is deliberately absent here — the client supplies it at
 // createRoom time, same as `MatchRoom`'s own `defaultOptions` pattern.
