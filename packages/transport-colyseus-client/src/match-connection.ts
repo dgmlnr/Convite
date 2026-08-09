@@ -90,6 +90,11 @@ export interface StartBotMatchOptions {
   readonly botTier: BotTier;
   readonly playerId: string;
   readonly token?: string;
+  /** How many real seats to wait for before bot-filling the rest
+   * (`MatchRoomCreateOptions.humanSeatsNeeded`) — omitted for every existing
+   * 1v1 caller, so the server-side default (1) applies unchanged. A 2v2
+   * entry point (e.g. "2 real players vs 2 bot-filled seats") passes 2. */
+  readonly humanSeatsNeeded?: number;
 }
 
 /**
@@ -105,7 +110,16 @@ export interface StartBotMatchOptions {
  */
 export function startBotMatch<TView = unknown>(client: ClientLike, options: StartBotMatchOptions): Promise<MatchConnection<TView>> {
   return client
-    .create(MATCH_ROOM_NAME, { gameId: options.gameId, config: options.config, botTier: options.botTier, token: options.token })
+    .create(MATCH_ROOM_NAME, {
+      gameId: options.gameId,
+      config: options.config,
+      botTier: options.botTier,
+      token: options.token,
+      // Omitted entirely (not sent as `undefined`) when the caller doesn't
+      // pass it, so the server-side default (1 human seat) applies exactly
+      // as it did before this field existed — every 1v1 caller is unchanged.
+      ...(options.humanSeatsNeeded !== undefined ? { humanSeatsNeeded: options.humanSeatsNeeded } : {}),
+    })
     .then(wrapMatchRoom<TView>);
 }
 
