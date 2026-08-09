@@ -34,9 +34,12 @@ export interface GameUiEntry {
  * the only entry today; a second game adds one more entry here, never a
  * change to `main.ts`'s own composition logic.
  */
-const trucoEntry: GameUiEntry = {
-  id: "truco-argentino" as GameId,
-  createRenderer() {
+/** Shared factory: `createMatchTableRenderer` is already seat-count generic
+ * (it derives `seatCount` from `view.teammates.length + view.opponents.length
+ * + 1`, per `truco-ui/table.ts`) — the 1v1 and 2v2 entries below reuse the
+ * EXACT same rendering function, never a second, 2v2-specific renderer. */
+function createTrucoRenderer(): GameUiEntry["createRenderer"] {
+  return () => {
     const render = createMatchTableRenderer();
     return (container, payload, dispatch, onPlayAgain) => {
       render(container, payload.view as PlayerView, payload.legalActions as readonly Action[], (action) => dispatch(action), {
@@ -44,14 +47,27 @@ const trucoEntry: GameUiEntry = {
         onPlayAgain,
       });
     };
-  },
-};
+  };
+}
+
+const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer() };
+
+/** The 2v2 game-ui entry — additive, registered under its own distinct
+ * `gameId` (matching `truco-module`'s own `trucoModule2v2.id`), never a
+ * branch inside `trucoEntry`. Without this entry, a 2v2 match would connect
+ * successfully over the wire but fall back to the generic "connection is
+ * live" placeholder (`main.ts`'s own `enterMatch` fallback) instead of the
+ * real table — found running an actual 2v2 match end to end, not assumed. */
+const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer() };
 
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
 }
 
 export function createGameUiRegistry(): GameUiRegistry {
-  const byId = new Map<GameId, GameUiEntry>([[trucoEntry.id, trucoEntry]]);
+  const byId = new Map<GameId, GameUiEntry>([
+    [trucoEntry.id, trucoEntry],
+    [trucoEntry2v2.id, trucoEntry2v2],
+  ]);
   return { get: (gameId) => byId.get(gameId) };
 }
