@@ -3,7 +3,9 @@ import type { PlayerId } from "@hexdev/platform-contract";
 import {
   createJtiReplayGuard,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
+  deriveTestSessionSigningKey,
   mintSessionForEmbed,
   renewSessionForWidget,
 } from "./tenant-auth.js";
@@ -20,6 +22,17 @@ function corruptSignature(token: string): string {
   const mid = Math.floor(signature.length / 2);
   const replacement = signature[mid] === "a" ? "b" : "a";
   return `${token.slice(0, dot + 1 + mid)}${replacement}${signature.slice(mid + 1)}`;
+}
+
+/** Same idea as `corruptSignature`, but flips a byte inside the PAYLOAD
+ * segment instead — a distinct attack shape (tamper the claims, not the
+ * signature bytes) that a signature-only tamper test does not cover. */
+function corruptPayload(token: string): string {
+  const dot = token.indexOf(".");
+  const payload = token.slice(0, dot);
+  const mid = Math.floor(payload.length / 2);
+  const replacement = payload[mid] === "a" ? "b" : "a";
+  return `${payload.slice(0, mid)}${replacement}${payload.slice(mid + 1)}${token.slice(dot)}`;
 }
 
 const tenantId = "tenant-a" as TenantId;
@@ -44,9 +57,9 @@ describe("createStaticTenantRepository", () => {
   });
 });
 
-describe("createSessionTokenIssuer", () => {
+describe("createSessionTokenIssuer (Ed25519/EdDSA — see this file's own docstring for why this replaced the prior shared-HMAC-secret design)", () => {
   it("verify recovers exactly the claims mint issued, plus jti/exp", async () => {
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const token = await issuer.mint({ tenantId, playerId, entitlements: ["truco-argentino"] }, 120);
     const claims = await issuer.verify(token);
     expect(claims?.tenantId).toBe(tenantId);
@@ -55,23 +68,92 @@ describe("createSessionTokenIssuer", () => {
   });
 
   it("rejects a token whose signature was tampered with", async () => {
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const token = await issuer.mint({ tenantId, playerId, entitlements: [] }, 120);
     const tampered = corruptSignature(token);
     expect(await issuer.verify(tampered)).toBeUndefined();
   });
 
+  it("rejects a token whose payload was tampered with", async () => {
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const token = await issuer.mint({ tenantId, playerId, entitlements: [] }, 120);
+    const tampered = corruptPayload(token);
+    expect(await issuer.verify(tampered)).toBeUndefined();
+  });
+
   it("rejects an already-expired token", async () => {
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const token = await issuer.mint({ tenantId, playerId, entitlements: [] }, -1);
     expect(await issuer.verify(token)).toBeUndefined();
   });
 
-  it("a token signed with a different secret is rejected", async () => {
-    const issuerA = createSessionTokenIssuer("secret-a");
-    const issuerB = createSessionTokenIssuer("secret-b");
+  it("a token signed with a different signing key is rejected", async () => {
+    const issuerA = await createSessionTokenIssuer(await deriveTestSessionSigningKey("secret-a"));
+    const issuerB = await createSessionTokenIssuer(await deriveTestSessionSigningKey("secret-b"));
     const token = await issuerA.mint({ tenantId, playerId, entitlements: [] }, 120);
     expect(await issuerB.verify(token)).toBeUndefined();
+  });
+
+  it("returns undefined for a malformed/garbage token instead of throwing", async () => {
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    await expect(issuer.verify("not-a-token-at-all")).resolves.toBeUndefined();
+    await expect(issuer.verify("")).resolves.toBeUndefined();
+    await expect(issuer.verify("..")).resolves.toBeUndefined();
+    await expect(issuer.verify("!!!not-base64url!!!.also-not-base64url!!!")).resolves.toBeUndefined();
+  });
+
+  it("two independent issuers built from the SAME signing key mint/verify interoperably — the property a horizontally-scaled fleet relies on", async () => {
+    const signingKey = await deriveTestSessionSigningKey("shared-across-instances");
+    const instanceA = await createSessionTokenIssuer(signingKey);
+    const instanceB = await createSessionTokenIssuer(signingKey);
+    const token = await instanceA.mint({ tenantId, playerId, entitlements: ["truco-argentino"] }, 120);
+    const claims = await instanceB.verify(token);
+    expect(claims?.playerId).toBe(playerId);
+  });
+
+  it("refuses to construct from a malformed signing key (wrong byte length after decoding) — the crypto-layer half of 'refuses to boot'", async () => {
+    await expect(createSessionTokenIssuer("not-a-valid-32-byte-seed")).rejects.toThrow(/malformed/i);
+    await expect(createSessionTokenIssuer("")).rejects.toThrow(/malformed/i);
+  });
+
+  it("derives a stable, reusable public key alongside the signer", async () => {
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    expect(typeof issuer.publicKey).toBe("string");
+    expect(issuer.publicKey.length).toBeGreaterThan(0);
+  });
+});
+
+describe("createSessionTokenVerifier — the genuinely mint-incapable construction (the whole point of moving off HMAC)", () => {
+  it("verifies a token minted by the matching issuer", async () => {
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const verifier = await createSessionTokenVerifier(issuer.publicKey);
+    const token = await issuer.mint({ tenantId, playerId, entitlements: ["truco-argentino"] }, 120);
+    const claims = await verifier.verify(token);
+    expect(claims?.playerId).toBe(playerId);
+  });
+
+  it("rejects a token minted by a DIFFERENT issuer's key, exactly like a full issuer would", async () => {
+    const issuerA = await createSessionTokenIssuer(await deriveTestSessionSigningKey("secret-a"));
+    const issuerB = await createSessionTokenIssuer(await deriveTestSessionSigningKey("secret-b"));
+    const verifierForA = await createSessionTokenVerifier(issuerA.publicKey);
+    const token = await issuerB.mint({ tenantId, playerId, entitlements: [] }, 120);
+    expect(await verifierForA.verify(token)).toBeUndefined();
+  });
+
+  it("has NO mint method at all at runtime — not merely hidden by typing", async () => {
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const verifier = await createSessionTokenVerifier(issuer.publicKey);
+    expect("mint" in verifier).toBe(false);
+    expect(Object.keys(verifier)).toEqual(["verify"]);
+    // @ts-expect-error — the whole thesis of this construction: TypeScript
+    // itself refuses to let a caller reach a mint capability that was never
+    // returned, not merely one that is inconvenient to call.
+    expect(typeof verifier.mint).toBe("undefined");
+  });
+
+  it("refuses to construct from a malformed public key (wrong byte length)", async () => {
+    await expect(createSessionTokenVerifier("not-a-valid-32-byte-key")).rejects.toThrow(/malformed/i);
+    await expect(createSessionTokenVerifier("")).rejects.toThrow(/malformed/i);
   });
 });
 
@@ -135,7 +217,7 @@ describe("createJtiReplayGuard (bounded, obs 2945: unbounded in-memory growth wa
 describe("mintSessionForEmbed", () => {
   it("mints a verifiable token for a known tenant loading from an allowed origin", async () => {
     const repository = createStaticTenantRepository([record]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await mintSessionForEmbed({
       repository,
       issuer,
@@ -152,7 +234,7 @@ describe("mintSessionForEmbed", () => {
 
   it("rejects a disallowed origin and issues no token", async () => {
     const repository = createStaticTenantRepository([record]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await mintSessionForEmbed({
       repository,
       issuer,
@@ -166,7 +248,7 @@ describe("mintSessionForEmbed", () => {
 
   it("rejects an unknown embed key", async () => {
     const repository = createStaticTenantRepository([record]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await mintSessionForEmbed({
       repository,
       issuer,
@@ -184,7 +266,7 @@ describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE
 
   it("mints a fresh, verifiable token for a known tenant when the request's own origin is an allowed WIDGET origin (never the tenant's host-page allowlist)", async () => {
     const repository = createStaticTenantRepository([record]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await renewSessionForWidget({
       repository,
       issuer,
@@ -202,7 +284,7 @@ describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE
 
   it("rejects a request whose origin is NOT one of this server's own widget origins, even though it exactly matches the tenant's host-page allowlist", async () => {
     const repository = createStaticTenantRepository([record]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await renewSessionForWidget({
       repository,
       issuer,
@@ -217,7 +299,7 @@ describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE
 
   it("rejects an unknown embed key", async () => {
     const repository = createStaticTenantRepository([record]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await renewSessionForWidget({
       repository,
       issuer,
@@ -233,7 +315,7 @@ describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE
   it("mints against CURRENT tenant entitlements, not any stale copy — same freshness guarantee mintSessionForEmbed already has", async () => {
     const currentRecord = { ...record, entitledGames: ["truco-argentino", "escoba"] };
     const repository = createStaticTenantRepository([currentRecord]);
-    const issuer = createSessionTokenIssuer("test-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
     const result = await renewSessionForWidget({
       repository,
       issuer,

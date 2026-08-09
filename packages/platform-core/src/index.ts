@@ -16,6 +16,9 @@ export type {
   JtiReplayGuardOptions,
   SessionTokenClaims,
   SessionTokenIssuer,
+  SessionTokenIssuerHandle,
+  SessionTokenSigner,
+  SessionTokenVerifier,
   TenantId,
   TenantRecord,
   TenantRepository,
@@ -23,7 +26,9 @@ export type {
 export {
   createJtiReplayGuard,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
+  deriveTestSessionSigningKey,
   mintSessionForEmbed,
   renewSessionForWidget,
 } from "./tenant-auth.js";
