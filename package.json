@@ -9,6 +9,8 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:redis": "vitest run --config vitest.redis.config.ts",
     "test:visual": "vitest run --config vitest.visual.config.ts",
+    "dev:server": "HEXDEV_WIDGET_ORIGIN=http://localhost:2567 pnpm -r build && HEXDEV_ALLOW_DEV_DEFAULTS=true pnpm --filter @hexdev/server start",
+    "dev:host": "node scripts/dev-host.mjs",
     "typecheck": "tsc -b",
     "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs"
   },
