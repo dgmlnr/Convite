@@ -7,10 +7,19 @@ import type { CatalogEntry } from "./bootstrap-data.js";
 
 const TRUCO_ID = "truco-argentino" as GameId;
 
+const TRUCO_2V2_ID = "truco-argentino-2v2" as GameId;
+
 const TRUCO_ENTRY: CatalogEntry = {
   id: TRUCO_ID,
   displayNameKey: "games.truco.name",
   seatCount: 2,
+  configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
+};
+
+const TRUCO_2V2_ENTRY: CatalogEntry = {
+  id: TRUCO_2V2_ID,
+  displayNameKey: "games.truco2v2.name",
+  seatCount: 4,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
 };
 
@@ -97,6 +106,32 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
     el.querySelector<HTMLButtonElement>('button[data-action="vs-bot"][data-tier="hard"]')?.click();
 
     expect(onPlayVsBot).toHaveBeenCalledWith(TRUCO_ID, { pointsToWin: 15 }, "hard");
+  });
+});
+
+describe("renderGameSelection — a 4-seat modality (2v2) never offers a queue with no way to pair four (obs 2927/2925's own named matchmaking gap)", () => {
+  it("never renders a vs-person button for a 4-seat game, even when the (unused) presence entry reports waiting players", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_2V2_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 3, promoteBotFallback: false }]],
+    ]);
+
+    renderGameSelection(el, [TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelector('button[data-action="vs-person"]')).toBeNull();
+    expect(el.querySelectorAll('button[data-action="vs-bot"]').length).toBeGreaterThan(0);
+  });
+
+  it("still renders a 2-seat game's vs-person button unchanged when both a 2-seat and a 4-seat game are in the catalog", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
+      [TRUCO_2V2_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 0, promoteBotFallback: true }]],
+    ]);
+
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelectorAll('button[data-action="vs-person"]')).toHaveLength(1);
   });
 });
 

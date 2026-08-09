@@ -1,8 +1,8 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, Card, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
-import { sampleOpponentHand } from "./determinize.js";
-import { envidoPoints, handPower, scoreFollowingCardPlay } from "./heuristics.js";
+import { sampleAllOpponentHands } from "./determinize.js";
+import { envidoPoints, handPower, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 
 /** Number of determinizations sampled per decision — a tunable search
  * budget, same spirit as `budgetMs` on `BotStrategy.chooseAction`. Kept
@@ -30,15 +30,34 @@ function respondChoice<T extends RespondTruco | RespondEnvido>(group: readonly T
 /**
  * Leading the trick: no opponent card is visible yet, so — unlike the
  * normal tier's static "always play weakest" habit — determinize the
- * opponent's hand and score each candidate by how often it beats the
- * STRONGEST card in a sampled hand (pessimistic: assume the opponent
- * defends with their best available response).
+ * opposing hand(s) and score each candidate by how often it beats the
+ * STRONGEST card among ALL of them combined (pessimistic: assume whichever
+ * opponent is about to act defends with their best available response —
+ * generalizes cleanly from 1v1's single opponent to 2v2's two, since either
+ * one might be the seat that actually follows).
  */
-function leadingCardPlayChoice(group: readonly PlayCard[], samples: readonly (readonly Card[])[]): Action {
+function leadingCardPlayChoice(group: readonly PlayCard[], roundsOfOpposingHands: readonly (readonly (readonly Card[])[])[]): Action {
+  const combinedPools = roundsOfOpposingHands.map((round) => round.flat());
   return group.reduce((best, candidate) => {
-    const score = (card: Card) => samples.filter((sample) => cardPower(card) > Math.max(...sample.map(cardPower))).length;
+    const score = (card: Card) => combinedPools.filter((pool) => pool.length > 0 && cardPower(card) > Math.max(...pool.map(cardPower))).length;
     return score(candidate.card) > score(best.card) ? candidate : best;
   });
+}
+
+/**
+ * Picks, per determinization round, whichever sampled opposing hand scores
+ * HIGHEST on `metric` — pessimistic: for a call/response decision, assume
+ * the stronger of however many real opponents exist is the relevant one.
+ * In 1v1 (`roundsOfOpposingHands[n]` always has exactly one hand) this is
+ * the identity — the exact same single hand `winRate` already compared
+ * against before this was generalized. DISCLOSED SIMPLIFICATION: does not
+ * model the bot's OWN teammate's hand at all (2v2 envido/truco strength is
+ * genuinely team-combined per the real engine's own Math.max-per-team rule
+ * — this heuristic still reasons only about the bot's own single hand, the
+ * same limitation the pre-existing 1v1 heuristic already had).
+ */
+function worstCaseOpposingHands(roundsOfOpposingHands: readonly (readonly (readonly Card[])[])[], metric: (hand: readonly Card[]) => number): readonly (readonly Card[])[] {
+  return roundsOfOpposingHands.map((round) => (round.length === 0 ? [] : round.reduce((best, hand) => (metric(hand) > metric(best) ? hand : best))));
 }
 
 export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): BotStrategy<PlayerView, Action> {
@@ -48,36 +67,43 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         throw new Error("createHardBot: no legal actions to choose from");
       }
 
-      const determinizations = Array.from({ length: samples }, () => sampleOpponentHand(view, rng));
+      // One round = one sampled hand per REAL opponent (1 in 1v1, up to 2 in
+      // 2v2 — `sampleAllOpponentHands`, replacing the old `sampleOpponentHand`
+      // call that silently ignored a second opponent entirely).
+      const rounds = Array.from({ length: samples }, () => sampleAllOpponentHands(view, rng));
 
       const respondTruco = legalActions.filter((a): a is RespondTruco => a.type === "respond-truco");
       if (respondTruco.length > 0) {
-        return respondChoice(respondTruco, winRate(view.self.hand, determinizations, handPower) > 0.5);
+        return respondChoice(respondTruco, winRate(view.self.hand, worstCaseOpposingHands(rounds, handPower), handPower) > 0.5);
       }
 
       const respondEnvido = legalActions.filter((a): a is RespondEnvido => a.type === "respond-envido");
       if (respondEnvido.length > 0) {
-        return respondChoice(respondEnvido, winRate(view.self.hand, determinizations, envidoPoints) > 0.5);
+        return respondChoice(respondEnvido, winRate(view.self.hand, worstCaseOpposingHands(rounds, envidoPoints), envidoPoints) > 0.5);
       }
 
       const reveal = legalActions.find((a) => a.type === "reveal-envido");
       if (reveal !== undefined) return reveal;
 
       const wantsToCallTruco = legalActions.find((a) => a.type === "call-truco");
-      if (wantsToCallTruco !== undefined && winRate(view.self.hand, determinizations, handPower) > 0.5) return wantsToCallTruco;
+      if (wantsToCallTruco !== undefined && winRate(view.self.hand, worstCaseOpposingHands(rounds, handPower), handPower) > 0.5) return wantsToCallTruco;
 
       const wantsToCallEnvido = legalActions.find((a) => a.type === "call-envido");
-      if (wantsToCallEnvido !== undefined && winRate(view.self.hand, determinizations, envidoPoints) > 0.5) return wantsToCallEnvido;
+      if (wantsToCallEnvido !== undefined && winRate(view.self.hand, worstCaseOpposingHands(rounds, envidoPoints), envidoPoints) > 0.5) return wantsToCallEnvido;
 
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) {
-        const opponentPlay = view.hand?.currentTrickPlays[0];
-        if (opponentPlay !== undefined) {
+        // `strongestOpposingPlay` (heuristics.ts), not currentTrickPlays[0]:
+        // in 2v2 the first play in the trick can be a TEAMMATE's, which must
+        // never be read as "the card to beat" — see that function's own
+        // docstring for the fixed bug and its 1v1-identical-behavior proof.
+        const opponentCard = strongestOpposingPlay(view.self.teamId, view.hand?.currentTrickPlays ?? []);
+        if (opponentCard !== undefined) {
           return cardPlays.reduce((best, candidate) =>
-            scoreFollowingCardPlay(candidate.card, opponentPlay.card) > scoreFollowingCardPlay(best.card, opponentPlay.card) ? candidate : best,
+            scoreFollowingCardPlay(candidate.card, opponentCard) > scoreFollowingCardPlay(best.card, opponentCard) ? candidate : best,
           );
         }
-        return leadingCardPlayChoice(cardPlays, determinizations);
+        return leadingCardPlayChoice(cardPlays, rounds);
       }
 
       return legalActions[0]!;

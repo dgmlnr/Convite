@@ -54,6 +54,20 @@ describe("startBotMatch — single-player vs bot, no lobby wait (spec: 'Single-P
       { roomName: "match", options: { gameId: GAME_ID, config: { pointsToWin: 15 }, botTier: "hard", token: "tok" } },
     ]);
   });
+
+  it("omits humanSeatsNeeded from the room-creation options entirely when the caller does not pass it — the server-side default (1) applies, unchanged for every existing 1v1 caller", async () => {
+    const client = createFakeClient();
+    await startBotMatch(client, { gameId: GAME_ID, config: { pointsToWin: 15 }, botTier: "easy", playerId: "p0", token: "tok" });
+    expect(client.createCalls[0]?.options).not.toHaveProperty("humanSeatsNeeded");
+  });
+
+  it("forwards an explicit humanSeatsNeeded — the 2v2 'N real players vs bot-filled remaining seats' entry point", async () => {
+    const client = createFakeClient();
+    await startBotMatch(client, { gameId: GAME_ID, config: { pointsToWin: 15 }, botTier: "easy", playerId: "p0", token: "tok", humanSeatsNeeded: 2 });
+    expect(client.createCalls).toEqual([
+      { roomName: "match", options: { gameId: GAME_ID, config: { pointsToWin: 15 }, botTier: "easy", token: "tok", humanSeatsNeeded: 2 } },
+    ]);
+  });
 });
 
 describe("reconnectMatch — the client's half of the reconnection window (design §9, MatchRoom.onLeave's allowReconnection)", () => {

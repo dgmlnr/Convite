@@ -99,3 +99,43 @@ describe("createHardBot — determinization + Monte Carlo evaluation", () => {
     expect(createHardBot(seededRng(5)).chooseAction(view, [expensiveWin, cheapWin], 50)).toBe(cheapWin);
   });
 });
+
+describe("createHardBot — 2v2: considers BOTH opponents, not just opponents[0] (the fixed determinization gap)", () => {
+  function viewWithTwoOpponents(overrides: { hand: readonly Card[] }): PlayerView {
+    const OPPONENT_2 = "player-d" as PlayerId;
+    return {
+      self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null },
+      teammates: [],
+      // opponents[0] is GUARANTEED empty (0 cards remaining, samples to [])
+      // — the OLD code (`sampleOpponentHand` reads only opponents[0]) would
+      // see an empty hand every round and confidently accept ANY truco call,
+      // since `handPower([]) === 0` always loses to a non-empty hand. The
+      // REAL second opponent, holding 3 real cards, is what must actually
+      // be beaten — ignoring it is exactly the disclosed "assumes exactly
+      // one opponent" bug.
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 0 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],
+      hand: {
+        manoSeat: 0,
+        truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM },
+        envido: { status: "none" },
+        turnSeat: 0,
+        currentTrickPlays: [],
+        trickOutcomes: [],
+        outcome: { decided: false },
+      },
+      config: { pointsToWin: 15 },
+      dealerSeat: 1,
+    };
+  }
+
+  it("declines a truco call with a weak hand even though the FIRST opponent is guaranteed to have zero cards — the second, real opponent is what must be beaten", () => {
+    const view = viewWithTwoOpponents({ hand: WORST_HAND });
+    const quiero: Action = { type: "respond-truco", playerId: SELF, response: "quiero" };
+    const noQuiero: Action = { type: "respond-truco", playerId: SELF, response: "no-quiero" };
+    expect(createHardBot(seededRng(3)).chooseAction(view, [quiero, noQuiero], 50)).toBe(noQuiero);
+  });
+});

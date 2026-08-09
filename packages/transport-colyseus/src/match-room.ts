@@ -54,13 +54,23 @@ export interface MatchRoomCreateOptions {
    * §4: "the engine never randomizes" — this is where randomness enters).
    * `apps/server` supplies a real CSPRNG; tests supply a fixed source. */
   readonly rng: RandomSource;
-  /** Single-player mode (spec: "Single-Player vs Bot Mode"): when present,
-   * the LAST seat is filled with a bot controller of this tier BEFORE any
-   * human joins, and `maxClients` shrinks to the remaining human seat(s) —
-   * the match starts the moment they fill, with no lobby wait (design §9:
-   * bot substitution is a seat-controller concept, not a second code path;
-   * this is the same mechanism a disconnect-takeover mutates later). */
+  /** Bot-fill mode (spec: "Single-Player vs Bot Mode", generalized to N
+   * seats for 2v2 — obs 2927/2925's own named gap): when present, every seat
+   * from the LAST one down to (but excluding) `humanSeatsNeeded` is filled
+   * with a bot controller of this tier BEFORE any human joins, and
+   * `maxClients` shrinks to exactly the remaining human seat(s) — the match
+   * starts the moment they ALL fill, with no lobby wait (design §9: bot
+   * substitution is a seat-controller concept, not a second code path; this
+   * is the same mechanism a disconnect-takeover mutates later). For a 2-seat
+   * module with the default `humanSeatsNeeded` (1), this is byte-identical
+   * to the original single-player behavior: exactly one bot, the last seat. */
   readonly botTier?: BotTier;
+  /** How many of `metadata.seatCount` seats are real clients, the rest bot-
+   * filled — defaults to 1 (single-player vs bot, unchanged 1v1 behavior).
+   * A 2v2 "play vs bots" entry point passes 1 here too (3 bot seats); a
+   * future "2 real players vs 2 bots" entry point would pass 2. Only
+   * consulted when `botTier` is also present. */
+  readonly humanSeatsNeeded?: number;
   /** Reconnection window (spec: "Disconnect, Reconnection Window, and Bot
    * Takeover"; design open question resolved to 30s, obs 2919/2921). */
   readonly reconnectionWindowSeconds?: number;
@@ -179,8 +189,16 @@ export class MatchRoom extends Room {
       // §7), so a fixed or predictable bot id would be an identity a client
       // could pre-claim a token for. A fresh random UUID, generated only
       // once this room exists, never can be.
-      const seat = module.metadata.seatCount - 1;
-      this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: module.createBot(options.botTier) });
+      //
+      // Fills every seat from the LAST down to (not including) the human
+      // seats reserved at the front — `humanSeatsNeeded` defaults to 1, so a
+      // 2-seat module (1v1) fills exactly seat 1, unchanged from before this
+      // was generalized. A 4-seat module (2v2) with the same default fills
+      // seats 1, 2, and 3, leaving only seat 0 for the real player.
+      const humanSeatsNeeded = options.humanSeatsNeeded ?? 1;
+      for (let seat = module.metadata.seatCount - 1; seat >= humanSeatsNeeded; seat -= 1) {
+        this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: module.createBot(options.botTier) });
+      }
     }
     this.maxClients = module.metadata.seatCount - this.controllers.size;
     this.onMessage("action", (client, message: unknown) => this.handleAction(client, message));
@@ -563,11 +581,29 @@ export class MatchRoom extends Room {
     return this.advanceChain;
   }
 
+  /**
+   * A REAL, reproduced deadlock this method closes (see
+   * `platform-core`'s `NonBlockingActionClassifier` for the full story):
+   * "this bot has ANY legal action" used to mean "auto-drive it now" — but
+   * a non-blocking action (2v2's `send-sena`) is legal continuously,
+   * independent of whose real turn it is. A bot whose ONLY legal action was
+   * non-blocking kept getting picked forever, starving the actual pending
+   * decision. This method now only returns a bot whose legal-action set
+   * includes at least one BLOCKING action — never a bot that could only
+   * take a skippable side action. A bot simply never proactively uses a
+   * non-blocking action on its own initiative; that is an acceptable,
+   * disclosed limitation (see apply-progress's own bot-honesty section),
+   * not a correctness gap — nothing depends on a bot ever sending one.
+   */
   private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> } | undefined {
     const module = this.module;
-    if (module === undefined || this.matchState === undefined) return undefined;
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return undefined;
     for (const controller of this.controllers.values()) {
-      if (controller.kind === "bot" && module.getLegalActions(this.matchState, controller.playerId).length > 0) return controller;
+      if (controller.kind !== "bot") continue;
+      const legal = module.getLegalActions(this.matchState, controller.playerId);
+      if (legal.some((action) => !registry.isNonBlockingAction(gameId, action))) return controller;
     }
     return undefined;
   }

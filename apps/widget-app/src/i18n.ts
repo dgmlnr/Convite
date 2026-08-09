@@ -12,6 +12,7 @@
 
 const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   "games.truco.name": "Truco Argentino",
+  "games.truco2v2.name": "Truco Argentino 2v2",
 };
 
 const CONFIG_LABELS: Readonly<Record<string, string>> = {

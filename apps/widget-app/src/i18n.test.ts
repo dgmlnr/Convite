@@ -10,6 +10,11 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
     expect(translateGameName("games.escoba.name")).toBe("games.escoba.name");
   });
 
+  it("translates the 2v2 truco display-name key distinctly from the 1v1 one", () => {
+    expect(translateGameName("games.truco2v2.name")).toBe("Truco Argentino 2v2");
+    expect(translateGameName("games.truco2v2.name")).not.toBe(translateGameName("games.truco.name"));
+  });
+
   it("translates a known config-option label key", () => {
     expect(translateConfigLabel("games.truco.pointsToWin")).toBe("Puntos para ganar");
   });

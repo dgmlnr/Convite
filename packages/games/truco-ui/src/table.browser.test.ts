@@ -380,6 +380,78 @@ describe("createMatchTableRenderer — end of a hand gets a clear acknowledgemen
   });
 });
 
+describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious at a glance (obs 33's engine work made this reachable)", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  function teamView(overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      ...overrides,
+    });
+  }
+
+  it("marks the partner's anchor data-relation=partner and both opponents' anchors data-relation=opponent", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(), [], () => {});
+
+    // Partner sits opposite (mySeat 0 -> partner seat 2 -> anchor 'top').
+    expect(el.querySelector<HTMLElement>('[data-position="top"]')!.dataset.relation).toBe("partner");
+    expect(el.querySelector<HTMLElement>('[data-position="left"]')!.dataset.relation).toBe("opponent");
+    expect(el.querySelector<HTMLElement>('[data-position="right"]')!.dataset.relation).toBe("opponent");
+  });
+
+  it("labels the partner's anchor 'Compañero' and each opponent's anchor 'Rival' — a real text label, not color alone (spec: 'obvious at a glance')", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(), [], () => {});
+
+    expect(el.querySelector('[data-position="top"] .hexdev-truco-relation-label')?.textContent).toBe("Compañero");
+    expect(el.querySelector('[data-position="left"] .hexdev-truco-relation-label')?.textContent).toBe("Rival");
+    expect(el.querySelector('[data-position="right"] .hexdev-truco-relation-label')?.textContent).toBe("Rival");
+  });
+
+  it("never renders a relation label in a 2-seat (1v1) match — nothing to distinguish, one opponent only", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-relation-label")).toBeNull();
+  });
+
+  it("shows the partner's most recent seña on their own anchor, never on an opponent's", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const view = teamView({ teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: "tres" }] });
+
+    render(el, view, [], () => {});
+
+    expect(el.querySelector('[data-position="top"]')!.textContent).toContain("Tres");
+    expect(el.querySelector('[data-position="left"]')!.textContent).not.toContain("Tres");
+    expect(el.querySelector('[data-position="right"]')!.textContent).not.toContain("Tres");
+  });
+
+  it("renders the señas toggle when send-sena is legal, absent when it is not (1v1 stays untouched)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "dos" }];
+
+    render(el, teamView(), legal, () => {});
+    expect(el.querySelector('button[data-action="senas-toggle"]')).not.toBeNull();
+
+    render(el, baseView(), [], () => {}); // back to a plain 1v1-shaped view, no legal señas
+    expect(el.querySelector('button[data-action="senas-toggle"]')).toBeNull();
+  });
+});
+
 describe("createMatchTableRenderer — a real ending, once the match is over (spec: 'a way to play again without hunting')", () => {
   it("renders nothing extra while the match is still in progress", () => {
     const el = freshContainer();

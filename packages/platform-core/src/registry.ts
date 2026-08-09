@@ -15,9 +15,31 @@ type ActorTaggedAction = { readonly playerId: PlayerId };
  * supplies the module (design decision, apply-progress system-action note). */
 export type SystemActionRequester = (state: unknown, rng: RandomSource) => ActorTaggedAction | null;
 
+/**
+ * Classifies a SPECIFIC action as "non-blocking": legal any time (not
+ * turn-gated) and safe for the driving loop to skip auto-taking on a bot's
+ * behalf when it is the ONLY thing that bot has legal (`truco-module`'s own
+ * `send-sena`, paired here — never a `platform-contract` port member, same
+ * convention as `SystemActionRequester`). Closes a REAL, reproduced
+ * deadlock: `transport-colyseus`'s `MatchRoom.findActingBot` used to treat
+ * "this bot has ANY legal action" as "this bot must act now" — but a seña
+ * is legal continuously, for any player with a teammate, independent of
+ * whose real turn it is. A bot whose ONLY legal action was `send-sena`
+ * (because it genuinely was not that bot's turn for anything else) kept
+ * getting auto-driven forever, starving the actual pending decision
+ * (`respond-truco`/`respond-envido`) from ever being reached — reproduced
+ * with a real 2v2 bot-vs-bot simulation that never converged in 2000 steps.
+ * `MatchRoom` itself must never hardcode "send-sena" (design's own
+ * game-agnostic-transport rule) — this classifier is the generic seam that
+ * lets it ask "is this specific action safe to skip" without knowing what
+ * the action even is.
+ */
+export type NonBlockingActionClassifier = (action: unknown) => boolean;
+
 /** Either a bare `GameModule` (no system-action factory — the common case
  * for a game whose players can always act) or a module paired with its
- * optional `requestSystemAction`. Both forms resolve identically via `get`. */
+ * optional `requestSystemAction`/`isNonBlockingAction`. Both forms resolve
+ * identically via `get`. */
 export type GameModuleRegistration =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   | GameModule<any, any, any, any>
@@ -25,6 +47,7 @@ export type GameModuleRegistration =
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       readonly module: GameModule<any, any, any, any>;
       readonly requestSystemAction?: SystemActionRequester;
+      readonly isNonBlockingAction?: NonBlockingActionClassifier;
     };
 
 /**
@@ -41,6 +64,10 @@ export interface GameModuleRegistry {
    * module has no `requestSystemAction`, OR the module itself decides no
    * system action is currently needed — all three fail closed identically. */
   getSystemAction(gameId: GameId, state: unknown, rng: RandomSource): ActorTaggedAction | null;
+  /** `false` (every action blocks — the safe, conservative default) when
+   * nothing is registered for `gameId` OR the registered module supplied no
+   * classifier at all. */
+  isNonBlockingAction(gameId: GameId, action: unknown): boolean;
 }
 
 // See the erasure note above: registering a `GameModule<TState,...>` for a
@@ -52,5 +79,6 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
   return {
     get: (gameId) => byId.get(gameId)?.module,
     getSystemAction: (gameId, state, rng) => byId.get(gameId)?.requestSystemAction?.(state, rng) ?? null,
+    isNonBlockingAction: (gameId, action) => byId.get(gameId)?.isNonBlockingAction?.(action) ?? false,
   };
 }

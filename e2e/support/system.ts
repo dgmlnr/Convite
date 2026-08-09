@@ -62,6 +62,11 @@ export interface StartSystemOptions {
    * reproduces today's unthemed tenant exactly — every existing spec stays
    * a live regression proof that theming is genuinely optional. */
   readonly tenantTheme?: Readonly<Record<string, string>>;
+  /** Additive, opt-in only (2v2's own e2e spec passes `["truco-argentino-2v2"]`
+   * here) — every existing e2e spec omits this and gets the EXACT SAME
+   * `entitledGames: ["truco-argentino"]` tenant as before this option
+   * existed, byte for byte. */
+  readonly extraEntitledGames?: readonly string[];
 }
 
 export async function startSystem(options: StartSystemOptions = {}): Promise<SystemHandle> {
@@ -74,7 +79,7 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
       id: "e2e-tenant",
       embedKey: info.embedKey,
       allowedOrigins: [info.hostOrigin],
-      entitledGames: ["truco-argentino"],
+      entitledGames: ["truco-argentino", ...(options.extraEntitledGames ?? [])],
       theme: options.tenantTheme,
     },
   ];

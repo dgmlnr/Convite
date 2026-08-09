@@ -17,7 +17,7 @@ import {
 import type { JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { ExpressAppCallback, PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
-import { requestSystemAction, trucoModule } from "@hexdev/truco-module";
+import { requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
 import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
@@ -77,7 +77,22 @@ const joinIpLimiter: RateLimiter =
   redis !== undefined ? createRedisRateLimiter({ redis, ...config.joinIpRateLimit, keyPrefix: "rl:join-ip" }) : createRateLimiter(config.joinIpRateLimit);
 // The registry erases per-module state types (same documented boundary as
 // `platform-core/registry.ts` itself); this is that one spot for the pairing.
-const registry = createGameModuleRegistry([{ module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester }]);
+// `isNonBlockingAction` closes a real, reproduced deadlock (platform-core's
+// own `NonBlockingActionClassifier` docstring has the full story): a seña is
+// legal continuously, independent of turn, so `MatchRoom` must never treat
+// "a bot's ONLY legal action is send-sena" as "this bot must act now" — it
+// would starve the actual pending decision forever. Harmless for the 1v1
+// entry (send-sena is never offered there at all — señas are teammate-gated
+// and a 1v1 team has exactly one player by construction), included on both
+// entries for consistency rather than asymmetric registration.
+const isTrucoSenaNonBlocking = (action: unknown): boolean => typeof action === "object" && action !== null && (action as { type?: unknown }).type === "send-sena";
+const registry = createGameModuleRegistry([
+  { module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking },
+  // The 2v2 module, additive registration (obs 2927/2925's own named gap):
+  // same registry, same generic MatchRoom, a distinct gameId. Nothing above
+  // this line changed for the 1v1 entry.
+  { module: trucoModule2v2, requestSystemAction: requestSystemAction2v2 as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking },
+]);
 // The server is where entropy lives (design §4): the engine never
 // randomizes itself. A real CSPRNG, not `Math.random`.
 const rng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
