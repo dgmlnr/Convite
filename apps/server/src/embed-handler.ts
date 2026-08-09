@@ -60,5 +60,12 @@ export async function handleEmbedRequest(url: URL, origin: string | undefined, c
   // the real gate, unchanged by this addition.
   const tenant = deps.repository.findByEmbedKey(embedKey);
   const catalog = tenant !== undefined ? buildCatalog(tenant.entitledGames, deps.registry) : [];
-  return { status: 200, body: JSON.stringify({ token: result.token, playerId, catalog }) };
+  // `tenant.theme` was ALREADY re-sanitized once, at `createStaticTenantRepository`
+  // construction (`tenant-auth.ts`'s own docstring) — no raw, un-sanitized
+  // value from `HEXDEV_TENANTS_JSON` can be sitting on `tenant` here to leak
+  // onto the wire. `JSON.stringify` drops an `undefined` property outright,
+  // so a tenant with no theme configured (design §10: theming is OPTIONAL)
+  // gets a payload with no `theme` key at all — the exact shape this
+  // endpoint returned before theming existed.
+  return { status: 200, body: JSON.stringify({ token: result.token, playerId, catalog, theme: tenant?.theme }) };
 }

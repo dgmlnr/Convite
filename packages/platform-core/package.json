@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/widget-protocol": "workspace:*",
     "ioredis": "^5.11.1"
   }
 }

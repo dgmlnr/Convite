@@ -1,4 +1,5 @@
 import type { ConfigOption, GameId } from "@hexdev/platform-contract";
+import type { ThemeOverride } from "@hexdev/widget-protocol";
 
 /** The client-side mirror of `apps/server`'s `CatalogEntry` — the SAME shape
  * crosses the wire as plain JSON, so this is a structural type, not an
@@ -14,6 +15,10 @@ export interface BootstrapResult {
   readonly token: string;
   readonly playerId: string;
   readonly catalog: readonly CatalogEntry[];
+  /** The client-side mirror of `apps/server`'s `EmbedBootstrap.theme`
+   * (design §10 PRIMARY theming path) — see that interface's own docstring.
+   * Absent for a tenant with no theme configured (theming is optional). */
+  readonly theme?: ThemeOverride;
 }
 
 /** The minimal structural shape this needs from `window` — a plain object

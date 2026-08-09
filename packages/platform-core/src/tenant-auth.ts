@@ -1,16 +1,28 @@
 import type { Clock, GameId, PlayerId } from "@hexdev/platform-contract";
+import { sanitizeThemeOverride, type ThemeOverride } from "@hexdev/widget-protocol";
 
 /** A platform-wide tenant identifier. */
 export type TenantId = string & { readonly __brand: "TenantId" };
 
 /** Manually-administered tenant record (design §7: v1 has no tenant
  * self-service). Both `allowedOrigins` and `entitledGames` are re-checked
- * at room-join time, never trusted from a token's embedded copy alone. */
+ * at room-join time, never trusted from a token's embedded copy alone.
+ *
+ * `theme` (design §10, PRIMARY theming path) is OPTIONAL — a tenant with
+ * none configured renders exactly as before this field existed. It is NOT
+ * pre-validated: `HEXDEV_TENANTS_JSON` is deployment input the same way a
+ * host page's `data-theme-*` attributes are page-author input, so
+ * `createStaticTenantRepository` below re-runs the SAME
+ * `sanitizeThemeOverride` the secondary (host-override) path already uses
+ * before this value is ever readable off the repository — never trust a
+ * value merely because "we control the config," see that function's own
+ * call site for the full argument. */
 export interface TenantRecord {
   readonly id: TenantId;
   readonly embedKey: string;
   readonly allowedOrigins: readonly string[];
   readonly entitledGames: readonly GameId[];
+  readonly theme?: ThemeOverride;
 }
 
 /** Port: how a tenant is looked up. The v1 adapter below is a static
@@ -21,9 +33,27 @@ export interface TenantRepository {
   findById(tenantId: TenantId): TenantRecord | undefined;
 }
 
+/** Re-sanitizes an incoming `theme` value at the ONE choke point every
+ * `TenantRecord` passes through on its way into a repository, regardless of
+ * where the record came from (`apps/server`'s `HEXDEV_TENANTS_JSON`-parsed
+ * deploy config, or a hardcoded dev/test fixture). `JSON.parse(...) as
+ * TenantRecord[]` (`apps/server/src/config.ts`) is a TYPE ASSERTION, not a
+ * runtime guarantee — a malformed deploy value would otherwise reach this
+ * far with no check at all. `sanitizeThemeOverride` is REUSED, not
+ * reimplemented (apply prompt's own instruction): the closed token
+ * vocabulary and its regex validation must not exist twice with two
+ * chances to drift apart. A non-object `theme` (or none at all) becomes
+ * `undefined`, never a thrown error — malformed deploy config must not crash
+ * the whole repository over one tenant's bad value. */
+function sanitizeTenantTheme(theme: unknown): ThemeOverride | undefined {
+  if (theme === null || typeof theme !== "object") return undefined;
+  return sanitizeThemeOverride(theme as Readonly<Record<string, unknown>>);
+}
+
 export function createStaticTenantRepository(records: readonly TenantRecord[]): TenantRepository {
-  const byEmbedKey = new Map(records.map((record) => [record.embedKey, record]));
-  const byId = new Map(records.map((record) => [record.id, record]));
+  const sanitized = records.map((record) => ({ ...record, theme: sanitizeTenantTheme(record.theme) }));
+  const byEmbedKey = new Map(sanitized.map((record) => [record.embedKey, record]));
+  const byId = new Map(sanitized.map((record) => [record.id, record]));
   return {
     findByEmbedKey: (embedKey) => byEmbedKey.get(embedKey),
     findById: (tenantId) => byId.get(tenantId),

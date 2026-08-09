@@ -55,7 +55,16 @@ async function waitForHttpReachable(url: string, timeoutMs: number, describeFail
  * rebuilding it per file would be wasted work for no isolation benefit,
  * since the port number itself carries no state).
  */
-export async function startSystem(): Promise<SystemHandle> {
+export interface StartSystemOptions {
+  /** Design §10 PRIMARY theming path: configures the e2e tenant's own
+   * `TenantRecord.theme`, exactly like a real `HEXDEV_TENANTS_JSON` deploy
+   * value would. `undefined` (the default every OTHER e2e spec uses)
+   * reproduces today's unthemed tenant exactly — every existing spec stays
+   * a live regression proof that theming is genuinely optional. */
+  readonly tenantTheme?: Readonly<Record<string, string>>;
+}
+
+export async function startSystem(options: StartSystemOptions = {}): Promise<SystemHandle> {
   const info = readHarnessInfo();
   const serverPort = Number(new URL(info.serverOrigin).port);
   const hostPort = Number(new URL(info.hostOrigin).port);
@@ -66,6 +75,7 @@ export async function startSystem(): Promise<SystemHandle> {
       embedKey: info.embedKey,
       allowedOrigins: [info.hostOrigin],
       entitledGames: ["truco-argentino"],
+      theme: options.tenantTheme,
     },
   ];
 

@@ -9,7 +9,7 @@ import {
   mintSessionForEmbed,
   renewSessionForWidget,
 } from "./tenant-auth.js";
-import type { TenantId } from "./tenant-auth.js";
+import type { TenantId, TenantRecord } from "./tenant-auth.js";
 import { describeJtiReplayGuardContract } from "./jti-replay-guard.contract.js";
 
 /** Flips one character in the MIDDLE of the signature segment — not the
@@ -54,6 +54,45 @@ describe("createStaticTenantRepository", () => {
     const repo = createStaticTenantRepository([record]);
     expect(repo.findById(tenantId)).toEqual(record);
     expect(repo.findById("does-not-exist" as TenantId)).toBeUndefined();
+  });
+});
+
+describe("createStaticTenantRepository — theme sanitization (design §10 primary path: server-delivered, per-tenant brand theming)", () => {
+  it("keeps a tenant's validly-shaped theme tokens, reachable off the stored record", () => {
+    const themed = { ...record, theme: { "--gx-color-primary": "#336699", "--gx-radius": "8px" } };
+    const repo = createStaticTenantRepository([themed]);
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-primary": "#336699", "--gx-radius": "8px" });
+  });
+
+  it("a tenant with no theme configured has no theme on the stored record — theming is optional, this is today's unchanged path", () => {
+    const repo = createStaticTenantRepository([record]);
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
+  });
+
+  it("drops a hostile theme value (a CSS-injection attempt) rather than storing it — HEXDEV_TENANTS_JSON is deployment input, validated exactly like a host page's own override", () => {
+    const hostile = { ...record, theme: { "--gx-color-primary": "javascript:alert(1)" } };
+    const repo = createStaticTenantRepository([hostile]);
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({});
+  });
+
+  it("drops a key outside the closed vocabulary, including a prototype-pollution-shaped one — the loop stays driven by the vocabulary, never by the input's own keys", () => {
+    // `as unknown as TenantRecord`: deliberately NOT type-safe, mirroring how
+    // a real hostile value actually arrives at runtime —
+    // `apps/server/src/config.ts` reads `HEXDEV_TENANTS_JSON` via
+    // `JSON.parse(...) as readonly TenantRecord[]`, a bare TYPE ASSERTION
+    // that lies about runtime shape, never a real check. A test that only
+    // ever passed genuinely-typed objects would not exercise the case this
+    // repository construction step exists to guard against.
+    const hostile = { ...record, theme: { "--gx-not-a-real-token": "#000000", __proto__: { polluted: true } } } as unknown as TenantRecord;
+    const repo = createStaticTenantRepository([hostile]);
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({});
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("treats a malformed (non-object) theme value as no theme, rather than throwing", () => {
+    const malformed = { ...record, theme: "not-an-object" } as unknown as TenantRecord;
+    const repo = createStaticTenantRepository([malformed]);
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
   });
 });
 

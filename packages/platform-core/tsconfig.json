@@ -12,6 +12,9 @@
   "references": [
     {
       "path": "../platform-contract"
+    },
+    {
+      "path": "../widget-protocol"
     }
   ]
 }

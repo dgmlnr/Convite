@@ -23,6 +23,9 @@
     },
     {
       "path": "../../packages/games/truco-module"
+    },
+    {
+      "path": "../../packages/widget-protocol"
     }
   ]
 }
