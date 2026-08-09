@@ -27,9 +27,17 @@ function fakeTrucoModule(): GameModule<unknown, { readonly playerId: PlayerId },
 
 /** Generous limits by default so unrelated tests never trip rate limiting
  * — the dedicated describe block below overrides with tight limits. */
-async function deps(overrides: { ipLimit?: number; keyLimit?: number; entitledGames?: readonly GameId[] } = {}) {
+async function deps(
+  overrides: { ipLimit?: number; keyLimit?: number; entitledGames?: readonly GameId[]; theme?: Record<string, string> } = {},
+) {
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: overrides.entitledGames ?? [TRUCO_ID] },
+    {
+      id: TENANT_ID,
+      embedKey: "pk_live_t_a",
+      allowedOrigins: [ALLOWED_ORIGIN],
+      entitledGames: overrides.entitledGames ?? [TRUCO_ID],
+      theme: overrides.theme,
+    },
   ]);
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
   return {
@@ -91,6 +99,36 @@ describe("handleEmbedRequest — catalog (spec: tenant-catalog — server-enforc
     const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps({ entitledGames: [] }));
     const body = JSON.parse(result.body) as { catalog: readonly unknown[] };
     expect(body.catalog).toEqual([]);
+  });
+});
+
+describe("handleEmbedRequest — tenant theme (spec: tenant-catalog — Tenant Brand Theming, design §10 primary path)", () => {
+  it("includes the tenant's configured, sanitized theme tokens in the bootstrap payload", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps({ theme: { "--gx-color-primary": "#336699" } }));
+    const body = JSON.parse(result.body) as { theme?: Record<string, string> };
+    expect(body.theme).toEqual({ "--gx-color-primary": "#336699" });
+  });
+
+  it("theming is optional — a tenant with no theme configured renders exactly as before this field existed (no theme key at all in the payload)", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps());
+    const body = JSON.parse(result.body) as { theme?: Record<string, string> };
+    expect(body.theme).toBeUndefined();
+  });
+
+  it("a hostile theme value configured for the tenant is rejected, not injected — proves the CSS-injection vector is closed from the SERVER side, not only the host-override side: the raw malicious string never reaches the wire at all", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(
+      url,
+      ALLOWED_ORIGIN,
+      CLIENT_IP,
+      await deps({ theme: { "--gx-color-primary": "javascript:alert(1)</style><script>alert(1)</script>" } }),
+    );
+    expect(result.body).not.toContain("javascript:alert");
+    expect(result.body).not.toContain("<script>");
+    const body = JSON.parse(result.body) as { theme?: Record<string, string> };
+    expect(body.theme).toEqual({});
   });
 });
 

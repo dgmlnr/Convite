@@ -1,9 +1,16 @@
+import type { ThemeOverride } from "@hexdev/widget-protocol";
 import type { CatalogEntry } from "./catalog.js";
 
 export interface EmbedBootstrap {
   readonly token: string;
   readonly playerId: string;
   readonly catalog: readonly CatalogEntry[];
+  /** Design §10 PRIMARY theming path — server-delivered, applied by
+   * `widget-app` directly, zero loader involvement. Already sanitized once
+   * at `createStaticTenantRepository` construction (`tenant-auth.ts`); see
+   * `embed-handler.ts`'s own comment for why. Absent entirely (never `{}`)
+   * for a tenant with no theme configured — theming is optional. */
+  readonly theme?: ThemeOverride;
 }
 
 /**
