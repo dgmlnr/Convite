@@ -171,6 +171,15 @@ export function createMatchTableRenderer(
       // anchor never gets — CSS reads it for the visual accent, and this is
       // also what senas.test.ts/table.test.ts assert against directly.
       anchor.dataset.relation = other.relation;
+      // A real TEXT label, not color alone (seatCount>2 guard: in a 1v1
+      // match there is nothing to distinguish — one opponent only, and the
+      // label would be pure noise on the table this unit is contractually
+      // forbidden from changing the appearance of).
+      if (others.length > 1) {
+        const label = anchor.appendChild(document.createElement("span"));
+        label.className = "hexdev-truco-relation-label";
+        label.textContent = other.relation === "partner" ? TABLE_STRINGS.partner : TABLE_STRINGS.opponent;
+      }
       renderOpponentHand(anchor.appendChild(document.createElement("div")), other.cardsRemaining);
       if (other.relation === "partner") {
         renderPartnerSena(anchor.appendChild(document.createElement("div")), other.lastSena);

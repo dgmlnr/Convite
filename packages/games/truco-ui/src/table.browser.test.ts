@@ -408,6 +408,26 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
     expect(el.querySelector<HTMLElement>('[data-position="right"]')!.dataset.relation).toBe("opponent");
   });
 
+  it("labels the partner's anchor 'Compañero' and each opponent's anchor 'Rival' — a real text label, not color alone (spec: 'obvious at a glance')", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(), [], () => {});
+
+    expect(el.querySelector('[data-position="top"] .hexdev-truco-relation-label')?.textContent).toBe("Compañero");
+    expect(el.querySelector('[data-position="left"] .hexdev-truco-relation-label')?.textContent).toBe("Rival");
+    expect(el.querySelector('[data-position="right"] .hexdev-truco-relation-label')?.textContent).toBe("Rival");
+  });
+
+  it("never renders a relation label in a 2-seat (1v1) match — nothing to distinguish, one opponent only", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView(), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-relation-label")).toBeNull();
+  });
+
   it("shows the partner's most recent seña on their own anchor, never on an opponent's", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();

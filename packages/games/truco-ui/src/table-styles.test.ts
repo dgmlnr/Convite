@@ -77,6 +77,7 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
 
     expect(css).toContain('[data-relation="partner"]');
     expect(css).toContain('[data-relation="opponent"]');
+    expect(css).toContain(".hexdev-truco-relation-label");
   });
 
   it("2v2: the señas toggle and picker have their own, deliberately understated styling (spec: 'discoverable without being noisy')", () => {

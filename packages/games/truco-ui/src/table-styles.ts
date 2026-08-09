@@ -450,6 +450,25 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="opponent"] {
   box-shadow: inset 0 -4px 0 0 rgba(255, 255, 255, 0.35);
 }
+/* Static flow, NOT absolutely positioned: the top anchor's own box only
+ * wraps tightly around its card-back row (min-height: 0), so an absolutely
+ * positioned label risked sitting outside that box and clipping against
+ * the felt's own overflow:hidden edge (found rendering the actual 2v2
+ * baseline, not assumed). A normal block element, ordered FIRST in the
+ * anchor via table.ts, is what a reviewer sees intact regardless of anchor
+ * height. */
+.hexdev-truco-relation-label {
+  display: block;
+  order: -1;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: var(--gx-radius, 999px);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--gx-color-on-surface, #f2f2f2);
+}
 
 /* Señas: discoverable without being noisy (spec). The toggle stays small
  * and secondary -- never styled like a primary call button, so a player
