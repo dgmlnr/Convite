@@ -13,7 +13,11 @@ export default defineConfig({
           // and run only via the separate `pnpm test:redis` project
           // (`vitest.redis.config.ts`) — the default unit suite stays
           // genuinely Redis-free, matching the in-memory default deployment.
-          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/dist/**", "**/node_modules/**"],
+          // `.visual.test.ts` files require the separate, opt-in
+          // `pnpm test:visual` project (`vitest.visual.config.ts`) — same
+          // "not part of `pnpm test`" discipline as `.redis.test.ts` below,
+          // for the reason documented in that config's own header comment.
+          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/*.visual.test.ts", "**/dist/**", "**/node_modules/**"],
         },
       },
       {

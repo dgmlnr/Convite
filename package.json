@@ -8,6 +8,7 @@
     "test:watch": "vitest watch",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:redis": "vitest run --config vitest.redis.config.ts",
+    "test:visual": "vitest run --config vitest.visual.config.ts",
     "typecheck": "tsc -b",
     "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs"
   },
