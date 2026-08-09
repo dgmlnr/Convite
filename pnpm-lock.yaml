@@ -88,6 +88,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/widget-sdk
     devDependencies:
+      '@vitest/browser':
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.0(@types/node@26.1.2))(vitest@4.1.10)
       vite:
         specifier: ^8.2.0
         version: 8.2.0(@types/node@26.1.2)
@@ -131,6 +134,9 @@ importers:
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2
+      '@vitest/browser':
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.0(@types/node@26.1.2))(vitest@4.1.10)
 
   packages/platform-contract: {}
 
