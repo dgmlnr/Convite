@@ -20,8 +20,36 @@ import { CARD_HEIGHT, CARD_WIDTH } from "./geometry.js";
 // `dist/front-image.js` resolves to the same place: both `src/` and `dist/`
 // sit exactly one directory below the package root, and the assets are
 // checked into the repo directly rather than generated, so no build/copy
-// step is needed for this to work.
-const FRONTS_BASE_URL = new URL("../assets/fronts/", import.meta.url);
+// step is needed for this to work — `static-deck-assets.ts` (apps/server)
+// serves these exact on-disk files at `/assets/fronts/<cardId>.webp`, never
+// a Vite-hashed build output filename.
+//
+// TWO Vite pitfalls fought here, in opposite directions, both found by the
+// visual-regression suite (`pnpm test:visual`) actually fetching the bytes —
+// no prior test did, they only asserted the `src` STRING contained the
+// filename, which stayed true either way:
+//
+// 1. A two-step version of this file (a shared `new URL("../assets/fronts/",
+//    import.meta.url)` base, reused by a second `new URL(file, base)` call)
+//    was correct under real Node and under `vite build`, but silently 404'd
+//    EVERY card under Vite's DEV-SERVER serving — its static
+//    `new URL(url, import.meta.url)` asset analysis only rewrites the
+//    pattern correctly when `import.meta.url` is the literal second argument
+//    of THAT exact call.
+// 2. Combining both into ONE call with a template literal
+//    (`` new URL(`../assets/fronts/${cardId(card)}.webp`, import.meta.url) ``)
+//    fixes the dev-server case, but at `vite build` time Rollup's asset
+//    plugin treats the dynamic template literal as a GLOB, bundling all 40
+//    card fronts under hashed `dist-app/assets/` filenames the real server
+//    never serves — breaking production (`pnpm test:e2e` 404s) while fixing
+//    dev-server.
+//
+// `/* @vite-ignore */` (below) opts the whole expression OUT of Vite's
+// static analysis in both places at once, forcing genuine runtime
+// `new URL()` resolution — the ONLY combination that resolves correctly
+// under real Node, Vite's dev server, AND a real `vite build`.
+// preserves). Caught by the visual-regression suite's own asset-loading
+// wait, not by any prior test.
 
 const RANK_LABELS: Record<Rank, string> = {
   1: "Ace",
@@ -62,7 +90,7 @@ export function cardLabel(card: Card): string {
  * requests, never the full 40-card, ~1MB deck.
  */
 export function getCardFrontUrl(card: Card): URL {
-  return new URL(`${cardId(card)}.webp`, FRONTS_BASE_URL);
+  return new URL(/* @vite-ignore */ `../assets/fronts/${cardId(card)}.webp`, import.meta.url);
 }
 
 export interface CardFrontImage {
