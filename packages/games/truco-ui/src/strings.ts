@@ -37,4 +37,26 @@ export const TABLE_STRINGS = {
   matchOverNeutral: "Partida finalizada",
   finalScore: "Resultado final",
   playAgain: "Jugar de nuevo",
+  // 2v2 only (obs 33's engine work): "obvious at a glance who you are
+  // helping" — a short, real text label on the anchor, same discipline the
+  // turn badge already established ("text alone is not enough" cuts both
+  // ways: color alone is not enough either).
+  partner: "Compañero",
+  opponent: "Rival",
+  // Señas affordance: discoverable (a real, visible toggle) without being
+  // noisy (collapsed by default, never auto-opened) — spec's own framing.
+  senasToggle: "Señas",
+  senaSentBy: "Seña:",
+} as const;
+
+/** Spanish table vocabulary for the six closed señas signals
+ * (`@hexdev/truco-engine`'s `SENA_SIGNALS`) — authentic Truco terms, never
+ * a generic "signal 1/2/3" placeholder. */
+export const SENA_LABELS = {
+  asDeEspada: "As de espada",
+  asDeBasto: "As de basto",
+  sieteDeEspada: "7 de espada",
+  sieteDeOro: "7 de oro",
+  tres: "Tres",
+  dos: "Dos",
 } as const;

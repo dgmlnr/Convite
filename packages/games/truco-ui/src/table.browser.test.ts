@@ -380,6 +380,59 @@ describe("createMatchTableRenderer — end of a hand gets a clear acknowledgemen
   });
 });
 
+describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious at a glance (obs 33's engine work made this reachable)", () => {
+  const PARTNER_TEAM = MY_TEAM; // partners share the local player's own TeamId
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  function teamView(overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      ...overrides,
+    });
+  }
+
+  it("marks the partner's anchor data-relation=partner and both opponents' anchors data-relation=opponent", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(), [], () => {});
+
+    // Partner sits opposite (mySeat 0 -> partner seat 2 -> anchor 'top').
+    expect(el.querySelector<HTMLElement>('[data-position="top"]')!.dataset.relation).toBe("partner");
+    expect(el.querySelector<HTMLElement>('[data-position="left"]')!.dataset.relation).toBe("opponent");
+    expect(el.querySelector<HTMLElement>('[data-position="right"]')!.dataset.relation).toBe("opponent");
+  });
+
+  it("shows the partner's most recent seña on their own anchor, never on an opponent's", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const view = teamView({ teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: "tres" }] });
+
+    render(el, view, [], () => {});
+
+    expect(el.querySelector('[data-position="top"]')!.textContent).toContain("Tres");
+    expect(el.querySelector('[data-position="left"]')!.textContent).not.toContain("Tres");
+    expect(el.querySelector('[data-position="right"]')!.textContent).not.toContain("Tres");
+  });
+
+  it("renders the señas toggle when send-sena is legal, absent when it is not (1v1 stays untouched)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "dos" }];
+
+    render(el, teamView(), legal, () => {});
+    expect(el.querySelector('button[data-action="senas-toggle"]')).not.toBeNull();
+
+    render(el, baseView(), [], () => {}); // back to a plain 1v1-shaped view, no legal señas
+    expect(el.querySelector('button[data-action="senas-toggle"]')).toBeNull();
+  });
+});
+
 describe("createMatchTableRenderer — a real ending, once the match is over (spec: 'a way to play again without hunting')", () => {
   it("renders nothing extra while the match is still in progress", () => {
     const el = freshContainer();

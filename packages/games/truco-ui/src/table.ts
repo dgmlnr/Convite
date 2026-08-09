@@ -12,6 +12,7 @@ import { renderScoreboardPanel } from "./scoreboard-panel.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 import type { TableAnchor } from "./seat-position.js";
+import { renderPartnerSena, renderSenaPicker } from "./senas.js";
 import { TABLE_STRINGS } from "./strings.js";
 import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
@@ -109,9 +110,14 @@ export function createMatchTableRenderer(
     }
     previousView = view;
 
+    // `relation` — obs 33's own engine work is what makes this reachable at
+    // all (a 1v1 match's `view.teammates` is always empty, so this array is
+    // structurally identical to before outside 2v2). Carried explicitly so
+    // "partner vs opponent obvious at a glance" (spec) never has to be
+    // re-derived from teamId at render time in more than one place.
     const others = [
-      ...view.teammates.map((teammate) => ({ ...teammate, teamId: view.self.teamId })),
-      ...view.opponents,
+      ...view.teammates.map((teammate) => ({ ...teammate, teamId: view.self.teamId, relation: "partner" as const })),
+      ...view.opponents.map((opponent) => ({ ...opponent, relation: "opponent" as const, lastSena: null })),
     ];
     const seatCount = 1 + others.length;
     const positions = resolveSeatPositions({ mySeat: view.self.seat, seatCount });
@@ -160,7 +166,15 @@ export function createMatchTableRenderer(
 
     for (const other of others) {
       const anchor = anchors.get(positions.get(other.seat) ?? "top")!;
+      // 2v2 only (obs 2970/the apply prompt's own "must never work out who
+      // they are helping"): a real, queryable attribute an opponent's
+      // anchor never gets — CSS reads it for the visual accent, and this is
+      // also what senas.test.ts/table.test.ts assert against directly.
+      anchor.dataset.relation = other.relation;
       renderOpponentHand(anchor.appendChild(document.createElement("div")), other.cardsRemaining);
+      if (other.relation === "partner") {
+        renderPartnerSena(anchor.appendChild(document.createElement("div")), other.lastSena);
+      }
       if (isAnchorActive(other.seat, other.teamId)) {
         anchor.classList.add("hexdev-truco-anchor--active");
         appendTurnBadge(anchor, turnBadgeText(false));
@@ -175,6 +189,14 @@ export function createMatchTableRenderer(
     const callsRow = bottom.appendChild(document.createElement("div"));
     callsRow.className = "hexdev-truco-calls-row";
     renderCalls(callsRow, legalActions, dispatch);
+    // 1v1 must stay BYTE-IDENTICAL (visual regression safety property): no
+    // extra DOM node is even created in `bottom` unless send-sena is
+    // actually legal, never merely "rendered empty" — `getLegalSenaActions`
+    // never offers it outside a 2v2 match, so this `some` is false for
+    // every 1v1 view, same discipline as `renderCalls`'s own null groups.
+    if (legalActions.some((action) => action.type === "send-sena")) {
+      renderSenaPicker(bottom.appendChild(document.createElement("div")), legalActions, dispatch);
+    }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
 

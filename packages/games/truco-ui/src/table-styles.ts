@@ -427,6 +427,69 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-match-over button[data-action="play-again"]:focus-visible {
   filter: brightness(1.08);
 }
+
+/* 2v2 ONLY -- every selector below is scoped under
+ * .hexdev-truco-table[data-seat-count="4"] so the 1v1 (2-seat) felt is
+ * BYTE-IDENTICAL to before this block existed, even though every anchor now
+ * carries a data-relation attribute regardless of seat count (table.ts's own
+ * doc comment): an attribute with no matching selector changes nothing
+ * paintable. "Obvious at a glance who you are helping" (spec): a colored
+ * left-edge accent on top of the shared anchor treatment, distinct enough
+ * between partner and opponent that color alone is not the only signal --
+ * the real text label (TABLE_STRINGS.partner/opponent, rendered by a
+ * caller of this stylesheet, not by CSS content) carries the rest. */
+.hexdev-truco-table[data-seat-count="4"] .hexdev-truco-anchor[data-relation="partner"] {
+  box-shadow: inset 4px 0 0 0 var(--gx-color-accent, #ffd166);
+}
+.hexdev-truco-table[data-seat-count="4"] .hexdev-truco-anchor[data-relation="opponent"] {
+  box-shadow: inset 4px 0 0 0 rgba(255, 255, 255, 0.35);
+}
+.hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="partner"] {
+  box-shadow: inset 0 -4px 0 0 var(--gx-color-accent, #ffd166);
+}
+.hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="opponent"] {
+  box-shadow: inset 0 -4px 0 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Señas: discoverable without being noisy (spec). The toggle stays small
+ * and secondary -- never styled like a primary call button, so a player
+ * who does not care about señas is not visually nagged into opening it. */
+.hexdev-truco-senas-toggle {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--gx-color-on-surface, #f2f2f2);
+  border-radius: var(--gx-radius, 999px);
+  background: transparent;
+  color: var(--gx-color-on-surface, #f2f2f2);
+  font-family: inherit;
+  font-size: 0.75rem;
+  opacity: 0.8;
+  cursor: pointer;
+}
+.hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { opacity: 1; }
+.hexdev-truco-senas-row { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 4px; }
+.hexdev-truco-sena {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: var(--gx-radius, 999px);
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The partner's claimed signal -- small, secondary chrome on their own
+ * anchor, never on an opponent's (senas.ts's own structural guarantee). */
+.hexdev-truco-partner-sena {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: var(--gx-radius, 999px);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--gx-color-on-surface, #f2f2f2);
+}
 `.trim();
 }
 
