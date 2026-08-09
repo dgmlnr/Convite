@@ -57,4 +57,24 @@ describe("createGameModuleRegistry", () => {
     expect(registry.get("fixture-a")).toBe(module);
     expect(registry.getSystemAction("fixture-a", { turn: 1 }, () => 0.5)).toEqual({ playerId: '{"turn":1}:0.5' });
   });
+
+  describe("isNonBlockingAction — paired with a module, never a platform-contract port member (same convention as requestSystemAction)", () => {
+    it("defaults to false (every action blocks) for a bare GameModule registration with no classifier supplied", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.isNonBlockingAction("fixture-a", { playerId: "p" as PlayerId })).toBe(false);
+    });
+
+    it("defaults to false for a gameId nothing registered", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.isNonBlockingAction("does-not-exist", { playerId: "p" as PlayerId })).toBe(false);
+    });
+
+    it("delegates to the paired classifier when one is supplied", () => {
+      const module = fixtureModule("fixture-a");
+      const isNonBlockingAction = (action: unknown): boolean => (action as { type?: string }).type === "signal";
+      const registry = createGameModuleRegistry([{ module, isNonBlockingAction }]);
+      expect(registry.isNonBlockingAction("fixture-a", { playerId: "p" as PlayerId, type: "signal" })).toBe(true);
+      expect(registry.isNonBlockingAction("fixture-a", { playerId: "p" as PlayerId, type: "play" })).toBe(false);
+    });
+  });
 });

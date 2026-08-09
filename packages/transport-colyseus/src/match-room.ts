@@ -581,11 +581,29 @@ export class MatchRoom extends Room {
     return this.advanceChain;
   }
 
+  /**
+   * A REAL, reproduced deadlock this method closes (see
+   * `platform-core`'s `NonBlockingActionClassifier` for the full story):
+   * "this bot has ANY legal action" used to mean "auto-drive it now" — but
+   * a non-blocking action (2v2's `send-sena`) is legal continuously,
+   * independent of whose real turn it is. A bot whose ONLY legal action was
+   * non-blocking kept getting picked forever, starving the actual pending
+   * decision. This method now only returns a bot whose legal-action set
+   * includes at least one BLOCKING action — never a bot that could only
+   * take a skippable side action. A bot simply never proactively uses a
+   * non-blocking action on its own initiative; that is an acceptable,
+   * disclosed limitation (see apply-progress's own bot-honesty section),
+   * not a correctness gap — nothing depends on a bot ever sending one.
+   */
   private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> } | undefined {
     const module = this.module;
-    if (module === undefined || this.matchState === undefined) return undefined;
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return undefined;
     for (const controller of this.controllers.values()) {
-      if (controller.kind === "bot" && module.getLegalActions(this.matchState, controller.playerId).length > 0) return controller;
+      if (controller.kind !== "bot") continue;
+      const legal = module.getLegalActions(this.matchState, controller.playerId);
+      if (legal.some((action) => !registry.isNonBlockingAction(gameId, action))) return controller;
     }
     return undefined;
   }
