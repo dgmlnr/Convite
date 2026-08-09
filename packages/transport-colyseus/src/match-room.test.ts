@@ -6,7 +6,9 @@ import {
   createJtiReplayGuard,
   createRateLimiter,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
+  deriveTestSessionSigningKey,
 } from "@hexdev/platform-core";
 import type { RateLimiter, SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
 import { MatchRoom } from "./match-room.js";
@@ -71,8 +73,19 @@ const SECRET = "fixture-secret-key";
 const P0 = "seat-0-player" as PlayerId;
 const P1 = "seat-1-player" as PlayerId;
 
-function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoomAuthOptions {
-  const issuer = createSessionTokenIssuer(SECRET);
+// NOT annotated `: Promise<MatchRoomAuthOptions>` — the extra `issuer` field
+// below (a full mint+verify handle, kept ONLY so this file's tests can mint
+// fixture tokens) would trip TypeScript's excess-property check against
+// that narrower port type. `room.onCreate({ ..., auth })` still typechecks:
+// a wider object satisfies `MatchRoomAuthOptions` structurally through a
+// variable, never excess-property-checked outside a literal.
+async function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}) {
+  const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey(SECRET));
+  // The verify-only construction this whole change exists to prove: MINTING
+  // in these tests still goes through `auth.issuer` below, but the ROOM
+  // ITSELF (`room.onCreate({ auth, ... })`) only ever receives `verifier` —
+  // matching exactly what `apps/server/src/index.ts` wires in production.
+  const verifier = await createSessionTokenVerifier(issuer.publicKey);
   const repository = createStaticTenantRepository([
     { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race"] },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
@@ -81,6 +94,7 @@ function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}): MatchRoo
   // the dedicated rate-limiting describe block overrides this.
   return {
     issuer,
+    verifier,
     repository,
     replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), // matches this fixture's default mintToken ttlSeconds
     joinRateLimiter: overrides.joinRateLimiter ?? createRateLimiter({ limit: 1000, windowMs: 60_000 }),
@@ -131,7 +145,7 @@ async function joinWithToken(room: MatchRoom, client: Client & { auth: unknown }
 }
 
 async function createJoinedRoom() {
-  const auth = createAuth();
+  const auth = await createAuth();
   const registry = createGameModuleRegistry([fixtureModule]);
   const room = new MatchRoom();
   room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
@@ -146,7 +160,17 @@ describe("MatchRoom", () => {
   it("refuses to create when no module is registered for the requested gameId", () => {
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
-    expect(() => room.onCreate({ gameId: "does-not-exist", config: undefined, registry, auth: createAuth(), rng: DEFAULT_RNG })).toThrow(/no GameModule registered/);
+    // A minimal static double, not `createAuth()` (which is now async: it
+    // imports real Ed25519 key material) — this test only asserts `onCreate`
+    // throws before ever touching `auth`, so no real crypto is needed here.
+    const dummyAuth: MatchRoomAuthOptions = {
+      verifier: { verify: () => Promise.resolve(undefined) },
+      repository: createStaticTenantRepository([]),
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [],
+    };
+    expect(() => room.onCreate({ gameId: "does-not-exist", config: undefined, registry, auth: dummyAuth, rng: DEFAULT_RNG })).toThrow(/no GameModule registered/);
   });
 
   it("delegates match creation to the registered module only once every seat has joined", async () => {
@@ -228,7 +252,7 @@ describe("MatchRoom — outcome on the wire (spec: 'a real ending' needs the mod
   };
 
   async function createTerminalRoom() {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([terminalModule]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-terminal", config: undefined, registry, auth, rng: DEFAULT_RNG });
@@ -256,8 +280,8 @@ describe("MatchRoom — outcome on the wire (spec: 'a real ending' needs the mod
 });
 
 describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
-  function freshRoom() {
-    const auth = createAuth();
+  async function freshRoom() {
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
@@ -265,7 +289,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
   }
 
   it("derives playerId from the verified token, never from client-declared options", async () => {
-    const { room, auth } = freshRoom();
+    const { room, auth } = await freshRoom();
     const seat0 = fakeClient("s0");
     // The client attempts the exact PR10a-era attack: claim to be P1 via a
     // field the room no longer reads for identity. `options.token` is the
@@ -276,7 +300,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
   });
 
   it("end-to-end: onJoin seats the token's identity, not a forged options.playerId (the PR10a-era attack, closed)", async () => {
-    const { room, auth } = freshRoom();
+    const { room, auth } = await freshRoom();
     const seat0 = fakeClient("s0");
     const seat1 = fakeClient("s1");
     // seat0 holds a token minted for P0 but ALSO claims playerId: P1 in its
@@ -294,13 +318,13 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
   });
 
   it("rejects a join with no token presented", async () => {
-    const { room } = freshRoom();
+    const { room } = await freshRoom();
     const seat0 = fakeClient("s0");
     await expect(room.onAuth(seat0.client, {}, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" })).rejects.toThrow(/no session token/);
   });
 
   it("rejects a forged token (signature does not verify)", async () => {
-    const { room, auth } = freshRoom();
+    const { room, auth } = await freshRoom();
     const seat0 = fakeClient("s0");
     const valid = await mintToken(auth.issuer, P0);
     const forged = corruptSignature(valid);
@@ -310,7 +334,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
   });
 
   it("rejects a replayed token: a captured, already-consumed token cannot authenticate a second connection", async () => {
-    const { room, auth } = freshRoom();
+    const { room, auth } = await freshRoom();
     const token = await mintToken(auth.issuer, P0);
     const first = fakeClient("s0");
     await room.onAuth(first.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" });
@@ -321,7 +345,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
   });
 
   it("re-validates origin at join time against the server's OWN known widget origins (spec: NOT redundant with the mint-time tenant-page check — see MatchRoomAuthOptions's own docstring for why this is not per-tenant)", async () => {
-    const { room, auth } = freshRoom();
+    const { room, auth } = await freshRoom();
     const seat0 = fakeClient("s0");
     const token = await mintToken(auth.issuer, P0);
     await expect(
@@ -330,7 +354,7 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
   });
 
   it("rejects a join for a non-entitled game, server-side, even with an otherwise-valid token (crafted request)", async () => {
-    const { room, auth } = freshRoom();
+    const { room, auth } = await freshRoom();
     const seat0 = fakeClient("s0");
     const token = await mintToken(auth.issuer, P0, { tenantId: OTHER_TENANT_ID }); // OTHER_TENANT_ID is not entitled to "fixture-secret"
     await expect(
@@ -340,8 +364,8 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
 });
 
 describe("MatchRoom.onAuth — per-IP join rate limiting (hardening: public surface, obs 2945)", () => {
-  function freshRoomWithLimiter(joinRateLimiter: RateLimiter) {
-    const auth = createAuth({ joinRateLimiter });
+  async function freshRoomWithLimiter(joinRateLimiter: RateLimiter) {
+    const auth = await createAuth({ joinRateLimiter });
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
@@ -349,7 +373,7 @@ describe("MatchRoom.onAuth — per-IP join rate limiting (hardening: public surf
   }
 
   it("rejects a join attempt once a single IP exceeds its configured limit within the window", async () => {
-    const { room, auth } = freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
+    const { room, auth } = await freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
     const first = fakeClient("s0");
     await room.onAuth(first.client, { token: await mintToken(auth.issuer, P0) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "5.5.5.5" });
     const second = fakeClient("s1");
@@ -359,7 +383,7 @@ describe("MatchRoom.onAuth — per-IP join rate limiting (hardening: public surf
   });
 
   it("does not rate-limit a different IP even after the first IP is exhausted", async () => {
-    const { room, auth } = freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
+    const { room, auth } = await freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
     const first = fakeClient("s0");
     await room.onAuth(first.client, { token: await mintToken(auth.issuer, P0) }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "5.5.5.5" });
     const second = fakeClient("s1");
@@ -368,7 +392,7 @@ describe("MatchRoom.onAuth — per-IP join rate limiting (hardening: public surf
   });
 
   it("rate-limits BEFORE token verification — a flood of no-token attempts from one IP is rejected too", async () => {
-    const { room } = freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
+    const { room } = await freshRoomWithLimiter(createRateLimiter({ limit: 1, windowMs: 60_000 }));
     const first = fakeClient("s0");
     await expect(room.onAuth(first.client, {}, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "7.7.7.7" })).rejects.toThrow(/no session token/);
     const second = fakeClient("s1");
@@ -406,7 +430,7 @@ const stuckModule: GameModule<StuckState, StuckAction, StuckState, void> = {
 
 describe("MatchRoom + system actions (design: paired in the registry, never a GameModule port member)", () => {
   it("applies a registered requestSystemAction automatically once no seated player has any legal action", async () => {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([
       { module: stuckModule, requestSystemAction: (state) => ((state as StuckState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) },
     ]);
@@ -425,7 +449,7 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
   });
 
   it("never advances a module with no requestSystemAction registered, even with zero legal actions", async () => {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([stuckModule]); // bare module: no pairing
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG });
@@ -440,7 +464,7 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
 
 describe("MatchRoom + single-player vs bot (spec: Single-Player vs Bot Mode)", () => {
   async function createSinglePlayerRoom() {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([fixtureModule]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });
@@ -490,7 +514,7 @@ describe("MatchRoom.advance() — a misbehaving bot strategy must not crash the 
   }
 
   async function createSinglePlayerRoomWithThrowingBot() {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([moduleWithThrowingBot()]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });
@@ -540,7 +564,7 @@ describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal'
   }
 
   async function twoJoinedSeats(module: GameModule<FixtureState, FixtureAction, FixtureView, void>, overrides: { reconnectionWindowSeconds?: number; takeoverTier?: BotTier } = {}) {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([module]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, reconnectionWindowSeconds: overrides.reconnectionWindowSeconds ?? 0.01, takeoverTier: overrides.takeoverTier });
@@ -695,7 +719,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
   }
 
   async function createRaceRoom(module: GameModule<RaceState, RaceAction, RaceView, void>) {
-    const auth = createAuth();
+    const auth = await createAuth();
     const registry = createGameModuleRegistry([module]);
     const room = new MatchRoom();
     room.onCreate({ gameId: "fixture-race", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });

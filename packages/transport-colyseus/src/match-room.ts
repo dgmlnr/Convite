@@ -1,12 +1,20 @@
 import { Room, type AuthContext, type Client } from "colyseus";
 import type { BotStrategy, BotTier, GameId, GameModule, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
-import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
+import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenVerifier, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
  * imported directly: `transport-colyseus` must not know HOW tokens are
- * signed or tenants are stored, only that it can ask. */
+ * signed or tenants are stored, only that it can ask.
+ *
+ * `verifier` is deliberately typed `SessionTokenVerifier`, not the wider
+ * `SessionTokenIssuer` — `onAuth` never mints, only verifies (see
+ * `tenant-auth.ts`'s own docstring on `createSessionTokenVerifier`: this
+ * field is the concrete place that construction's "cannot mint" property is
+ * actually wired into the running system, not merely proven in a unit
+ * test). `apps/server`'s composition root passes a real verify-only object
+ * here today. */
 export interface MatchRoomAuthOptions {
-  readonly issuer: SessionTokenIssuer;
+  readonly verifier: SessionTokenVerifier;
   readonly repository: TenantRepository;
   readonly replayGuard: JtiReplayGuard;
   /** Per-IP join throttle (hardening, obs 2945: room join had no rate
@@ -202,7 +210,7 @@ export class MatchRoom extends Room {
     if (typeof options.token !== "string") {
       throw new Error("MatchRoom: join rejected, no session token presented");
     }
-    const claims = await auth.issuer.verify(options.token);
+    const claims = await auth.verifier.verify(options.token);
     if (claims === undefined) {
       throw new Error("MatchRoom: join rejected, invalid or expired session token");
     }
