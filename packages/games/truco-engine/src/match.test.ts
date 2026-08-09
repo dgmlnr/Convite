@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
 import type { PlayerId } from "./ids.js";
-import { createHeadToHeadMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
+import { createHeadToHeadMatch, createTeamMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
+const playerC = "player-c" as PlayerId;
+const playerD = "player-d" as PlayerId;
 
 const handOf = (rank: Card["rank"]): readonly Card[] => [{ suit: "espada", rank }];
 
@@ -18,6 +20,53 @@ describe("createHeadToHeadMatch", () => {
       expect(team.score).toBe(0);
     }
     expect(state.teams[0]!.id).not.toBe(state.teams[1]!.id);
+  });
+});
+
+/**
+ * 2v2 (design: "partners seated across from each other so seats alternate
+ * teams"). Seat order around the table is 0,1,2,3; partners sit ACROSS from
+ * each other, i.e. seat 0 with seat 2 and seat 1 with seat 3 — which is
+ * exactly the alternating pattern (team A, team B, team A, team B).
+ */
+describe("createTeamMatch (2v2)", () => {
+  it("seats four players with partners across the table, alternating teams by seat", () => {
+    const state = createTeamMatch({
+      seatOrder: [playerA, playerB, playerC, playerD],
+      pointsToWin: 15,
+    });
+
+    expect(state.players).toHaveLength(4);
+    expect(state.teams).toHaveLength(2);
+
+    const seatOf = (id: PlayerId) => state.players.find((p) => p.id === id)!;
+    // seat 0 (A) and seat 2 (C) are partners; seat 1 (B) and seat 3 (D) are partners.
+    expect(seatOf(playerA).teamId).toBe(seatOf(playerC).teamId);
+    expect(seatOf(playerB).teamId).toBe(seatOf(playerD).teamId);
+    // The two teams are genuinely different — not everyone on one team.
+    expect(seatOf(playerA).teamId).not.toBe(seatOf(playerB).teamId);
+  });
+
+  it("gives each team exactly two playerIds, both starting at score 0", () => {
+    const state = createTeamMatch({
+      seatOrder: [playerA, playerB, playerC, playerD],
+      pointsToWin: 30,
+    });
+
+    for (const team of state.teams) {
+      expect(team.playerIds).toHaveLength(2);
+      expect(team.score).toBe(0);
+    }
+  });
+
+  it("assigns seats 0..3 in the supplied order", () => {
+    const state = createTeamMatch({
+      seatOrder: [playerA, playerB, playerC, playerD],
+      pointsToWin: 15,
+    });
+
+    expect(state.players.map((p) => p.id)).toEqual([playerA, playerB, playerC, playerD]);
+    expect(state.players.map((p) => p.seat)).toEqual([0, 1, 2, 3]);
   });
 });
 
