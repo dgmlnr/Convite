@@ -37,6 +37,16 @@ export interface ServerConfig {
    * than merely discouraged.
    */
   readonly redisUrl: string | undefined;
+  /**
+   * This process's own reachable `host:port`, forwarded to Colyseus's own
+   * `publicAddress` option (see `MatchServerOptions.publicAddress`'s own
+   * docstring in `transport-colyseus`). Only meaningful together with
+   * `redisUrl` — a single-instance deployment never needs a second process
+   * to find this one. `undefined` by default: correct for local dev and for
+   * any deployment where every client already reaches this process at the
+   * same address it used for the matchmake HTTP call.
+   */
+  readonly publicAddress: string | undefined;
 }
 
 const DEFAULT_PORT = 2567;
@@ -120,5 +130,6 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
     joinIpRateLimit: readRateLimit(env, "HEXDEV_JOIN_IP_RATE_LIMIT", "HEXDEV_JOIN_IP_RATE_WINDOW_MS", DEFAULT_JOIN_IP_LIMIT),
     allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${port}`],
     redisUrl: env.HEXDEV_REDIS_URL,
+    publicAddress: env.HEXDEV_PUBLIC_ADDRESS,
   };
 }

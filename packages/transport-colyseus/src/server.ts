@@ -53,6 +53,25 @@ export interface MatchServerOptions {
    * driver`'s own dependency) per process, never two.
    */
   readonly redis?: Redis;
+  /**
+   * This process's OWN reachable host:port (e.g. `127.0.0.1:2568`),
+   * forwarded verbatim into Colyseus's own `publicAddress` option.
+   * Meaningless without `redis`/`RedisDriver` — Colyseus records it on a
+   * room's own metadata at creation time and returns it in the seat
+   * reservation, which is what lets a client whose `joinOrCreate` HTTP
+   * request landed on THIS process's matchmake endpoint open its actual
+   * WebSocket against a DIFFERENT process's socket, when the driver
+   * discovers the target room lives there instead (verified in the
+   * installed `@colyseus/core` source: `MatchMaker.createRoom` records
+   * `publicAddress` on the room, and `reserveSeatFor` copies it onto the
+   * reservation only when set). Undefined (default, single-instance/dev)
+   * relies on the client reusing the SAME address it already used for the
+   * matchmake call — correct there, but silently wrong the moment two
+   * processes are involved, which is exactly why a horizontal-scaling
+   * deployment must set this per instance (real address, or a stable
+   * per-instance hostname behind a WS-aware load balancer).
+   */
+  readonly publicAddress?: string;
 }
 
 /**
@@ -74,7 +93,13 @@ export function createMatchServer(options: MatchServerOptions): Server {
   // fail-loud check, `apps/server/src/redis-client.ts`).
   const presence = options.redis !== undefined ? new RedisPresence(options.redis) : undefined;
   const driver = options.redis !== undefined ? new RedisDriver(options.redis) : undefined;
-  const gameServer = new Server({ transport: new WebSocketTransport({ server: options.httpServer }), express: options.express, presence, driver });
+  const gameServer = new Server({
+    transport: new WebSocketTransport({ server: options.httpServer }),
+    express: options.express,
+    presence,
+    driver,
+    publicAddress: options.publicAddress,
+  });
   // colyseus types `defaultOptions` as the FULL `onCreate` param, but at
   // runtime merges `merge({}, clientOptions, defaultOptions)` — THIS object
   // wins on collision, so a client can supply `gameId`/`config` but never

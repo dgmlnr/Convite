@@ -242,6 +242,7 @@ const gameServer = createMatchServer({
   // becomes cluster-aware together with our own adapters, never separately
   // — config.ts's own "no partial configuration" docstring.
   redis,
+  publicAddress: config.publicAddress,
 });
 // `gameId` is deliberately absent here — the client supplies it at
 // createRoom time, same as `MatchRoom`'s own `defaultOptions` pattern.
