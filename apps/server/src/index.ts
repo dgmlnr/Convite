@@ -11,6 +11,7 @@ import {
   createRedisMatchmakingPool,
   createRedisRateLimiter,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
 } from "@hexdev/platform-core";
 import type { JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
@@ -31,7 +32,24 @@ import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 // here — see `truco-module`/`truco-engine` for those.
 const config = loadServerConfig(process.env);
 const repository = createStaticTenantRepository(config.tenants);
-const issuer = createSessionTokenIssuer(config.sessionSecret);
+// `await` here is deliberate, same "throw, crash boot" convention as
+// `connectRedis` below: a missing OR malformed `HEXDEV_SESSION_SIGNING_KEY`
+// throws INSIDE `createSessionTokenIssuer` (real Ed25519 key import), never
+// silently falling back to an ephemeral key — an ephemeral key would
+// invalidate every live session on restart and, worse, differ PER INSTANCE,
+// quietly re-breaking the exact fleet-wide consistency #29 just fixed.
+const issuer = await createSessionTokenIssuer(config.sessionSigningKey);
+// The genuinely mint-incapable construction (`tenant-auth.ts`'s own
+// docstring): `MatchRoom`'s auth path below receives ONLY this, never
+// `issuer` — the concrete place this whole change's "a verifier need not
+// mint" thesis is wired into the running system, not merely unit-proven.
+// DISCLOSED LIMITATION, not hidden: THIS process still holds the private
+// key too (it mints via `/embed`/`/session/renew` below), so this does not
+// yet shrink the "compromise any one instance mints fleet-wide" blast
+// radius on its own — see `createSessionTokenIssuer`'s own docstring for
+// why EdDSA is a necessary, not sufficient, step toward that, and what a
+// future deployment split would need.
+const verifier = await createSessionTokenVerifier(issuer.publicKey);
 
 // Horizontal scaling (config.ts's own docstring on `redisUrl`): ONE knob.
 // `redis` is `undefined` unless `HEXDEV_REDIS_URL` is set, and every
@@ -234,7 +252,7 @@ const registerCustomRoutes: ExpressAppCallback = (app) => {
 const gameServer = createMatchServer({
   httpServer,
   registry,
-  auth: { issuer, repository, replayGuard, joinRateLimiter: joinIpLimiter, allowedWidgetOrigins: config.allowedWidgetOrigins },
+  auth: { verifier, repository, replayGuard, joinRateLimiter: joinIpLimiter, allowedWidgetOrigins: config.allowedWidgetOrigins },
   rng,
   express: registerCustomRoutes,
   // Same `redis` as every port above: Colyseus's OWN room selection/lookup

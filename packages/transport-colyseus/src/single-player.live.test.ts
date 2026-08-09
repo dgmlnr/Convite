@@ -2,7 +2,15 @@ import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ColyseusTestServer } from "@colyseus/testing";
 import type { GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { createGameModuleRegistry, createJtiReplayGuard, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import {
+  createGameModuleRegistry,
+  createJtiReplayGuard,
+  createRateLimiter,
+  createSessionTokenIssuer,
+  createSessionTokenVerifier,
+  createStaticTenantRepository,
+  deriveTestSessionSigningKey,
+} from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
 
@@ -65,12 +73,12 @@ describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single
   let nextPort = 2680;
 
   beforeEach(async () => {
-    const issuer = createSessionTokenIssuer("solo-live-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("solo-live-secret"));
     const repository = createStaticTenantRepository([{ id: TENANT_ID, embedKey: "pk_solo", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-solo"] }]);
     const registry = createGameModuleRegistry([soloModule]);
     const httpServer = createServer();
     const auth = {
-      issuer,
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
@@ -87,7 +95,7 @@ describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single
   });
 
   it("plays a full match to its outcome with exactly ONE real client and a bot occupying the other seat", async () => {
-    const issuer = createSessionTokenIssuer("solo-live-secret");
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("solo-live-secret"));
     const room = await testServer.createRoom("match", { gameId: "fixture-solo", config: undefined, botTier: "hard" });
     const token0 = await issuer.mint({ tenantId: TENANT_ID, playerId: P0, entitlements: ["fixture-solo"] }, 60);
     const client0 = await testServer.connectTo(room, { token: token0 });

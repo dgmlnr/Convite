@@ -8,9 +8,11 @@ import {
   createMatchmakingPool,
   createRateLimiter,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
+  deriveTestSessionSigningKey,
 } from "@hexdev/platform-core";
-import type { SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
+import type { SessionTokenIssuerHandle, TenantId } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import { createTransportClient } from "./client.js";
 import { joinMatchFromReservation, startBotMatch } from "./match-connection.js";
@@ -62,7 +64,7 @@ describe("transport-colyseus-client — real production code over a real WebSock
   const P1 = "adapter-p1" as PlayerId;
 
   let testServer: ColyseusTestServer;
-  let issuer: SessionTokenIssuer;
+  let issuer: SessionTokenIssuerHandle;
   let port: number;
   let httpServer: ReturnType<typeof createServer>;
 
@@ -71,12 +73,12 @@ describe("transport-colyseus-client — real production code over a real WebSock
     const registry = createGameModuleRegistry([fixtureModule]);
     const pool = createMatchmakingPool();
     httpServer = createServer();
-    issuer = createSessionTokenIssuer("adapter-live-secret");
+    issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("adapter-live-secret"));
     const repository = createStaticTenantRepository([
       { id: TENANT_ID, embedKey: "pk_adapter", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GAME_ID] },
     ]);
     const auth = {
-      issuer,
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
       repository,
       replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),

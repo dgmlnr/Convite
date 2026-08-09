@@ -11,7 +11,9 @@ import {
   createRedisJtiReplayGuard,
   createRedisMatchmakingPool,
   createSessionTokenIssuer,
+  createSessionTokenVerifier,
   createStaticTenantRepository,
+  deriveTestSessionSigningKey,
 } from "@hexdev/platform-core";
 import { PresenceRoom } from "./presence-room.js";
 import { createMatchServer } from "./server.js";
@@ -86,8 +88,9 @@ describe("PresenceRoom — game isolation, re-verified with RedisPresence/RedisD
     const registry = createGameModuleRegistry([isolationModuleA, isolationModuleB]);
     const pool = createRedisMatchmakingPool({ redis, keyPrefix: `test:isolation-single:${String(process.pid)}:${String(Math.random())}` });
     const httpServer = createServer();
+    const unusedIssuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("isolation-redis-secret"));
     const auth = {
-      issuer: createSessionTokenIssuer("isolation-redis-secret"),
+      verifier: await createSessionTokenVerifier(unusedIssuer.publicKey),
       repository: createStaticTenantRepository([]),
       replayGuard: createRedisJtiReplayGuard({ redis, ttlMs: 60_000, keyPrefix: `test:isolation-single-jti:${String(process.pid)}:${String(Math.random())}` }),
       joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
