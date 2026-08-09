@@ -3,13 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
 import { buildDeck } from "./deck.js";
 import type { PlayerId } from "./ids.js";
-import { createHeadToHeadMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
+import { createHeadToHeadMatch, createTeamMatch, getMatchWinner, rotateDealer, startHand } from "./match.js";
 import type { MatchState, TrucoCallLevel } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action, TrucoAction } from "./truco-chain.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
+const playerC = "player-c" as PlayerId;
+const playerD = "player-d" as PlayerId;
 
 function freshHand(): MatchState {
   const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
@@ -238,5 +240,51 @@ describe("declining a truco ends the hand", () => {
     expect(result.ok).toBe(true);
     const hand = result.ok ? result.state.hand! : null;
     expect(hand!.outcome).toEqual({ decided: true, winnerTeamId: caller.teamId });
+  });
+});
+
+/**
+ * 2v2 truco calls (spec prompt: "any player may call for their team; the
+ * response comes from the opposing team. Decide and justify who may answer
+ * when both opponents could."). DESIGN DECISION: `getLegalTrucoActions`
+ * already gates purely on `player.teamId === truco.callingTeamId` (never on
+ * a specific player), so BOTH members of the opposing team are simultaneously
+ * offered `respond-truco`, and whichever one actually acts first settles it
+ * for the whole team — the same "first mover for the team" shape the truco
+ * chain already used for calling. This is the real-table behavior (a team's
+ * response is a team decision; either partner may voice it) and requires NO
+ * engine change: this test is a characterization/approval test proving the
+ * existing team-scoped legality check already generalizes correctly to two
+ * players per team, rather than accidentally only working for one.
+ */
+describe("2v2 — either member of the opposing team may respond to a truco call", () => {
+  function freshTeamHand(): MatchState {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
+    return startHand(state, [[], [], [], []]);
+  }
+
+  it("both opposing players see respond-truco as legal, and the calling team's OWN teammate cannot respond", () => {
+    const called = apply(freshTeamHand(), { type: "call-truco", playerId: playerA, level: "truco" });
+
+    // team A = playerA + playerC (the callers); team B = playerB + playerD (opponents).
+    expect(getLegalActions(called, playerB)).toContainEqual({ type: "respond-truco", playerId: playerB, response: "quiero" });
+    expect(getLegalActions(called, playerD)).toContainEqual({ type: "respond-truco", playerId: playerD, response: "quiero" });
+    // playerC is on the CALLING team — may not also respond to their own team's call.
+    expect(getLegalActions(called, playerC).some((a) => a.type === "respond-truco")).toBe(false);
+  });
+
+  it("either opponent's response settles it for the whole team — the teammate who did NOT respond is bound by it", () => {
+    const called = apply(freshTeamHand(), { type: "call-truco", playerId: playerA, level: "truco" });
+    // playerD (not playerB) responds — the team B teammate who spoke.
+    const accepted = apply(called, { type: "respond-truco", playerId: playerD, response: "quiero" });
+
+    expect(accepted.hand?.truco).toMatchObject({ status: "accepted" });
+    // The call is settled for the WHOLE hand — playerB (who never acted) has no
+    // outstanding respond-truco left, and cannot call retruco either — only
+    // the team that just accepted (team B, spec: "only the team that most
+    // recently accepted may escalate") may do so, via EITHER of its members.
+    expect(getLegalActions(accepted, playerB).some((a) => a.type === "respond-truco")).toBe(false);
+    expect(getLegalActions(accepted, playerA).some((a) => a.type === "call-truco")).toBe(false); // calling team may not escalate its own accepted call
+    expect(getLegalActions(accepted, playerB)).toContainEqual({ type: "call-truco", playerId: playerB, level: "retruco" });
   });
 });

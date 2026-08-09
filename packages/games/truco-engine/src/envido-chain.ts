@@ -124,13 +124,21 @@ const isLegalEnvido = (state: MatchState, action: EnvidoAction): boolean =>
   getLegalEnvidoActions(state, action.playerId).some((legal) => envidoActionsEqual(legal, action));
 
 /** Winner of the envido reveal: higher points wins; a tie is won by the mano's team.
- * INFERENCE — spec doesn't state the tie-break; mirrors hand-winner's ("parda") mano tie-break. */
+ * INFERENCE — spec doesn't state the tie-break; mirrors hand-winner's ("parda") mano tie-break.
+ * 2v2 (design/spec: "each player has their own envido value; the team's is
+ * the BEST among its members"): a team's points are the max across ALL its
+ * players' own hands, not just one representative — this is a strict
+ * generalization of the 1v1 case, where a team has exactly one player so
+ * "the best of its members" and "that one player's points" are identical.
+ * "IsMano" for the tie-break is true if EITHER team member is mano's seat
+ * (only one can be, since mano is a single seat), matching the same rule
+ * used for 1v1: the team containing the mano seat wins ties. */
 function resolveEnvidoWinner(state: MatchState, manoSeat: number): TeamId {
   let winner: { teamId: TeamId; points: number; isMano: boolean } | null = null;
   for (const team of state.teams) {
-    const teamPlayer = state.players.find((player) => player.teamId === team.id)!;
-    const points = calculateEnvidoPoints(teamPlayer.hand);
-    const isMano = teamPlayer.seat === manoSeat;
+    const teamPlayers = state.players.filter((player) => player.teamId === team.id);
+    const points = Math.max(...teamPlayers.map((player) => calculateEnvidoPoints(player.hand)));
+    const isMano = teamPlayers.some((player) => player.seat === manoSeat);
     if (winner === null || points > winner.points || (points === winner.points && isMano)) winner = { teamId: team.id, points, isMano };
   }
   return winner!.teamId;
