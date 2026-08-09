@@ -53,15 +53,35 @@ function main(): void {
     return; // malformed/untrusted origin value — refuse to proceed, same fail-closed posture as the loader
   }
 
-  const handshake = connectToHost(window.parent, window, hostOrigin, (hostHello) => {
-    applyThemeToRoot(document.documentElement, hostHello.payload.theme);
-    void boot();
-  });
-
   // Not a network call: the browser's own navigation to this URL is what
   // minted this session server-side (see readInlineBootstrap's doc comment
   // for why a second same-origin fetch cannot carry origin evidence).
   const bootstrap = readInlineBootstrap(window);
+
+  // PRIMARY theming path (design §10): the tenant's server-delivered theme
+  // applies the moment it is readable, with ZERO loader involvement — it
+  // does not wait for the `host-hello` postMessage handshake at all, unlike
+  // the secondary host-override path below. This is what makes "zero loader
+  // involvement" a real, checkable property rather than a claim: a tenant
+  // with a configured theme and a host page that never sends ANY
+  // `host-hello` at all (a stale/misbehaving loader build) still renders
+  // themed.
+  applyThemeToRoot(document.documentElement, bootstrap?.theme);
+
+  // SECONDARY path: the host page's own `data-theme-*` override, forwarded
+  // by the loader in `host-hello`. Applied SECOND, on top of the tenant
+  // theme already set above — `applyThemeToRoot` only touches a CSS custom
+  // property for a token PRESENT in its own argument (see its own
+  // docstring), so this is a per-token override, not a wholesale replace: a
+  // token the host page never mentions keeps the tenant's server value (see
+  // `theme.browser.test.ts`'s own precedence-rule test for the exact proof
+  // and its justification — the host page is the SAME tenant's own site,
+  // not a third party, so letting it win per-token is more precise tenant
+  // intent, not a trust violation).
+  const handshake = connectToHost(window.parent, window, hostOrigin, (hostHello) => {
+    applyThemeToRoot(document.documentElement, hostHello.payload.theme);
+    void boot();
+  });
 
   const resizeObserver = new ResizeObserver(() => {
     handshake.sendResize(document.documentElement.scrollHeight);

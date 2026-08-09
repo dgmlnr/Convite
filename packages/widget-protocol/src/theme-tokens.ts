@@ -1,16 +1,26 @@
 /**
- * Host-supplied theme overrides (design §10, secondary path). The primary
- * theming path is server-delivered and never touches this file at all — a
- * tenant's brand tokens come back in the `/embed` bootstrap payload and are
- * applied by `widget-app` directly, with zero loader involvement.
+ * The closed theme token vocabulary and its sanitizer (design §10), shared
+ * by BOTH real theming paths — never duplicated between them:
  *
- * This module exists ONLY for the optional secondary path: a host page may
- * offer `data-theme-*` attributes on the `<script>` tag, which the loader
- * forwards in `host-hello`. Accepting an arbitrary CSS string from a host
- * page would be a CSS-injection vector into our own document, so the
- * vocabulary is CLOSED (only these exact keys are ever read out of the
- * input, everything else is structurally invisible to the sanitizer) and
- * every value is regex-validated against its token's own shape.
+ * - PRIMARY, server-delivered (`@hexdev/platform-core`'s `tenant-auth.ts`):
+ *   a tenant's brand tokens are configured on its `TenantRecord`, sanitized
+ *   with THIS SAME function at repository-construction time, and returned
+ *   in the `/embed` bootstrap payload. `widget-app` applies them directly
+ *   from that payload, with zero loader involvement — the loader script
+ *   never sees or forwards them.
+ * - SECONDARY, host override (optional): a host page may offer
+ *   `data-theme-*` attributes on the `<script>` tag, which the loader
+ *   forwards in `host-hello`. Applied on top of the primary theme, and wins
+ *   per-token where both set the same one — see `apps/widget-app/src/main.ts`'s
+ *   own docstring for the full precedence rule and its justification.
+ *
+ * Both paths carry deployment/config-adjacent input we do not fully trust:
+ * `HEXDEV_TENANTS_JSON` for the primary path, host-page markup for the
+ * secondary one. Accepting an arbitrary CSS string from either would be a
+ * CSS-injection vector into our own document, so the vocabulary is CLOSED
+ * (only these exact keys are ever read out of the input, everything else is
+ * structurally invisible to the sanitizer) and every value is
+ * regex-validated against its token's own shape.
  */
 export const THEME_TOKEN_NAMES = [
   "--gx-color-surface",
