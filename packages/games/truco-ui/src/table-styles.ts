@@ -486,7 +486,15 @@ export function buildTableStylesheet(): string {
   cursor: pointer;
 }
 .hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { opacity: 1; }
-.hexdev-truco-senas-row { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 4px; }
+/* The picker must take the anchor's real width, not its own max-content.
+ * The bottom anchor is a column flex with align-items:center, so an
+ * unstretched child is sized shrink-to-fit -- it reports the full unwrapped
+ * six-signal row as its width, flex-wrap below never has a narrower box to
+ * wrap into, and the whole picker overflows the table on both sides (the
+ * toggle was visibly clipped off the left edge). align-self:stretch gives it
+ * a real bound, so the wrap rule can finally do its job. */
+.hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: column; align-items: center; }
+.hexdev-truco-senas-row { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 4px; max-width: 100%; }
 .hexdev-truco-sena {
   min-height: 32px;
   padding: 4px 10px;

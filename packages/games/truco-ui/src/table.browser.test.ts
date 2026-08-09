@@ -381,7 +381,6 @@ describe("createMatchTableRenderer — end of a hand gets a clear acknowledgemen
 });
 
 describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious at a glance (obs 33's engine work made this reachable)", () => {
-  const PARTNER_TEAM = MY_TEAM; // partners share the local player's own TeamId
   const TEAMMATE = "player-c" as PlayerId;
   const OPPONENT_2 = "player-d" as PlayerId;
 

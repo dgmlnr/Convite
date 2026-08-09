@@ -22,6 +22,8 @@ export function renderSenaPicker(container: HTMLElement, legalActions: readonly 
   const legalSenas = legalActions.filter((action): action is SendSena => action.type === "send-sena");
   if (legalSenas.length === 0) return;
 
+  container.className = "hexdev-truco-senas";
+
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "hexdev-truco-senas-toggle";
