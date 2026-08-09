@@ -19,6 +19,12 @@ playwright-report/
 blob-report/
 .playwright/
 
+# Vitest Browser Mode failure attachments (actual/diff screenshots on a
+# toMatchScreenshot mismatch) — transient debugging artifacts, never the
+# reviewable baseline itself. Baselines live in each test's own
+# __screenshots__/ directory, which IS committed.
+.vitest-attachments/
+
 # Environment
 .env
 .env.*
