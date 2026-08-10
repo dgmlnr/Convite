@@ -44,22 +44,42 @@ function dealtMatch(): MatchState {
 
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
-  container.style.width = "375px";
-  // 620px (stable window height, apply prompt, round 3): the transient
-  // chrome (pending-call/hand-outcome banner, call buttons, the señas
-  // picker) floats over the felt instead of reserving layout space for it
-  // — see table-styles.ts's own .hexdev-truco-banner-slot/.hexdev-truco-
-  // action-tray doc comments — so the table's real content height at this
-  // width is ~559px regardless of what chrome is showing, comfortably
-  // under this container. A container SHORTER than the real content clips
-  // it under this suite's own overflow:hidden, which was observed to make
-  // Vitest Browser Mode's screenshot-stability retry never converge (a
-  // real hang, not a flaky mismatch — confirmed earlier this branch by
-  // bisecting the exact CSS change that triggered it).
-  container.style.height = "620px";
-  container.style.overflow = "hidden";
+  // 320px — a real narrow-phone width (iPhone SE class). Same NARROW branch
+  // of the shell's container query as the old 375px (the breakpoint is
+  // min-width: 640px, table-styles.ts), just without the dead side felt the
+  // fixed 60px cards never used. Measured before choosing: the felt's
+  // content height is width-independent at this card size (395.3px at 375,
+  // 340, and 320 alike), so this narrows the frame without moving anything.
+  container.style.width = "320px";
+  // Height deliberately NOT set. With ANY explicit height, the felt's own
+  // `min-height: max(100%, …)` (table-styles.ts) stretches the felt to the
+  // full container and pushes the scoreboard panel — a flex sibling BELOW
+  // the felt — entirely out of frame (measured: panel at y=628 in the old
+  // 375x620 container). The old fixed-height baselines therefore contained
+  // no scoreboard panel at all, silently, while README claimed the themed
+  // shot proves panel theming. An auto-height container hugs its content:
+  // the felt takes its essential floor, the panel is genuinely in frame,
+  // and nothing can clip — the screenshot-stability hang this suite once
+  // bisected needed CLIPPED content to trigger, which auto height rules
+  // out by construction. Tradeoff, disclosed: baseline height now tracks
+  // content height, so a future change to the table's natural height shows
+  // up as a dimension mismatch (slow ~30s timeout, not a clean pixel diff)
+  // until the baseline is regenerated per visual/README.md.
   document.body.appendChild(container);
   return container;
+}
+
+/** The zone under test for the card shots: the felt element itself. The
+ * locked-card opacity bug this suite exists to catch (visual/README.md)
+ * lives in the RELATIONSHIP between a card and the surface underneath it,
+ * and every card — own hand, the played trick card, opponent backs — plus
+ * the turn badge and the floating banner/call chrome all render inside the
+ * felt, so cropping the screenshot to the felt keeps every piece of context
+ * those shots assert on while dropping chrome they do not. */
+function feltOf(container: HTMLElement): HTMLElement {
+  const felt = container.querySelector<HTMLElement>(".hexdev-truco-table");
+  if (felt === null) throw new Error("visual fixture setup: felt element not rendered");
+  return felt;
 }
 
 /** Card art (`<img>`, `hand.ts`/`played-cards.ts`) loads asynchronously —
@@ -85,7 +105,7 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
-    await expect.element(container).toMatchScreenshot("table-mid-hand");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-mid-hand");
   });
 
   it("a pending truco call: the banner is shown and the whole hand is locked until it is answered", async () => {
@@ -98,7 +118,7 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
-    await expect.element(container).toMatchScreenshot("table-truco-pending");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-truco-pending");
   });
 
   it("a themed tenant: the chrome (scoreboard panel, calls, pending banner) takes the brand; the felt and cards do not", async () => {
@@ -125,6 +145,13 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
+    // The whole shell — felt AND scoreboard panel — never just the felt:
+    // this is the one shot that proves theme tokens reach the chrome
+    // (visual/README.md names the panel's background as its verified
+    // regression), so the panel surface must be in frame. The auto-height
+    // container is what makes that true — the panel, with the fixture's
+    // 12:8 matchsticks, sits fully visible below the felt here, where the
+    // old fixed-height container silently clipped it out.
     await expect.element(container).toMatchScreenshot("table-themed");
   });
 });
