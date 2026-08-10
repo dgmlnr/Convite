@@ -212,7 +212,19 @@ export function createMatchTableRenderer(
     const center = document.createElement("div");
     center.className = "hexdev-truco-center";
 
-    const banner = center.appendChild(document.createElement("div"));
+    // Stable window height (apply prompt: "un cartel aparece... la ventana
+    // crece"): pending-call and hand-outcome are mutually exclusive in time
+    // (a pending call always clears — see pending-call.ts's own doc comment —
+    // before a hand-outcome event can be derived; see hand-outcome.ts) but
+    // each independently appears/disappears via its own `:empty { display:
+    // none }` rule. Reserving the taller banner's own height on this SHARED
+    // wrapper, rather than on each banner individually, is what keeps the
+    // table's total height constant whether NEITHER, or either ONE, is
+    // currently showing.
+    const bannerSlot = center.appendChild(document.createElement("div"));
+    bannerSlot.className = "hexdev-truco-banner-slot";
+
+    const banner = bannerSlot.appendChild(document.createElement("div"));
     renderPendingCallBanner(
       banner,
       pendingCall === null
@@ -224,7 +236,7 @@ export function createMatchTableRenderer(
           },
     );
 
-    const handOutcomeBanner = center.appendChild(document.createElement("div"));
+    const handOutcomeBanner = bannerSlot.appendChild(document.createElement("div"));
     mountedHandOutcomeEl = handOutcomeBanner;
     renderHandOutcomeBanner(
       handOutcomeBanner,

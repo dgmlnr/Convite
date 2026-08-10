@@ -38,7 +38,11 @@ function dealtTeamMatch(): MatchState {
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
   container.style.width = "375px";
-  container.style.height = "700px";
+  // 980px, not 700px — same reason as table.visual.test.ts's own
+  // mountedContainer (stable window height, apply prompt): the reserved
+  // chrome space, plus 2v2's own extra relation labels/partner-seña chip on
+  // four anchors, needs up to ~948px of real content height at this width.
+  container.style.height = "980px";
   container.style.overflow = "hidden";
   document.body.appendChild(container);
   return container;

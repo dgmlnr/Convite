@@ -184,12 +184,24 @@ export function buildTableStylesheet(): string {
   overflow: hidden;
 }
 
+/* Stable window height (apply prompt): playing the LAST card in hand empties
+ * this row entirely (0 cards -> 0 height), a real drop of one full card's
+ * own height right at the end of every hand — "cards played" from the
+ * acceptance list, not the calls/banners already covered above. Reserving
+ * one card row's height, expressed via the same --truco-card-width token
+ * the card itself is sized from (matching .hexdev-truco-trick's own calc()
+ * convention below), keeps that one-row worst case constant across 3, 2, 1,
+ * or 0 remaining cards. Disclosed gap: this reserves a SINGLE row, so a
+ * left/right 2v2 anchor's own opponent hand (column layout, one card removed
+ * at a time rather than a row emptying at once) is not fully covered by this
+ * rule alone — see the apply report for that named remainder. */
 .hexdev-truco-hand, .hexdev-truco-opponent-hand {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  min-height: calc(var(--truco-card-width) * 336 / 220);
 }
 [data-position="left"] .hexdev-truco-opponent-hand,
 [data-position="right"] .hexdev-truco-opponent-hand {
@@ -269,6 +281,22 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-score-label { font-size: 0.65rem; opacity: 0.8; }
 .hexdev-truco-score-sticks { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; }
 
+/* Stable window height (apply prompt): the pending-call and hand-outcome
+ * banners are mutually exclusive in time but each collapses to nothing via
+ * its own :empty { display: none } rule below. Reserving space on this
+ * SHARED wrapper — sized to the taller of the two banners — is what keeps
+ * the table's own height constant whether neither, or either one, is
+ * currently on screen: the literal reported bug ("a banner appears, the
+ * window grows; it resolves, the window shrinks"). This costs real vertical
+ * room on every hand, always, even when nothing is pending — a disclosed,
+ * deliberate tradeoff: a status area a player already expects to find here,
+ * not space wasted on a feature that is rarely present. */
+.hexdev-truco-banner-slot {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 /* Change 1: the pending call is the single most important thing on screen
  * while it is open — an opaque, solid-background block in normal document
  * flow (never a modal-style overlay, never anything translucent over the
@@ -320,19 +348,37 @@ export function buildTableStylesheet(): string {
   min-height: 0;
 }
 
+/* Stable window height (apply prompt): the number of legal call buttons
+ * (zero, one group, or two stacked groups — e.g. a response PLUS an envido
+ * escalation, legal simultaneously per truco-chain.ts's own "envido
+ * interrupts a pending truco call" rule) changes constantly during a hand.
+ * A reserved min-height, sized for the worst real case (two groups, one row
+ * each — see .hexdev-truco-calls-group's own nowrap/overflow-x, which is
+ * what keeps a group to exactly one row instead of wrapping to two), is what
+ * keeps a call being offered, answered, or withdrawn from ever resizing the
+ * table. Disclosed tradeoff, same as the banner slot above: this space is
+ * reserved on every hand, not only while calls are actually being made. */
 .hexdev-truco-calls-row, [data-position="bottom"] > div:first-child {
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: center;
-  min-height: 0;
+  min-height: 86px;
 }
 /* Change 4: answering a pending call reads as a different decision from
  * opening or escalating one — response buttons take the accent treatment
  * (matches the pending-call banner's own "mine" state), opening/escalation
  * buttons stay on the table's primary colour, and the two groups never
- * interleave in one undifferentiated row. */
-.hexdev-truco-calls-group { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+ * interleave in one undifferentiated row.
+ *
+ * flex-wrap: nowrap + overflow-x: auto (stable window height, apply
+ * prompt): the previous flex-wrap: wrap let a group with several
+ * simultaneously-legal buttons (e.g. a full envido escalation) grow to a
+ * second row on a narrow phone width, which the reserved min-height above
+ * would then have had to double to stay ahead of. A horizontally scrollable
+ * single-row strip keeps every group's own height constant instead — a
+ * common, honest mobile pattern, not a magic number chasing content. */
+.hexdev-truco-calls-group { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; justify-content: center; min-height: 40px; }
 .hexdev-truco-call {
   min-height: 40px;
   padding: 6px 16px;
@@ -489,12 +535,31 @@ export function buildTableStylesheet(): string {
 /* The picker must take the anchor's real width, not its own max-content.
  * The bottom anchor is a column flex with align-items:center, so an
  * unstretched child is sized shrink-to-fit -- it reports the full unwrapped
- * six-signal row as its width, flex-wrap below never has a narrower box to
- * wrap into, and the whole picker overflows the table on both sides (the
- * toggle was visibly clipped off the left edge). align-self:stretch gives it
- * a real bound, so the wrap rule can finally do its job. */
+ * six-signal row as its width, and the whole picker overflows the table on
+ * both sides (the toggle was visibly clipped off the left edge).
+ * align-self:stretch gives it a real bound, so the row below has an actual
+ * width to scroll horizontally within instead of shrinking to its content. */
 .hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: column; align-items: center; }
-.hexdev-truco-senas-row { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 4px; max-width: 100%; }
+/* Stable window height (apply prompt): opening the señas picker used to grow
+ * the table (this row went from zero children to up to six), and closing it
+ * shrank the table back — the exact fluctuation the apply prompt names by
+ * example. min-height reserves the row's own open-state height whether it
+ * is open or closed, so toggling it never resizes the table; flex-wrap:
+ * nowrap + overflow-x: auto (same technique as .hexdev-truco-calls-group
+ * above) keeps that reservation to ONE row instead of the two the six real
+ * labels would wrap to on a narrow phone. Disclosed tradeoff: this space is
+ * reserved for the whole hand in every 2v2 match, whether or not a player
+ * ever opens señas — 1v1 never creates this element at all (table.ts's own
+ * legality gate), so it costs 1v1 nothing. */
+.hexdev-truco-senas-row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  margin-top: 4px;
+  max-width: 100%;
+  min-height: 38px;
+}
 .hexdev-truco-sena {
   min-height: 32px;
   padding: 4px 10px;

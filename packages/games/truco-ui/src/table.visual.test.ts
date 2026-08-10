@@ -45,7 +45,16 @@ function dealtMatch(): MatchState {
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
   container.style.width = "375px";
-  container.style.height = "700px";
+  // 800px, not 700px (stable window height, apply prompt): the table now
+  // reserves stable space for transient chrome (pending-call/hand-outcome
+  // banner, call buttons, the player's own hand row) so the table's own
+  // height never fluctuates as a hand is played — see table-styles.ts. That
+  // reserved space needs ~739px of real content height at this width; a
+  // shorter fixed container clips it under this suite's own overflow:hidden,
+  // which was observed to make Vitest Browser Mode's screenshot-stability
+  // retry never converge (a real hang, not a flaky mismatch — confirmed by
+  // bisecting the CSS change that triggered it).
+  container.style.height = "800px";
   container.style.overflow = "hidden";
   document.body.appendChild(container);
   return container;
