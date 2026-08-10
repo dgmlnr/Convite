@@ -3,6 +3,7 @@ import {
   negotiateProtocolVersion,
   postProtocolMessage,
   PROTOCOL_NAMESPACE,
+  type LayoutMessage,
   type TargetOrigin,
 } from "@hexdev/widget-protocol";
 import { applyLayoutMode, applyResizeHeight, mountIframe, unmount, type MountHandle } from "./mount.js";
@@ -69,6 +70,19 @@ export function initWidget(
 
   const timeoutId = win.setTimeout(teardown, readyTimeoutMs);
 
+  // Stable window height (apply prompt): "fullscreen" already pins the
+  // container to `position:fixed;inset:0` (`applyLayoutMode`) — it fills the
+  // viewport by construction, not by content height. A resize message that
+  // arrives AFTER that (main.ts's own ResizeObserver keeps firing regardless
+  // of layout mode) would otherwise overwrite `iframe.style.height` with a
+  // content-driven value, fighting the fixed box and, if content is ever
+  // taller than the real viewport, pushing it past the bottom edge with NO
+  // way for the host page to scroll there (a `position:fixed` element is
+  // outside normal document flow). Once fullscreen, height adjustment is
+  // both unnecessary (already 100%) and actively harmful — resize only
+  // matters again once layout returns to "inline".
+  let layoutMode: LayoutMessage["payload"]["mode"] = "inline";
+
   const listener = createProtocolMessageListener(options.widgetOrigin, (message) => {
     switch (message.type) {
       case "ready": {
@@ -93,9 +107,10 @@ export function initWidget(
         break;
       }
       case "resize":
-        applyResizeHeight(mount, message.payload.height);
+        if (layoutMode !== "fullscreen") applyResizeHeight(mount, message.payload.height);
         break;
       case "layout":
+        layoutMode = message.payload.mode;
         applyLayoutMode(mount, message.payload.mode);
         break;
       case "error":

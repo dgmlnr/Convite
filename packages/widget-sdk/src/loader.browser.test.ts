@@ -108,4 +108,70 @@ describe("initWidget", () => {
 
     expect(document.body.contains(handle!.container)).toBe(false);
   });
+
+  it("applies a resize while inline", () => {
+    const el = mountScriptTag();
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
+    const handle = initWidget(el, document, window, { widgetOrigin });
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: widgetOrigin,
+        data: { ns: PROTOCOL_NAMESPACE, v: 1, type: "resize", payload: { height: 480 } },
+      }),
+    );
+
+    expect(handle!.iframe.style.height).toBe("480px");
+    handle!.dispose();
+  });
+
+  it("ignores a resize once fullscreen — the fullscreen container already fills the viewport (position:fixed;inset:0); letting a later resize keep overwriting iframe.style.height fights that box and can push content past the viewport with no way for the host page to scroll to it (stable window height, apply prompt)", () => {
+    const el = mountScriptTag();
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
+    const handle = initWidget(el, document, window, { widgetOrigin });
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: widgetOrigin,
+        data: { ns: PROTOCOL_NAMESPACE, v: 1, type: "layout", payload: { mode: "fullscreen" } },
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: widgetOrigin,
+        data: { ns: PROTOCOL_NAMESPACE, v: 1, type: "resize", payload: { height: 1200 } },
+      }),
+    );
+
+    expect(handle!.iframe.style.height).toBe("100%");
+    handle!.dispose();
+  });
+
+  it("resumes applying resize once layout returns to inline", () => {
+    const el = mountScriptTag();
+    const widgetOrigin = parseTargetOrigin(WIDGET_ORIGIN);
+    const handle = initWidget(el, document, window, { widgetOrigin });
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: widgetOrigin,
+        data: { ns: PROTOCOL_NAMESPACE, v: 1, type: "layout", payload: { mode: "fullscreen" } },
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: widgetOrigin,
+        data: { ns: PROTOCOL_NAMESPACE, v: 1, type: "layout", payload: { mode: "inline" } },
+      }),
+    );
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: widgetOrigin,
+        data: { ns: PROTOCOL_NAMESPACE, v: 1, type: "resize", payload: { height: 640 } },
+      }),
+    );
+
+    expect(handle!.iframe.style.height).toBe("640px");
+    handle!.dispose();
+  });
 });
