@@ -286,6 +286,51 @@ describe("applyAction — 2v2 envido: team value is the BEST among its members, 
   });
 });
 
+/**
+ * Ordered public call log (spec: "Ordered Call Log"). Every truco call,
+ * envido call, response, and reveal is appended, in the order applied,
+ * attributed to its actor. The chain below deliberately interleaves both
+ * reducers — envido must resolve before truco is legal at all
+ * (`getLegalTrucoActions`), so the only way to exercise "truco after
+ * envido" for real is to actually resolve envido first, same as a real
+ * table.
+ */
+describe("callEvents — ordered public call log across truco+envido chains (spec: 'Ordered Call Log')", () => {
+  it("records every call/response/reveal in the exact order applied, each attributed to its actor", () => {
+    const state = freshHand();
+    const teamAId = state.teams[0]!.id;
+    const teamBId = state.teams[1]!.id;
+
+    let s = apply(state, { type: "call-envido", playerId: playerA, level: "envido" });
+    s = apply(s, { type: "call-envido", playerId: playerB, level: "realEnvido" });
+    s = apply(s, { type: "respond-envido", playerId: playerA, response: "quiero" });
+    s = apply(s, { type: "reveal-envido", playerId: playerB });
+    s = apply(s, { type: "call-truco", playerId: playerA, level: "truco" });
+    s = apply(s, { type: "respond-truco", playerId: playerB, response: "quiero" });
+    s = apply(s, { type: "call-truco", playerId: playerB, level: "retruco" });
+    s = apply(s, { type: "respond-truco", playerId: playerA, response: "no-quiero" });
+
+    expect(s.hand?.callEvents).toEqual([
+      { kind: "envido-call", playerId: playerA, teamId: teamAId, seat: 0, level: "envido" },
+      { kind: "envido-call", playerId: playerB, teamId: teamBId, seat: 1, level: "realEnvido" },
+      { kind: "envido-response", playerId: playerA, teamId: teamAId, seat: 0, response: "quiero" },
+      { kind: "envido-reveal", playerId: playerB, teamId: teamBId, seat: 1 },
+      { kind: "truco-call", playerId: playerA, teamId: teamAId, seat: 0, level: "truco" },
+      { kind: "truco-response", playerId: playerB, teamId: teamBId, seat: 1, response: "quiero" },
+      { kind: "truco-call", playerId: playerB, teamId: teamBId, seat: 1, level: "retruco" },
+      { kind: "truco-response", playerId: playerA, teamId: teamAId, seat: 0, response: "no-quiero" },
+    ]);
+  });
+
+  it("a re-deal clears the call log to empty (spec: 'New deal')", () => {
+    const called = apply(freshHand(), { type: "call-envido", playerId: playerA, level: "envido" });
+    expect(called.hand?.callEvents.length).toBeGreaterThan(0);
+
+    const nextHand = startHand(called, [[], []]);
+    expect(nextHand.hand?.callEvents).toEqual([]);
+  });
+});
+
 describe("calculateEnvidoPoints", () => {
   it.each([
     ["two same-suit cards", [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }], 33],

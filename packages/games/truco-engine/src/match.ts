@@ -69,6 +69,29 @@ export interface HandPlay {
   readonly card: Card;
 }
 
+/** One thing a player SAID out loud this hand, in order. Append-only and
+ * deal-scoped (unlike `senas`, which deliberately replaces per player).
+ * `playerId`/`teamId`/`seat` are carried inline for exactly the reason
+ * `HandPlay` and `SenaEvent` already carry them: the view projection and the
+ * UI must attribute an event to a seat without a second lookup.
+ *
+ * DISCRIMINANT IS `kind`, NOT `type` — deliberately. `Action` variants use
+ * `type`; a `CallEvent` that also used `type` would be structurally
+ * ASSIGNABLE to `CallTrucoAction`/`RespondEnvidoAction` (excess-property
+ * checks only bite on object literals), so an event could be fed back into
+ * `applyAction` by accident and silently re-apply a call. `kind` makes that
+ * a compile error.
+ *
+ * SEÑAS ARE NOT CALL EVENTS. This log is public table speech only; a seña is
+ * private to one team and has its own redacted channel (`TeammateView.lastSena`).
+ * Adding a seña-shaped variant here would leak it to every viewer. */
+export type CallEvent =
+  | { readonly kind: "truco-call"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly level: TrucoCallLevel }
+  | { readonly kind: "truco-response"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly response: "quiero" | "no-quiero" }
+  | { readonly kind: "envido-call"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly level: EnvidoCallLevel }
+  | { readonly kind: "envido-response"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly response: "quiero" | "no-quiero" }
+  | { readonly kind: "envido-reveal"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number };
+
 /** State materialized once a hand's deal has been dealt (design §4). */
 export interface HandState {
   readonly manoSeat: number;
@@ -94,6 +117,9 @@ export interface HandState {
    * first-trick gate and turn advancement are untouched (spec: "Retain
    * All-Trick Plays"). */
   readonly resolvedTrickPlays: readonly (readonly HandPlay[])[];
+  /** Ordered public speech this hand. Append-only, never overwritten
+   * (spec: "Ordered Call Log"). */
+  readonly callEvents: readonly CallEvent[];
 }
 
 export interface MatchState {
@@ -213,6 +239,7 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
       outcome: { decided: false },
       senas: [],
       resolvedTrickPlays: [],
+      callEvents: [],
     },
   };
 }

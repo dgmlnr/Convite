@@ -1,6 +1,6 @@
 import type { Card, Rank, Suit } from "./card.js";
 import type { PlayerId, TeamId } from "./ids.js";
-import type { EnvidoCallLevel, EnvidoState, HandState, MatchState, Player } from "./match.js";
+import type { CallEvent, EnvidoCallLevel, EnvidoState, HandState, MatchState, Player } from "./match.js";
 
 /** Envido point value of a rank: 1-7 count face value, 10/11/12 count zero. */
 const ENVIDO_RANK_VALUE: Record<Rank, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 10: 0, 11: 0, 12: 0 };
@@ -154,7 +154,8 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   if (action.type === "call-envido") {
     const priorCalls = hand.envido.status === "pending" ? hand.envido.calls : [];
     const envido: EnvidoState = { status: "pending", calls: [...priorCalls, action.level], callingTeamId: player.teamId };
-    return { ok: true, state: { ...state, hand: { ...hand, envido } } };
+    const event: CallEvent = { kind: "envido-call", playerId: player.id, teamId: player.teamId, seat: player.seat, level: action.level };
+    return { ok: true, state: { ...state, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
   }
 
   if (action.type === "respond-envido") {
@@ -163,17 +164,22 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
       const isFalta = pending.calls[pending.calls.length - 1] === "faltaEnvido";
       const acceptedValue = isFalta ? faltaEnvidoValue(state) : sumValue(pending.calls);
       const envido: EnvidoState = { status: "accepted", calls: pending.calls, callingTeamId: pending.callingTeamId, acceptedValue };
-      return { ok: true, state: { ...state, hand: { ...hand, envido } } };
+      const event: CallEvent = { kind: "envido-response", playerId: player.id, teamId: player.teamId, seat: player.seat, response: "quiero" };
+      return { ok: true, state: { ...state, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
     }
     const awarded = declineValue(pending.calls);
     const envido: EnvidoState = { status: "declined", calls: pending.calls, callingTeamId: pending.callingTeamId, decliningTeamId: player.teamId };
+    const event: CallEvent = { kind: "envido-response", playerId: player.id, teamId: player.teamId, seat: player.seat, response: "no-quiero" };
     const teams = state.teams.map((team) => (team.id === pending.callingTeamId ? { ...team, score: team.score + awarded } : team));
-    return { ok: true, state: { ...state, teams, hand: { ...hand, envido } } };
+    return { ok: true, state: { ...state, teams, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
   }
 
   const accepted = hand.envido as Extract<EnvidoState, { status: "accepted" }>;
   const winningTeamId = resolveEnvidoWinner(state, hand.manoSeat);
   const envido: EnvidoState = { status: "revealed", calls: accepted.calls, winningTeamId, awardedValue: accepted.acceptedValue };
+  // Marker-only event: no points, no winner (D-1/D-5). The numbers stay
+  // confined to `envido` above until PR-2 adds a redacted declaration list.
+  const event: CallEvent = { kind: "envido-reveal", playerId: player.id, teamId: player.teamId, seat: player.seat };
   const teams = state.teams.map((team) => (team.id === winningTeamId ? { ...team, score: team.score + accepted.acceptedValue } : team));
-  return { ok: true, state: { ...state, teams, hand: { ...hand, envido } } };
+  return { ok: true, state: { ...state, teams, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
 }
