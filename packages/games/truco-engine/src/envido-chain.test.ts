@@ -1,9 +1,11 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
+import { buildDeck } from "./deck.js";
 import { calculateEnvidoPoints, resolveEnvidoDeclarations } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
-import type { EnvidoCallLevel, MatchState } from "./match.js";
+import type { EnvidoCallLevel, EnvidoState, MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 
@@ -426,6 +428,54 @@ describe("resolveEnvidoDeclarations — per-player declaration order (T-3, amend
     // tie component; see the AMENDMENT docblock on resolveEnvidoDeclarations).
     const lastPointsEntry = [...declarations].reverse().find((entry) => entry.declaration === "points")!;
     expect(lastPointsEntry.teamId).toBe(teamBId);
+  });
+});
+
+/**
+ * Derivation equivalence (design D-2, T-4): `resolveEnvidoWinner`'s
+ * replacement must agree with `resolveEnvidoDeclarations`'s own output by
+ * CONSTRUCTION, not by coincidence. A purely random legal walk rarely
+ * reaches `revealed` (call/respond/reveal envido is one action among many
+ * competing with card-play/truco/señas), so these generators DRIVE the
+ * envido chain straight to reveal -- mano opens, the first legal opponent
+ * accepts, mano reveals -- while still randomizing the deal and (via
+ * `dealerSeat`) which seat is mano, for both 1v1 and 2v2.
+ */
+const revealedHeadToHeadArb = fc
+  .tuple(fc.shuffledSubarray(buildDeck() as Card[], { minLength: 6, maxLength: 6 }), fc.constantFrom(0, 1))
+  .map(([cards, dealerSeat]) => {
+    const base = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat });
+    const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6)]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const opponent = dealt.players.find((player) => player.seat !== manoSeat)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+  });
+
+const revealedTeamArb = fc
+  .tuple(fc.shuffledSubarray(buildDeck() as Card[], { minLength: 12, maxLength: 12 }), fc.constantFrom(0, 1, 2, 3))
+  .map(([cards, dealerSeat]) => {
+    const base = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat });
+    const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6), cards.slice(6, 9), cards.slice(9, 12)]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+  });
+
+describe("envido.declarations — derivation equivalence property (design D-2, T-4)", () => {
+  it("in every revealed state (1v1 and 2v2), the teamId of the LAST 'points' declaration equals envido.winningTeamId", () => {
+    fc.assert(
+      fc.property(fc.oneof(revealedHeadToHeadArb, revealedTeamArb), (state) => {
+        const revealed = state.hand!.envido as Extract<EnvidoState, { status: "revealed" }>;
+        const lastPointsEntry = [...revealed.declarations].reverse().find((entry) => entry.declaration === "points")!;
+        return lastPointsEntry.teamId === revealed.winningTeamId;
+      }),
+    );
   });
 });
 
