@@ -226,9 +226,25 @@ export function buildTableStylesheet(): string {
   min-height: calc((var(--truco-card-width) * 336 / 220) * 3 + 4px * 2);
 }
 
+/* Explicit height via calc(), not aspect-ratio (apply prompt round 4: a
+ * reported clipped hand — every card's own box cut short by ~35%, seen
+ * live through pnpm dev:server/dev:host). aspect-ratio derives this box's
+ * height from its OWN intrinsic ratio resolution, which — for an element
+ * whose width comes from a custom property and whose content is an <img>
+ * that table.ts recreates from scratch on every single render
+ * (container.replaceChildren()) — depends on the browser reconciling
+ * layout, aspect-ratio, and a freshly-mounted image in the right order.
+ * Deriving the height directly from the SAME width the card's own layout
+ * already has (matching the real 220x336 baraja proportions, same numbers
+ * .hexdev-truco-trick's own reservation already uses) makes this box's
+ * geometry depend on nothing but its own width — never on image-load
+ * timing or aspect-ratio resolution — which is the most robust fix
+ * available for the class of bug that mechanism could produce, confirmed
+ * or not. See card-render-size.browser.test.ts, the regression test this
+ * round adds. */
 .hexdev-truco-card {
   width: var(--truco-card-width);
-  aspect-ratio: 220 / 336;
+  height: calc(var(--truco-card-width) * 336 / 220);
   border-radius: 6px;
   overflow: hidden;
   padding: 0;
