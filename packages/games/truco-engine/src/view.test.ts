@@ -4,6 +4,7 @@ import type { Card } from "./card.js";
 import { cardId } from "./card.js";
 import { buildDeck } from "./deck.js";
 import type { PlayerId } from "./ids.js";
+import { calculateEnvidoPoints } from "./envido-chain.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
 import type { MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
@@ -253,3 +254,33 @@ describe("getViewFor — envido declaration redaction property, for any reachabl
  * property as committed runs against the correct, unmutated code. See
  * apply-progress for the exact failing output of both attempts.
  */
+
+/**
+ * Positive coverage rider (PR-2 review, WARNING): the property above only
+ * ever asserts on `sonBuenas` entries — for a `declaration: "points"` entry,
+ * `entry.declaration !== "sonBuenas"` is already `true`, so the property is
+ * VACUOUSLY satisfied for it and never actually reads `entry.points`. This
+ * closes that gap with a genuinely positive check: an independent oracle
+ * (`calculateEnvidoPoints`, pure and exported per D-1) recomputes each
+ * declarer's points straight from their own dealt hand, and the view's own
+ * `points` value must agree exactly — proving `getViewFor` neither drops nor
+ * mutates a legitimate declaration on its way through the projection.
+ */
+describe("getViewFor — a legitimate points declaration keeps its EXACT value through the projection, for every viewer, in every reachable revealed state", () => {
+  it("every declaration === 'points' entry's points equals calculateEnvidoPoints(that player's own dealt hand)", () => {
+    fc.assert(
+      fc.property(fc.oneof(revealedHeadToHeadArb, revealedTeamArb), (state) =>
+        state.players.every((viewer) => {
+          const view = getViewFor(state, viewer.id);
+          const envido = view.hand?.envido;
+          if (envido === undefined || envido.status !== "revealed") return false; // generator always reveals -- a non-revealed view here is the bug
+          return envido.declarations.every((entry) => {
+            if (entry.declaration !== "points") return true; // covered by the redaction property above
+            const declarer = state.players.find((player) => player.seat === entry.seat)!;
+            return entry.points === calculateEnvidoPoints(declarer.hand);
+          });
+        }),
+      ),
+    );
+  });
+});

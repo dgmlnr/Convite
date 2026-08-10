@@ -167,6 +167,62 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
     expect(list.scrollTop).toBe(list.scrollHeight - list.clientHeight);
   });
 
+  // PR-4a review rider: the two `input.positions.get(seat) ?? "top"` fallback
+  // sites (`speakerLabel`, `buildEntry`'s own `dataset.position`) were never
+  // exercised by an existing test — every fixture's `positions` map covers
+  // every seat that appears in an event. A seat absent from the map is
+  // reachable in principle (a stale/rotated positions snapshot); this pins
+  // BOTH the rendered label and the dataset attribute to the documented
+  // fallback instead of leaving it an unverified assumption.
+  it("falls back to the 'top' anchor when a seat is absent from positions — pins BOTH the speaker label and dataset.position", () => {
+    const el = freshHost();
+    const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: "p9" as PlayerId, teamId: TEAM_B, seat: 9, level: "truco" }];
+    const sparsePositions: ReadonlyMap<number, TableAnchor> = new Map([[0, "bottom"]]); // seat 9 is deliberately absent
+
+    renderCallLog(el, { events, envido: ENVIDO_NONE, manoSeat: 0, selfSeat: 0, positions: sparsePositions });
+
+    const entry = el.querySelector<HTMLElement>(".hexdev-truco-call-log-entry")!;
+    expect(entry.dataset.position).toBe("top");
+    // "top" with more than 2 known seats would read "Compañero", but a
+    // 1-entry positions map has size 1, so the 1v1 branch ("Rival") applies.
+    expect(entry.querySelector(".hexdev-truco-call-log-speaker")?.textContent).toBe("Rival");
+  });
+
+  // PR-4a review rider: `renderCallLog` is called on every table re-render
+  // (table.ts), never only once — a stale entry from a PREVIOUS render must
+  // never survive a second call with different data.
+  it("a second render on the SAME host fully replaces the first — no stale or duplicated nodes, and the tantos row disappears when no longer revealed", () => {
+    const el = freshHost();
+    const firstEvents: readonly CallEvent[] = [
+      { kind: "truco-call", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, level: "truco" },
+      { kind: "truco-response", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, response: "quiero" },
+    ];
+    const firstRevealed: EnvidoState = {
+      status: "revealed",
+      calls: ["envido"],
+      winningTeamId: TEAM_A,
+      awardedValue: 28,
+      declarations: [
+        { declaration: "points", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, points: 28 },
+        { declaration: "sonBuenas", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1 },
+      ],
+    };
+    renderCallLog(el, { events: firstEvents, envido: firstRevealed, manoSeat: 0, selfSeat: 0, positions: POSITIONS_1V1 });
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry")).toHaveLength(2);
+    expect(el.querySelector(".hexdev-truco-call-log-tantos")).not.toBeNull();
+
+    // Second render: fewer events, envido no longer revealed for THIS hand
+    // (design §2.3: the field is only present on the `revealed` variant —
+    // representative of the very next hand, which starts back at "none").
+    const secondEvents: readonly CallEvent[] = [{ kind: "envido-call", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, level: "envido" }];
+    renderCallLog(el, { events: secondEvents, envido: ENVIDO_NONE, manoSeat: 1, selfSeat: 0, positions: POSITIONS_1V1 });
+
+    const entries = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-entry")];
+    expect(entries).toHaveLength(1); // never 3 (2 stale + 1 new) or 2 (1 stale + 1 new)
+    expect(entries[0]!.textContent).toContain("Envido");
+    expect(el.querySelector(".hexdev-truco-call-log-tantos")).toBeNull(); // no longer revealed -> the row is gone, not just empty
+  });
+
   it("scrollCallLogToNewest is a no-op on a DETACHED node — exactly why it's a separate export from renderCallLog (design §5.2)", () => {
     const detached = document.createElement("div"); // never appended to the document
     const events: readonly CallEvent[] = Array.from({ length: 30 }, (_, index) => ({
