@@ -45,16 +45,18 @@ function dealtMatch(): MatchState {
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
   container.style.width = "375px";
-  // 800px, not 700px (stable window height, apply prompt): the table now
-  // reserves stable space for transient chrome (pending-call/hand-outcome
-  // banner, call buttons, the player's own hand row) so the table's own
-  // height never fluctuates as a hand is played — see table-styles.ts. That
-  // reserved space needs ~739px of real content height at this width; a
-  // shorter fixed container clips it under this suite's own overflow:hidden,
-  // which was observed to make Vitest Browser Mode's screenshot-stability
-  // retry never converge (a real hang, not a flaky mismatch — confirmed by
-  // bisecting the CSS change that triggered it).
-  container.style.height = "800px";
+  // 620px (stable window height, apply prompt, round 3): the transient
+  // chrome (pending-call/hand-outcome banner, call buttons, the señas
+  // picker) floats over the felt instead of reserving layout space for it
+  // — see table-styles.ts's own .hexdev-truco-banner-slot/.hexdev-truco-
+  // action-tray doc comments — so the table's real content height at this
+  // width is ~559px regardless of what chrome is showing, comfortably
+  // under this container. A container SHORTER than the real content clips
+  // it under this suite's own overflow:hidden, which was observed to make
+  // Vitest Browser Mode's screenshot-stability retry never converge (a
+  // real hang, not a flaky mismatch — confirmed earlier this branch by
+  // bisecting the exact CSS change that triggered it).
+  container.style.height = "620px";
   container.style.overflow = "hidden";
   document.body.appendChild(container);
   return container;
