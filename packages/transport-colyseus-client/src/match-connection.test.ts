@@ -102,4 +102,52 @@ describe("reconnectMatch — the client's half of the reconnection window (desig
     await expect(reconnectMatch(client, "reconnection-token-3", { retries: 2, retryDelayMs: 0 })).rejects.toThrow("server unreachable");
     expect(client.reconnect).toHaveBeenCalledTimes(3); // 1 initial + 2 retries, then give up
   });
+
+  // Apply prompt (round 4, lower priority): a real session found a stored
+  // reconnection token pointing at a match the server no longer has (the
+  // server restarted) logging FOUR console errors before the app correctly
+  // fell back to the catalogue — one per retry attempt, all doomed, since
+  // `@colyseus/sdk`'s own `reconnect()` throws a `MatchMakeError` whose
+  // `.code` is `522` (`ErrorCode.MATCHMAKE_INVALID_ROOM_ID`, verified by
+  // reading `@colyseus/core`'s own `MatchMaker.ts`/`@colyseus/shared-types`'
+  // `Protocol.ts` source, not assumed) when the room has been disposed, and
+  // `524` (`MATCHMAKE_EXPIRED`) when the reconnection token itself is stale
+  // — both are PERMANENT: retrying can never turn a disposed room or an
+  // already-expired token into a live one, so every retry is pure noise.
+  it("does NOT retry a permanently-disposed room (colyseus code 522) — one attempt, not four", async () => {
+    const client = createFakeClient();
+    const permanentError = Object.assign(new Error(`room "abc" has been disposed.`), { code: 522 });
+    client.reconnect = vi.fn(async () => {
+      throw permanentError;
+    });
+
+    await expect(reconnectMatch(client, "reconnection-token-4", { retries: 3, retryDelayMs: 0 })).rejects.toBe(permanentError);
+    expect(client.reconnect).toHaveBeenCalledTimes(1); // never retried — the room is gone for good
+  });
+
+  it("does NOT retry an expired reconnection token (colyseus code 524) either — same permanent-failure reasoning", async () => {
+    const client = createFakeClient();
+    const expiredError = Object.assign(new Error("reconnection token invalid or expired."), { code: 524 });
+    client.reconnect = vi.fn(async () => {
+      throw expiredError;
+    });
+
+    await expect(reconnectMatch(client, "reconnection-token-5", { retries: 3, retryDelayMs: 0 })).rejects.toBe(expiredError);
+    expect(client.reconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("still retries a transient failure that merely happens to carry an unrelated numeric code — only 522/524 short-circuit", async () => {
+    const client = createFakeClient();
+    let attempt = 0;
+    const originalReconnect = client.reconnect.bind(client);
+    client.reconnect = async (token: string) => {
+      attempt += 1;
+      if (attempt < 2) throw Object.assign(new Error("rate limited"), { code: 429 });
+      return originalReconnect(token);
+    };
+
+    const connection = await reconnectMatch(client, "reconnection-token-6", { retries: 3, retryDelayMs: 0 });
+    expect(attempt).toBe(2);
+    expect(connection.reconnectionToken).toBe(client.room.reconnectionToken);
+  });
 });
