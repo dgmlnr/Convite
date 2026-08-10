@@ -109,11 +109,19 @@ function findPlayCard(state: MatchState, playerId: PlayerId): Action | undefined
  * one — mirrors the real turn order without this test tracking `turnSeat`
  * itself. */
 function playNextCard(state: MatchState, a: PlayerId, b: PlayerId): MatchState {
-  const playA = findPlayCard(state, a);
-  if (playA !== undefined) return dispatch(state, playA);
-  const playB = findPlayCard(state, b);
-  if (playB !== undefined) return dispatch(state, playB);
-  throw new Error("test setup: no legal play-card action for either player — is the hand already decided?");
+  return playNextCardAmong(state, [a, b]);
+}
+
+/** Generalization of playNextCard over any number of seats (2v2's four
+ * players): exactly one of them has a legal play-card action at a time
+ * (whoever `turnSeat` names), so checking every candidate and dispatching
+ * the first hit is equivalent to tracking `turnSeat` directly. */
+function playNextCardAmong(state: MatchState, players: readonly PlayerId[]): MatchState {
+  for (const player of players) {
+    const play = findPlayCard(state, player);
+    if (play !== undefined) return dispatch(state, play);
+  }
+  throw new Error("test setup: no legal play-card action for any given player — is the hand already decided?");
 }
 
 /** Asserts every recorded height matches the first, within a tolerance loose
@@ -203,6 +211,62 @@ describe("createMatchTableRenderer — the table's own reported height stays con
 
     state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "no-quiero" });
     await recordRender(state); // pending clears, hand-outcome banner: "Ganaste la mano"
+
+    expectStableHeights(heights);
+  });
+
+  it("2v2: envido called/accepted/revealed, cards played seat-by-seat, tricks resolved, truco called/accepted, cards played to a decided hand — the height never changes", async () => {
+    const el = mountedContainer();
+    const render = createMatchTableRenderer();
+    const heights: number[] = [];
+
+    const recordRender = async (state: MatchState): Promise<void> => {
+      const view = getViewFor(state, SELF);
+      const legal = getLegalActions(state, SELF);
+      render(el, view, legal, () => {});
+      await waitForArt(el);
+      heights.push(el.getBoundingClientRect().height);
+    };
+
+    // Partners sit ACROSS the table (design: 0/2 vs 1/3, matching
+    // truco-engine's own createTeamMatch geometry) — SELF (seat 0) and
+    // TEAMMATE (seat 2) are one team; OPPONENT (seat 1) and OPPONENT_2
+    // (seat 3) are the other. dealerSeat 3 makes SELF mano.
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+    let state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
+    await recordRender(state); // baseline: dealt, nothing has happened yet
+
+    state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
+    await recordRender(state); // pending-call banner: "Envido"
+
+    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state); // banner clears — accepted, awaiting reveal
+
+    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    await recordRender(state); // envido revealed, still no banner
+
+    const allFourSeats = [SELF, OPPONENT, TEAMMATE, OPPONENT_2] as const;
+
+    // Trick 1: every one of the four seats plays a card in turn, one card at
+    // a time — the exact "opponent hand shrinking seat by seat" case named
+    // as a possible remaining fluctuation.
+    for (let play = 0; play < 4; play++) {
+      state = playNextCardAmong(state, allFourSeats);
+      await recordRender(state);
+    }
+
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    await recordRender(state); // pending-call banner: "Truco"
+
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state); // banner clears again
+
+    let guard = 0;
+    while (state.hand !== null && !state.hand.outcome.decided) {
+      if (guard++ > 20) throw new Error("test setup: hand never decided — possible infinite loop");
+      state = playNextCardAmong(state, allFourSeats);
+      await recordRender(state);
+    }
 
     expectStableHeights(heights);
   });

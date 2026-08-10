@@ -199,11 +199,22 @@ export function createMatchTableRenderer(
     callsRow.className = "hexdev-truco-calls-row";
     renderCalls(callsRow, legalActions, dispatch);
     // 1v1 must stay BYTE-IDENTICAL (visual regression safety property): no
-    // extra DOM node is even created in `bottom` unless send-sena is
-    // actually legal, never merely "rendered empty" — `getLegalSenaActions`
-    // never offers it outside a 2v2 match, so this `some` is false for
-    // every 1v1 view, same discipline as `renderCalls`'s own null groups.
-    if (legalActions.some((action) => action.type === "send-sena")) {
+    // extra DOM node is even created in `bottom` for a 1v1 view —
+    // `view.teammates` is structurally always empty outside a 2v2 match, so
+    // this condition is false for every 1v1 view, same discipline as
+    // `renderCalls`'s own null groups.
+    //
+    // Gated on `view.teammates.length > 0` (a static fact about the MATCH),
+    // not on "is send-sena legal RIGHT NOW" (stable window height, apply
+    // prompt): `getLegalSenaActions` goes empty once the hand is decided
+    // (truco-engine's `senas.ts`), which used to remove this whole node —
+    // toggle, reserved row and all — right at the very last render of a
+    // played hand, a real ~80px drop found by the height-stability test
+    // itself. Keeping the node (and its own reserved height, table-styles.ts)
+    // present for the whole 2v2 match means `renderSenaPicker` can still
+    // legitimately render nothing INSIDE it once send-sena stops being
+    // legal, without the reserved space disappearing along with it.
+    if (view.teammates.length > 0) {
       renderSenaPicker(bottom.appendChild(document.createElement("div")), legalActions, dispatch);
     }
     const handRow = bottom.appendChild(document.createElement("div"));

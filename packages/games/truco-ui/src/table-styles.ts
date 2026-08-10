@@ -191,10 +191,12 @@ export function buildTableStylesheet(): string {
  * one card row's height, expressed via the same --truco-card-width token
  * the card itself is sized from (matching .hexdev-truco-trick's own calc()
  * convention below), keeps that one-row worst case constant across 3, 2, 1,
- * or 0 remaining cards. Disclosed gap: this reserves a SINGLE row, so a
- * left/right 2v2 anchor's own opponent hand (column layout, one card removed
- * at a time rather than a row emptying at once) is not fully covered by this
- * rule alone — see the apply report for that named remainder. */
+ * or 0 remaining cards — for the ROW-layout case (this player's own hand,
+ * and a 1v1 opponent / 2v2 partner at top/bottom, where up to 3 cards always
+ * fit on one line at every supported width, so the row never needs a second
+ * line). The column-layout case (a 2v2 left/right opponent) is NOT covered
+ * by this rule and needs its own reservation below — a card removed one at a
+ * time shrinks a vertical stack continuously, not just at the 1-to-0 edge. */
 .hexdev-truco-hand, .hexdev-truco-opponent-hand {
   display: flex;
   flex-wrap: wrap;
@@ -203,9 +205,24 @@ export function buildTableStylesheet(): string {
   gap: 4px;
   min-height: calc(var(--truco-card-width) * 336 / 220);
 }
+/* Stable window height (apply prompt): a 2v2 left/right opponent's hand
+ * stacks vertically, so EVERY card played shrinks it, not only the last one
+ * — confirmed by measurement, not assumed (a real hand through the real
+ * table dropped the felt's own height by ~35px exactly once, right when the
+ * first trick fully resolved: that anchor's un-stretched content briefly
+ * exceeded the centre column's own reserved height at 3 cards, then fell
+ * behind it once the second opponent's hand also dropped to 2). A hand is
+ * ALWAYS dealt exactly 3 cards in this engine and only ever loses cards, so
+ * reserving 3 stacked cards' worth of height here is not a guessed worst
+ * case — it is the true, structural maximum a 2v2 opponent's own hand can
+ * ever need, which keeps this column's OWN height constant at every count
+ * from 3 down to 0, not merely stable once it happens to fall below the
+ * centre column. This selector's higher specificity overrides the shared
+ * min-height above. */
 [data-position="left"] .hexdev-truco-opponent-hand,
 [data-position="right"] .hexdev-truco-opponent-hand {
   flex-direction: column;
+  min-height: calc((var(--truco-card-width) * 336 / 220) * 3 + 4px * 2);
 }
 
 .hexdev-truco-card {
@@ -539,7 +556,15 @@ export function buildTableStylesheet(): string {
  * both sides (the toggle was visibly clipped off the left edge).
  * align-self:stretch gives it a real bound, so the row below has an actual
  * width to scroll horizontally within instead of shrinking to its content. */
-.hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: column; align-items: center; }
+/* Stable window height (apply prompt): reserves the WHOLE picker's own
+ * closed-toggle-plus-row height (toggle ~34px + row's own 4px margin-top +
+ * 38px reserved row below = ~76px, rounded up) on the outer wrapper itself.
+ * table.ts now keeps this element mounted for the entire 2v2 match, even
+ * once send-sena stops being legal (hand decided) and renderSenaPicker
+ * renders nothing inside it — without this min-height, that would collapse
+ * the wrapper to 0 and drop the felt's own height right at the last render
+ * of a played hand, found by the height-stability test itself. */
+.hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: column; align-items: center; min-height: 80px; }
 /* Stable window height (apply prompt): opening the señas picker used to grow
  * the table (this row went from zero children to up to six), and closing it
  * shrank the table back — the exact fluctuation the apply prompt names by
