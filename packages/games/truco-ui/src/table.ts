@@ -1,4 +1,5 @@
 import type { Action, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { renderCallLog, scrollCallLogToNewest } from "./call-log.js";
 import { renderCalls } from "./calls.js";
 import { deriveHandOutcomeEvent, renderHandOutcomeBanner } from "./hand-outcome.js";
 import type { HandOutcomeEvent } from "./hand-outcome.js";
@@ -306,6 +307,22 @@ export function createMatchTableRenderer(
     turnIndicator.textContent = pendingCall === null ? describeTurn(view.self.seat, turnSeat) : "";
     center.appendChild(turnIndicator);
 
+    // Call-log panel (spec: "Call-Log Panel With Bounded Footprint", "History
+    // Persists Through the Outcome Banner"). Reads the SAME `positions` map
+    // the piles above already use (design §5.2), so a speaker's label always
+    // points at the seat's own screen anchor. No new UI state (Q5/D-9):
+    // `view.hand` already carries the whole hand's history until the next
+    // `startHand` resets `resolvedTrickPlays`/`callEvents` to `[]`, which is
+    // exactly what clears both the piles and this panel for free.
+    const callLog = center.appendChild(document.createElement("div"));
+    renderCallLog(callLog, {
+      events: view.hand?.callEvents ?? [],
+      envido: view.hand?.envido ?? { status: "none" },
+      manoSeat: view.hand?.manoSeat ?? 0,
+      selfSeat: view.self.seat,
+      positions,
+    });
+
     for (const anchor of ANCHOR_ORDER) felt.appendChild(anchors.get(anchor)!);
     felt.appendChild(center);
 
@@ -320,6 +337,11 @@ export function createMatchTableRenderer(
     layout.appendChild(felt);
     layout.appendChild(panel);
     container.appendChild(layout);
+
+    // MUST run only now, after `callLog` is actually attached all the way up
+    // to `container` — `scrollTop` is a no-op on a node with no layout yet
+    // (call-log.ts's own doc comment on `scrollCallLogToNewest`, design §5.2).
+    scrollCallLogToNewest(callLog);
 
     // A real ending, mounted as a sibling of `layout` so it overlays the
     // whole shell (design: "losing should feel like a loss, not like an
