@@ -87,6 +87,13 @@ export interface HandState {
    * always empty in a 1v1 match, since `getLegalSenaActions` never offers
    * `send-sena` to a player without a teammate). */
   readonly senas: readonly SenaEvent[];
+  /** Every trick already resolved this hand, oldest first, each holding that
+   * trick's own plays in play order. INDEX-ALIGNED with `trickOutcomes` —
+   * both are appended in the same atomic transition in `card-play.ts`.
+   * `currentTrickPlays` keeps its exact prior meaning, so `canOpenEnvido`'s
+   * first-trick gate and turn advancement are untouched (spec: "Retain
+   * All-Trick Plays"). */
+  readonly resolvedTrickPlays: readonly (readonly HandPlay[])[];
 }
 
 export interface MatchState {
@@ -205,6 +212,7 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
       trickOutcomes: [],
       outcome: { decided: false },
       senas: [],
+      resolvedTrickPlays: [],
     },
   };
 }
