@@ -37,17 +37,34 @@ function dealtTeamMatch(): MatchState {
 
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
+  // 375px is the FLOOR here, not a habit: the open señas row measures
+  // exactly 359px and the felt pads 8px each side (359 + 16 = 375), so any
+  // narrower container scrolls the sixth signal out of frame — and the
+  // señas panel is precisely what these baselines must keep visible.
+  // Still the narrow branch of the shell's container query (< 640px).
   container.style.width = "375px";
-  // 720px (stable window height, apply prompt, round 3): the transient
-  // chrome (calls, señas picker) now floats over the felt instead of
-  // reserving layout space — see table.visual.test.ts's own
-  // mountedContainer for the full reasoning. 2v2's real content height at
-  // this width is ~681px regardless of what chrome is showing, comfortably
-  // under this container.
-  container.style.height = "720px";
-  container.style.overflow = "hidden";
+  // Height deliberately NOT set — same reasoning as table.visual.test.ts's
+  // mountedContainer: any explicit height makes the felt's
+  // `min-height: max(100%, …)` stretch over the full container, and an
+  // auto-height container hugs the content instead, so nothing can clip
+  // (clipped content was the trigger of the screenshot-stability hang this
+  // suite once bisected). The two shots here screenshot the FELT element,
+  // which at auto height takes its own natural size: 375x613 for the
+  // mid-hand fixture (the partner's seña badge wraps the top hand to two
+  // rows) and 375x517 with the señas picker open.
   document.body.appendChild(container);
   return container;
+}
+
+/** The zone under test: the felt. All four seats, every card, the señas
+ * toggle/picker (it floats OVER the felt — table-styles.ts's action-tray),
+ * and the partner's seña badge all render inside it; only the scoreboard
+ * panel below is dropped, and that chrome has its own dedicated baseline
+ * (scoreboard-panel.visual.test.ts) plus the themed 1v1 shot. */
+function feltOf(container: HTMLElement): HTMLElement {
+  const felt = container.querySelector<HTMLElement>(".hexdev-truco-table");
+  if (felt === null) throw new Error("visual fixture setup: felt element not rendered");
+  return felt;
 }
 
 async function waitForArt(container: HTMLElement): Promise<void> {
@@ -69,7 +86,7 @@ describe("visual: the 4-seat (2v2) game table — partner obvious at a glance, s
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
-    await expect.element(container).toMatchScreenshot("table-2v2-mid-hand");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-mid-hand");
   });
 
   it("the señas picker, opened: the local player's own six-signal row, discoverable without being noisy", async () => {
@@ -81,6 +98,6 @@ describe("visual: the 4-seat (2v2) game table — partner obvious at a glance, s
     await waitForArt(container);
     container.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.click();
 
-    await expect.element(container).toMatchScreenshot("table-2v2-senas-open");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-senas-open");
   });
 });

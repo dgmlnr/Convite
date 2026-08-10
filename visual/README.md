@@ -77,6 +77,14 @@ it does:
 | `packages/games/truco-ui/src/scoreboard-panel.visual.test.ts` | The matchstick scoreboard at a non-trivial, asymmetric score (both malas and buenas casitas populated on both sides). |
 | `apps/widget-app/src/game-selection.visual.test.ts` | The game-selection screen, both branches of the zero-counter UX rule side by side (real waiting count vs. the promoted bot CTA). |
 
+Each table shot captures the element under test, not the whole test container:
+the mid-hand/pending/2v2 shots screenshot the felt element (dead side cloth
+cropped away), while `table-themed` keeps the whole shell — felt AND scoreboard
+panel — in an auto-height container. The auto height matters: with any explicit
+container height, the felt's `min-height: max(100%, …)` stretches over the full
+box and evicts the panel below the fold, which silently blinded this shot's
+panel-theming proof until the panel was restored to frame.
+
 ## Updating a baseline — deliberately, on purpose
 
 The default command (`pnpm test:visual`) never writes a baseline silently —
