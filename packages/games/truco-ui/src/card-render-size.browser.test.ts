@@ -200,3 +200,111 @@ describe("createMatchTableRenderer — every card renders at its own whole heigh
     container.remove();
   });
 });
+
+/**
+ * ROUND 5 — the coordinator reproduced the clip for real (clean tree, fresh
+ * browser context, cache-busted URL, server restarted, 375x900 viewport —
+ * every alternative explanation this file's own round-4 investigation
+ * raised, ruled out). The above tests measure a card's OWN rect and compare
+ * it to its OWN expected size — that is necessarily blind to this bug,
+ * because the card's own layout box is correct; what clips it is an
+ * ANCESTOR's `overflow: hidden` cutting the PAINT once that ancestor itself
+ * is squeezed shorter than the card's real position. `.hexdev-truco-table`
+ * has `overflow: hidden` (table-styles.ts) — the measurement that actually
+ * catches this is a card's rect against THAT element's own clip edge.
+ *
+ * Root cause, confirmed directly (not assumed): `.hexdev-truco-table` is a
+ * flex item of `.hexdev-truco-shell-layout`, and CSS Flexbox's own
+ * automatic-minimum-size algorithm gives ANY flex item that is a scroll
+ * container (this element's own `overflow: hidden` makes it exactly that)
+ * an automatic minimum size of 0 — REGARDLESS of what its children need —
+ * unless an explicit `min-height` overrides it. table-styles.ts's own fix
+ * gives `.hexdev-truco-table` an explicit essential-minimum `min-height`
+ * (one card row for top/bottom, the existing trick-area reservation for
+ * the centre column, the 3-card column reservation for a 2v2 left/right
+ * anchor) so it can never be squeezed below what its own essential content
+ * needs — it overflows its own shell (a real page becomes scrollable, the
+ * same "natural size, not silently clipped" model this whole branch
+ * already established for the fullscreen/resize fight) rather than
+ * clipping a card.
+ */
+describe("createMatchTableRenderer — a squeezed container overflows its own shell instead of clipping essential content (apply prompt round 5)", () => {
+  /** Mirrors the REAL production ancestor chain exactly: an outer box with a
+   * definite, short height (the fullscreen iframe pinned shorter than the
+   * felt's own real need) containing table.ts's own
+   * table-shell/shell-layout/table structure — no extra wrapper, this
+   * `container` IS what `table.ts` turns into `.hexdev-truco-table-shell`. */
+  function squeezedContainer(heightPx: number): HTMLElement {
+    const el = document.createElement("div");
+    el.style.width = "375px";
+    el.style.height = `${heightPx}px`;
+    document.body.appendChild(el);
+    return el;
+  }
+
+  /** Every `.hexdev-truco-card` under `root` must stay ENTIRELY within the
+   * nearest clipping ancestor's own edge — the measurement the coordinator
+   * asked for directly: not the card's own rect in isolation (round 4's own
+   * tests, blind to this exact bug), but the card's rect AGAINST the box
+   * that actually clips it. */
+  function expectNoCardExceedsClipEdge(root: HTMLElement, clipAncestor: HTMLElement, context: string): void {
+    const clipBox = clipAncestor.getBoundingClientRect();
+    const cards = [...root.querySelectorAll<HTMLElement>(".hexdev-truco-card")];
+    expect(cards.length, `${context}: expected at least one card to check`).toBeGreaterThan(0);
+    for (const [index, card] of cards.entries()) {
+      const cardBox = card.getBoundingClientRect();
+      expect(
+        cardBox.bottom,
+        `${context}: card #${index} bottom (${cardBox.bottom.toFixed(2)}px) exceeds the clipping ancestor's own edge (${clipBox.bottom.toFixed(2)}px) — cropped by overflow: hidden`,
+      ).toBeLessThanOrEqual(clipBox.bottom + 0.5);
+    }
+  }
+
+  it("1v1: a container squeezed well below the felt's essential need still shows the whole hand", async () => {
+    const container = squeezedContainer(100);
+    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 });
+    const dealt = startHand(base, DEAL_1V1);
+    const called = dispatch(dealt, { type: "call-truco", playerId: OPPONENT, level: "truco" });
+    const view = getViewFor(called, SELF);
+    const legal = getLegalActions(called, SELF);
+
+    createMatchTableRenderer()(container, view, legal, () => {});
+    await waitForArt(container);
+
+    const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
+    expectNoCardExceedsClipEdge(container.querySelector(".hexdev-truco-hand")!, felt, "1v1 own hand, squeezed container");
+    container.remove();
+  });
+
+  it("1v1: a card genuinely in play, in the trick area, stays whole under the same squeeze", async () => {
+    const container = squeezedContainer(100);
+    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 });
+    const dealt = startHand(base, DEAL_1V1);
+    const played = dispatch(dealt, { type: "play-card", playerId: SELF, card: DEAL_1V1[0]![0]! });
+    const view = getViewFor(played, SELF);
+    const legal = getLegalActions(played, SELF);
+
+    createMatchTableRenderer()(container, view, legal, () => {});
+    await waitForArt(container);
+
+    const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
+    expectNoCardExceedsClipEdge(container.querySelector(".hexdev-truco-trick")!, felt, "1v1 trick area, squeezed container");
+    container.remove();
+  });
+
+  it("2v2: a left/right opponent's column-layout hand stays whole under the same squeeze", async () => {
+    const container = squeezedContainer(100);
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+    const state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
+    const view = getViewFor(state, SELF);
+    const legal = getLegalActions(state, SELF);
+
+    createMatchTableRenderer()(container, view, legal, () => {});
+    await waitForArt(container);
+
+    const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
+    expectNoCardExceedsClipEdge(container.querySelector('[data-position="left"]')!, felt, "2v2 left opponent hand, squeezed container");
+    expectNoCardExceedsClipEdge(container.querySelector('[data-position="right"]')!, felt, "2v2 right opponent hand, squeezed container");
+    container.remove();
+  });
+});

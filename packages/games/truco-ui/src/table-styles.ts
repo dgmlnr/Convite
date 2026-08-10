@@ -73,14 +73,43 @@ export function buildTableStylesheet(): string {
   min-height: 0;
   box-sizing: border-box;
 }
-.hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; min-height: 0; }
+.hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; }
 
+/* Stable window height (apply prompt, round 5): min-height alone cannot
+ * protect this box's own essential content from squeeze-induced clipping,
+ * because .hexdev-truco-table's own overflow: hidden below makes it a
+ * "scroll container" for CSS Flexbox's own automatic-minimum-size
+ * algorithm — per spec, a flex item that is a scroll container gets an
+ * automatic minimum size of 0 REGARDLESS of what its children need, unless
+ * an EXPLICIT min-height overrides that. Confirmed directly: giving the
+ * anchors below back their own real min-content contribution (removing
+ * .hexdev-truco-anchor's own min-height: 0 override) was NOT enough on its
+ * own — the felt itself kept shrinking to fit whatever the shell-layout's
+ * own flex distribution gave it, clipping the now-correctly-sized anchors
+ * anyway, confirmed by deliberately squeezing the real ancestor chain
+ * (table-shell > shell-layout > table) down to increasingly short heights
+ * and watching a hand card's own rect exceed the felt's clip edge below
+ * ~400px (1v1) — exactly the mechanism reported: a real card cut by a hard
+ * line where the felt ends and the scoreboard begins.
+ *
+ * The explicit min-height below is this box's own TRUE essential floor —
+ * one card row for top/bottom (the row-layout hand cases) plus the trick
+ * area's own existing reservation for the centre column (a card genuinely
+ * in play must stay whole too, apply prompt's own item 4) — NOT this
+ * box's full natural/resting size. Decorative slack (the trick area's own
+ * generous offset-positioning room beyond what a single card strictly
+ * needs, the banner/calls tray now floating out of flow entirely) still
+ * compresses freely under real pressure; only genuinely essential,
+ * always-visible content gets a hard floor. This keeps overflow: hidden
+ * doing its own real job — clipping content that visually bleeds past the
+ * felt's rounded box — without also silently discarding essential content
+ * whenever the container around it is shorter than this minimum. */
 .hexdev-truco-table {
   --truco-card-width: 60px;
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  min-height: 100%;
+  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px));
   display: grid;
   grid-template-columns: 1fr;
   grid-template-rows: auto 1fr auto;
@@ -99,8 +128,16 @@ export function buildTableStylesheet(): string {
  * anchors nobody occupies yet. Four seats (v2/2v2) trades some of that width
  * for real side gutters; on a genuinely narrow phone those gutters stay
  * tight (opponent backs stack vertically, shrunk) — a disclosed tradeoff,
- * not a hidden one: 2-seat truco is the common case and stays uncompromised. */
+ * not a hidden one: 2-seat truco is the common case and stays uncompromised.
+ *
+ * min-height override (stable window height, apply prompt round 5): the
+ * 4-seat middle row's own essential need is taller than 2-seat's — the
+ * left/right 3-card column reservation (table-styles' own
+ * [data-position=left/right] .hexdev-truco-opponent-hand rule) always
+ * exceeds the centre column's own trick-area reservation, so it is what
+ * actually drives this row's real minimum. */
 .hexdev-truco-table[data-seat-count="4"] {
+  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 5 + 40px));
   grid-template-columns: minmax(34px, 15vw) 1fr minmax(34px, 15vw);
   grid-template-areas: "top top top" "left center right" "bottom bottom bottom";
 }
@@ -130,7 +167,7 @@ export function buildTableStylesheet(): string {
   }
 }
 
-.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 0; }
+.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
 [data-position="top"] { grid-area: top; align-items: flex-start; }
 [data-position="bottom"] { grid-area: bottom; flex-direction: column; }
 [data-position="left"] { grid-area: left; flex-direction: column; }
