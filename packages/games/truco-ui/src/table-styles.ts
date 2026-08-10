@@ -73,14 +73,43 @@ export function buildTableStylesheet(): string {
   min-height: 0;
   box-sizing: border-box;
 }
-.hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; min-height: 0; }
+.hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; }
 
+/* Stable window height (apply prompt, round 5): min-height alone cannot
+ * protect this box's own essential content from squeeze-induced clipping,
+ * because .hexdev-truco-table's own overflow: hidden below makes it a
+ * "scroll container" for CSS Flexbox's own automatic-minimum-size
+ * algorithm — per spec, a flex item that is a scroll container gets an
+ * automatic minimum size of 0 REGARDLESS of what its children need, unless
+ * an EXPLICIT min-height overrides that. Confirmed directly: giving the
+ * anchors below back their own real min-content contribution (removing
+ * .hexdev-truco-anchor's own min-height: 0 override) was NOT enough on its
+ * own — the felt itself kept shrinking to fit whatever the shell-layout's
+ * own flex distribution gave it, clipping the now-correctly-sized anchors
+ * anyway, confirmed by deliberately squeezing the real ancestor chain
+ * (table-shell > shell-layout > table) down to increasingly short heights
+ * and watching a hand card's own rect exceed the felt's clip edge below
+ * ~400px (1v1) — exactly the mechanism reported: a real card cut by a hard
+ * line where the felt ends and the scoreboard begins.
+ *
+ * The explicit min-height below is this box's own TRUE essential floor —
+ * one card row for top/bottom (the row-layout hand cases) plus the trick
+ * area's own existing reservation for the centre column (a card genuinely
+ * in play must stay whole too, apply prompt's own item 4) — NOT this
+ * box's full natural/resting size. Decorative slack (the trick area's own
+ * generous offset-positioning room beyond what a single card strictly
+ * needs, the banner/calls tray now floating out of flow entirely) still
+ * compresses freely under real pressure; only genuinely essential,
+ * always-visible content gets a hard floor. This keeps overflow: hidden
+ * doing its own real job — clipping content that visually bleeds past the
+ * felt's rounded box — without also silently discarding essential content
+ * whenever the container around it is shorter than this minimum. */
 .hexdev-truco-table {
   --truco-card-width: 60px;
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  min-height: 100%;
+  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px));
   display: grid;
   grid-template-columns: 1fr;
   grid-template-rows: auto 1fr auto;
@@ -99,8 +128,16 @@ export function buildTableStylesheet(): string {
  * anchors nobody occupies yet. Four seats (v2/2v2) trades some of that width
  * for real side gutters; on a genuinely narrow phone those gutters stay
  * tight (opponent backs stack vertically, shrunk) — a disclosed tradeoff,
- * not a hidden one: 2-seat truco is the common case and stays uncompromised. */
+ * not a hidden one: 2-seat truco is the common case and stays uncompromised.
+ *
+ * min-height override (stable window height, apply prompt round 5): the
+ * 4-seat middle row's own essential need is taller than 2-seat's — the
+ * left/right 3-card column reservation (table-styles' own
+ * [data-position=left/right] .hexdev-truco-opponent-hand rule) always
+ * exceeds the centre column's own trick-area reservation, so it is what
+ * actually drives this row's real minimum. */
 .hexdev-truco-table[data-seat-count="4"] {
+  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 5 + 40px));
   grid-template-columns: minmax(34px, 15vw) 1fr minmax(34px, 15vw);
   grid-template-areas: "top top top" "left center right" "bottom bottom bottom";
 }
@@ -130,7 +167,7 @@ export function buildTableStylesheet(): string {
   }
 }
 
-.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 0; }
+.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
 [data-position="top"] { grid-area: top; align-items: flex-start; }
 [data-position="bottom"] { grid-area: bottom; flex-direction: column; }
 [data-position="left"] { grid-area: left; flex-direction: column; }
@@ -175,6 +212,7 @@ export function buildTableStylesheet(): string {
 
 .hexdev-truco-center {
   grid-area: center;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -184,21 +222,66 @@ export function buildTableStylesheet(): string {
   overflow: hidden;
 }
 
+/* Stable window height (apply prompt): playing the LAST card in hand empties
+ * this row entirely (0 cards -> 0 height), a real drop of one full card's
+ * own height right at the end of every hand — "cards played" from the
+ * acceptance list, not the calls/banners already covered above. Reserving
+ * one card row's height, expressed via the same --truco-card-width token
+ * the card itself is sized from (matching .hexdev-truco-trick's own calc()
+ * convention below), keeps that one-row worst case constant across 3, 2, 1,
+ * or 0 remaining cards — for the ROW-layout case (this player's own hand,
+ * and a 1v1 opponent / 2v2 partner at top/bottom, where up to 3 cards always
+ * fit on one line at every supported width, so the row never needs a second
+ * line). The column-layout case (a 2v2 left/right opponent) is NOT covered
+ * by this rule and needs its own reservation below — a card removed one at a
+ * time shrinks a vertical stack continuously, not just at the 1-to-0 edge. */
 .hexdev-truco-hand, .hexdev-truco-opponent-hand {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  min-height: calc(var(--truco-card-width) * 336 / 220);
 }
+/* Stable window height (apply prompt): a 2v2 left/right opponent's hand
+ * stacks vertically, so EVERY card played shrinks it, not only the last one
+ * — confirmed by measurement, not assumed (a real hand through the real
+ * table dropped the felt's own height by ~35px exactly once, right when the
+ * first trick fully resolved: that anchor's un-stretched content briefly
+ * exceeded the centre column's own reserved height at 3 cards, then fell
+ * behind it once the second opponent's hand also dropped to 2). A hand is
+ * ALWAYS dealt exactly 3 cards in this engine and only ever loses cards, so
+ * reserving 3 stacked cards' worth of height here is not a guessed worst
+ * case — it is the true, structural maximum a 2v2 opponent's own hand can
+ * ever need, which keeps this column's OWN height constant at every count
+ * from 3 down to 0, not merely stable once it happens to fall below the
+ * centre column. This selector's higher specificity overrides the shared
+ * min-height above. */
 [data-position="left"] .hexdev-truco-opponent-hand,
 [data-position="right"] .hexdev-truco-opponent-hand {
   flex-direction: column;
+  min-height: calc((var(--truco-card-width) * 336 / 220) * 3 + 4px * 2);
 }
 
+/* Explicit height via calc(), not aspect-ratio (apply prompt round 4: a
+ * reported clipped hand — every card's own box cut short by ~35%, seen
+ * live through pnpm dev:server/dev:host). aspect-ratio derives this box's
+ * height from its OWN intrinsic ratio resolution, which — for an element
+ * whose width comes from a custom property and whose content is an <img>
+ * that table.ts recreates from scratch on every single render
+ * (container.replaceChildren()) — depends on the browser reconciling
+ * layout, aspect-ratio, and a freshly-mounted image in the right order.
+ * Deriving the height directly from the SAME width the card's own layout
+ * already has (matching the real 220x336 baraja proportions, same numbers
+ * .hexdev-truco-trick's own reservation already uses) makes this box's
+ * geometry depend on nothing but its own width — never on image-load
+ * timing or aspect-ratio resolution — which is the most robust fix
+ * available for the class of bug that mechanism could produce, confirmed
+ * or not. See card-render-size.browser.test.ts, the regression test this
+ * round adds. */
 .hexdev-truco-card {
   width: var(--truco-card-width);
-  aspect-ratio: 220 / 336;
+  height: calc(var(--truco-card-width) * 336 / 220);
   border-radius: 6px;
   overflow: hidden;
   padding: 0;
@@ -269,6 +352,34 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-score-label { font-size: 0.65rem; opacity: 0.8; }
 .hexdev-truco-score-sticks { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; }
 
+/* Stable window height (apply prompt, round 3): the pending-call and
+ * hand-outcome banners are mutually exclusive in time (a pending call always
+ * clears before a hand-outcome event can be derived) but each independently
+ * appears/disappears via its own :empty { display: none } rule below. A
+ * FIRST fix reserved a shared min-height here so the table never resized as
+ * either one appeared or vanished — genuinely eliminated the fluctuation,
+ * but at a real, permanent cost: reserving every transient element's worst
+ * case made the whole table taller than a real phone's own visible viewport
+ * (measured: 739px/859px against a ~530-601px iPhone SE viewport — the "UI
+ * linda y cómoda" requirement failing a different way). This slot now floats
+ * OVER the felt instead (position: absolute, out of flow entirely, same
+ * technique .hexdev-truco-turn-badge and .hexdev-truco-match-over already
+ * use) — it cannot affect the table's height at all, at zero permanent
+ * cost, rather than merely being sized not to. Non-interactive (no buttons
+ * live here), so pointer-events: none guarantees it never swallows a tap
+ * meant for anything underneath it. */
+.hexdev-truco-banner-slot {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  max-width: 100%;
+}
 /* Change 1: the pending call is the single most important thing on screen
  * while it is open — an opaque, solid-background block in normal document
  * flow (never a modal-style overlay, never anything translucent over the
@@ -320,19 +431,49 @@ export function buildTableStylesheet(): string {
   min-height: 0;
 }
 
-.hexdev-truco-calls-row, [data-position="bottom"] > div:first-child {
+/* Stable window height (apply prompt, round 3): the number of legal call
+ * buttons (zero, one group, or two stacked groups — a response PLUS an
+ * envido escalation can be simultaneously legal, truco-chain.ts's own
+ * "envido interrupts a pending truco call" rule) changes constantly during a
+ * hand. A FIRST fix reserved a shared worst-case min-height here (two
+ * groups' worth); that, added to every other reservation, made the table
+ * taller than a real phone's own visible viewport. This tray now floats
+ * OVER the felt instead (position: absolute, out of flow entirely) — see
+ * table.ts's own doc comment for exactly where and why: directly above this
+ * anchor's box (bottom: 100%), which by construction never covers the
+ * still-in-flow hand row below it. pointer-events: none on the tray keeps
+ * it from intercepting taps over empty space around its own children;
+ * pointer-events: auto on each child restores real tappability for the
+ * calls and señas buttons themselves. */
+.hexdev-truco-action-tray {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: center;
-  min-height: 0;
+  pointer-events: none;
 }
+.hexdev-truco-action-tray > * { pointer-events: auto; }
+
+.hexdev-truco-calls-row { display: flex; flex-direction: column; gap: 6px; align-items: center; align-self: stretch; max-width: 100%; }
 /* Change 4: answering a pending call reads as a different decision from
  * opening or escalating one — response buttons take the accent treatment
  * (matches the pending-call banner's own "mine" state), opening/escalation
  * buttons stay on the table's primary colour, and the two groups never
- * interleave in one undifferentiated row. */
-.hexdev-truco-calls-group { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+ * interleave in one undifferentiated row.
+ *
+ * flex-wrap: nowrap + overflow-x: auto: several simultaneously-legal
+ * buttons (e.g. a full envido escalation) could otherwise wrap to a second
+ * line — keeping a group to exactly one horizontally-scrollable row keeps
+ * this floating tray compact, so it covers as little of the felt beneath it
+ * as possible (still a real, honest mobile pattern now, not only a
+ * height-budget trick). */
+.hexdev-truco-calls-group { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; justify-content: center; min-height: 40px; max-width: 100%; }
 .hexdev-truco-call {
   min-height: 40px;
   padding: 6px 16px;
@@ -472,29 +613,49 @@ export function buildTableStylesheet(): string {
 
 /* Señas: discoverable without being noisy (spec). The toggle stays small
  * and secondary -- never styled like a primary call button, so a player
- * who does not care about señas is not visually nagged into opening it. */
+ * who does not care about señas is not visually nagged into opening it.
+ *
+ * SOLID background, not the original transparent/opacity outline (apply
+ * prompt, round 3): this toggle now floats over the felt inside
+ * .hexdev-truco-action-tray instead of sitting on reserved chrome, so
+ * whatever happens to be behind it (cloth, a card) needs to show through
+ * only where deliberately transparent, never blended via opacity — the
+ * exact opacity-over-green-cloth TINTING trap this project has already been
+ * burned by once (.hexdev-truco-card--locked's own history). A solid
+ * chrome-surface chip plus a real shadow (matching .hexdev-truco-turn-badge
+ * and .hexdev-truco-relation-label's own established treatment) stays
+ * secondary in TONE (a muted surface colour, not the vivid primary/accent
+ * call buttons) without relying on opacity for that distinction. */
 .hexdev-truco-senas-toggle {
   min-height: 32px;
   padding: 4px 12px;
-  border: 1px solid var(--gx-color-on-surface, #f2f2f2);
+  border: none;
   border-radius: var(--gx-radius, 999px);
-  background: transparent;
+  background: var(--gx-color-surface, #26433a);
   color: var(--gx-color-on-surface, #f2f2f2);
   font-family: inherit;
   font-size: 0.75rem;
-  opacity: 0.8;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   cursor: pointer;
 }
-.hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { opacity: 1; }
-/* The picker must take the anchor's real width, not its own max-content.
- * The bottom anchor is a column flex with align-items:center, so an
- * unstretched child is sized shrink-to-fit -- it reports the full unwrapped
- * six-signal row as its width, flex-wrap below never has a narrower box to
- * wrap into, and the whole picker overflows the table on both sides (the
- * toggle was visibly clipped off the left edge). align-self:stretch gives it
- * a real bound, so the wrap rule can finally do its job. */
+.hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
+/* The picker must take the tray's real width, not its own max-content — the
+ * tray is a column flex with align-items:center, so an unstretched child is
+ * sized shrink-to-fit and reports the full unwrapped six-signal row as its
+ * width, overflowing on both sides (the toggle was visibly clipped off the
+ * left edge). align-self:stretch gives it a real bound, so the row below has
+ * an actual width to scroll horizontally within instead of shrinking to its
+ * content. */
 .hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: column; align-items: center; }
-.hexdev-truco-senas-row { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 4px; max-width: 100%; }
+.hexdev-truco-senas-row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  margin-top: 4px;
+  max-width: 100%;
+}
 .hexdev-truco-sena {
   min-height: 32px;
   padding: 4px 10px;

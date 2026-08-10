@@ -141,16 +141,43 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * `@colyseus/sdk`'s own `reconnect()` DOES carry a distinguishing signal for
+ * two specific, genuinely PERMANENT rejection reasons — verified by reading
+ * `@colyseus/core`'s `MatchMaker.ts` (server-side `reconnect()`) and
+ * `@colyseus/shared-types`' `Protocol.ts` source directly, not assumed: a
+ * `MatchMakeError` whose `.code` is `522` (`ErrorCode.MATCHMAKE_INVALID_ROOM_ID`
+ * — the room has been disposed, e.g. the server restarted since the token was
+ * stored) or `524` (`MATCHMAKE_EXPIRED` — the reconnection token itself is
+ * stale). Retrying either can never succeed: the room is gone for good, or
+ * the token will never become valid again. A real session found a stale
+ * stored token logging one console error PER retry attempt (four, matching
+ * this function's own default retry budget) before correctly falling back to
+ * the catalogue (apply prompt, round 4) — the fallback itself was already
+ * correct (`tryResumeSession` swallows the final rejection), but every one
+ * of those doomed retries was pure, avoidable noise. This package
+ * deliberately never imports `@colyseus/sdk`'s own `MatchMakeError` CLASS
+ * here (`ports.ts`'s own documented boundary: this file works only through
+ * the narrow, structurally-typed `ClientLike` seam, so a plain
+ * `{ code: 522 }`-shaped fake is equally valid to a real error) — a duck-typed
+ * check on `.code` is enough and keeps that boundary intact.
+ */
+function isPermanentReconnectFailure(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  const code = (error as { readonly code: unknown }).code;
+  return code === 522 || code === 524;
+}
+
+/**
  * The client's half of the reconnection window (design §9,
  * `MatchRoom.onLeave`'s `allowReconnection`): resumes the SAME seat with
  * current match state (spec: "Player reconnects within the window"). Retries
  * a bounded number of times on a TRANSIENT failure (e.g. a network blip while
- * the tab was backgrounded) — a genuine AUTH rejection from the server (the
- * window already expired, a bot already took over) is not transient and is
- * NOT retried: `@colyseus/sdk`'s `reconnect` rejects identically for both
- * cases at this layer, so this function retries on EVERY rejection up to the
- * budget, then surfaces the last error — the caller (a bot-takeover UI
- * notice) decides what a final rejection means, this package only owns the
+ * the tab was backgrounded) — a genuine PERMANENT rejection (the room is
+ * disposed, or the token is expired — see `isPermanentReconnectFailure`'s own
+ * doc comment) is never retried, surfacing immediately instead; any OTHER
+ * rejection still retries up to the budget, then surfaces the last error —
+ * the caller (a bot-takeover UI notice, or `tryResumeSession`'s own silent
+ * fallback) decides what a final rejection means, this package only owns the
  * retry mechanics.
  */
 export async function reconnectMatch<TView = unknown>(
@@ -167,6 +194,7 @@ export async function reconnectMatch<TView = unknown>(
       return wrapMatchRoom<TView>(room);
     } catch (error) {
       lastError = error;
+      if (isPermanentReconnectFailure(error)) throw error;
       if (attempt < retries) await delay(retryDelayMs);
     }
   }

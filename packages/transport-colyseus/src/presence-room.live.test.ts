@@ -47,7 +47,13 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
   // binds 2568 internally, which collided with that other live-socket file
   // once both ran in the same suite (found from-clean, not assumed). Listen
   // on our own distinctly-ranged port ourselves, bypassing that path.
-  let nextPort = 2600;
+  //
+  // Disjoint 100-wide bands, one per `*.live.test.ts` port pool, 100 apart
+  // (stable window height apply prompt, round 3 — port collisions across
+  // concurrently-run live test files): this file alone owns THREE such
+  // pools (one per describe block below), each with its own `nextPort`.
+  // See `adapter.live.test.ts`'s own doc comment for the full band map.
+  let nextPort = 3000;
 
   beforeEach(async () => {
     const registry = createGameModuleRegistry([fixtureModule]);
@@ -196,7 +202,9 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
 
   let testServer: ColyseusTestServer;
   let issuer: SessionTokenIssuerHandle;
-  let nextPort = 2650;
+  // Own disjoint band — see this file's first describe block for the full
+  // reasoning and `adapter.live.test.ts` for the complete band map.
+  let nextPort = 3100;
 
   beforeEach(async () => {
     const registry = createGameModuleRegistry([handoffModule]);
@@ -307,7 +315,7 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
   let testServer: ColyseusTestServer;
   // Own distinct port range, same discipline as every sibling describe block
   // in this file (see the first block's own comment for the full rationale).
-  let nextPort = 2660;
+  let nextPort = 3200;
 
   beforeEach(async () => {
     // BOTH fixture games share one registry and one matchmaking pool —

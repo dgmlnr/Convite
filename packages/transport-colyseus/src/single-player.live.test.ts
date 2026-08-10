@@ -69,8 +69,10 @@ async function waitFor(views: readonly SoloState[], matches: (view: SoloState) =
 describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single-Player vs Bot Mode)", () => {
   let testServer: ColyseusTestServer;
   // See `server.live.test.ts`: `boot()` silently ignores `port` for a raw
-  // `Server` instance. Own distinct port range, same workaround.
-  let nextPort = 2680;
+  // `Server` instance. Own distinct port range, same workaround. Disjoint
+  // 100-wide band — see `adapter.live.test.ts`'s own doc comment for the
+  // full band map across every `*.live.test.ts` file's own port pool.
+  let nextPort = 3600;
 
   beforeEach(async () => {
     const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("solo-live-secret"));

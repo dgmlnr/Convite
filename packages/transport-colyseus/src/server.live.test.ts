@@ -87,7 +87,11 @@ describe("createMatchServer — live WebSocket integration (the composition root
   // caused a real EADDRINUSE found running `pnpm test` from clean. Fix:
   // listen on our OWN chosen port first, then wrap directly — bypassing
   // `boot()`'s buggy re-listen for this call shape entirely.
-  let nextPort = 2570;
+  //
+  // Disjoint 100-wide band (stable window height apply prompt, round 3) —
+  // see `adapter.live.test.ts`'s own doc comment for the full band map
+  // across every `*.live.test.ts` file's own port pool.
+  let nextPort = 3400;
 
   beforeEach(async () => {
     const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("live-test-secret"));
@@ -165,7 +169,11 @@ describe("createMatchServer — the express option (custom routes coexisting wit
   });
 
   it("a custom route added via express responds, AND colyseus's own real HTTP matchmake route still works on the same server", async () => {
-    port = 2780 + Math.floor(Math.random() * 200);
+    // Disjoint 100-wide random band — see `adapter.live.test.ts`'s own doc
+    // comment for the full band map (stable window height apply prompt,
+    // round 3: this used to overlap `adapter.live.test.ts`'s own [2700,3199]
+    // random range).
+    port = 3500 + Math.floor(Math.random() * 100);
     const registry = createGameModuleRegistry([liveModule]);
     const unusedIssuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("express-option-secret"));
     const auth = {

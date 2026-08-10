@@ -195,16 +195,45 @@ export function createMatchTableRenderer(
       bottom.classList.add("hexdev-truco-anchor--active");
       appendTurnBadge(bottom, turnBadgeText(true));
     }
-    const callsRow = bottom.appendChild(document.createElement("div"));
+    // Stable window height (apply prompt, round 3): reserving layout space
+    // for the call buttons and the señas picker made the whole table
+    // permanently taller than a real phone's visible viewport (739px/859px
+    // measured against a ~530-601px iPhone SE viewport) — a constant height
+    // that no longer fits the screen is not "linda y cómoda" either. This
+    // tray takes both OUT of flow entirely (position: absolute, table-styles
+    // .hexdev-truco-action-tray) so neither can affect the felt's height at
+    // all, at zero permanent cost — the same technique the turn badge and
+    // the match-over overlay already use. It floats directly above THIS
+    // anchor's own box (`bottom: 100%` off `.hexdev-truco-anchor`'s own
+    // `position: relative`), which — because the anchor now contains only
+    // the still-in-flow hand row below — guarantees it never covers the
+    // player's own (tappable) cards. It can still visually sit over the
+    // lower edge of the trick area above it when a card has already been
+    // played into the current trick; that trick card is not interactive, so
+    // no tap is ever swallowed by this tray — a disclosed, accepted
+    // tradeoff, not a hidden one.
+    const actionTray = bottom.appendChild(document.createElement("div"));
+    actionTray.className = "hexdev-truco-action-tray";
+
+    const callsRow = actionTray.appendChild(document.createElement("div"));
     callsRow.className = "hexdev-truco-calls-row";
     renderCalls(callsRow, legalActions, dispatch);
     // 1v1 must stay BYTE-IDENTICAL (visual regression safety property): no
-    // extra DOM node is even created in `bottom` unless send-sena is
-    // actually legal, never merely "rendered empty" — `getLegalSenaActions`
-    // never offers it outside a 2v2 match, so this `some` is false for
-    // every 1v1 view, same discipline as `renderCalls`'s own null groups.
-    if (legalActions.some((action) => action.type === "send-sena")) {
-      renderSenaPicker(bottom.appendChild(document.createElement("div")), legalActions, dispatch);
+    // extra DOM node is even created in `bottom` for a 1v1 view —
+    // `view.teammates` is structurally always empty outside a 2v2 match, so
+    // this condition is false for every 1v1 view, same discipline as
+    // `renderCalls`'s own null groups.
+    //
+    // Gated on `view.teammates.length > 0` (a static fact about the MATCH),
+    // not on "is send-sena legal RIGHT NOW" (stable window height, apply
+    // prompt): `getLegalSenaActions` goes empty once the hand is decided
+    // (truco-engine's `senas.ts`), which used to remove this whole node —
+    // toggle and all — right at the very last render of a played hand.
+    // Keeping the node mounted for the whole 2v2 match means
+    // `renderSenaPicker` can still legitimately render nothing inside it
+    // once send-sena stops being legal, without a visible element vanishing.
+    if (view.teammates.length > 0) {
+      renderSenaPicker(actionTray.appendChild(document.createElement("div")), legalActions, dispatch);
     }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
@@ -212,7 +241,22 @@ export function createMatchTableRenderer(
     const center = document.createElement("div");
     center.className = "hexdev-truco-center";
 
-    const banner = center.appendChild(document.createElement("div"));
+    // Stable window height (apply prompt: "un cartel aparece... la ventana
+    // crece"): pending-call and hand-outcome are mutually exclusive in time
+    // (a pending call always clears — see pending-call.ts's own doc comment —
+    // before a hand-outcome event can be derived; see hand-outcome.ts) but
+    // each independently appears/disappears via its own `:empty { display:
+    // none }` rule. Round 3: this slot floats over the felt (table-styles'
+    // own `position: absolute`, out of flow entirely) rather than reserving
+    // layout space — a reserved worst case made the whole table taller than
+    // a real phone's visible viewport (see the apply report). Docked at the
+    // TOP of the centre column, matching where it already sat in flow, and
+    // non-interactive (`pointer-events: none`), so it never swallows a tap
+    // meant for anything beneath it.
+    const bannerSlot = center.appendChild(document.createElement("div"));
+    bannerSlot.className = "hexdev-truco-banner-slot";
+
+    const banner = bannerSlot.appendChild(document.createElement("div"));
     renderPendingCallBanner(
       banner,
       pendingCall === null
@@ -224,7 +268,7 @@ export function createMatchTableRenderer(
           },
     );
 
-    const handOutcomeBanner = center.appendChild(document.createElement("div"));
+    const handOutcomeBanner = bannerSlot.appendChild(document.createElement("div"));
     mountedHandOutcomeEl = handOutcomeBanner;
     renderHandOutcomeBanner(
       handOutcomeBanner,

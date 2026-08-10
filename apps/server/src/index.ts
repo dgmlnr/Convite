@@ -224,8 +224,8 @@ const registerCustomRoutes: ExpressAppCallback = (app) => {
 
   app.get("/assets/widget-app.js", (_req, res) => {
     serveWidgetAppAsset(widgetAppDistDir)
-      .then(({ status, contentType, body }) => {
-        res.writeHead(status, { "content-type": contentType });
+      .then(({ status, contentType, body, cacheControl }) => {
+        res.writeHead(status, cacheControl ? { "content-type": contentType, "cache-control": cacheControl } : { "content-type": contentType });
         res.end(body);
       })
       .catch(() => {
@@ -253,8 +253,8 @@ const registerCustomRoutes: ExpressAppCallback = (app) => {
     // production intent that WIDGET_ORIGIN and the loader's own host are one
     // and the same origin.
     serveLoaderAsset(widgetSdkDistDir)
-      .then(({ status, contentType, body }) => {
-        res.writeHead(status, { "content-type": contentType, "cache-control": "public, max-age=300" });
+      .then(({ status, contentType, body, cacheControl }) => {
+        res.writeHead(status, cacheControl ? { "content-type": contentType, "cache-control": cacheControl } : { "content-type": contentType });
         res.end(body);
       })
       .catch(() => {

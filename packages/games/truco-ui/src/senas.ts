@@ -19,10 +19,17 @@ type SendSena = Extract<Action, { type: "send-sena" }>;
  */
 export function renderSenaPicker(container: HTMLElement, legalActions: readonly Action[], dispatch: (action: Action) => void): void {
   container.replaceChildren();
+  // Stable window height (apply prompt): the class is set BEFORE the early
+  // return below, not after — table.ts now mounts this container for the
+  // whole 2v2 match (view.teammates.length > 0), even once send-sena stops
+  // being legal (hand decided). Setting the class only in the "has content"
+  // branch used to leave a bare, unclassed <div> in that state, which never
+  // matched table-styles.ts's own .hexdev-truco-senas min-height rule and
+  // collapsed to 0 — a real ~80px drop at the very last render of a played
+  // hand, found by the height-stability test itself, not assumed.
+  container.className = "hexdev-truco-senas";
   const legalSenas = legalActions.filter((action): action is SendSena => action.type === "send-sena");
   if (legalSenas.length === 0) return;
-
-  container.className = "hexdev-truco-senas";
 
   const toggle = document.createElement("button");
   toggle.type = "button";

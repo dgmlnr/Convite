@@ -69,7 +69,24 @@ describe("transport-colyseus-client — real production code over a real WebSock
   let httpServer: ReturnType<typeof createServer>;
 
   beforeEach(async () => {
-    port = 2700 + Math.floor(Math.random() * 500);
+    // Disjoint random band (stable window height apply prompt, round 3): this
+    // used to be `2700 + random(500)` = [2700,3199], which overlapped
+    // `team-play.live.test.ts`'s own `[2900,3399]`, `server.live.test.ts`'s
+    // `[2780,2979]`, and `reconnection.live.test.ts`'s sequential range
+    // starting at 2700 — all live test files that bind a REAL HTTP server
+    // and can run concurrently in the same `pnpm test` invocation (this
+    // codebase's own presence-room.live.test.ts/server.live.test.ts doc
+    // comments already record two PRIOR real collisions from exactly this
+    // class of bug). Every `*.live.test.ts` port pool now owns its own
+    // disjoint 100-wide band, 100 apart, so no two can ever collide
+    // regardless of how many tests run within a band or how the files are
+    // scheduled:
+    //   3000 presence-room.live.test.ts (pairing)         3400 server.live.test.ts (main)
+    //   3100 presence-room.live.test.ts (hand-off)         3500 server.live.test.ts (express option, random)
+    //   3200 presence-room.live.test.ts (game isolation)   3600 single-player.live.test.ts
+    //   3300 reconnection.live.test.ts                     3700 adapter.live.test.ts (random, THIS file)
+    //                                                       3800 team-play.live.test.ts (random)
+    port = 3700 + Math.floor(Math.random() * 100);
     const registry = createGameModuleRegistry([fixtureModule]);
     const pool = createMatchmakingPool();
     httpServer = createServer();
