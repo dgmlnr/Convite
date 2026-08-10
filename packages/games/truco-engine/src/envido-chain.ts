@@ -135,9 +135,15 @@ const isLegalEnvido = (state: MatchState, action: EnvidoAction): boolean =>
  * AMENDMENT (post-design, supersedes design D-3's lexicographic
  * `(points, isManoTeam)` comparator): the comparator below is plain
  * strictly-greater on points alone — `points > runningBest`, no
- * mano-priority term. Weakening this to `>=` (or dropping the strict check)
- * is EXACTLY the mutation view.test.ts's T-5 redaction property must catch
- * (T-5m). `resolveEnvidoWinner`'s replacement is DERIVED from this list
+ * mano-priority term. Weakening this to `>=` changes WHO declares at a tie
+ * (a game-rule concern, fenced by T-3/T-4) but — verified by manual mutation
+ * during T-5m — does NOT leak a withheld number: every push below still
+ * either builds a fully-typed `"points"` object or a fully-typed
+ * `"sonBuenas"` object, so a would-be leak needs an actual out-of-band
+ * assignment (e.g. an unsafe cast), not a comparator change. THAT is the
+ * mutation view.test.ts's T-5 property is fenced against; see this test
+ * file's own T-5m comment for the exact mutation performed and its result.
+ * `resolveEnvidoWinner`'s replacement is DERIVED from this list
  * (D-2, unchanged): the team of the LAST entry whose
  * `declaration === "points"`. In the 2v2 corner where two players from
  * different teams tie for the max and neither is the mano seat, the earlier

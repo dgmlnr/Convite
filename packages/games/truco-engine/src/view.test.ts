@@ -7,6 +7,7 @@ import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
 import type { MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
+import type { Action } from "./truco-chain.js";
 import { getViewFor } from "./view.js";
 
 const playerA = "player-a" as PlayerId;
@@ -163,3 +164,92 @@ describe("getViewFor — señas redaction property, for any reachable 2v2 state"
     );
   });
 });
+
+function apply(state: MatchState, action: Action): MatchState {
+  const result = applyAction(state, action);
+  if (!result.ok) throw new Error(`expected legal action, got violation: ${result.violation}`);
+  return result.state;
+}
+
+/**
+ * Envido declaration redaction (spec: "Envido Declaration Redaction Is
+ * Structural"; design T-5/T-5m). Mirrors the señas property above: a purely
+ * random legal walk rarely reaches a `revealed` envido (call/respond/reveal
+ * is one action among many competing with card-play/truco/señas), so these
+ * generators DRIVE the envido chain straight to reveal — mano opens, the
+ * first legal opponent accepts, mano reveals — while still randomizing the
+ * deal and (via `dealerSeat`) which seat is mano, for both 1v1 and 2v2.
+ */
+const revealedHeadToHeadArb = fc
+  .tuple(fc.shuffledSubarray(buildDeck() as Card[], { minLength: 6, maxLength: 6 }), fc.constantFrom(0, 1))
+  .map(([cards, dealerSeat]) => {
+    const base = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat });
+    const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6)]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const opponent = dealt.players.find((player) => player.seat !== manoSeat)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+  });
+
+const revealedTeamArb = fc
+  .tuple(fc.shuffledSubarray(buildDeck() as Card[], { minLength: 12, maxLength: 12 }), fc.constantFrom(0, 1, 2, 3))
+  .map(([cards, dealerSeat]) => {
+    const base = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat });
+    const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6), cards.slice(6, 9), cards.slice(9, 12)]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+  });
+
+describe("getViewFor — envido declaration redaction property, for any reachable revealed 1v1/2v2 state", () => {
+  /**
+   * TRAP, inherited from the señas property above (view.test.ts:146-165):
+   * this MUST be a structural check (`!("points" in entry)`), never a
+   * `JSON.stringify(...).includes(String(points))` check — envido points are
+   * small integers (0-33) that collide with scores, seats, and card ranks
+   * already present elsewhere in the view, exactly like señas' own documented
+   * collision risk. Every viewer sees the SAME declaration list (D-6 — no
+   * per-viewer branch), so this loops every player as viewer, not just one.
+   */
+  it("every sonBuenas entry structurally lacks a `points` key, for every viewer, in every reachable revealed state", () => {
+    fc.assert(
+      fc.property(fc.oneof(revealedHeadToHeadArb, revealedTeamArb), (state) =>
+        state.players.every((viewer) => {
+          const view = getViewFor(state, viewer.id);
+          const envido = view.hand?.envido;
+          if (envido === undefined || envido.status !== "revealed") return false; // generator always reveals -- a non-revealed view here is the bug
+          return envido.declarations.every((entry) => entry.declaration !== "sonBuenas" || !("points" in entry));
+        }),
+      ),
+    );
+  });
+});
+
+/**
+ * Mutation guard (T-5m, manual — documented inline exactly as this trap is
+ * documented for the señas property above at view.ts:93-97).
+ *
+ * DISCLOSED FINDING: the mutation named in tasks.md ("invert `>` to `>=`, or
+ * drop the strict check") was tried first and does NOT make the property
+ * above fail. Inverting the comparator only changes WHO declares at a tie —
+ * every entry `resolveEnvidoDeclarations` builds is still either a
+ * fully-typed `"points"` object or a fully-typed `"sonBuenas"` object
+ * (TypeScript's excess-property check forbids attaching `points` to a
+ * `"sonBuenas"` literal), so no comparator change alone can produce a leak.
+ * This is D-1 working exactly as designed: "a leak is a compile error, not a
+ * runtime check someone could forget."
+ *
+ * The mutation that DOES bite: temporarily changing the `sonBuenas` push in
+ * `resolveEnvidoDeclarations` (envido-chain.ts) to
+ * `{ declaration: "sonBuenas", playerId, teamId, seat, points } as EnvidoDeclaration`
+ * — an unsafe cast bypassing the excess-property check — confirmed the
+ * property above FAILS with the withheld `points` value now present on a
+ * `sonBuenas` entry. Reverted immediately after confirming the failure; the
+ * property as committed runs against the correct, unmutated code. See
+ * apply-progress for the exact failing output of both attempts.
+ */
