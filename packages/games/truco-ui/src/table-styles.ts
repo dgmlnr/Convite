@@ -322,7 +322,22 @@ export function buildTableStylesheet(): string {
  * card) is what gives the top/bottom offset room to actually read as "closer
  * to that seat" instead of sitting dead-centre regardless of who played it. */
 .hexdev-truco-trick { position: relative; display: flex; align-items: center; justify-content: center; min-height: calc(var(--truco-card-width) * 336 / 220 * 1.7); width: 100%; }
-.hexdev-truco-played { position: absolute; }
+/* Per-seat pile offset (T-8, spec: "Persistent Per-Seat Card Piles").
+ * --truco-pile-index is set inline per card by played-cards.ts, one integer
+ * per play, counting from 0 within its own seat. The offset leans up and
+ * right so a growing pile reads as depth, not as a random jitter; since the
+ * multiplier is index 0 for a single-card trick, this transform resolves to
+ * a literal zero offset there, which is exactly what keeps a single-card
+ * trick byte-identical to the pre-pile rendering. Position stays absolute,
+ * so N stacked cards still contribute exactly one card's worth of layout
+ * height, same as before this change. No z-index anywhere here: DOM order
+ * alone decides which card paints on top, matching played-cards.ts's own
+ * chronological append order. */
+.hexdev-truco-played {
+  position: absolute;
+  --truco-pile-index: 0;
+  transform: translate(calc(var(--truco-pile-index) * 6px), calc(var(--truco-pile-index) * -6px));
+}
 .hexdev-truco-played--top { top: 0; }
 .hexdev-truco-played--bottom { bottom: 0; }
 .hexdev-truco-played--left { left: 15%; }

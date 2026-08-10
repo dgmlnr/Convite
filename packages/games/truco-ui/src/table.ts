@@ -276,7 +276,14 @@ export function createMatchTableRenderer(
     );
 
     const trickArea = center.appendChild(document.createElement("div"));
-    renderPlayedCards(trickArea, view.hand?.currentTrickPlays ?? [], positions);
+    // Every card played THIS HAND, not only the trick in progress (spec:
+    // "Persistent Per-Seat Card Piles") — resolved tricks first (oldest
+    // first, per `HandView.resolvedTrickPlays`'s own alignment with
+    // `trickOutcomes`), then whatever is still in flight. `renderPlayedCards`
+    // itself has no opinion on trick boundaries; it just lays out a flat,
+    // chronological list per seat.
+    const allPlaysThisHand = [...(view.hand?.resolvedTrickPlays.flat() ?? []), ...(view.hand?.currentTrickPlays ?? [])];
+    renderPlayedCards(trickArea, allPlaysThisHand, positions);
 
     const feedback = document.createElement("p");
     feedback.className = "hexdev-truco-trick-feedback";
