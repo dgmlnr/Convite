@@ -80,7 +80,9 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
   let testServer: ColyseusTestServer;
   let issuer: SessionTokenIssuerHandle;
   // See `server.live.test.ts`: `boot()` silently ignores `port`. Own range.
-  let nextPort = 2700;
+  // This range used to overlap `adapter.live.test.ts`'s own random band —
+  // see that file's doc comment for the full disjoint-band map now in use.
+  let nextPort = 3300;
 
   beforeEach(async () => {
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("reconnect-live-secret"));

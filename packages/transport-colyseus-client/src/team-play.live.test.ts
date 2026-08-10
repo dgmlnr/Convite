@@ -106,7 +106,11 @@ describe("2v2 over-the-wire: a real per-team signal never reaches an opposing RE
   let port: number;
 
   beforeEach(async () => {
-    port = 2900 + Math.floor(Math.random() * 500);
+    // Disjoint random band — see `adapter.live.test.ts`'s own doc comment
+    // for the full band map across every `*.live.test.ts` file's own port
+    // pool (stable window height apply prompt, round 3: this used to
+    // overlap `adapter.live.test.ts`'s own random range).
+    port = 3800 + Math.floor(Math.random() * 100);
     // The SAME classifier wiring apps/server's own composition root uses
     // for the real truco modules (registry.ts's own docstring) — proves
     // this fixture exercises the identical MatchRoom code path a real 2v2
