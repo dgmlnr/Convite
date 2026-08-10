@@ -257,6 +257,47 @@ describe("declining a truco ends the hand", () => {
  * existing team-scoped legality check already generalizes correctly to two
  * players per team, rather than accidentally only working for one.
  */
+/**
+ * Completeness proof for the call log (design §3: "Append-site completeness
+ * is proved by behaviour, not by structure"; risk table: "A future append
+ * site is added without a `CallEvent`"). This does NOT test new behavior —
+ * every append site already exists from the prior commit. It fences a
+ * REGRESSION: if a future call/response/reveal action's append site is ever
+ * forgotten, `callEvents.length` falls behind the count of actions actually
+ * applied, and this property catches it — the failure names which count
+ * diverged, pointing at the missing site, not at this test.
+ */
+describe("callEvents — property: no append site is missing (design §3, T-6)", () => {
+  it("callEvents.length equals the number of call/response/reveal actions successfully applied along a random legal walk", () => {
+    const dealArb = fc.shuffledSubarray(buildDeck() as Card[], { minLength: 6, maxLength: 6 });
+    const walkArb = fc.array(fc.nat({ max: 9 }), { maxLength: 20 });
+    const isCallEventAction = (action: Action): boolean =>
+      action.type === "call-truco" ||
+      action.type === "respond-truco" ||
+      action.type === "call-envido" ||
+      action.type === "respond-envido" ||
+      action.type === "reveal-envido";
+
+    fc.assert(
+      fc.property(dealArb, walkArb, (cards, walk) => {
+        const fresh = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+        let state = startHand(fresh, [cards.slice(0, 3), cards.slice(3, 6)]);
+        let appliedCallActionCount = 0;
+        for (const step of walk) {
+          const legal = [...getLegalActions(state, playerA), ...getLegalActions(state, playerB)];
+          if (legal.length === 0) break;
+          const action = legal[step % legal.length]!;
+          const result = applyAction(state, action);
+          if (!result.ok) continue;
+          state = result.state;
+          if (isCallEventAction(action)) appliedCallActionCount += 1;
+        }
+        return state.hand?.callEvents.length === appliedCallActionCount;
+      }),
+    );
+  });
+});
+
 describe("2v2 — either member of the opposing team may respond to a truco call", () => {
   function freshTeamHand(): MatchState {
     const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
