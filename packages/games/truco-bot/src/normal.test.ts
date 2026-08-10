@@ -23,6 +23,8 @@ function viewWith(overrides: {
       envido: { status: "none" },
       turnSeat: 0,
       currentTrickPlays: overrides.currentTrickPlays ?? [],
+      resolvedTrickPlays: [],
+      callEvents: [],
       trickOutcomes: [],
       outcome: { decided: false },
     },

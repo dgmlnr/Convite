@@ -13,6 +13,8 @@ function baseHand(overrides: Partial<HandView> = {}): HandView {
     envido: { status: "none" },
     turnSeat: 0,
     currentTrickPlays: [],
+    resolvedTrickPlays: [],
+    callEvents: [],
     trickOutcomes: [],
     outcome: { decided: false },
     ...overrides,
