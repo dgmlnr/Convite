@@ -47,6 +47,21 @@ export const TABLE_STRINGS = {
   // noisy (collapsed by default, never auto-opened) — spec's own framing.
   senasToggle: "Señas",
   senaSentBy: "Seña:",
+  // Call-log panel (spec: "Call-Log Panel With Bounded Footprint", "Mano-
+  // Ordered Envido Row"; design §5.4). Speaker labels are derived from seat
+  // geometry, never a player id/name — see call-log.ts's own `speakerLabel`.
+  // `partner`/`opponent` above are reused for the top anchor (1v1 vs 2v2);
+  // these two cover the 2v2-only side anchors.
+  callLogTitle: "Cantos",
+  tantosTitle: "Tantos",
+  sonBuenas: "Son buenas",
+  // Past tense — a log entry, not a button (CALL_LABELS.revealEnvido stays
+  // the imperative "Mostrar envido" for the action itself).
+  showedEnvido: "Mostró el envido",
+  speakerSelf: "Vos",
+  speakerOpponentLeft: "Rival izq.",
+  speakerOpponentRight: "Rival der.",
+  manoTag: "Mano",
 } as const;
 
 /** Spanish table vocabulary for the six closed señas signals
