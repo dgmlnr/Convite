@@ -55,4 +55,10 @@ export const STRINGS = {
   // is live — every real message the server sends bumps the counter — without
   // this package pretending to know what any specific game's view looks like.
   liveUpdatesReceived: (count: number): string => `Actualizaciones recibidas: ${count}`,
+  // The unregistered-game fallback's own body copy (PR6-T11, WCR-3): honest
+  // about WHY the player landed here (a real match, a game this widget
+  // build's gameUiRegistry has no renderer for yet) rather than looking
+  // broken -- and a real way out, not a dead end.
+  gameNotAvailable: "Este juego todavía no está disponible en esta versión.",
+  backToLobby: "Volver al lobby",
 } as const;
