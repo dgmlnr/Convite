@@ -1,5 +1,6 @@
 /// <reference types="@vitest/browser/matchers" />
 import { describe, expect, it } from "vitest";
+import { page } from "vitest/browser";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
 import { renderGameSelection } from "./game-selection.js";
@@ -18,16 +19,18 @@ function noop(): void {
   // intentionally empty — this screen is never clicked in a screenshot test
 }
 
-function mountedContainer(): HTMLElement {
+/** Parameterized (PR7-T1 adds a second, wider tier to this same file) —
+ * `375` is the narrow tier the pre-existing test below always used. */
+function mountedContainer(width: number): HTMLElement {
   const container = document.createElement("div");
-  container.style.width = "375px";
+  container.style.width = `${width}px`;
   document.body.appendChild(container);
   return container;
 }
 
 describe("visual: the game-selection screen (spec: game-session — the widget's opening view)", () => {
   it("both zero-counter UX rule branches at once: real waiting players for 15 points, the bot CTA promoted for 30", async () => {
-    const container = mountedContainer();
+    const container = mountedContainer(375);
     // Both modalities of the SAME game, deliberately showing the two
     // opposite branches of the zero-counter rule (spec) side by side: real
     // players waiting is the more common state to review, and it is exactly
@@ -46,5 +49,30 @@ describe("visual: the game-selection screen (spec: game-session — the widget's
     renderGameSelection(container, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     await expect.element(container).toMatchScreenshot("game-selection-mixed-presence");
+  });
+
+  it("lobby wide grid (WCR-2, PR7-T1, 1024px): the same mixed-presence catalog, now a real grid — chrome-styles.ts's `@container hexdev-chrome (min-width: 720px)` grid rule, plus the 1024px padding override, both engaged at once", async () => {
+    // Real bug found writing this test (table-wide.visual.test.ts's own
+    // mountedContainer docblock has the full story): Browser Mode's default
+    // viewport (414×896) is narrower than 1024px, and Chromium never paints
+    // past the viewport edge — the narrow shot above never needed this
+    // because 375px < 414px.
+    await page.viewport(1024 + 120, 900);
+    const container = mountedContainer(1024);
+    // Same fixture as the narrow shot above — deliberately, so a reviewer can
+    // compare the flex-column vs. grid layout of the identical catalog.
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [
+        TRUCO_ID,
+        [
+          { modality: { pointsToWin: 15 }, waitingCount: 3, promoteBotFallback: false },
+          { modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true },
+        ],
+      ],
+    ]);
+
+    renderGameSelection(container, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    await expect.element(container).toMatchScreenshot("lobby-wide-grid");
   });
 });
