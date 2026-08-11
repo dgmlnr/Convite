@@ -37,7 +37,7 @@ export function buildTableStylesheet(): string {
 :root {
   ${cssDeclarations(DECK_THEME_DEFAULTS)}
   ${cssDeclarations(MATCHSTICK_THEME_DEFAULTS)}
-  --truco-table-cloth: #1e5c43;
+  --truco-table-cloth: #123f2f;
   /* --hx-* private token layer (design token-parity, VDS-1): spacing,
    * radii, elevation, type, motion, and private colour, identical to
    * chrome-styles.ts's own .hexdev-gamify-chrome block below (proved by
@@ -165,7 +165,21 @@ export function buildTableStylesheet(): string {
   grid-template-areas: "top" "center" "bottom";
   gap: 8px;
   padding: 8px;
-  background: var(--truco-table-cloth);
+  /* Felt palette (PR2, design §10/§3.7): a deterministic CSS vignette, not an
+   * image asset — three layers, weave painted ABOVE the vignette (layer
+   * order matters: the weaves are listed first, so they composite on top).
+   * Two faint diagonal weaves (one lighter, one darker) give the cloth a
+   * woven texture; the radial vignette (lit centre fading to a deeper edge)
+   * reads as "a table under a light", not a flat colour fill. All four
+   * --truco-cloth-* tokens declared unused in PR1 are consumed together
+   * here, for the first time. */
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.030) 0 1px, transparent 1px 6px),
+    radial-gradient(ellipse 120% 90% at 50% 42%, var(--truco-cloth-lit), var(--truco-table-cloth) 55%, var(--truco-cloth-deep) 100%);
+  /* --hx-rim (VDS-4, paint-only): an inner highlight/shadow pair reading as
+   * "a real recessed play surface", never a layout-affecting border. */
+  box-shadow: var(--hx-rim);
   color: var(--gx-color-on-surface, #f2f2f2);
   overflow: hidden;
 }
@@ -229,7 +243,10 @@ export function buildTableStylesheet(): string {
  * pointing at the exact active seat — the piece that keeps meaning "a
  * specific seat" once a fourth anchor exists. */
 .hexdev-truco-anchor--active {
-  box-shadow: inset 0 0 0 3px var(--gx-color-accent, #ffd166), 0 0 0 6px rgba(255, 209, 102, 0.28);
+  /* Elevation (PR2, VDS-4, paint-only): --hx-elev-3 appended to the existing
+   * accent ring — the ring stays the primary "whose turn" signal, elevation
+   * only adds depth behind it. */
+  box-shadow: inset 0 0 0 3px var(--gx-color-accent, #ffd166), 0 0 0 6px rgba(255, 209, 102, 0.28), var(--hx-elev-3);
   border-radius: var(--gx-radius, 12px);
 }
 .hexdev-truco-turn-badge {
@@ -238,7 +255,7 @@ export function buildTableStylesheet(): string {
   left: 50%;
   transform: translateX(-50%);
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  color: var(--hx-ink);
   font-size: 0.65rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -246,7 +263,8 @@ export function buildTableStylesheet(): string {
   padding: 3px 10px;
   border-radius: 999px;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* Elevation (PR2, VDS-4, paint-only). */
+  box-shadow: var(--hx-elev-2);
   z-index: 1;
 }
 [data-position="top"] .hexdev-truco-turn-badge { top: auto; bottom: -11px; }
@@ -341,12 +359,25 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-card img, .hexdev-truco-card svg { width: 100%; height: 100%; object-fit: contain; display: block; }
 .hexdev-truco-card--playable {
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  /* Elevation (PR2, VDS-4, paint-only): resting --hx-elev-2, hover/focus
+   * --hx-elev-3 below — box-shadow and transform only, never a property
+   * that could move layout (card-render-size.browser.test.ts's own zero
+   * height-delta fence proves this). */
+  box-shadow: var(--hx-elev-2);
+  /* Motion (PR2, VDS-5): capped at --hx-motion-fast/--hx-ease, disabled
+   * entirely under prefers-reduced-motion below — "nothing animated at
+   * rest" (refinement 3) plus a restrained, capped transition here. */
+  transition: transform var(--hx-motion-fast) var(--hx-ease), box-shadow var(--hx-motion-fast) var(--hx-ease);
 }
 .hexdev-truco-card--playable:hover, .hexdev-truco-card--playable:focus-visible {
   transform: translateY(-10%);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--hx-elev-3);
+}
+/* VDS-5: a reduced-motion user gets no transition — the hover/focus state
+ * still applies instantly (transform/box-shadow still change), only the
+ * animated interpolation between states is removed. */
+@media (prefers-reduced-motion: reduce) {
+  .hexdev-truco-card--playable { transition: none; }
 }
 /* A card you cannot play right now must read as waiting, not as broken.
  *
@@ -358,9 +389,14 @@ export function buildTableStylesheet(): string {
  *
  * The previous values (0.55 opacity plus 40% grayscale) also went far past
  * "not now" into "this card is disabled forever". The point is only to make
- * the playable ones stand out. */
+ * the playable ones stand out.
+ *
+ * Elevation (PR2, VDS-4): deliberately NO box-shadow here — every other
+ * surface in this file gets --hx-elev-1..4, but a locked card gets none at
+ * all, so "waiting" never reads as "lifted/interactive" the way a hovered
+ * playable card does. */
 .hexdev-truco-card--locked {
-  filter: brightness(0.86) saturate(0.9);
+  filter: brightness(0.80) saturate(0.85);
   cursor: default;
 }
 
@@ -408,7 +444,8 @@ export function buildTableStylesheet(): string {
   color: var(--gx-color-on-surface, #f2f2f2);
   border-radius: var(--gx-radius, 12px);
   padding: 8px 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* Elevation (PR2, VDS-4, paint-only): --hx-elev-1 + --hx-relief. */
+  box-shadow: var(--hx-elev-1), var(--hx-relief);
 }
 .hexdev-truco-scoreboard-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .hexdev-truco-team-label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gx-color-accent, #ffd166); text-align: center; }
@@ -459,13 +496,15 @@ export function buildTableStylesheet(): string {
   border-radius: var(--gx-radius, 12px);
   background: var(--gx-color-primary, #2f6f4f);
   color: var(--gx-color-on-primary, #ffffff);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  /* Elevation (PR2, VDS-4, paint-only): the single most important thing on
+   * screen while it is open gets the same depth as a hovered card. */
+  box-shadow: var(--hx-elev-3);
   text-align: center;
 }
 .hexdev-truco-pending-call[data-turn="mine"] {
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
-  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.5), 0 4px 14px rgba(0, 0, 0, 0.4);
+  color: var(--hx-ink);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.5), var(--hx-elev-3);
 }
 .hexdev-truco-pending-call-level { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
 .hexdev-truco-pending-call-caller { font-size: 0.75rem; }
@@ -549,12 +588,13 @@ export function buildTableStylesheet(): string {
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  /* Elevation (PR2, VDS-4, paint-only). */
+  box-shadow: var(--hx-elev-2);
 }
 .hexdev-truco-call:hover, .hexdev-truco-call:focus-visible { filter: brightness(1.1); }
 .hexdev-truco-calls-group--response .hexdev-truco-call {
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  color: var(--hx-ink);
 }
 .hexdev-truco-calls-group--opening .hexdev-truco-call {
   background: transparent;
@@ -581,7 +621,7 @@ export function buildTableStylesheet(): string {
 }
 .hexdev-truco-hand-outcome[data-result="won"] {
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  color: var(--hx-ink);
 }
 .hexdev-truco-hand-outcome[data-result="lost"] {
   background: #3a3a3a;
@@ -622,11 +662,14 @@ export function buildTableStylesheet(): string {
   border: none;
   border-radius: var(--gx-radius, 999px);
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  color: var(--hx-ink);
   font-family: inherit;
   font-weight: 800;
   font-size: 1rem;
   cursor: pointer;
+  /* Elevation (PR2, VDS-4, paint-only): the strongest depth on the table,
+   * matching this control's own weight as the match's one remaining action. */
+  box-shadow: var(--hx-elev-4);
 }
 .hexdev-truco-match-over button[data-action="play-again"]:hover,
 .hexdev-truco-match-over button[data-action="play-again"]:focus-visible {
@@ -726,7 +769,7 @@ export function buildTableStylesheet(): string {
   border: none;
   border-radius: var(--gx-radius, 999px);
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  color: var(--hx-ink);
   font-family: inherit;
   font-size: 0.75rem;
   font-weight: 600;
@@ -772,7 +815,8 @@ export function buildTableStylesheet(): string {
   border-radius: var(--gx-radius, 10px);
   background: var(--gx-color-surface, rgba(20, 20, 20, 0.72));
   color: var(--gx-color-on-surface, #f2f2f2);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  /* Elevation (PR2, VDS-4, paint-only): --hx-elev-1 + --hx-relief. */
+  box-shadow: var(--hx-elev-1), var(--hx-relief);
   font-size: 0.68rem;
 }
 .hexdev-truco-call-log-title,
@@ -824,7 +868,7 @@ export function buildTableStylesheet(): string {
   padding: 0 4px;
   border-radius: 999px;
   background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  color: var(--hx-ink);
 }
 .hexdev-truco-call-log-points { margin-left: auto; font-weight: 700; }
 `.trim();

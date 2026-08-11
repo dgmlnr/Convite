@@ -87,4 +87,32 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
     expect(css).toContain(".hexdev-truco-sena");
     expect(css).toContain(".hexdev-truco-partner-sena");
   });
+
+  // PR2-T4 (VDS-4/design §14 item 3): locked-card readability is the exact
+  // historical bug this project already shipped once (visual/README.md:
+  // opacity: 0.55 tinted the card green through the felt). filter never
+  // blends the surface behind it — this guard makes the anti-opacity
+  // discipline mechanically enforced, not just a comment above the rule.
+  it("never dims a locked card with opacity — filter only", () => {
+    const css = buildTableStylesheet();
+    const lockedBlock = css.match(/\.hexdev-truco-card--locked\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(lockedBlock.length).toBeGreaterThan(0);
+    expect(lockedBlock).not.toMatch(/opacity\s*:/);
+    expect(lockedBlock).toMatch(/filter:\s*brightness\(/);
+  });
+
+  // PR2-T8 (VDS-5: "Motion Is Restrained and Reduced-Motion Aware"). No test
+  // file in the design names this scenario, so it is a gap-filling guard —
+  // same regex-assertion pattern as PR2-T4/PR1-T5. The playable card's own
+  // hover/focus transition (table-styles.ts) must be fully disabled under
+  // prefers-reduced-motion, not merely shortened.
+  it("disables the playable card's hover/focus transition under prefers-reduced-motion (VDS-5)", () => {
+    const css = buildTableStylesheet();
+    const reducedMotionBlock = css.match(/@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\}\s*\}/)?.[0] ?? "";
+    const ruleInsideMediaBlock = reducedMotionBlock.match(/\.hexdev-truco-card--playable\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(reducedMotionBlock.length, "expected an @media (prefers-reduced-motion: reduce) block to exist").toBeGreaterThan(0);
+    expect(ruleInsideMediaBlock).toMatch(/transition:\s*none/);
+  });
 });
