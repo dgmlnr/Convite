@@ -853,14 +853,18 @@ export function buildTableStylesheet(): string {
   gap: var(--hx-space-2xs);
   min-width: 0;
   /* The band NEVER grows: contents scroll, the track itself is fixed
-   * (--hx-band-action-total on the felt's own grid-template-rows). Setting
-   * only overflow-x here (not a second overflow: hidden) lets the UA's own
-   * "one axis non-visible forces the other to auto" rule give this element a
-   * free vertical scroller too, for 1v1's own edge case where two call
-   * groups (a response plus an envido escalation) are simultaneously legal
-   * inside the single compact/1v1 strip. */
-  overflow: hidden;
+   * (--hx-band-action-total on the felt's own grid-template-rows). Both axes
+   * scroll EXPLICITLY, on purpose: overflow: hidden is a shorthand that sets
+   * overflow-y to "hidden", never "visible", so the UA's "one axis
+   * non-visible forces the other to auto" coercion this rule used to rely on
+   * never actually fires — vertical overflow was silently clipped, not
+   * scrollable (PR5 correction, native review CRITICAL). The y-scroller is
+   * real, load-bearing work: 1v1's own edge case where two call groups (a
+   * response plus an envido escalation) are simultaneously legal inside the
+   * single compact/1v1 strip, per envido-chain.ts's own canOpenEnvido rule
+   * that envido may still interrupt a pending, unanswered truco call. */
   overflow-x: auto;
+  overflow-y: auto;
   padding-inline: var(--hx-space-2xs);
   border-radius: var(--gx-radius, var(--hx-radius-md));
   background: var(--truco-cloth-lane);

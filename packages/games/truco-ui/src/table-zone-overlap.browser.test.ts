@@ -261,10 +261,19 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     const felt = el.querySelector(".hexdev-truco-table");
     const banner = el.querySelector(".hexdev-truco-pending-call");
     if (felt === null || banner === null) throw new Error("test setup: felt or pending-call banner not rendered");
+    const feltRect = felt.getBoundingClientRect();
     const bandBanner = parseFloat(getComputedStyle(felt).getPropertyValue("--hx-band-banner"));
     expect(bandBanner, "sanity: --hx-band-banner must resolve to a real pixel number on the felt").toBeGreaterThan(0);
     const bannerRect = banner.getBoundingClientRect();
 
+    // Restored (native review SUGGESTION): the "own lane" height check alone
+    // dropped the only proof of the horizontal containment invariant — a
+    // banner that stays under its own height budget could still spill past
+    // the felt's left/right edges without either assertion below catching it.
+    expect(bannerRect.left, "banner left edge").toBeGreaterThanOrEqual(feltRect.left - 0.5);
+    expect(bannerRect.right, "banner right edge").toBeLessThanOrEqual(feltRect.right + 0.5);
+    expect(bannerRect.top, "banner top edge").toBeGreaterThanOrEqual(feltRect.top - 0.5);
+    expect(bannerRect.bottom, "banner bottom edge").toBeLessThanOrEqual(feltRect.bottom + 0.5);
     expect(bannerRect.height, `banner height ${bannerRect.height}px vs its own lane ${bandBanner}px`).toBeLessThanOrEqual(bandBanner + 0.5);
   });
 
