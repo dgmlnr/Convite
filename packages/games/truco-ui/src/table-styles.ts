@@ -155,6 +155,13 @@ export function buildTableStylesheet(): string {
  * whenever the container around it is shorter than this minimum. */
 .hexdev-truco-table {
   --truco-card-width: 60px;
+  /* --hx-felt-gap / --hx-felt-pad (PR3, tasks §3.8): the per-tier scalar
+   * pair driving this grid's own gap/padding. Declared HERE, never on :root
+   * — design-token-parity.test.ts only scans :root/.hexdev-gamify-chrome,
+   * so a felt-only scalar living outside that block cannot trip the parity
+   * guard or need a chrome-side twin it has no reason to share. */
+  --hx-felt-gap: 8px;
+  --hx-felt-pad: 8px;
   position: relative;
   box-sizing: border-box;
   width: 100%;
@@ -163,8 +170,8 @@ export function buildTableStylesheet(): string {
   grid-template-columns: 1fr;
   grid-template-rows: auto 1fr auto;
   grid-template-areas: "top" "center" "bottom";
-  gap: 8px;
-  padding: 8px;
+  gap: var(--hx-felt-gap);
+  padding: var(--hx-felt-pad);
   /* Felt palette (PR2, design §10/§3.7): a deterministic CSS vignette, not an
    * image asset — three layers, weave painted ABOVE the vignette (layer
    * order matters: the weaves are listed first, so they composite on top).
@@ -204,12 +211,38 @@ export function buildTableStylesheet(): string {
   grid-template-columns: minmax(34px, 15vw) 1fr minmax(34px, 15vw);
   grid-template-areas: "top top top" "left center right" "bottom bottom bottom";
 }
-@media (min-width: 640px) {
-  .hexdev-truco-table { gap: 14px; padding: 16px; --truco-card-width: 84px; }
+/* Breakpoint axis (PR3, tasks §7/§3.8): the two viewport @media blocks that
+ * used to drive --truco-card-width/gap/padding are replaced by the SAME
+ * hexdev-truco-shell container the shell-layout row-switch above already
+ * established on .hexdev-truco-table-shell — .hexdev-truco-table is a
+ * DESCENDANT of that container (unlike the container element itself, which
+ * cannot be styled by its own container-query rules, see the comment
+ * above), so it is a legal query target. @media now survives only for
+ * prefers-reduced-motion (below). Scalar-only: grid STRUCTURE
+ * (grid-template-columns/areas) is byte-for-byte what it was under the old
+ * @media axis at every tier — the log-rail column and actions row are
+ * PR4/PR5 scope, not this one. */
+@container hexdev-truco-shell (min-width: 640px) {
+  .hexdev-truco-table {
+    --truco-card-width: 84px;
+    /* Deliberate 2px snap to the --hx-space scale (was 14px under the old
+     * @media axis) — covered by table-height-stability's own 700px fence. */
+    --hx-felt-gap: 12px;
+    --hx-felt-pad: 16px;
+  }
   .hexdev-truco-table[data-seat-count="4"] { grid-template-columns: minmax(72px, 16vw) 1fr minmax(72px, 16vw); }
 }
-@media (min-width: 960px) {
-  .hexdev-truco-table { --truco-card-width: 100px; }
+@container hexdev-truco-shell (min-width: 900px) {
+  .hexdev-truco-table { --hx-felt-gap: 16px; --hx-felt-pad: 24px; }
+  /* 1v1 only grows here — the 4-seat felt is already width-constrained by
+   * its own side gutters, so 2v2 holds at the medium tier's 84px (no
+   * declaration needed: nothing above overrides it for this seat count). */
+  .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 100px; }
+}
+@container hexdev-truco-shell (min-width: 1280px) {
+  .hexdev-truco-table { --hx-felt-gap: 24px; --hx-felt-pad: 32px; }
+  .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 108px; }
+  .hexdev-truco-table[data-seat-count="4"] { --truco-card-width: 100px; }
 }
 
 /* Change 2: a side panel that works wide does not fit narrow, so the two

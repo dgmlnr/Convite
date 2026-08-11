@@ -125,11 +125,13 @@ afterEach(() => {
   document.getElementById("hexdev-truco-table-styles")?.remove();
 });
 
-/** Phone width (the tightest real case, apply prompt) and deliberately NO
- * fixed height — see the file docstring for why that matters here. */
-function mountedContainer(): HTMLElement {
+/** PR3-T2 (tasks §7): parameterized over the four container tiers (compact
+ * 375, medium 700, wide 960, ultra 1280 — tasks §3.8) instead of the single
+ * hardcoded phone width this suite used before PR3. Deliberately NO fixed
+ * height — see the file docstring for why that matters here. */
+function mountedContainer(width: number): HTMLElement {
   container = document.createElement("div");
-  container.style.width = "375px";
+  container.style.width = `${width}px`;
   document.body.appendChild(container);
   return container;
 }
@@ -183,9 +185,38 @@ function expectStableHeights(heights: readonly number[]): void {
   }
 }
 
-describe("createMatchTableRenderer — the table's own reported height stays constant across a whole played hand (stable window height)", () => {
+/** PR3-T2's own regression fence (tasks §7 exit gate): the four container
+ * tiers this suite now runs at (tasks §3.8: compact/medium/wide/ultra).
+ * 375 is the pre-PR3 width, kept first so it stays the visually-obvious
+ * "nothing changed here" row. */
+const WIDTHS = [375, 700, 960, 1280] as const;
+
+/** T-7 fence, exact numbers (tasks §7/PR3-T2): the two MAXIMAL cases below
+ * are this file's own named "fence, not a one-time check" — this locks
+ * their baseline (freshly-dealt, nothing-happened-yet) rendered height to
+ * an exact, measured number per width x seat-count, on top of the existing
+ * purely-relative expectStableHeights check both already run. 375's values
+ * are byte-for-byte what this suite measured before PR3-T1's axis change
+ * (proving zero pixel leakage into the compact tier); 700/960/1280 are
+ * freshly measured against PR3-T1's own per-tier scalar constants (RED-
+ * first: measured with a temporary loose assertion, then locked here — see
+ * apply-progress for the exact RED readings). A value drifting later means
+ * either a real regression or an intentional constant change that must
+ * update this table deliberately, never silently. */
+const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
+  375: { "1v1": 561.9375, "2v2": 684.75 },
+  700: { "1v1": 554.96875, "2v2": 725.421875 },
+  960: { "1v1": 669.375, "2v2": 749.421875 },
+  1280: { "1v1": 746.59375, "2v2": 903.609375 },
+};
+
+function expectExactHeight(actual: number, expected: number, label: string): void {
+  expect(Math.abs(actual - expected), `${label}: measured ${actual}px, expected ${expected}px`).toBeLessThan(0.5);
+}
+
+describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported height stays constant across a whole played hand (stable window height) — %ipx", (width) => {
   it("1v1: envido called/accepted/revealed, a trick resolves, truco called/accepted, cards played to a decided hand — the height never changes", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -235,7 +266,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   });
 
   it("1v1: a truco call declined ends the hand immediately — pending banner, then hand-outcome banner, height still never changes", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -263,7 +294,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   });
 
   it("2v2: envido called/accepted/revealed, cards played seat-by-seat, tricks resolved, truco called/accepted, cards played to a decided hand — the height never changes", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -319,7 +350,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   });
 
   it("2v2: opening and closing the señas picker never changes the table's height", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
 
     const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
@@ -352,7 +383,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   // all three tricks resolved — every transient banner and every seat's pile
   // at its largest, all at once.
   it("1v1 MAXIMAL: full envido chain + fully-escalated truco chain + three resolved tricks — the tallest possible state, height never changes (T-7 fence)", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -411,10 +442,11 @@ describe("createMatchTableRenderer — the table's own reported height stays con
     expect(state.hand?.trickOutcomes).toHaveLength(3); // sanity: this really is the maximal case, not an early decision
     expect(state.hand?.outcome.decided).toBe(true);
     expectStableHeights(heights);
+    expectExactHeight(heights[0]!, MAXIMAL_BASELINE_HEIGHT[width]["1v1"], `1v1 baseline height at ${width}px`);
   });
 
   it("2v2 MAXIMAL: full envido chain + fully-escalated truco chain + three resolved tricks — the tallest possible state, height never changes (T-7 fence)", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -483,5 +515,6 @@ describe("createMatchTableRenderer — the table's own reported height stays con
     expect(state.hand?.trickOutcomes).toHaveLength(3); // sanity: this really is the maximal case, not an early decision
     expect(state.hand?.outcome.decided).toBe(true);
     expectStableHeights(heights);
+    expectExactHeight(heights[0]!, MAXIMAL_BASELINE_HEIGHT[width]["2v2"], `2v2 baseline height at ${width}px`);
   });
 });
