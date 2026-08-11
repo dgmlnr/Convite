@@ -314,7 +314,17 @@ export function createMatchTableRenderer(
     // `view.hand` already carries the whole hand's history until the next
     // `startHand` resets `resolvedTrickPlays`/`callEvents` to `[]`, which is
     // exactly what clears both the piles and this panel for free.
-    const callLog = center.appendChild(document.createElement("div"));
+    //
+    // PR4 (D-4/blessed refinement 2, tasks §8): `callLog` is a FELT grid
+    // child now, not a child of `.hexdev-truco-center` — created standalone
+    // here (not appended to `center`) and appended to `felt` below, after
+    // `center`, so table-styles.ts's own `.hexdev-truco-call-log` rule
+    // (`grid-area: center; position: absolute; left: 0; bottom: 0` at
+    // compact/medium, `grid-area: log; position: static` at wide/ultra) can
+    // place it purely via CSS Grid's own "an absolutely-positioned grid item
+    // with a definite grid-area is contained by that area" rule, with no
+    // change to `renderCallLog`'s own argument list.
+    const callLog = document.createElement("div");
     renderCallLog(callLog, {
       events: view.hand?.callEvents ?? [],
       envido: view.hand?.envido ?? { status: "none" },
@@ -325,6 +335,11 @@ export function createMatchTableRenderer(
 
     for (const anchor of ANCHOR_ORDER) felt.appendChild(anchors.get(anchor)!);
     felt.appendChild(center);
+    // MUST attach here, as a felt child (not inside `center`) — see the
+    // construction-order comment further below on `scrollCallLogToNewest`:
+    // that call is only safe once `callLog` is attached all the way up to
+    // `container`, and this append is the first link in that chain.
+    felt.appendChild(callLog);
 
     // The scoreboard is chrome, mounted as a SIBLING of the felt, never a
     // child of it (design §10, obs 2955: "the scoreboard is chrome, so it
@@ -338,9 +353,17 @@ export function createMatchTableRenderer(
     layout.appendChild(panel);
     container.appendChild(layout);
 
-    // MUST run only now, after `callLog` is actually attached all the way up
-    // to `container` — `scrollTop` is a no-op on a node with no layout yet
-    // (call-log.ts's own doc comment on `scrollCallLogToNewest`, design §5.2).
+    // LOAD-BEARING ORDERING (PR4-T3, tasks §8, design §9.3): this call is only
+    // safe once `callLog` is attached all the way up to `container` —
+    // `felt.appendChild(callLog)` -> `layout.appendChild(felt)` ->
+    // `layout.appendChild(panel)` -> `container.appendChild(layout)` -> ONLY
+    // THEN this call. `scrollTop` is a no-op on a node with no layout yet
+    // (call-log.ts's own doc comment on `scrollCallLogToNewest`;
+    // `call-log.browser.test.ts:236` proves the detached case directly). A
+    // regression here (e.g. reordering these appends, or calling this before
+    // `container.appendChild(layout)`) produces no error and no visible
+    // symptom in this function — the auto-scroll-to-newest just silently
+    // stops working, which is exactly why this comment exists.
     scrollCallLogToNewest(callLog);
 
     // A real ending, mounted as a sibling of `layout` so it overlays the

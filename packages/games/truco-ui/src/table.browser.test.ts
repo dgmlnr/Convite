@@ -489,16 +489,41 @@ describe("createMatchTableRenderer — a real ending, once the match is over (sp
 });
 
 describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel With Bounded Footprint', 'History Persists Through the Outcome Banner')", () => {
-  it("mounts renderCallLog inside .hexdev-truco-center, fed from view.hand.callEvents and the SAME positions map the piles use", () => {
+  // PR4-T1 (tasks §8, RED-first, D-4/blessed refinement 2 — tasks §1 item 2/
+  // §2.1): rewritten, not preserved as a fallback. The OLD assertion ("mounts
+  // renderCallLog inside .hexdev-truco-center") was the contract PR4 exists to
+  // replace — the log now mounts as a direct child of the felt itself
+  // (.hexdev-truco-table), positioned into the center grid area at compact via
+  // CSS Grid's own "absolutely-positioned grid item with a definite grid-area
+  // gets that area as its containing block" rule (table-styles.ts's own
+  // .hexdev-truco-call-log rule: grid-area: center; position: absolute; left:
+  // 0; bottom: 0), not by DOM nesting under .hexdev-truco-center anymore.
+  it("mounts renderCallLog as a direct child of the felt (.hexdev-truco-table), positioned into the center grid area at compact — fed from view.hand.callEvents and the SAME positions map the piles use", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
 
     render(el, baseView({ hand: { ...baseView().hand!, callEvents: events } }), [], () => {});
 
-    const center = el.querySelector(".hexdev-truco-center")!;
-    const panel = center.querySelector(".hexdev-truco-call-log");
-    expect(panel).not.toBeNull();
+    const felt = el.querySelector(".hexdev-truco-table")!;
+    const center = felt.querySelector(".hexdev-truco-center")!;
+    const panel = felt.querySelector(":scope > .hexdev-truco-call-log");
+    expect(panel, "renderCallLog must mount as a DIRECT child of .hexdev-truco-table").not.toBeNull();
+    expect(panel!.parentElement).toBe(felt);
+    // The replaced contract, asserted explicitly so a regression back to the
+    // old mount point is caught here, not just by the positive assertion above.
+    expect(center.querySelector(".hexdev-truco-call-log"), "the log must NOT be nested inside .hexdev-truco-center anymore").toBeNull();
+
+    // "Positioned into the center grid area at compact": the panel's own
+    // absolutely-positioned rect must coincide with .hexdev-truco-center's own
+    // rect at the edges its CSS anchors to (left/bottom) — the same rect the
+    // log occupied when it was still a DOM child of .hexdev-truco-center,
+    // reproduced now purely through the grid-area containing-block mechanism.
+    const centerRect = center.getBoundingClientRect();
+    const panelRect = panel!.getBoundingClientRect();
+    expect(Math.abs(panelRect.left - centerRect.left), `panel left ${panelRect.left} vs center left ${centerRect.left}`).toBeLessThan(0.5);
+    expect(Math.abs(panelRect.bottom - centerRect.bottom), `panel bottom ${panelRect.bottom} vs center bottom ${centerRect.bottom}`).toBeLessThan(0.5);
+
     const entries = panel!.querySelectorAll(".hexdev-truco-call-log-entry");
     expect(entries).toHaveLength(1);
     // Same geometry the piles use (resolveSeatPositions): seat 0 is the local player, "bottom".

@@ -157,11 +157,36 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * the exact collision PR5-T4's D-5 mechanism (`.hexdev-truco-center {
  * padding-top: var(--hx-band-banner) }`, removing the banner's lane from
  * the trick area's own layout calculation) is scheduled to fix. NOT every
- * (width, mode) pair collides today: 2v2 at 960px/1280px already renders
- * clean (the wider felt's own extra horizontal room happens to keep the
- * banner and the top pile apart at those two combinations) — that is
- * reported, not hidden, via the separate clean-today loop right below this
- * one; PR5 must not regress those two back into collision.
+ * (width, mode) pair collides today: 2v2 at 1280px still renders clean (the
+ * ultra felt's own extra horizontal room keeps the banner and the top pile
+ * apart there) — that is reported, not hidden, via the separate clean-today
+ * loop right below this one; PR5 must not regress that one back into
+ * collision.
+ *
+ * PR4 UPDATE (tasks §8): `{ width: 960, mode: "2v2" }` moved INTO this list
+ * — PR3b's own note above ("PR5 must not regress those two back into
+ * collision") turned out to name the wrong PR: it was PR4, not PR5, that
+ * regressed this one specific pair, and it happened for a real, structural
+ * reason, not a mistake to undo. Reserving the `--hx-log-rail` column at
+ * wide/ultra (table-styles.ts's own `@container (min-width: 900px)` block)
+ * genuinely narrows the 2v2 play area's own left/center/right tracks; that
+ * narrower play area shifts the CSS Grid row-height distribution among the
+ * felt's spanned top/center/bottom rows (measured directly: the felt's OWN
+ * total height is provably unchanged post-PR4 — see
+ * table-height-stability.browser.test.ts's own PR4 fence — but individual
+ * row heights within that same total can and did shift), which is enough to
+ * move the top pile back into the banner's own floating rect at exactly this
+ * one (width, mode) combination. This is still the SAME underlying defect
+ * (TRZ-2: the banner has no reserved lane of its own yet) and gets fixed by
+ * the SAME PR5-T4 mechanism as every other entry in this list — it is not a
+ * new defect class PR4 owes its own fix for, and attempting one here would
+ * fight PR5's own intended banner-lane mechanism instead of complementing
+ * it. Left alone (not "fixed") deliberately, per this PR's own explicit
+ * "re-examine the CSS, never regenerate/never patch around it" discipline
+ * applied to the ONE place that discipline does not apply — the acceptance
+ * gate (PR4-T9) is baseline-diff-only, not zero-overlap-only, so this
+ * particular wide-tier collision was always going to be visible before PR5,
+ * not silently hidden by the gate.
  */
 const KNOWN_BANNER_PILE_COLLISIONS: ReadonlyArray<{ readonly width: (typeof WIDTHS)[number]; readonly mode: "1v1" | "2v2" }> = [
   { width: 375, mode: "1v1" },
@@ -169,6 +194,7 @@ const KNOWN_BANNER_PILE_COLLISIONS: ReadonlyArray<{ readonly width: (typeof WIDT
   { width: 700, mode: "1v1" },
   { width: 700, mode: "2v2" },
   { width: 960, mode: "1v1" },
+  { width: 960, mode: "2v2" },
   { width: 1280, mode: "1v1" },
 ];
 

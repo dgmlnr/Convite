@@ -233,16 +233,102 @@ export function buildTableStylesheet(): string {
   .hexdev-truco-table[data-seat-count="4"] { grid-template-columns: minmax(72px, 16vw) 1fr minmax(72px, 16vw); }
 }
 @container hexdev-truco-shell (min-width: 900px) {
-  .hexdev-truco-table { --hx-felt-gap: 16px; --hx-felt-pad: 24px; }
+  .hexdev-truco-table {
+    --hx-felt-gap: 16px;
+    --hx-felt-pad: 24px;
+    /* PR4 (tasks §8/§3.8, D-4/blessed refinement 2 — tasks §1 item 2/§2.1):
+     * the call-log rail becomes a real column track at wide/ultra —
+     * clamp(min, preferred%, max), never a bare percentage, so it neither
+     * collapses on a container that is only barely wide enough nor runs away
+     * on an extremely wide one. Declared HERE (on .hexdev-truco-table, inside
+     * this @container block), never on :root — design-token-parity.test.ts
+     * only scans :root/.hexdev-gamify-chrome, and a felt-only layout
+     * constant with no chrome-side twin has no reason to risk tripping that
+     * guard (same discipline as --hx-felt-gap/--hx-felt-pad above). */
+    --hx-log-rail: clamp(200px, 22%, 280px);
+    /* --hx-play-max (tasks §3.8): an INLINE-axis cap only — see its own
+     * consumer below — never enters a height-fence formula. Derived from
+     * --truco-card-width via calc(), so it automatically tracks whichever
+     * tier's card size is in effect on THIS specific element: a custom
+     * property's var() reference resolves against the element's own final
+     * cascaded value at used-value time, not the value in effect where
+     * --hx-play-max itself happened to be declared — so, unlike
+     * --hx-log-rail just above (a fixed clamp(), not derived from anything),
+     * no separate ultra-tier redeclaration is needed for this one. */
+    --hx-play-max: calc(var(--truco-card-width) * 7);
+  }
   /* 1v1 only grows here — the 4-seat felt is already width-constrained by
    * its own side gutters, so 2v2 holds at the medium tier's 84px (no
    * declaration needed: nothing above overrides it for this seat count). */
   .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 100px; }
+
+  /* PR4-T4 (tasks §8): the log rail becomes a real grid column track, in
+   * flow, beside the play — structurally what TRZ-1's own "the call-log
+   * rail, the felt, and the scoreboard rail each occupy a disjoint
+   * horizontal region" scenario needs (tasks §2.1: a rectangle claim, proven
+   * by getBoundingClientRect in the test suite, never by DOM parentage).
+   * Deliberately only 3/4 areas — no "actions" row yet, that is PR5's own
+   * grid-row addition (tasks §8's own scope note); this PR only moves the
+   * log, so grid STRUCTURE otherwise matches the compact/medium base rules
+   * above, with "log" prepended to every row. */
+  .hexdev-truco-table {
+    grid-template-columns: var(--hx-log-rail) minmax(0, 1fr);
+    grid-template-areas: "log top" "log center" "log bottom";
+  }
+  .hexdev-truco-table[data-seat-count="4"] {
+    grid-template-columns: var(--hx-log-rail) minmax(72px, 16%) minmax(0, 1fr) minmax(72px, 16%);
+    grid-template-areas:
+      "log top    top    top"
+      "log left   center right"
+      "log bottom bottom bottom";
+  }
+  /* PR4-T6 (tasks §8): 1v1 only — cap and centre the play column so a very
+   * wide felt does not stretch a 3-card hand across the whole track.
+   * .hexdev-truco-action-bar joins this selector list in PR5, once it exists
+   * as a felt-grid child — today it is still the floating, absolutely
+   * positioned .hexdev-truco-action-tray, which this cap does not apply to. */
+  .hexdev-truco-table:not([data-seat-count="4"]) > .hexdev-truco-anchor,
+  .hexdev-truco-table:not([data-seat-count="4"]) > .hexdev-truco-center {
+    justify-self: center;
+    width: min(100%, var(--hx-play-max));
+  }
+
+  /* PR4-T5 (tasks §8, D-4): the log's rect stops floating over the felt and
+   * becomes a real in-flow grid-column child at wide/ultra. The clipping
+   * ancestor moves from .hexdev-truco-center to .hexdev-truco-table (both
+   * stay overflow: hidden — see the base .hexdev-truco-table rule above and
+   * the base .hexdev-truco-call-log rule below, neither edited by this
+   * block). Everything else about the panel (max-width: 58%, max-height,
+   * internal scroll, pointer-events: auto) is UNCHANGED at wide/ultra too
+   * (design §9.5) — only its containing-block mechanism changes, from
+   * "grid-area: center" to "grid-area: log", and from position: absolute to
+   * position: static (a real in-flow box now, no longer needing left/bottom
+   * offsets at all). */
+  .hexdev-truco-call-log {
+    grid-area: log;
+    position: static;
+  }
+
+  /* PR4-T7 (tasks §8): scoreboard rail width bump — a SHELL-level change
+   * (this selector is a sibling of .hexdev-truco-table, not a descendant of
+   * it), grouped here only because it shares this @container block's own
+   * min-width condition. 168px (medium, declared below) stays unchanged. */
+  .hexdev-truco-scoreboard-panel { width: 200px; }
 }
 @container hexdev-truco-shell (min-width: 1280px) {
-  .hexdev-truco-table { --hx-felt-gap: 24px; --hx-felt-pad: 32px; }
+  .hexdev-truco-table {
+    --hx-felt-gap: 24px;
+    --hx-felt-pad: 32px;
+    /* Ultra's own rail width — a distinct clamp(), not derived from
+     * --truco-card-width, so (unlike --hx-play-max, declared once at wide
+     * above and left alone here) it DOES need its own redeclaration at every
+     * tier that changes it. */
+    --hx-log-rail: clamp(240px, 20%, 320px);
+  }
   .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 108px; }
   .hexdev-truco-table[data-seat-count="4"] { --truco-card-width: 100px; }
+  /* PR4-T7: ultra's own scoreboard rail width. */
+  .hexdev-truco-scoreboard-panel { width: 240px; }
 }
 
 /* Change 2: a side panel that works wide does not fit narrow, so the two
@@ -820,20 +906,37 @@ export function buildTableStylesheet(): string {
 }
 
 /* Call-log panel (T-11/T-10, design §5.3: "how it holds by construction").
- * table.ts mounts this as a child of .hexdev-truco-center (already position:
- * relative; overflow: hidden), anchored bottom-left; .hexdev-truco-played's
- * own pile offset above leans up-and-right, so the two floating surfaces
- * lean apart instead of overlapping. max-height is a FIXED length derived
- * from --truco-card-width (this file's own unit convention) -- never vh,
- * never content-driven -- so a long call chain scrolls INSIDE the panel
- * instead of ever growing the felt; not added anywhere to
- * .hexdev-truco-table's own min-height calc, the same out-of-flow discipline
- * .hexdev-truco-action-tray and .hexdev-truco-banner-slot already use.
- * Unlike those two, pointer-events stays auto: this is the one floating
- * surface a player actually scrolls (D-9: auto-scroll to newest; manual
- * scroll survives only between renders). */
+ *
+ * PR4 (tasks §8, D-4/blessed refinement 2 — tasks §1 item 2/§2.1): table.ts
+ * now mounts this as a DIRECT CHILD OF THE FELT (.hexdev-truco-table, a grid
+ * container, already position: relative; overflow: hidden) — no longer a
+ * child of .hexdev-truco-center. grid-area: center below is what makes an
+ * absolutely-positioned grid item with a definite grid-area use that AREA
+ * (not the whole grid) as its containing block (CSS Grid's own rule, design
+ * D-4) — the panel's rect at compact/medium ends up byte-for-byte the SAME
+ * rect it had when it was a DOM child of .hexdev-truco-center: today's
+ * center-anchored bottom-left corner is exactly that grid area's own
+ * bottom-left corner. .hexdev-truco-played's own pile offset above leans
+ * up-and-right, so the two floating surfaces lean apart instead of
+ * overlapping. max-height is a FIXED length derived from --truco-card-width
+ * (this file's own unit convention) -- never vh, never content-driven -- so
+ * a long call chain scrolls INSIDE the panel instead of ever growing the
+ * felt; not added anywhere to .hexdev-truco-table's own min-height calc, the
+ * same out-of-flow discipline .hexdev-truco-action-tray and
+ * .hexdev-truco-banner-slot already use. Unlike those two, pointer-events
+ * stays auto: this is the one floating surface a player actually scrolls
+ * (D-9: auto-scroll to newest; manual scroll survives only between
+ * renders).
+ *
+ * Wide/ultra (@container hexdev-truco-shell (min-width: 900px) above)
+ * override BOTH grid-area and position — see that block's own PR4-T5
+ * comment — to become a real in-flow column child instead; every other
+ * declaration below (max-width, max-height, overflow, pointer-events, the
+ * elevation) stays exactly as declared here at every tier (design §9.5:
+ * "unchanged"). */
 .hexdev-truco-call-log:empty { display: none; }
 .hexdev-truco-call-log {
+  grid-area: center;
   position: absolute;
   left: 0;
   bottom: 0;

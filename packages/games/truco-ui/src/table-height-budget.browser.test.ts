@@ -32,7 +32,18 @@ import { createMatchTableRenderer } from "./table.js";
  * every existing fence and still ship. Adding these two rows closes that gap
  * without touching `table-height-stability.browser.test.ts`'s own width
  * list, which stays scoped to its original four tiers per PR3a.
- */
+ *
+ * PR4 (tasks §8): re-ran this whole suite after moving the call log into the
+ * felt's own grid ("log" column, in flow at 900px/1280px). Re-verified, not
+ * silently skipped: every BUDGET ceiling below still holds (12/12 green,
+ * unchanged) — the log's own bounded max-height never exceeds what the
+ * felt's other rows already reserve (see
+ * table-height-stability.browser.test.ts's own PR4 fence for the direct
+ * proof of that), so nothing here needed the deliberate x1.08 update this
+ * docblock's own PR5-T10 note anticipates. That re-measurement is still
+ * owed to PR5, which is the PR that actually adds real height (the banner
+ * lane and the action-bar row) rather than merely relocating existing
+ * content within the same total. */
 
 const SELF = "budget-self" as PlayerId;
 const OPPONENT = "budget-opponent" as PlayerId;
