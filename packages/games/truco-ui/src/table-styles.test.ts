@@ -115,4 +115,94 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
     expect(reducedMotionBlock.length, "expected an @media (prefers-reduced-motion: reduce) block to exist").toBeGreaterThan(0);
     expect(ruleInsideMediaBlock).toMatch(/transition:\s*none/);
   });
+
+  // PR3-T5 (tasks §7, VDS-2 guard half): a `var(--gx-*)` read with NO
+  // fallback breaks the very first time a tenant sends no theme at all — the
+  // fallback IS what keeps this file's own "hybrid theming by zone" promise
+  // (design §10 docblock above) honest for every `--gx-*` token, not just
+  // the ones a reviewer happens to eyeball. `[a-z-]+\)` (closing paren
+  // immediately after the token name, no comma) only matches a BARE read —
+  // any read with a fallback has a `,` right there instead of `)`, so it can
+  // never false-positive against the (currently universal) `var(--gx-x, y)`
+  // shape already in this file.
+  it("every --gx- read carries a fallback", () => {
+    const css = buildTableStylesheet();
+    const bareReads = css.match(/var\(--gx-[a-z-]+\)/g) ?? [];
+
+    expect(bareReads, `bare (no-fallback) --gx- reads found: ${JSON.stringify(bareReads)}`).toEqual([]);
+  });
+});
+
+// PR3-T6 (tasks §7, VDS-2's own "unit assertion catches a hardcoded chrome
+// color" scenario). A naive `/selector\s*\{[^}]*\}/` scan (this file's own
+// convention for several OTHER single-selector guards above) is not safe
+// for the selectors below: this stylesheet has real rules like
+// `.hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; }`,
+// whose tail is byte-identical to `.hexdev-truco-table`'s own base rule
+// opening — a naive scan finds THAT tiny compound rule first (wrong rule,
+// no `--gx-`/`--truco-cloth` in it at all) instead of the real ~40-line
+// felt rule below it. `stripComments` + `ruleBodyForExactSelector` avoid
+// this two ways: comments are removed first (an unstripped comment
+// immediately before a rule was, empirically, swallowed into the "selector"
+// capture and broke an exact-string match), and a rule only counts if
+// `exactSelector` appears as a COMPLETE, comma-separated entry in that
+// rule's own selector list — never as the tail of a combinator/compound
+// chain. Several of the 9 surfaces below also have MORE than one rule
+// targeting the bare selector (e.g. `.hexdev-truco-scoreboard-panel` also
+// gets a layout-only variant inside the medium-tier `@container` block,
+// which carries no color at all) — this helper collects every one of those,
+// not just the first, so checking only the first found could not silently
+// pass or fail depending on source order.
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+function ruleBodyForExactSelector(css: string, exactSelector: string): string {
+  const ruleRegex = /([^{}]+)\{([^}]*)\}/g;
+  const bodies: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = ruleRegex.exec(stripComments(css))) !== null) {
+    const selectors = match[1]!.split(",").map((entry) => entry.trim());
+    if (selectors.includes(exactSelector)) bodies.push(match[2]!);
+  }
+  return bodies.join("\n");
+}
+
+// The exact 9 felt-mounted CHROME surfaces (tasks §7): every one of these
+// sits physically on top of the felt (a scoreboard panel, a call log, calls,
+// the pending-call banner, the turn badge, señas, the match-over overlay,
+// the hand-outcome chip) but is still CHROME by design §10's own hybrid
+// theming rule — a tenant's brand must reach it, unlike the felt/cards
+// beneath it.
+const CHROME_SURFACES_ON_FELT = [
+  ".hexdev-truco-scoreboard-panel",
+  ".hexdev-truco-call-log",
+  ".hexdev-truco-call",
+  ".hexdev-truco-pending-call",
+  ".hexdev-truco-turn-badge",
+  ".hexdev-truco-senas-toggle",
+  ".hexdev-truco-sena",
+  ".hexdev-truco-match-over",
+  ".hexdev-truco-hand-outcome",
+] as const;
+
+describe("VDS-2 (design §10, hybrid theming by zone): chrome-on-felt surfaces read the tenant's --gx- tokens, the felt itself never does", () => {
+  it.each(CHROME_SURFACES_ON_FELT)("%s reads at least one --gx- token somewhere in its own rule(s)", (selector) => {
+    const css = buildTableStylesheet();
+    const ownBody = ruleBodyForExactSelector(css, selector);
+
+    expect(ownBody.length, `no rule found for exact selector ${selector}`).toBeGreaterThan(0);
+    expect(ownBody).toMatch(/--gx-/);
+  });
+
+  it("the felt's own background is never a tenant token", () => {
+    const css = buildTableStylesheet();
+    const feltBody = ruleBodyForExactSelector(css, ".hexdev-truco-table");
+    const backgroundDeclaration = feltBody.match(/background:\s*[\s\S]*?;/)?.[0] ?? "";
+
+    expect(feltBody.length, "no rule found for exact selector .hexdev-truco-table").toBeGreaterThan(0);
+    expect(backgroundDeclaration.length, "no background declaration found on .hexdev-truco-table").toBeGreaterThan(0);
+    expect(backgroundDeclaration).toContain("--truco-cloth");
+    expect(backgroundDeclaration).not.toMatch(/--gx-/);
+  });
 });
