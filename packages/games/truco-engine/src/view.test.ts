@@ -284,3 +284,40 @@ describe("getViewFor — a legitimate points declaration keeps its EXACT value t
     );
   });
 });
+
+/**
+ * Spec: "Call Log and Trick Plays Are Public" — the "Any viewer" scenario.
+ * Every sibling public/redacted field already has its own cross-viewer fence
+ * (señas, hand cards, envido declarations); this closes the one gap the
+ * verify phase found. Today `getViewFor` hands every viewer the same values
+ * with no per-viewer branch, so this can only fail if someone introduces
+ * one — which is exactly the regression it exists to catch.
+ */
+describe("getViewFor — call log and trick plays are identical across every player's view (spec: 'Any viewer')", () => {
+  it("all four 2v2 viewers see the same callEvents and resolvedTrickPlays after a call chain and a resolved trick", () => {
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [playerA, playerB, playerC, playerD];
+    const base = createTeamMatch({ seatOrder, pointsToWin: 15, dealerSeat: 3 }); // manoSeat 0 -> playerA
+    let state = startHand(base, [
+      [{ suit: "espada", rank: 1 }, { suit: "espada", rank: 2 }, { suit: "espada", rank: 3 }],
+      [{ suit: "basto", rank: 1 }, { suit: "basto", rank: 2 }, { suit: "basto", rank: 3 }],
+      [{ suit: "oro", rank: 1 }, { suit: "oro", rank: 2 }, { suit: "oro", rank: 3 }],
+      [{ suit: "copa", rank: 1 }, { suit: "copa", rank: 2 }, { suit: "copa", rank: 3 }],
+    ]);
+    state = apply(state, { type: "call-envido", playerId: playerA, level: "envido" });
+    state = apply(state, { type: "respond-envido", playerId: playerB, response: "quiero" });
+    state = apply(state, { type: "reveal-envido", playerId: playerA });
+    state = apply(state, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
+    state = apply(state, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 1 } });
+    state = apply(state, { type: "play-card", playerId: playerC, card: { suit: "oro", rank: 1 } });
+    state = apply(state, { type: "play-card", playerId: playerD, card: { suit: "copa", rank: 1 } });
+
+    const views = seatOrder.map((playerId) => getViewFor(state, playerId));
+
+    expect(views[0]!.hand?.callEvents).toHaveLength(3); // sanity: the log really has content to compare
+    expect(views[0]!.hand?.resolvedTrickPlays).toHaveLength(1); // sanity: one trick really resolved
+    for (const view of views.slice(1)) {
+      expect(view.hand?.callEvents).toEqual(views[0]!.hand?.callEvents);
+      expect(view.hand?.resolvedTrickPlays).toEqual(views[0]!.hand?.resolvedTrickPlays);
+    }
+  });
+});

@@ -219,7 +219,8 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   const winningTeamId = [...declarations].reverse().find((entry) => entry.declaration === "points")!.teamId;
   const envido: EnvidoState = { status: "revealed", calls: accepted.calls, winningTeamId, awardedValue: accepted.acceptedValue, declarations };
   // Marker-only event: no points, no winner (D-1/D-5). The numbers stay
-  // confined to `envido` above until PR-2 adds a redacted declaration list.
+  // confined to the structurally-redacted `declarations` list inside
+  // `envido` above — the log itself never carries one.
   const event: CallEvent = { kind: "envido-reveal", playerId: player.id, teamId: player.teamId, seat: player.seat };
   const teams = state.teams.map((team) => (team.id === winningTeamId ? { ...team, score: team.score + accepted.acceptedValue } : team));
   return { ok: true, state: { ...state, teams, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
