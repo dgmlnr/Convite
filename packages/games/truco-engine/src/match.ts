@@ -47,7 +47,28 @@ export type EnvidoState =
   | { readonly status: "pending"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId }
   | { readonly status: "accepted"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly acceptedValue: number }
   | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
-  | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number };
+  | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number;
+      /** Mano-rotation order, oldest first. Present ONLY on `revealed` — an
+       * envido that was never called, or was declined, has no variant that
+       * can hold a declaration list (design §2.3). `winningTeamId` above is
+       * DERIVED from this list (D-2) — see `resolveEnvidoDeclarations` and
+       * the `reveal-envido` branch in envido-chain.ts. */
+      readonly declarations: readonly EnvidoDeclaration[] };
+
+/** What one player SAID at the envido reveal, in mano declaration order.
+ *
+ * The withheld variant has NO `points` KEY AT ALL — the same structural
+ * discipline `OpponentView` uses for `lastSena` (view.ts:13-31): a leak is a
+ * compile error, not a runtime check someone could forget.
+ *
+ * Stronger than the seña case, and deliberately so: a withholder's number is
+ * never COMPUTED INTO STATE in the first place (see `resolveEnvidoDeclarations`
+ * in envido-chain.ts), so there is no redacted-at-projection step to get
+ * wrong. `getViewFor` can keep projecting `envido` as one already-public
+ * value (D-6). */
+export type EnvidoDeclaration =
+  | { readonly declaration: "points"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly points: number }
+  | { readonly declaration: "sonBuenas"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number };
 
 /** A recorded seña (design: closed vocabulary, a claim not a verified
  * statement). `teamId` is carried alongside `playerId` purely so the view

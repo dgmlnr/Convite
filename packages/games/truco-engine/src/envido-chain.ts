@@ -1,6 +1,6 @@
 import type { Card, Rank, Suit } from "./card.js";
-import type { PlayerId, TeamId } from "./ids.js";
-import type { CallEvent, EnvidoCallLevel, EnvidoState, HandState, MatchState, Player } from "./match.js";
+import type { PlayerId } from "./ids.js";
+import type { CallEvent, EnvidoCallLevel, EnvidoDeclaration, EnvidoState, HandState, MatchState, Player } from "./match.js";
 
 /** Envido point value of a rank: 1-7 count face value, 10/11/12 count zero. */
 const ENVIDO_RANK_VALUE: Record<Rank, number> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 10: 0, 11: 0, 12: 0 };
@@ -123,25 +123,59 @@ function envidoActionsEqual(a: EnvidoAction, b: EnvidoAction): boolean {
 const isLegalEnvido = (state: MatchState, action: EnvidoAction): boolean =>
   getLegalEnvidoActions(state, action.playerId).some((legal) => envidoActionsEqual(legal, action));
 
-/** Winner of the envido reveal: higher points wins; a tie is won by the mano's team.
- * INFERENCE — spec doesn't state the tie-break; mirrors hand-winner's ("parda") mano tie-break.
- * 2v2 (design/spec: "each player has their own envido value; the team's is
- * the BEST among its members"): a team's points are the max across ALL its
- * players' own hands, not just one representative — this is a strict
- * generalization of the 1v1 case, where a team has exactly one player so
- * "the best of its members" and "that one player's points" are identical.
- * "IsMano" for the tie-break is true if EITHER team member is mano's seat
- * (only one can be, since mano is a single seat), matching the same rule
- * used for 1v1: the team containing the mano seat wins ties. */
-function resolveEnvidoWinner(state: MatchState, manoSeat: number): TeamId {
-  let winner: { teamId: TeamId; points: number; isMano: boolean } | null = null;
-  for (const team of state.teams) {
-    const teamPlayers = state.players.filter((player) => player.teamId === team.id);
-    const points = Math.max(...teamPlayers.map((player) => calculateEnvidoPoints(player.hand)));
-    const isMano = teamPlayers.some((player) => player.seat === manoSeat);
-    if (winner === null || points > winner.points || (points === winner.points && isMano)) winner = { teamId: team.id, points, isMano };
+/** Per-player declaration order at envido reveal, in mano rotation
+ * (`manoSeat`, `manoSeat+1`, …, mod `players.length` — spec: "Per-Player
+ * Envido Declaration Order"). Mano always declares their own points — there
+ * is no running best yet to compare against. Each LATER player declares
+ * their own points ONLY IF strictly greater than the best already declared;
+ * otherwise the entry is `sonBuenas` and the withheld number is NEVER
+ * COMPUTED INTO the entry at all (D-1) — there is nothing to redact at
+ * projection, because nothing withheld was ever written down.
+ *
+ * AMENDMENT (post-design, supersedes design D-3's lexicographic
+ * `(points, isManoTeam)` comparator): the comparator below is plain
+ * strictly-greater on points alone — `points > runningBest`, no
+ * mano-priority term. Weakening this to `>=` changes WHO declares at a tie
+ * (a game-rule concern, fenced by T-3/T-4) but — verified by manual mutation
+ * during T-5m — does NOT leak a withheld number: every push below still
+ * either builds a fully-typed `"points"` object or a fully-typed
+ * `"sonBuenas"` object, so a would-be leak needs an actual out-of-band
+ * assignment (e.g. an unsafe cast), not a comparator change. THAT is the
+ * mutation view.test.ts's T-5 property is fenced against; see this test
+ * file's own T-5m comment for the exact mutation performed and its result.
+ * `resolveEnvidoWinner`'s replacement is DERIVED from this list
+ * (D-2, unchanged): the team of the LAST entry whose
+ * `declaration === "points"`. In the 2v2 corner where two players from
+ * different teams tie for the max and neither is the mano seat, the earlier
+ * declarer (closer to mano) now wins the derived tie — not mano's team, as
+ * the pre-amendment `(points, isManoTeam)` comparator would have produced.
+ * 1v1 is unaffected: mano is definitionally the earliest declarer, so an
+ * equal later opponent still withholds and mano's team still wins the tie —
+ * identical to today (see envido-chain.test.ts's "a tied reveal is won by
+ * the mano's team", unmodified by this amendment).
+ *
+ * Module-exported (not package-exported — `index.ts` re-exports only the
+ * `EnvidoDeclaration` TYPE, never this function, design checklist item 1) so
+ * this file's own tests can exercise it directly, without needing a full
+ * call/quiero/reveal chain first. */
+export function resolveEnvidoDeclarations(state: MatchState, manoSeat: number): readonly EnvidoDeclaration[] {
+  const playerCount = state.players.length;
+  const rotation = Array.from({ length: playerCount }, (_, i) => (manoSeat + i) % playerCount).map(
+    (seat) => state.players.find((player) => player.seat === seat)!,
+  );
+
+  const declarations: EnvidoDeclaration[] = [];
+  let runningBest = -Infinity;
+  for (const player of rotation) {
+    const points = calculateEnvidoPoints(player.hand);
+    if (points > runningBest) {
+      declarations.push({ declaration: "points", playerId: player.id, teamId: player.teamId, seat: player.seat, points });
+      runningBest = points;
+    } else {
+      declarations.push({ declaration: "sonBuenas", playerId: player.id, teamId: player.teamId, seat: player.seat });
+    }
   }
-  return winner!.teamId;
+  return declarations;
 }
 
 /** Pure reducer for the envido call chain: never mutates `state`; illegal actions rejected via `{ok:false}`. */
@@ -175,8 +209,15 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   }
 
   const accepted = hand.envido as Extract<EnvidoState, { status: "accepted" }>;
-  const winningTeamId = resolveEnvidoWinner(state, hand.manoSeat);
-  const envido: EnvidoState = { status: "revealed", calls: accepted.calls, winningTeamId, awardedValue: accepted.acceptedValue };
+  // D-2: `winningTeamId` is DERIVED from the declaration list, computed once
+  // here — the team of the LAST entry whose `declaration === "points"`. Mano
+  // always declares (see `resolveEnvidoDeclarations`), so that entry always
+  // exists. This REPLACES the pre-amendment per-team max+isMano scan: "who
+  // declared the highest number" and "who won" are now a structural fact of
+  // one function, not a coincidence two independent functions had to agree on.
+  const declarations = resolveEnvidoDeclarations(state, hand.manoSeat);
+  const winningTeamId = [...declarations].reverse().find((entry) => entry.declaration === "points")!.teamId;
+  const envido: EnvidoState = { status: "revealed", calls: accepted.calls, winningTeamId, awardedValue: accepted.acceptedValue, declarations };
   // Marker-only event: no points, no winner (D-1/D-5). The numbers stay
   // confined to `envido` above until PR-2 adds a redacted declaration list.
   const event: CallEvent = { kind: "envido-reveal", playerId: player.id, teamId: player.teamId, seat: player.seat };

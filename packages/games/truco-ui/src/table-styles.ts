@@ -322,7 +322,22 @@ export function buildTableStylesheet(): string {
  * card) is what gives the top/bottom offset room to actually read as "closer
  * to that seat" instead of sitting dead-centre regardless of who played it. */
 .hexdev-truco-trick { position: relative; display: flex; align-items: center; justify-content: center; min-height: calc(var(--truco-card-width) * 336 / 220 * 1.7); width: 100%; }
-.hexdev-truco-played { position: absolute; }
+/* Per-seat pile offset (T-8, spec: "Persistent Per-Seat Card Piles").
+ * --truco-pile-index is set inline per card by played-cards.ts, one integer
+ * per play, counting from 0 within its own seat. The offset leans up and
+ * right so a growing pile reads as depth, not as a random jitter; since the
+ * multiplier is index 0 for a single-card trick, this transform resolves to
+ * a literal zero offset there, which is exactly what keeps a single-card
+ * trick byte-identical to the pre-pile rendering. Position stays absolute,
+ * so N stacked cards still contribute exactly one card's worth of layout
+ * height, same as before this change. No z-index anywhere here: DOM order
+ * alone decides which card paints on top, matching played-cards.ts's own
+ * chronological append order. */
+.hexdev-truco-played {
+  position: absolute;
+  --truco-pile-index: 0;
+  transform: translate(calc(var(--truco-pile-index) * 6px), calc(var(--truco-pile-index) * -6px));
+}
 .hexdev-truco-played--top { top: 0; }
 .hexdev-truco-played--bottom { bottom: 0; }
 .hexdev-truco-played--left { left: 15%; }
@@ -678,6 +693,91 @@ export function buildTableStylesheet(): string {
   background: rgba(0, 0, 0, 0.35);
   color: var(--gx-color-on-surface, #f2f2f2);
 }
+
+/* Call-log panel (T-11/T-10, design §5.3: "how it holds by construction").
+ * table.ts mounts this as a child of .hexdev-truco-center (already position:
+ * relative; overflow: hidden), anchored bottom-left; .hexdev-truco-played's
+ * own pile offset above leans up-and-right, so the two floating surfaces
+ * lean apart instead of overlapping. max-height is a FIXED length derived
+ * from --truco-card-width (this file's own unit convention) -- never vh,
+ * never content-driven -- so a long call chain scrolls INSIDE the panel
+ * instead of ever growing the felt; not added anywhere to
+ * .hexdev-truco-table's own min-height calc, the same out-of-flow discipline
+ * .hexdev-truco-action-tray and .hexdev-truco-banner-slot already use.
+ * Unlike those two, pointer-events stays auto: this is the one floating
+ * surface a player actually scrolls (D-9: auto-scroll to newest; manual
+ * scroll survives only between renders). */
+.hexdev-truco-call-log:empty { display: none; }
+.hexdev-truco-call-log {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  max-width: 58%;
+  max-height: calc(var(--truco-card-width) * 336 / 220 * 2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow: hidden;
+  pointer-events: auto;
+  border-radius: var(--gx-radius, 10px);
+  background: var(--gx-color-surface, rgba(20, 20, 20, 0.72));
+  color: var(--gx-color-on-surface, #f2f2f2);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  font-size: 0.68rem;
+}
+.hexdev-truco-call-log-title,
+.hexdev-truco-call-log-tantos-title {
+  margin: 0;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.8;
+}
+/* The ONLY scroller (design §5.2: the tantos row sits outside this list, so
+ * auto-scroll to newest never pushes the tantos row away). flex: 1 1 auto
+ * plus min-height: 0 is what lets a flex child actually shrink below its own
+ * content size and scroll, inside the panel's own fixed max-height above. */
+.hexdev-truco-call-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hexdev-truco-call-log-entry,
+.hexdev-truco-call-log-tantos-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  border-left: 2px solid rgba(255, 255, 255, 0.25);
+  padding-left: 4px;
+}
+/* A minimal per-speaker tint (project convention: colour is never the ONLY
+ * signal -- the speaker span's own text, from call-log.ts's speakerLabel,
+ * already carries the rest). Only the viewer's own entries sit at the
+ * 'bottom' anchor (resolveSeatPositions always maps mySeat there), so this
+ * is the one selector that needs to exist for the accent to reach them. */
+.hexdev-truco-call-log-entry[data-position="bottom"],
+.hexdev-truco-call-log-tantos-entry[data-position="bottom"] {
+  border-left-color: var(--gx-color-accent, #ffd166);
+}
+.hexdev-truco-call-log-speaker { font-weight: 700; }
+.hexdev-truco-call-log-mano-tag {
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--gx-color-accent, #ffd166);
+  color: #1a1a1a;
+}
+.hexdev-truco-call-log-points { margin-left: auto; font-weight: 700; }
 `.trim();
 }
 
