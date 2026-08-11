@@ -38,6 +38,55 @@ export function buildTableStylesheet(): string {
   ${cssDeclarations(DECK_THEME_DEFAULTS)}
   ${cssDeclarations(MATCHSTICK_THEME_DEFAULTS)}
   --truco-table-cloth: #1e5c43;
+  /* --hx-* private token layer (design token-parity, VDS-1): spacing,
+   * radii, elevation, type, motion, and private colour, identical to
+   * chrome-styles.ts's own .hexdev-gamify-chrome block below (proved by
+   * design-token-parity.test.ts). This slice only DECLARES these tokens --
+   * no rule anywhere above or below reads any of them yet, so it repaints
+   * nothing (pnpm test:visual stays at zero baseline diff). Never exposed
+   * through widget-protocol's theme-token vocabulary (see the guard in
+   * theme-tokens.test.ts). */
+  --hx-space-2xs: 4px;
+  --hx-space-xs: 8px;
+  --hx-space-sm: 12px;
+  --hx-space-md: 16px;
+  --hx-space-lg: 24px;
+  --hx-space-xl: 32px;
+  --hx-space-2xl: 48px;
+  --hx-radius-sm: 8px;
+  --hx-radius-md: 12px;
+  --hx-radius-lg: 16px;
+  --hx-radius-xl: 22px;
+  --hx-radius-pill: 999px;
+  --hx-elev-1: 0 1px 2px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.22);
+  --hx-elev-2: 0 2px 4px rgba(0,0,0,.30), 0 6px 14px rgba(0,0,0,.26);
+  --hx-elev-3: 0 4px 8px rgba(0,0,0,.32), 0 14px 28px rgba(0,0,0,.30);
+  --hx-elev-4: 0 8px 16px rgba(0,0,0,.35), 0 28px 56px rgba(0,0,0,.38);
+  --hx-relief: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -1px 0 rgba(0,0,0,.25);
+  --hx-rim: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 12px rgba(0,0,0,.35);
+  --hx-text-display: 1.5rem;
+  --hx-text-display-compact: 1.35rem;
+  --hx-text-title: 1.1rem;
+  --hx-text-body: 0.9rem;
+  --hx-text-meta: 0.75rem;
+  --hx-text-label: 0.7rem;
+  --hx-tracking-label: 0.08em;
+  --hx-leading: 1.35;
+  --hx-motion-fast: 120ms;
+  --hx-ease: ease-out;
+  --hx-chrome-on-felt: #10312a;
+  --hx-gold: #e8c877;
+  --hx-gold-edge: #b8923f;
+  --hx-ink: #1a1a1a;
+  /* New, unused felt-palette tokens (tasks §3.7 boundary note): PR2 changes
+   * --truco-table-cloth's own value above to #123f2f and consumes all four
+   * of these together in one vignette gradient. Declaring them here, now,
+   * unused, keeps THIS PR a true zero-paint slice -- changing
+   * --truco-table-cloth's value itself would repaint the felt before this
+   * PR's own "tokens declared, never consumed" claim holds. */
+  --truco-cloth-lit: #1d6a4d;
+  --truco-cloth-deep: #0d3325;
+  --truco-cloth-lane: rgba(0,0,0,.18);
 }
 /* The outer shell owns the shell-level layout (felt beside/above its own
  * chrome scoreboard panel — Change 2), and establishes an inline-size

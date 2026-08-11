@@ -28,6 +28,44 @@ export function buildChromeStylesheet(): string {
   font-family: var(--gx-font-family, system-ui, sans-serif);
   color: var(--gx-color-on-surface, #1a1a1a);
   background: var(--gx-color-surface, #ffffff);
+  /* --hx-* private token layer (design token-parity, VDS-1), identical to
+   * table-styles.ts's own :root declaration (proved by
+   * design-token-parity.test.ts). Scoped here, not :root: chrome has no
+   * <defs>-sibling problem the way the table's matchstick SVG does, so
+   * ordinary descendant scoping is enough. Declared, not consumed, in this
+   * slice -- no rule below reads any of these yet. */
+  --hx-space-2xs: 4px;
+  --hx-space-xs: 8px;
+  --hx-space-sm: 12px;
+  --hx-space-md: 16px;
+  --hx-space-lg: 24px;
+  --hx-space-xl: 32px;
+  --hx-space-2xl: 48px;
+  --hx-radius-sm: 8px;
+  --hx-radius-md: 12px;
+  --hx-radius-lg: 16px;
+  --hx-radius-xl: 22px;
+  --hx-radius-pill: 999px;
+  --hx-elev-1: 0 1px 2px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.22);
+  --hx-elev-2: 0 2px 4px rgba(0,0,0,.30), 0 6px 14px rgba(0,0,0,.26);
+  --hx-elev-3: 0 4px 8px rgba(0,0,0,.32), 0 14px 28px rgba(0,0,0,.30);
+  --hx-elev-4: 0 8px 16px rgba(0,0,0,.35), 0 28px 56px rgba(0,0,0,.38);
+  --hx-relief: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -1px 0 rgba(0,0,0,.25);
+  --hx-rim: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 12px rgba(0,0,0,.35);
+  --hx-text-display: 1.5rem;
+  --hx-text-display-compact: 1.35rem;
+  --hx-text-title: 1.1rem;
+  --hx-text-body: 0.9rem;
+  --hx-text-meta: 0.75rem;
+  --hx-text-label: 0.7rem;
+  --hx-tracking-label: 0.08em;
+  --hx-leading: 1.35;
+  --hx-motion-fast: 120ms;
+  --hx-ease: ease-out;
+  --hx-chrome-on-felt: #10312a;
+  --hx-gold: #e8c877;
+  --hx-gold-edge: #b8923f;
+  --hx-ink: #1a1a1a;
 }
 .hexdev-gamify-chrome * { box-sizing: border-box; }
 
