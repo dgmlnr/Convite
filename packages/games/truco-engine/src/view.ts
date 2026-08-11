@@ -1,7 +1,7 @@
 import type { Card } from "./card.js";
 import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId, TeamId } from "./ids.js";
-import type { EnvidoState, HandPlay, MatchConfig, MatchState, TrucoState } from "./match.js";
+import type { CallEvent, EnvidoState, HandPlay, MatchConfig, MatchState, TrucoState } from "./match.js";
 import type { SenaSignal } from "./senas.js";
 import type { TrickOutcome } from "./trick.js";
 
@@ -50,6 +50,11 @@ export interface HandView {
   readonly turnSeat: number;
   /** Already-played cards for the trick in progress — public, unlike hand cards. */
   readonly currentTrickPlays: readonly HandPlay[];
+  /** All tricks already resolved this hand — public, exactly like
+   * `currentTrickPlays`. The UI's per-seat piles read
+   * `[...resolvedTrickPlays.flat(), ...currentTrickPlays]`. */
+  readonly resolvedTrickPlays: readonly (readonly HandPlay[])[];
+  readonly callEvents: readonly CallEvent[];
   readonly trickOutcomes: readonly TrickOutcome[];
   readonly outcome: HandOutcome;
 }
@@ -118,6 +123,8 @@ export function getViewFor(state: MatchState, playerId: PlayerId): PlayerView {
             envido: state.hand.envido,
             turnSeat: state.hand.turnSeat,
             currentTrickPlays: state.hand.currentTrickPlays,
+            resolvedTrickPlays: state.hand.resolvedTrickPlays,
+            callEvents: state.hand.callEvents,
             trickOutcomes: state.hand.trickOutcomes,
             outcome: state.hand.outcome,
           },

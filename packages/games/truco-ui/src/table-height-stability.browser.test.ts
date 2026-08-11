@@ -70,6 +70,53 @@ const DEAL_2V2: DealInput = [
   ],
 ];
 
+/** A maximal 1v1 hand (T-7 fence): the exact split-then-decided-at-trick-3
+ * deck `card-play.test.ts`'s own end-to-end fixture already proves produces
+ * exactly 3 resolved tricks, not fewer, paired here with a full envido chain
+ * AND a fully-escalated truco chain (truco -> retruco -> vale cuatro, each
+ * accepted) — the tallest possible combination of transient chrome (the
+ * widest calls row, both banners in sequence, three growing piles) this
+ * table can ever show at once. */
+const DEAL_1V1_MAXIMAL: DealInput = [
+  [
+    { suit: "espada", rank: 1 },
+    { suit: "basto", rank: 4 },
+    { suit: "espada", rank: 7 },
+  ],
+  [
+    { suit: "espada", rank: 4 },
+    { suit: "basto", rank: 1 },
+    { suit: "oro", rank: 4 },
+  ],
+];
+
+/** A maximal 2v2 hand (T-7 fence): reuses `card-play.test.ts`'s own
+ * split-then-decided-at-trick-3 four-seat fixture, paired with a full envido
+ * chain and a fully-escalated truco chain traded across both teams — the
+ * tallest and widest possible combination this table can ever show. */
+const DEAL_2V2_MAXIMAL: DealInput = [
+  [
+    { suit: "espada", rank: 1 },
+    { suit: "basto", rank: 4 },
+    { suit: "espada", rank: 3 },
+  ],
+  [
+    { suit: "basto", rank: 5 },
+    { suit: "oro", rank: 1 },
+    { suit: "basto", rank: 6 },
+  ],
+  [
+    { suit: "oro", rank: 4 },
+    { suit: "copa", rank: 4 },
+    { suit: "basto", rank: 4 },
+  ],
+  [
+    { suit: "copa", rank: 5 },
+    { suit: "basto", rank: 3 },
+    { suit: "copa", rank: 6 },
+  ],
+];
+
 let container: HTMLElement;
 
 afterEach(() => {
@@ -296,5 +343,145 @@ describe("createMatchTableRenderer — the table's own reported height stays con
 
     expect(Math.abs(opened - before), `opened: ${opened}px vs before: ${before}px`).toBeLessThan(1);
     expect(Math.abs(closed - before), `closed: ${closed}px vs before: ${before}px`).toBeLessThan(1);
+  });
+
+  // T-7 fence (design/tasks: must be GREEN before the pile change lands and
+  // STAY green through every later PR-3/PR-4 task — a fence, not a one-time
+  // check). Both cases below reach the tallest state this table can ever
+  // render: a full envido chain, a truco chain escalated to its ceiling, and
+  // all three tricks resolved — every transient banner and every seat's pile
+  // at its largest, all at once.
+  it("1v1 MAXIMAL: full envido chain + fully-escalated truco chain + three resolved tricks — the tallest possible state, height never changes (T-7 fence)", async () => {
+    const el = mountedContainer();
+    const render = createMatchTableRenderer();
+    const heights: number[] = [];
+
+    const recordRender = async (state: MatchState): Promise<void> => {
+      const view = getViewFor(state, SELF);
+      const legal = getLegalActions(state, SELF);
+      render(el, view, legal, () => {});
+      await waitForArt(el);
+      heights.push(el.getBoundingClientRect().height);
+    };
+
+    let state = startHand(
+      createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 }),
+      DEAL_1V1_MAXIMAL,
+    );
+    await recordRender(state); // baseline
+
+    state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state);
+    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    await recordRender(state);
+
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state);
+    state = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "retruco" }); // only the non-calling team may escalate
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-truco", playerId: SELF, response: "quiero" });
+    await recordRender(state);
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "valeCuatro" }); // escalated to the ceiling — no level above this
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state); // fully escalated and accepted — the widest possible calls row, already retired
+
+    // Trick 1: SELF (mano) leads and wins with 1-espada over 4-espada.
+    state = dispatch(state, { type: "play-card", playerId: SELF, card: DEAL_1V1_MAXIMAL[0]![0]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_1V1_MAXIMAL[1]![0]! });
+    await recordRender(state); // trick 1 resolves — the first pile card appears on both seats
+
+    // Trick 2: SELF leads again (won trick 1); OPPONENT wins with 1-basto over 4-basto — split so far.
+    state = dispatch(state, { type: "play-card", playerId: SELF, card: DEAL_1V1_MAXIMAL[0]![1]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_1V1_MAXIMAL[1]![1]! });
+    await recordRender(state); // trick 2 resolves — split, trick 3 must decide
+
+    // Trick 3: OPPONENT leads (won trick 2); SELF wins with 7-espada over 4-oro, deciding the hand.
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_1V1_MAXIMAL[1]![2]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: SELF, card: DEAL_1V1_MAXIMAL[0]![2]! });
+    await recordRender(state); // hand decided — two full three-card piles, a full call log, hand-outcome banner: all at once
+
+    expect(state.hand?.trickOutcomes).toHaveLength(3); // sanity: this really is the maximal case, not an early decision
+    expect(state.hand?.outcome.decided).toBe(true);
+    expectStableHeights(heights);
+  });
+
+  it("2v2 MAXIMAL: full envido chain + fully-escalated truco chain + three resolved tricks — the tallest possible state, height never changes (T-7 fence)", async () => {
+    const el = mountedContainer();
+    const render = createMatchTableRenderer();
+    const heights: number[] = [];
+
+    const recordRender = async (state: MatchState): Promise<void> => {
+      const view = getViewFor(state, SELF);
+      const legal = getLegalActions(state, SELF);
+      render(el, view, legal, () => {});
+      await waitForArt(el);
+      heights.push(el.getBoundingClientRect().height);
+    };
+
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+    let state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2_MAXIMAL);
+    await recordRender(state); // baseline
+
+    state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state);
+    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    await recordRender(state);
+
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    await recordRender(state);
+    state = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "retruco" }); // team B escalates
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-truco", playerId: TEAMMATE, response: "quiero" }); // any team A player may answer
+    await recordRender(state);
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "valeCuatro" }); // team A escalates to the ceiling
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT_2, response: "quiero" });
+    await recordRender(state); // fully escalated and accepted, both teams having taken a turn calling
+
+    // Trick 1: SELF leads (mano), turn order 0 -> 1 -> 2 -> 3; team A's 1-espada (SELF) wins.
+    state = dispatch(state, { type: "play-card", playerId: SELF, card: DEAL_2V2_MAXIMAL[0]![0]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_2V2_MAXIMAL[1]![0]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: TEAMMATE, card: DEAL_2V2_MAXIMAL[2]![0]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT_2, card: DEAL_2V2_MAXIMAL[3]![0]! });
+    await recordRender(state); // trick 1 resolves — the first pile card appears on all four seats
+
+    // Trick 2: SELF leads again (held trick 1's winning card); team B's 3-basto (OPPONENT_2) wins — split so far.
+    state = dispatch(state, { type: "play-card", playerId: SELF, card: DEAL_2V2_MAXIMAL[0]![1]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_2V2_MAXIMAL[1]![1]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: TEAMMATE, card: DEAL_2V2_MAXIMAL[2]![1]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT_2, card: DEAL_2V2_MAXIMAL[3]![1]! });
+    await recordRender(state); // trick 2 resolves — split, trick 3 must decide
+
+    // Trick 3: OPPONENT_2 leads (won trick 2); turn order wraps 3 -> 0 -> 1 -> 2. Team A's 3-espada (SELF) decides the hand.
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT_2, card: DEAL_2V2_MAXIMAL[3]![2]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: SELF, card: DEAL_2V2_MAXIMAL[0]![2]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_2V2_MAXIMAL[1]![2]! });
+    await recordRender(state);
+    state = dispatch(state, { type: "play-card", playerId: TEAMMATE, card: DEAL_2V2_MAXIMAL[2]![2]! });
+    await recordRender(state); // hand decided — four full three-card piles, a full call log, hand-outcome banner: all at once
+
+    expect(state.hand?.trickOutcomes).toHaveLength(3); // sanity: this really is the maximal case, not an early decision
+    expect(state.hand?.outcome.decided).toBe(true);
+    expectStableHeights(heights);
   });
 });

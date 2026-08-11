@@ -20,6 +20,8 @@ function view(overrides: Partial<PlayerView> & { readonly dealerSeat?: number } 
       envido: { status: "none" },
       turnSeat: 0,
       currentTrickPlays: [],
+      resolvedTrickPlays: [],
+      callEvents: [],
       trickOutcomes: [],
       outcome: { decided: false },
     },

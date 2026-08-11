@@ -9,8 +9,10 @@ export type { HandOutcome } from "./hand-winner.js";
 export { resolveHandWinner } from "./hand-winner.js";
 export type { PlayerId, TeamId } from "./ids.js";
 export type {
+  CallEvent,
   DealInput,
   EnvidoCallLevel,
+  EnvidoDeclaration,
   EnvidoState,
   HandPlay,
   HandState,

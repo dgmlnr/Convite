@@ -34,6 +34,8 @@ function baseView(overrides: { selfHand: readonly Card[]; cardsRemaining: number
       envido: { status: "none" },
       turnSeat: 0,
       currentTrickPlays: [],
+      resolvedTrickPlays: [],
+      callEvents: [],
       trickOutcomes: [],
       outcome: { decided: false },
     },

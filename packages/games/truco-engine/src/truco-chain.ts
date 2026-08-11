@@ -4,7 +4,7 @@ import { applyEnvidoAction, getLegalEnvidoActions } from "./envido-chain.js";
 import type { EnvidoAction } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { getMatchWinner } from "./match.js";
-import type { MatchState, Player, TrucoCallLevel, TrucoState } from "./match.js";
+import type { CallEvent, MatchState, Player, TrucoCallLevel, TrucoState } from "./match.js";
 import { applySenaAction, getLegalSenaActions } from "./senas.js";
 import type { SenaAction } from "./senas.js";
 import { DECLINE_VALUE } from "./truco-scoring.js";
@@ -136,7 +136,8 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
     // escalation ("accepted" -> "pending"): in both cases the caller
     // becomes the new pending caller at the new level.
     const nextTruco: TrucoState = { status: "pending", level: action.level, callingTeamId: player.teamId };
-    return { ok: true, state: { ...state, hand: { ...hand, truco: nextTruco } } };
+    const event: CallEvent = { kind: "truco-call", playerId: player.id, teamId: player.teamId, seat: player.seat, level: action.level };
+    return { ok: true, state: { ...state, hand: { ...hand, truco: nextTruco, callEvents: [...hand.callEvents, event] } } };
   }
 
   const pending = hand.truco;
@@ -146,7 +147,8 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
 
   if (action.response === "quiero") {
     const nextTruco: TrucoState = { status: "accepted", level: pending.level, callingTeamId: pending.callingTeamId };
-    return { ok: true, state: { ...state, hand: { ...hand, truco: nextTruco } } };
+    const event: CallEvent = { kind: "truco-response", playerId: player.id, teamId: player.teamId, seat: player.seat, response: "quiero" };
+    return { ok: true, state: { ...state, hand: { ...hand, truco: nextTruco, callEvents: [...hand.callEvents, event] } } };
   }
 
   const nextTruco: TrucoState = {
@@ -155,6 +157,7 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
     callingTeamId: pending.callingTeamId,
     decliningTeamId: player.teamId,
   };
+  const declineEvent: CallEvent = { kind: "truco-response", playerId: player.id, teamId: player.teamId, seat: player.seat, response: "no-quiero" };
   const awardedPoints = DECLINE_VALUE[pending.level];
   const teams = state.teams.map((team) =>
     team.id === pending.callingTeamId ? { ...team, score: team.score + awardedPoints } : team,
@@ -172,7 +175,12 @@ function applyTrucoAction(state: MatchState, action: TrucoAction): ApplyResult {
     state: {
       ...state,
       teams,
-      hand: { ...hand, truco: nextTruco, outcome: { decided: true, winnerTeamId: pending.callingTeamId } },
+      hand: {
+        ...hand,
+        truco: nextTruco,
+        outcome: { decided: true, winnerTeamId: pending.callingTeamId },
+        callEvents: [...hand.callEvents, declineEvent],
+      },
     },
   };
 }

@@ -96,7 +96,14 @@ export function applyCardPlayAction(state: MatchState, action: PlayCardAction): 
   const manoTeamId = state.players.find((p) => p.seat === hand.manoSeat)!.teamId;
   const handOutcome: HandOutcome = resolveHandWinner(trickOutcomes, manoTeamId);
   const nextTurnSeat = nextLeaderSeat(leaderSeat, outcome, plays);
-  const nextHand: HandState = { ...hand, currentTrickPlays: [], trickOutcomes, turnSeat: nextTurnSeat, outcome: handOutcome };
+  const nextHand: HandState = {
+    ...hand,
+    currentTrickPlays: [],
+    resolvedTrickPlays: [...hand.resolvedTrickPlays, plays],
+    trickOutcomes,
+    turnSeat: nextTurnSeat,
+    outcome: handOutcome,
+  };
 
   if (!handOutcome.decided) {
     return { ok: true, state: { ...state, players, hand: nextHand } };
