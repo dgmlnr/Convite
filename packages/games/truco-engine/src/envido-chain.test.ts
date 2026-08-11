@@ -1,9 +1,11 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { Card } from "./card.js";
-import { calculateEnvidoPoints } from "./envido-chain.js";
+import { buildDeck } from "./deck.js";
+import { calculateEnvidoPoints, resolveEnvidoDeclarations } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
-import type { EnvidoCallLevel, MatchState } from "./match.js";
+import type { EnvidoCallLevel, EnvidoState, MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 
@@ -204,6 +206,18 @@ describe("applyAction — envido cumulative cost and reveal (spec: truco-rules)"
     const declined = apply(pendingEnvidoAt(levels), { type: "respond-envido", playerId: decliner, response: "no-quiero" });
     expect(declined.teams[0]!.score).toBe(scoreA);
     expect(declined.teams[1]!.score).toBe(scoreB);
+
+    // Rider (PR-1 review): the respond-envido "no-quiero" CallEvent was only
+    // count-covered before this — assert its exact shape directly, not just
+    // that SOME event got appended.
+    const decliningPlayer = declined.players.find((player) => player.id === decliner)!;
+    expect(declined.hand?.callEvents).toContainEqual({
+      kind: "envido-response",
+      playerId: decliner,
+      teamId: decliningPlayer.teamId,
+      seat: decliningPlayer.seat,
+      response: "no-quiero",
+    });
   });
 
   it("a tied reveal is won by the mano's team", () => {
@@ -283,6 +297,185 @@ describe("applyAction — 2v2 envido: team value is the BEST among its members, 
 
     const teamA = revealed.teams.find((t) => t.playerIds.includes(playerA))!;
     expect(revealed.hand?.envido).toMatchObject({ winningTeamId: teamA.id });
+  });
+});
+
+/**
+ * Ordered public call log (spec: "Ordered Call Log"). Every truco call,
+ * envido call, response, and reveal is appended, in the order applied,
+ * attributed to its actor. The chain below deliberately interleaves both
+ * reducers — envido must resolve before truco is legal at all
+ * (`getLegalTrucoActions`), so the only way to exercise "truco after
+ * envido" for real is to actually resolve envido first, same as a real
+ * table.
+ */
+describe("callEvents — ordered public call log across truco+envido chains (spec: 'Ordered Call Log')", () => {
+  it("records every call/response/reveal in the exact order applied, each attributed to its actor", () => {
+    const state = freshHand();
+    const teamAId = state.teams[0]!.id;
+    const teamBId = state.teams[1]!.id;
+
+    let s = apply(state, { type: "call-envido", playerId: playerA, level: "envido" });
+    s = apply(s, { type: "call-envido", playerId: playerB, level: "realEnvido" });
+    s = apply(s, { type: "respond-envido", playerId: playerA, response: "quiero" });
+    s = apply(s, { type: "reveal-envido", playerId: playerB });
+    s = apply(s, { type: "call-truco", playerId: playerA, level: "truco" });
+    s = apply(s, { type: "respond-truco", playerId: playerB, response: "quiero" });
+    s = apply(s, { type: "call-truco", playerId: playerB, level: "retruco" });
+    s = apply(s, { type: "respond-truco", playerId: playerA, response: "no-quiero" });
+
+    expect(s.hand?.callEvents).toEqual([
+      { kind: "envido-call", playerId: playerA, teamId: teamAId, seat: 0, level: "envido" },
+      { kind: "envido-call", playerId: playerB, teamId: teamBId, seat: 1, level: "realEnvido" },
+      { kind: "envido-response", playerId: playerA, teamId: teamAId, seat: 0, response: "quiero" },
+      { kind: "envido-reveal", playerId: playerB, teamId: teamBId, seat: 1 },
+      { kind: "truco-call", playerId: playerA, teamId: teamAId, seat: 0, level: "truco" },
+      { kind: "truco-response", playerId: playerB, teamId: teamBId, seat: 1, response: "quiero" },
+      { kind: "truco-call", playerId: playerB, teamId: teamBId, seat: 1, level: "retruco" },
+      { kind: "truco-response", playerId: playerA, teamId: teamAId, seat: 0, response: "no-quiero" },
+    ]);
+  });
+
+  it("a re-deal clears the call log to empty (spec: 'New deal')", () => {
+    const called = apply(freshHand(), { type: "call-envido", playerId: playerA, level: "envido" });
+    expect(called.hand?.callEvents.length).toBeGreaterThan(0);
+
+    const nextHand = startHand(called, [[], []]);
+    expect(nextHand.hand?.callEvents).toEqual([]);
+  });
+});
+
+/**
+ * Per-player envido declaration order (spec: "Per-Player Envido Declaration
+ * Order"; AMENDMENT — supersedes design D-3's lexicographic
+ * `(points, isManoTeam)` comparator: declare iff `points > runningBest`,
+ * plain strictly-greater, no mano-priority term). `resolveEnvidoDeclarations`
+ * is pure over `state.players`' own hands and `manoSeat` — it does not read
+ * `hand.envido` at all, so these tests call it directly rather than driving
+ * a call/quiero/reveal chain first (T-4/T-5 exercise the wired-through
+ * version once `reveal-envido` computes it, see envido-chain.test.ts's own
+ * derivation-equivalence property and view.test.ts's redaction property).
+ */
+describe("resolveEnvidoDeclarations — per-player declaration order (T-3, amended comparator)", () => {
+  it("mano has the best hand: only mano's entry carries points, every other entry is son buenas", () => {
+    const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat: 1 }); // manoSeat = 0 -> playerA
+    const dealt = startHand(state, [
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }], // playerA: 33
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }], // playerB: 5
+    ]);
+    const manoSeat = dealt.hand!.manoSeat;
+    expect(manoSeat).toBe(0);
+
+    const declarations = resolveEnvidoDeclarations(dealt, manoSeat);
+
+    const teamAId = dealt.teams[0]!.id;
+    const teamBId = dealt.teams[1]!.id;
+    expect(declarations).toEqual([
+      { declaration: "points", playerId: playerA, teamId: teamAId, seat: 0, points: 33 },
+      { declaration: "sonBuenas", playerId: playerB, teamId: teamBId, seat: 1 },
+    ]);
+  });
+
+  it("a later player beats the running best -> only later players who then exceed IT (not the original best) also declare", () => {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 }); // manoSeat = 0 -> playerA
+    const dealt = startHand(state, [
+      [{ suit: "espada", rank: 5 }, { suit: "basto", rank: 2 }, { suit: "copa", rank: 1 }], // playerA (mano, team A): 5 (no shared suit)
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }], // playerB (team B): 27 -- beats 5, declares
+      [{ suit: "espada", rank: 1 }, { suit: "espada", rank: 3 }, { suit: "oro", rank: 7 }], // playerC (team A): 24 -- does NOT beat 27, withholds, even though 24 > 5
+      [{ suit: "copa", rank: 7 }, { suit: "copa", rank: 3 }, { suit: "basto", rank: 1 }], // playerD (team B): 30 -- beats 27, declares
+    ]);
+    const manoSeat = dealt.hand!.manoSeat;
+    expect(manoSeat).toBe(0);
+
+    const declarations = resolveEnvidoDeclarations(dealt, manoSeat);
+
+    const teamAId = dealt.teams[0]!.id;
+    const teamBId = dealt.teams[1]!.id;
+    expect(declarations).toEqual([
+      { declaration: "points", playerId: playerA, teamId: teamAId, seat: 0, points: 5 },
+      { declaration: "points", playerId: playerB, teamId: teamBId, seat: 1, points: 27 },
+      { declaration: "sonBuenas", playerId: playerC, teamId: teamAId, seat: 2 },
+      { declaration: "points", playerId: playerD, teamId: teamBId, seat: 3, points: 30 },
+    ]);
+  });
+
+  it("AMENDED 2v2 fixture (tasks.md amendment bullet 4): mano 27, a cross-team 31 declares, a same-value 31 later withholds -- the derived winner (last 'points' entry) is team B, not mano's team A", () => {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 }); // manoSeat = 0 -> playerA
+    const dealt = startHand(state, [
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }], // playerA (mano, team A): 27
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 4 }, { suit: "oro", rank: 2 }], // playerB (team B): 31 -- beats 27, declares
+      [{ suit: "copa", rank: 7 }, { suit: "copa", rank: 4 }, { suit: "basto", rank: 1 }], // playerC (team A): 31 -- ties, does NOT beat 31, withholds
+      [{ suit: "oro", rank: 3 }, { suit: "basto", rank: 5 }, { suit: "copa", rank: 1 }], // playerD (team B): 5 -- lower, withholds
+    ]);
+    const manoSeat = dealt.hand!.manoSeat;
+    expect(manoSeat).toBe(0);
+
+    const declarations = resolveEnvidoDeclarations(dealt, manoSeat);
+
+    const teamAId = dealt.teams[0]!.id;
+    const teamBId = dealt.teams[1]!.id;
+    expect(declarations).toEqual([
+      { declaration: "points", playerId: playerA, teamId: teamAId, seat: 0, points: 27 },
+      { declaration: "points", playerId: playerB, teamId: teamBId, seat: 1, points: 31 },
+      { declaration: "sonBuenas", playerId: playerC, teamId: teamAId, seat: 2 },
+      { declaration: "sonBuenas", playerId: playerD, teamId: teamBId, seat: 3 },
+    ]);
+    // Structural redaction (D-1): a son-buenas entry has NO `points` key at
+    // all -- not "points: undefined", the key itself is absent.
+    expect(declarations.filter((entry) => entry.declaration === "sonBuenas").every((entry) => !("points" in entry))).toBe(true);
+    // D-2: the derived winner is the team of the LAST "points" entry -- team
+    // B, the amended behavior (was team A under the now-replaced isManoTeam
+    // tie component; see the AMENDMENT docblock on resolveEnvidoDeclarations).
+    const lastPointsEntry = [...declarations].reverse().find((entry) => entry.declaration === "points")!;
+    expect(lastPointsEntry.teamId).toBe(teamBId);
+  });
+});
+
+/**
+ * Derivation equivalence (design D-2, T-4): `resolveEnvidoWinner`'s
+ * replacement must agree with `resolveEnvidoDeclarations`'s own output by
+ * CONSTRUCTION, not by coincidence. A purely random legal walk rarely
+ * reaches `revealed` (call/respond/reveal envido is one action among many
+ * competing with card-play/truco/señas), so these generators DRIVE the
+ * envido chain straight to reveal -- mano opens, the first legal opponent
+ * accepts, mano reveals -- while still randomizing the deal and (via
+ * `dealerSeat`) which seat is mano, for both 1v1 and 2v2.
+ */
+const revealedHeadToHeadArb = fc
+  .tuple(fc.shuffledSubarray(buildDeck() as Card[], { minLength: 6, maxLength: 6 }), fc.constantFrom(0, 1))
+  .map(([cards, dealerSeat]) => {
+    const base = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat });
+    const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6)]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const opponent = dealt.players.find((player) => player.seat !== manoSeat)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+  });
+
+const revealedTeamArb = fc
+  .tuple(fc.shuffledSubarray(buildDeck() as Card[], { minLength: 12, maxLength: 12 }), fc.constantFrom(0, 1, 2, 3))
+  .map(([cards, dealerSeat]) => {
+    const base = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat });
+    const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6), cards.slice(6, 9), cards.slice(9, 12)]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+  });
+
+describe("envido.declarations — derivation equivalence property (design D-2, T-4)", () => {
+  it("in every revealed state (1v1 and 2v2), the teamId of the LAST 'points' declaration equals envido.winningTeamId", () => {
+    fc.assert(
+      fc.property(fc.oneof(revealedHeadToHeadArb, revealedTeamArb), (state) => {
+        const revealed = state.hand!.envido as Extract<EnvidoState, { status: "revealed" }>;
+        const lastPointsEntry = [...revealed.declarations].reverse().find((entry) => entry.declaration === "points")!;
+        return lastPointsEntry.teamId === revealed.winningTeamId;
+      }),
+    );
   });
 });
 

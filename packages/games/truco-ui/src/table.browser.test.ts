@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Action, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import type { Action, CallEvent, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 const SELF = "player-a" as PlayerId;
@@ -37,6 +37,8 @@ function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
       envido: { status: "none" },
       turnSeat: 0,
       currentTrickPlays: [],
+      resolvedTrickPlays: [],
+      callEvents: [],
       trickOutcomes: [],
       outcome: { decided: false },
     },
@@ -127,6 +129,8 @@ describe("createMatchTableRenderer — four anchors, always relative to the loca
           envido: { status: "none" },
           turnSeat: 1,
           currentTrickPlays: [],
+          resolvedTrickPlays: [],
+          callEvents: [],
           trickOutcomes: [{ winnerTeamId: MY_TEAM }],
           outcome: { decided: false },
         },
@@ -481,5 +485,49 @@ describe("createMatchTableRenderer — a real ending, once the match is over (sp
     expect(overlay.textContent).toContain("18");
     overlay.querySelector<HTMLButtonElement>('button[data-action="play-again"]')!.click();
     expect(onPlayAgain).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel With Bounded Footprint', 'History Persists Through the Outcome Banner')", () => {
+  it("mounts renderCallLog inside .hexdev-truco-center, fed from view.hand.callEvents and the SAME positions map the piles use", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
+
+    render(el, baseView({ hand: { ...baseView().hand!, callEvents: events } }), [], () => {});
+
+    const center = el.querySelector(".hexdev-truco-center")!;
+    const panel = center.querySelector(".hexdev-truco-call-log");
+    expect(panel).not.toBeNull();
+    const entries = panel!.querySelectorAll(".hexdev-truco-call-log-entry");
+    expect(entries).toHaveLength(1);
+    // Same geometry the piles use (resolveSeatPositions): seat 0 is the local player, "bottom".
+    expect(entries[0]!.getAttribute("data-position")).toBe("bottom");
+  });
+
+  it("keeps piles and the call log visible through outcome.decided, then clears both once the next hand is dealt (Q5/D-9: no new UI state needed)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
+    const plays: readonly (readonly HandPlay[])[] = [[{ playerId: SELF, teamId: MY_TEAM, seat: 0, card: { suit: "espada", rank: 1 } }]];
+
+    render(
+      el,
+      baseView({
+        hand: { ...baseView().hand!, resolvedTrickPlays: plays, callEvents: events, outcome: { decided: true, winnerTeamId: MY_TEAM } },
+      }),
+      [],
+      () => {},
+    );
+
+    expect(el.querySelectorAll("[data-played-by-seat]")).toHaveLength(1);
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry")).toHaveLength(1);
+
+    // The next startHand() resets both fields to [] (design §2.3's own
+    // reset-on-deal guarantee) — the same shape a real re-deal broadcasts.
+    render(el, baseView(), [], () => {});
+
+    expect(el.querySelectorAll("[data-played-by-seat]")).toHaveLength(0);
+    expect(el.querySelector(".hexdev-truco-call-log")!.children).toHaveLength(0);
   });
 });

@@ -47,7 +47,28 @@ export type EnvidoState =
   | { readonly status: "pending"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId }
   | { readonly status: "accepted"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly acceptedValue: number }
   | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
-  | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number };
+  | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number;
+      /** Mano-rotation order, oldest first. Present ONLY on `revealed` — an
+       * envido that was never called, or was declined, has no variant that
+       * can hold a declaration list (design §2.3). `winningTeamId` above is
+       * DERIVED from this list (D-2) — see `resolveEnvidoDeclarations` and
+       * the `reveal-envido` branch in envido-chain.ts. */
+      readonly declarations: readonly EnvidoDeclaration[] };
+
+/** What one player SAID at the envido reveal, in mano declaration order.
+ *
+ * The withheld variant has NO `points` KEY AT ALL — the same structural
+ * discipline `OpponentView` uses for `lastSena` (view.ts:13-31): a leak is a
+ * compile error, not a runtime check someone could forget.
+ *
+ * Stronger than the seña case, and deliberately so: a withholder's number is
+ * never COMPUTED INTO STATE in the first place (see `resolveEnvidoDeclarations`
+ * in envido-chain.ts), so there is no redacted-at-projection step to get
+ * wrong. `getViewFor` can keep projecting `envido` as one already-public
+ * value (D-6). */
+export type EnvidoDeclaration =
+  | { readonly declaration: "points"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly points: number }
+  | { readonly declaration: "sonBuenas"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number };
 
 /** A recorded seña (design: closed vocabulary, a claim not a verified
  * statement). `teamId` is carried alongside `playerId` purely so the view
@@ -69,6 +90,29 @@ export interface HandPlay {
   readonly card: Card;
 }
 
+/** One thing a player SAID out loud this hand, in order. Append-only and
+ * deal-scoped (unlike `senas`, which deliberately replaces per player).
+ * `playerId`/`teamId`/`seat` are carried inline for exactly the reason
+ * `HandPlay` and `SenaEvent` already carry them: the view projection and the
+ * UI must attribute an event to a seat without a second lookup.
+ *
+ * DISCRIMINANT IS `kind`, NOT `type` — deliberately. `Action` variants use
+ * `type`; a `CallEvent` that also used `type` would be structurally
+ * ASSIGNABLE to `CallTrucoAction`/`RespondEnvidoAction` (excess-property
+ * checks only bite on object literals), so an event could be fed back into
+ * `applyAction` by accident and silently re-apply a call. `kind` makes that
+ * a compile error.
+ *
+ * SEÑAS ARE NOT CALL EVENTS. This log is public table speech only; a seña is
+ * private to one team and has its own redacted channel (`TeammateView.lastSena`).
+ * Adding a seña-shaped variant here would leak it to every viewer. */
+export type CallEvent =
+  | { readonly kind: "truco-call"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly level: TrucoCallLevel }
+  | { readonly kind: "truco-response"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly response: "quiero" | "no-quiero" }
+  | { readonly kind: "envido-call"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly level: EnvidoCallLevel }
+  | { readonly kind: "envido-response"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly response: "quiero" | "no-quiero" }
+  | { readonly kind: "envido-reveal"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number };
+
 /** State materialized once a hand's deal has been dealt (design §4). */
 export interface HandState {
   readonly manoSeat: number;
@@ -87,6 +131,16 @@ export interface HandState {
    * always empty in a 1v1 match, since `getLegalSenaActions` never offers
    * `send-sena` to a player without a teammate). */
   readonly senas: readonly SenaEvent[];
+  /** Every trick already resolved this hand, oldest first, each holding that
+   * trick's own plays in play order. INDEX-ALIGNED with `trickOutcomes` —
+   * both are appended in the same atomic transition in `card-play.ts`.
+   * `currentTrickPlays` keeps its exact prior meaning, so `canOpenEnvido`'s
+   * first-trick gate and turn advancement are untouched (spec: "Retain
+   * All-Trick Plays"). */
+  readonly resolvedTrickPlays: readonly (readonly HandPlay[])[];
+  /** Ordered public speech this hand. Append-only, never overwritten
+   * (spec: "Ordered Call Log"). */
+  readonly callEvents: readonly CallEvent[];
 }
 
 export interface MatchState {
@@ -205,6 +259,8 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
       trickOutcomes: [],
       outcome: { decided: false },
       senas: [],
+      resolvedTrickPlays: [],
+      callEvents: [],
     },
   };
 }

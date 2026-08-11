@@ -153,12 +153,28 @@ describe("applyAction — a complete three-trick hand, end to end (the reason th
     expect(getLegalActions(s, playerA)).toEqual([]);
     expect(getLegalActions(s, playerB)).toEqual([]);
 
+    // Every resolved trick's plays are RETAINED (spec: "Retain All-Trick
+    // Plays"), index-aligned with trickOutcomes, oldest first — not just the
+    // in-progress trick, which currentTrickPlays already covered and keeps
+    // covering unchanged.
+    expect(s.hand?.resolvedTrickPlays).toHaveLength(3);
+    expect(s.hand?.resolvedTrickPlays?.length).toBe(s.hand?.trickOutcomes.length);
+    expect(s.hand?.resolvedTrickPlays?.[0]).toEqual([
+      { playerId: playerA, teamId: s.teams[0]!.id, seat: 0, card: handA[0] },
+      { playerId: playerB, teamId: s.teams[1]!.id, seat: 1, card: handB[0] },
+    ]);
+    expect(s.hand?.resolvedTrickPlays?.[2]).toEqual([
+      { playerId: playerB, teamId: s.teams[1]!.id, seat: 1, card: handB[2] },
+      { playerId: playerA, teamId: s.teams[0]!.id, seat: 0, card: handA[2] },
+    ]);
+
     // A non-terminal hand starts a fresh, mano-rotated hand — same pattern the
     // truco-decline path already uses (match.test.ts): the engine does not
     // auto-advance; the caller rotates and deals explicitly.
     expect(getMatchWinner(s)).toBeNull();
     const nextHand = startHand(rotateDealer(s), [[], []]);
     expect(nextHand.hand?.manoSeat).not.toBe(s.hand?.manoSeat);
+    expect(nextHand.hand?.resolvedTrickPlays).toEqual([]); // reset on deal (spec: "New deal")
   });
 
   it("a hand decided by the second trick (two straight wins) needs no third trick", () => {

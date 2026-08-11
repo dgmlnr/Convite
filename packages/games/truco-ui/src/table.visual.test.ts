@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser/matchers" />
 import { describe, expect, it } from "vitest";
 import { applyAction, createHeadToHeadMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
-import type { DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
+import type { Card, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 const SELF = "visual-self" as PlayerId;
@@ -24,6 +24,31 @@ const FIXED_DEAL: DealInput = [
     { suit: "oro", rank: 3 },
   ],
 ];
+
+/** T-12 (piles-only slice, PR-3): the exact split-then-decided-at-trick-3
+ * deck already proven by `card-play.test.ts`'s own end-to-end fixture and
+ * reused by `table-height-stability.browser.test.ts`'s T-7 fence — the same
+ * reachable state, so this baseline and that fence describe the identical
+ * hand. Both hands are dealt 3 cards, unlike `FIXED_DEAL` above, so every
+ * seat ends the hand with a real 3-card pile to screenshot. */
+const PILED_DEAL: DealInput = [
+  [
+    { suit: "espada", rank: 1 },
+    { suit: "basto", rank: 4 },
+    { suit: "espada", rank: 7 },
+  ],
+  [
+    { suit: "espada", rank: 4 },
+    { suit: "basto", rank: 1 },
+    { suit: "oro", rank: 4 },
+  ],
+];
+
+function play(state: MatchState, playerId: PlayerId, card: Card): MatchState {
+  const result = applyAction(state, { type: "play-card", playerId, card });
+  if (!result.ok) throw new Error(`visual fixture setup: illegal action — ${result.violation}`);
+  return result.state;
+}
 
 /** A non-trivial, asymmetric score (spec: "the matchstick scoreboard at a
  * non-trivial score") set directly on the constructed state — the same
@@ -108,6 +133,11 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     await expect.element(feltOf(container)).toMatchScreenshot("table-mid-hand");
   });
 
+  // Also the first log-affected baseline (T-12 part 2): the call-truco
+  // action below is this fixture's only CallEvent, so once the call-log
+  // panel is mounted (P4-T3) it renders exactly one entry, bottom-left,
+  // never affecting `table-mid-hand`/`table-themed`/`table-hand-full-piles`
+  // above (none of those three fixtures ever calls anything).
   it("a pending truco call: the banner is shown and the whole hand is locked until it is answered", async () => {
     const container = mountedContainer();
     const called = applyAction(dealtMatch(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
@@ -153,5 +183,28 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     // 12:8 matchsticks, sits fully visible below the felt here, where the
     // old fixed-height container silently clipped it out.
     await expect.element(container).toMatchScreenshot("table-themed");
+  });
+
+  it("three tricks resolved: each seat shows a persistent, offset pile of its own played cards, most recent on top (spec: Persistent Per-Seat Card Piles)", async () => {
+    const container = mountedContainer();
+    let state = startHand(createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 }), PILED_DEAL);
+
+    // Trick 1: SELF (mano) wins 1-espada over 4-espada.
+    state = play(state, SELF, PILED_DEAL[0]![0]!);
+    state = play(state, OPPONENT, PILED_DEAL[1]![0]!);
+    // Trick 2: SELF leads again, OPPONENT wins 1-basto over 4-basto — split so far.
+    state = play(state, SELF, PILED_DEAL[0]![1]!);
+    state = play(state, OPPONENT, PILED_DEAL[1]![1]!);
+    // Trick 3: OPPONENT leads, SELF wins 7-espada over 4-oro, deciding the hand.
+    state = play(state, OPPONENT, PILED_DEAL[1]![2]!);
+    state = play(state, SELF, PILED_DEAL[0]![2]!);
+
+    const view = getViewFor(state, SELF);
+    const legalActions = getLegalActions(state, SELF);
+
+    createMatchTableRenderer()(container, view, legalActions, () => {});
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-hand-full-piles");
   });
 });

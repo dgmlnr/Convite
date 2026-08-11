@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser/matchers" />
 import { describe, expect, it } from "vitest";
 import { applyAction, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
-import type { DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
+import type { Card, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 /**
@@ -25,6 +25,26 @@ const FIXED_DEAL_4: DealInput = [
   [{ suit: "basto", rank: 1 }, { suit: "espada", rank: 7 }, { suit: "oro", rank: 12 }],
   [{ suit: "oro", rank: 11 }, { suit: "copa", rank: 10 }, { suit: "basto", rank: 6 }],
 ];
+
+/** T-12 (piles-only slice, PR-3): the exact split-then-decided-at-trick-3
+ * four-seat deck already proven by `card-play.test.ts`'s own end-to-end
+ * fixture and reused by `table-height-stability.browser.test.ts`'s T-7
+ * fence — the same reachable state, so this baseline and that fence
+ * describe the identical hand. Each seat ends with a different pile depth
+ * (SELF: 3, OPPONENT: 3, PARTNER: 3, OPPONENT_2: 3 — every seat plays all
+ * three tricks), which is what actually exercises per-seat independence. */
+const PILED_DEAL_4: DealInput = [
+  [{ suit: "espada", rank: 1 }, { suit: "basto", rank: 4 }, { suit: "espada", rank: 3 }],
+  [{ suit: "basto", rank: 5 }, { suit: "oro", rank: 1 }, { suit: "basto", rank: 6 }],
+  [{ suit: "oro", rank: 4 }, { suit: "copa", rank: 4 }, { suit: "basto", rank: 4 }],
+  [{ suit: "copa", rank: 5 }, { suit: "basto", rank: 3 }, { suit: "copa", rank: 6 }],
+];
+
+function play(state: MatchState, playerId: PlayerId, card: Card): MatchState {
+  const result = applyAction(state, { type: "play-card", playerId, card });
+  if (!result.ok) throw new Error(`visual fixture setup: illegal action — ${result.violation}`);
+  return result.state;
+}
 
 function withNonTrivialScore(state: MatchState): MatchState {
   return { ...state, teams: state.teams.map((team, index) => ({ ...team, score: index === 0 ? 9 : 5 })) };
@@ -99,5 +119,35 @@ describe("visual: the 4-seat (2v2) game table — partner obvious at a glance, s
     container.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.click();
 
     await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-senas-open");
+  });
+
+  it("three tricks resolved: all four seats show their own persistent, offset pile, most recent on top (spec: Persistent Per-Seat Card Piles)", async () => {
+    const container = mountedContainer();
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, PARTNER, OPPONENT_2];
+    let state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), PILED_DEAL_4);
+
+    // Trick 1: SELF leads (mano), turn order 0 -> 1 -> 2 -> 3; team A's 1-espada (SELF) wins.
+    state = play(state, SELF, PILED_DEAL_4[0]![0]!);
+    state = play(state, OPPONENT, PILED_DEAL_4[1]![0]!);
+    state = play(state, PARTNER, PILED_DEAL_4[2]![0]!);
+    state = play(state, OPPONENT_2, PILED_DEAL_4[3]![0]!);
+    // Trick 2: SELF leads again (held trick 1's winning card); team B's 3-basto (OPPONENT_2) wins — split so far.
+    state = play(state, SELF, PILED_DEAL_4[0]![1]!);
+    state = play(state, OPPONENT, PILED_DEAL_4[1]![1]!);
+    state = play(state, PARTNER, PILED_DEAL_4[2]![1]!);
+    state = play(state, OPPONENT_2, PILED_DEAL_4[3]![1]!);
+    // Trick 3: OPPONENT_2 leads (won trick 2); turn order wraps 3 -> 0 -> 1 -> 2. Team A's 3-espada (SELF) decides.
+    state = play(state, OPPONENT_2, PILED_DEAL_4[3]![2]!);
+    state = play(state, SELF, PILED_DEAL_4[0]![2]!);
+    state = play(state, OPPONENT, PILED_DEAL_4[1]![2]!);
+    state = play(state, PARTNER, PILED_DEAL_4[2]![2]!);
+
+    const view = getViewFor(state, SELF);
+    const legalActions = getLegalActions(state, SELF);
+
+    createMatchTableRenderer()(container, view, legalActions, () => {});
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-hand-full-piles");
   });
 });
