@@ -133,6 +133,11 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     await expect.element(feltOf(container)).toMatchScreenshot("table-mid-hand");
   });
 
+  // Also the first log-affected baseline (T-12 part 2): the call-truco
+  // action below is this fixture's only CallEvent, so once the call-log
+  // panel is mounted (P4-T3) it renders exactly one entry, bottom-left,
+  // never affecting `table-mid-hand`/`table-themed`/`table-hand-full-piles`
+  // above (none of those three fixtures ever calls anything).
   it("a pending truco call: the banner is shown and the whole hand is locked until it is answered", async () => {
     const container = mountedContainer();
     const called = applyAction(dealtMatch(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
