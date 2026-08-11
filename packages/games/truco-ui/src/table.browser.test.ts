@@ -555,4 +555,37 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
     expect(el.querySelectorAll("[data-played-by-seat]")).toHaveLength(0);
     expect(el.querySelector(".hexdev-truco-call-log")!.children).toHaveLength(0);
   });
+
+  // PR4 correction (native review, deterministic CRITICAL): the wide/ultra
+  // override (table-styles.ts's own @container (min-width: 900px) block)
+  // used to sit BEFORE the base .hexdev-truco-call-log rule in source order —
+  // same specificity, later rule wins regardless of @container nesting — so
+  // the base rule always won and the log stayed position: absolute /
+  // grid-area: center even at >=900px, never entering flow. This closes that
+  // gap directly: a real container-query width (per this suite's own
+  // established mountedContainer pattern elsewhere), a computed-style check,
+  // and a real geometry check against .hexdev-truco-center.
+  it("PR4 correction: at wide (960px), the log panel is really in flow — position: static, and its rect never overlaps .hexdev-truco-center's rect", () => {
+    const el = freshContainer();
+    el.style.width = "960px";
+    const render = createMatchTableRenderer();
+    const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
+
+    render(el, baseView({ hand: { ...baseView().hand!, callEvents: events } }), [], () => {});
+
+    const felt = el.querySelector(".hexdev-truco-table")!;
+    const center = felt.querySelector(".hexdev-truco-center")!;
+    const panel = felt.querySelector(":scope > .hexdev-truco-call-log")!;
+
+    expect(getComputedStyle(panel).position, "the panel must be a real in-flow box at wide, not floating over the felt").toBe("static");
+
+    const centerRect = center.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const overlaps =
+      panelRect.left < centerRect.right - 0.5 &&
+      centerRect.left < panelRect.right - 0.5 &&
+      panelRect.top < centerRect.bottom - 0.5 &&
+      centerRect.top < panelRect.bottom - 0.5;
+    expect(overlaps, `panel ${JSON.stringify(panelRect)} vs center ${JSON.stringify(centerRect)}`).toBe(false);
+  });
 });

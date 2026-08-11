@@ -292,28 +292,6 @@ export function buildTableStylesheet(): string {
     justify-self: center;
     width: min(100%, var(--hx-play-max));
   }
-
-  /* PR4-T5 (tasks §8, D-4): the log's rect stops floating over the felt and
-   * becomes a real in-flow grid-column child at wide/ultra. The clipping
-   * ancestor moves from .hexdev-truco-center to .hexdev-truco-table (both
-   * stay overflow: hidden — see the base .hexdev-truco-table rule above and
-   * the base .hexdev-truco-call-log rule below, neither edited by this
-   * block). Everything else about the panel (max-width: 58%, max-height,
-   * internal scroll, pointer-events: auto) is UNCHANGED at wide/ultra too
-   * (design §9.5) — only its containing-block mechanism changes, from
-   * "grid-area: center" to "grid-area: log", and from position: absolute to
-   * position: static (a real in-flow box now, no longer needing left/bottom
-   * offsets at all). */
-  .hexdev-truco-call-log {
-    grid-area: log;
-    position: static;
-  }
-
-  /* PR4-T7 (tasks §8): scoreboard rail width bump — a SHELL-level change
-   * (this selector is a sibling of .hexdev-truco-table, not a descendant of
-   * it), grouped here only because it shares this @container block's own
-   * min-width condition. 168px (medium, declared below) stays unchanged. */
-  .hexdev-truco-scoreboard-panel { width: 200px; }
 }
 @container hexdev-truco-shell (min-width: 1280px) {
   .hexdev-truco-table {
@@ -327,8 +305,6 @@ export function buildTableStylesheet(): string {
   }
   .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 108px; }
   .hexdev-truco-table[data-seat-count="4"] { --truco-card-width: 100px; }
-  /* PR4-T7: ultra's own scoreboard rail width. */
-  .hexdev-truco-scoreboard-panel { width: 240px; }
 }
 
 /* Change 2: a side panel that works wide does not fit narrow, so the two
@@ -347,6 +323,20 @@ export function buildTableStylesheet(): string {
     flex-direction: column;
     justify-content: flex-start;
   }
+}
+/* PR4 correction (native review, deterministic CRITICAL): same-specificity
+ * rules resolve by SOURCE ORDER regardless of @container nesting depth. These
+ * two rail-width bumps used to sit BEFORE the 640px block above (inside the
+ * 900/1280 blocks that also style .hexdev-truco-table), so the 168px rule
+ * above always won at every width, even >=900px. Moving them here, AFTER the
+ * 168px base rule, is what actually lets 900/1280 win. */
+@container hexdev-truco-shell (min-width: 900px) {
+  /* PR4-T7 (tasks §8): scoreboard rail width bump — a SHELL-level change. */
+  .hexdev-truco-scoreboard-panel { width: 200px; }
+}
+@container hexdev-truco-shell (min-width: 1280px) {
+  /* PR4-T7: ultra's own scoreboard rail width. */
+  .hexdev-truco-scoreboard-panel { width: 240px; }
 }
 
 .hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -954,6 +944,24 @@ export function buildTableStylesheet(): string {
   /* Elevation (PR2, VDS-4, paint-only): --hx-elev-1 + --hx-relief. */
   box-shadow: var(--hx-elev-1), var(--hx-relief);
   font-size: 0.68rem;
+}
+/* PR4 correction (native review, deterministic CRITICAL): this override used
+ * to sit inside the 900px block above (alongside the felt's own grid rules),
+ * which put it BEFORE this base rule in source order — same specificity, so
+ * the LATER rule always wins regardless of @container nesting, meaning the
+ * base rule above always won and the log stayed absolutely positioned and
+ * out of flow even at >=900px. This block MUST stay after the base rule.
+ *
+ * PR4-T5 (tasks §8, D-4): the log's rect stops floating over the felt and
+ * becomes a real in-flow grid-column child at wide/ultra — grid-area: log
+ * instead of center, position: static instead of absolute. Every other
+ * declaration above (max-width, max-height, overflow, pointer-events, the
+ * elevation) stays exactly as declared there at every tier (design §9.5). */
+@container hexdev-truco-shell (min-width: 900px) {
+  .hexdev-truco-call-log {
+    grid-area: log;
+    position: static;
+  }
 }
 .hexdev-truco-call-log-title,
 .hexdev-truco-call-log-tantos-title {
