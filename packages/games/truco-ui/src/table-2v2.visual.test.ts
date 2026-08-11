@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser/matchers" />
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { applyAction, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
 import type { Card, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
@@ -55,6 +55,16 @@ function dealtTeamMatch(): MatchState {
   return withNonTrivialScore(startHand(base, FIXED_DEAL_4));
 }
 
+/** Containers this file has mounted, removed after EVERY test — same
+ * cleanup and reasoning as table.visual.test.ts's own `mounted` list:
+ * accumulated tables push later felts below the viewport fold and the
+ * screenshot-stability retry can then fail to converge. */
+const mounted: HTMLElement[] = [];
+
+afterEach(() => {
+  while (mounted.length > 0) mounted.pop()!.remove();
+});
+
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
   // 375px is the FLOOR here, not a habit: the open señas row measures
@@ -73,6 +83,7 @@ function mountedContainer(): HTMLElement {
   // mid-hand fixture (the partner's seña badge wraps the top hand to two
   // rows) and 375x517 with the señas picker open.
   document.body.appendChild(container);
+  mounted.push(container);
   return container;
 }
 
