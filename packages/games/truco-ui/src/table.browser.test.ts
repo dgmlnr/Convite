@@ -588,4 +588,33 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
       centerRect.top < panelRect.bottom - 0.5;
     expect(overlaps, `panel ${JSON.stringify(panelRect)} vs center ${JSON.stringify(centerRect)}`).toBe(false);
   });
+
+  // PR5 correction (own cascade-order self-check, same CRITICAL pattern the
+  // PR4 correction above already fixed once): the medium+ override for
+  // .hexdev-truco-pending-call/.hexdev-truco-pending-call-turn used to sit
+  // inside the 640px @container block, BEFORE the base compact-pill rules —
+  // same specificity (both bare-class selectors), later rule wins regardless
+  // of @container nesting, so the base rule always won and the banner stayed
+  // a compact one-line pill (turn line clipped to 1x1px) even at >=640px.
+  // This closes that gap directly: a real container-query width, a
+  // computed-style check on the flex-direction, and a real geometry check
+  // proving the turn line has genuine visible height again.
+  it("PR5 correction: at medium (700px), the pending-call banner restores the three-line block, and the turn line is visible again", () => {
+    const el = freshContainer();
+    el.style.width = "700px";
+    const render = createMatchTableRenderer();
+    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
+    const legal: readonly Action[] = [{ type: "respond-truco", playerId: SELF, response: "quiero" }];
+
+    render(el, view, legal, () => {});
+
+    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!;
+    const turnLine = el.querySelector<HTMLElement>(".hexdev-truco-pending-call-turn")!;
+
+    expect(getComputedStyle(banner).flexDirection, "medium+ must restore the stacked three-line block, not the compact row pill").toBe("column");
+    expect(getComputedStyle(turnLine).position, "the turn line must be back in normal flow at medium+, not visually hidden").toBe("static");
+
+    const turnLineRect = turnLine.getBoundingClientRect();
+    expect(turnLineRect.height, "the turn line must have real, visible height again, not the 1px visually-hidden box").toBeGreaterThan(5);
+  });
 });

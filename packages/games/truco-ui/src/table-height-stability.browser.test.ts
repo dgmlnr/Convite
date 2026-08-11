@@ -211,12 +211,33 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * this suite, not assumed from the PR3 numbers still looking plausible; see
  * the dedicated "PR4: the felt's height with an empty call log matches..."
  * fence below for the direct, minimal proof of WHY (the log's own max-height
- * budget never exceeds what the top/center/bottom rows already reserve). */
+ * budget never exceeds what the top/center/bottom rows already reserve).
+ *
+ * PR5 (tasks §9, THS-2 — this PR modifies layout, so the fence must extend
+ * in the same PR): re-measured all 8, RED-first (temporarily loosened the
+ * tolerance to observe the real numbers, see table-height-budget.browser.
+ * test.ts's own identically-sourced RED readings for the same 8 values —
+ * both files measure the same baseline state, so they share one real
+ * measurement pass). EVERY value grew — the banner lane and action-bar row
+ * both add real height everywhere now, unlike PR4's zero-delta relocation:
+ *   375  1v1: 561.9375   -> 669.9375   | 2v2: 684.75      -> 732.75
+ *   700  1v1: 554.96875  -> 690.96875  | 2v2: 725.421875  -> 837.421875
+ *   960  1v1: 669.375    -> 817.375    | 2v2: 749.421875  -> 873.421875
+ *   1280 1v1: 746.59375  -> 910.59375  | 2v2: 903.609375  -> 1043.609375
+ * Every delta matches its own tier's formula terms exactly, term-for-term —
+ * no unaccounted growth:
+ *   1v1 (banner + action + felt-gap): 375 +108 (60+40+8) | 700 +136
+ *     (76+48+12) | 960 +148 (80+52+16) | 1280 +164 (84+56+24)
+ *   2v2 (action-total + felt-gap — the banner term is deliberately absent
+ *     from the 2v2 formula, tasks §9/PR5-T5): 375 +48 (40+8) | 700 +112
+ *     (100+12) | 960 +124 (108+16) | 1280 +140 (116+24)
+ * See table-height-budget.browser.test.ts for the full compact-1v1-total-vs-
+ * the-530-601px-window accounting. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 561.9375, "2v2": 684.75 },
-  700: { "1v1": 554.96875, "2v2": 725.421875 },
-  960: { "1v1": 669.375, "2v2": 749.421875 },
-  1280: { "1v1": 746.59375, "2v2": 903.609375 },
+  375: { "1v1": 669.9375, "2v2": 732.75 },
+  700: { "1v1": 690.96875, "2v2": 837.421875 },
+  960: { "1v1": 817.375, "2v2": 873.421875 },
+  1280: { "1v1": 910.59375, "2v2": 1043.609375 },
 };
 
 function expectExactHeight(actual: number, expected: number, label: string): void {
