@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser/matchers" />
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { applyAction, createHeadToHeadMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
 import type { Card, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
@@ -67,6 +67,22 @@ function dealtMatch(): MatchState {
   return withNonTrivialScore(startHand(base, FIXED_DEAL));
 }
 
+/** Containers this file has mounted, removed after EVERY test. Without this
+ * cleanup, each test's table stays in the page and pushes the next test's
+ * felt below the 414x896 viewport fold — the element screenshot then needs
+ * scrolling, and Browser Mode's screenshot-stability retry can fail to
+ * converge (the intermittent 30s timeout this suite kept hitting on
+ * whole-file runs). An empty page per test makes capture position
+ * deterministic. Sub-pixel text rasterization DOES depend on that position,
+ * so the baselines captured under polluted positions were deliberately
+ * regenerated once under this clean layout (see this change's own commit);
+ * a baseline captured at the top of an empty page stays valid forever. */
+const mounted: HTMLElement[] = [];
+
+afterEach(() => {
+  while (mounted.length > 0) mounted.pop()!.remove();
+});
+
 function mountedContainer(): HTMLElement {
   const container = document.createElement("div");
   // 320px — a real narrow-phone width (iPhone SE class). Same NARROW branch
@@ -91,6 +107,7 @@ function mountedContainer(): HTMLElement {
   // up as a dimension mismatch (slow ~30s timeout, not a clean pixel diff)
   // until the baseline is regenerated per visual/README.md.
   document.body.appendChild(container);
+  mounted.push(container);
   return container;
 }
 
