@@ -143,21 +143,39 @@ export function renderGameSelection(
   ensureChromeStyles(container.ownerDocument);
   container.replaceChildren();
   container.className = "hexdev-gamify-chrome";
+  // WCR-1: gates chrome-styles.ts's container-type declaration and the
+  // status/error/unsupported centering rule — the lobby is the one screen
+  // that does NOT want that centering (it stays top-anchored).
+  container.dataset.chromeView = "lobby";
+
+  // Two new wrapper elements (WCR-1/WCR-2, PR6-T1): .hexdev-chrome-content
+  // is the inline-size container's actual @container target (a size
+  // container cannot style itself); .hexdev-chrome-games is what switches
+  // from a flex column to a real grid at the wide tier. Every existing
+  // browser-test query below this point is a descendant selector
+  // (`el.querySelector(...)`), so both nestings are transparent to them —
+  // verified against game-selection.browser.test.ts, not assumed.
+  const content = document.createElement("div");
+  content.className = "hexdev-chrome-content";
+  container.appendChild(content);
 
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";
   title.textContent = STRINGS.selectionTitle;
-  container.appendChild(title);
+  content.appendChild(title);
 
   if (catalog.length === 0) {
     const empty = document.createElement("p");
     empty.className = "hexdev-chrome-empty";
     empty.textContent = STRINGS.emptyCatalog;
-    container.appendChild(empty);
+    content.appendChild(empty);
     return;
   }
 
+  const games = document.createElement("div");
+  games.className = "hexdev-chrome-games";
+  content.appendChild(games);
   for (const entry of catalog) {
-    container.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks));
+    games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks));
   }
 }
