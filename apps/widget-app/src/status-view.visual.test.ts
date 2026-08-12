@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser/matchers" />
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { STRINGS } from "./i18n.js";
 import { renderStatusMessage } from "./status-view.js";
@@ -21,6 +21,18 @@ function noop(): void {
   // intentionally empty — neither screen is ever clicked in a screenshot test
 }
 
+/** Containers this file has mounted, removed after EVERY test — PR8 fix
+ * (verify report's PR7 native-review WARNINGs, same pollution class as
+ * `table.visual.test.ts`'s FU-1 and `game-selection.visual.test.ts`'s own
+ * PR8 fix): an unremoved container from one test otherwise stays live for
+ * the next, the same accumulation risk `table-wide.visual.test.ts` and
+ * `table.visual.test.ts` already guard against. */
+const mounted: HTMLElement[] = [];
+
+afterEach(() => {
+  while (mounted.length > 0) mounted.pop()!.remove();
+});
+
 /** Also resizes Browser Mode's viewport to fit — its 414×896 default
  * (visual/README.md) is narrower than every width this file uses; Chromium
  * never paints past the viewport edge, so both baselines here would
@@ -31,6 +43,7 @@ async function mountedContainer(width: number): Promise<HTMLElement> {
   const container = document.createElement("div");
   container.style.width = `${width}px`;
   document.body.appendChild(container);
+  mounted.push(container);
   return container;
 }
 
