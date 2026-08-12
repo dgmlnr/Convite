@@ -196,27 +196,23 @@ export function createMatchTableRenderer(
       bottom.classList.add("hexdev-truco-anchor--active");
       appendTurnBadge(bottom, turnBadgeText(true));
     }
-    // Stable window height (apply prompt, round 3): reserving layout space
-    // for the call buttons and the señas picker made the whole table
-    // permanently taller than a real phone's visible viewport (739px/859px
-    // measured against a ~530-601px iPhone SE viewport) — a constant height
-    // that no longer fits the screen is not "linda y cómoda" either. This
-    // tray takes both OUT of flow entirely (position: absolute, table-styles
-    // .hexdev-truco-action-tray) so neither can affect the felt's height at
-    // all, at zero permanent cost — the same technique the turn badge and
-    // the match-over overlay already use. It floats directly above THIS
-    // anchor's own box (`bottom: 100%` off `.hexdev-truco-anchor`'s own
-    // `position: relative`), which — because the anchor now contains only
-    // the still-in-flow hand row below — guarantees it never covers the
-    // player's own (tappable) cards. It can still visually sit over the
-    // lower edge of the trick area above it when a card has already been
-    // played into the current trick; that trick card is not interactive, so
-    // no tap is ever swallowed by this tray — a disclosed, accepted
-    // tradeoff, not a hidden one.
-    const actionTray = bottom.appendChild(document.createElement("div"));
-    actionTray.className = "hexdev-truco-action-tray";
+    // PR5 (D-3/blessed refinement 1, tasks §1 item 1/§2.2, §9): the action
+    // bar is now a RESERVED GRID ROW below the hand, in flow, at every tier —
+    // not a floating tray. Built here as a standalone local (NOT appended to
+    // `bottom` — appended to `felt` below, after `center`, matching the
+    // felt's own "actions" grid area/--hx-band-action-total track in
+    // table-styles.ts), for the same reason the call log became a standalone
+    // local in PR4: this is what lets CSS Grid place it purely by
+    // `grid-area`, with no change to `renderCalls`/`renderSenaPicker`'s own
+    // argument lists. This retires the turn-badge/tray axis conflict by
+    // CONSTRUCTION: the badge lives at `top: -11px` of THIS anchor
+    // (`bottom`), unmoved; the bar is a sibling grid row below that same
+    // anchor — different edges, no shared axis, at any tier (tasks §2.2: no
+    // badge-repositioning CSS exists anywhere in this codebase).
+    const actionBar = document.createElement("div");
+    actionBar.className = "hexdev-truco-action-bar";
 
-    const callsRow = actionTray.appendChild(document.createElement("div"));
+    const callsRow = actionBar.appendChild(document.createElement("div"));
     callsRow.className = "hexdev-truco-calls-row";
     renderCalls(callsRow, legalActions, dispatch);
     // 1v1 must stay BYTE-IDENTICAL (visual regression safety property): no
@@ -234,7 +230,7 @@ export function createMatchTableRenderer(
     // `renderSenaPicker` can still legitimately render nothing inside it
     // once send-sena stops being legal, without a visible element vanishing.
     if (view.teammates.length > 0) {
-      renderSenaPicker(actionTray.appendChild(document.createElement("div")), legalActions, dispatch);
+      renderSenaPicker(actionBar.appendChild(document.createElement("div")), legalActions, dispatch);
     }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
@@ -314,7 +310,17 @@ export function createMatchTableRenderer(
     // `view.hand` already carries the whole hand's history until the next
     // `startHand` resets `resolvedTrickPlays`/`callEvents` to `[]`, which is
     // exactly what clears both the piles and this panel for free.
-    const callLog = center.appendChild(document.createElement("div"));
+    //
+    // PR4 (D-4/blessed refinement 2, tasks §8): `callLog` is a FELT grid
+    // child now, not a child of `.hexdev-truco-center` — created standalone
+    // here (not appended to `center`) and appended to `felt` below, after
+    // `center`, so table-styles.ts's own `.hexdev-truco-call-log` rule
+    // (`grid-area: center; position: absolute; left: 0; bottom: 0` at
+    // compact/medium, `grid-area: log; position: static` at wide/ultra) can
+    // place it purely via CSS Grid's own "an absolutely-positioned grid item
+    // with a definite grid-area is contained by that area" rule, with no
+    // change to `renderCallLog`'s own argument list.
+    const callLog = document.createElement("div");
     renderCallLog(callLog, {
       events: view.hand?.callEvents ?? [],
       envido: view.hand?.envido ?? { status: "none" },
@@ -325,6 +331,18 @@ export function createMatchTableRenderer(
 
     for (const anchor of ANCHOR_ORDER) felt.appendChild(anchors.get(anchor)!);
     felt.appendChild(center);
+    // PR5 (tasks §9): `actionBar` joins `callLog` as a standalone felt child,
+    // placed purely by table-styles.ts's own `grid-area: actions` rule — no
+    // ordering constraint here (unlike `callLog` below): the action bar has
+    // no scroll-restoration call that depends on being attached to a live
+    // document, so its append order relative to `callLog` is not
+    // load-bearing.
+    felt.appendChild(actionBar);
+    // MUST attach here, as a felt child (not inside `center`) — see the
+    // construction-order comment further below on `scrollCallLogToNewest`:
+    // that call is only safe once `callLog` is attached all the way up to
+    // `container`, and this append is the first link in that chain.
+    felt.appendChild(callLog);
 
     // The scoreboard is chrome, mounted as a SIBLING of the felt, never a
     // child of it (design §10, obs 2955: "the scoreboard is chrome, so it
@@ -338,9 +356,17 @@ export function createMatchTableRenderer(
     layout.appendChild(panel);
     container.appendChild(layout);
 
-    // MUST run only now, after `callLog` is actually attached all the way up
-    // to `container` — `scrollTop` is a no-op on a node with no layout yet
-    // (call-log.ts's own doc comment on `scrollCallLogToNewest`, design §5.2).
+    // LOAD-BEARING ORDERING (PR4-T3, tasks §8, design §9.3): this call is only
+    // safe once `callLog` is attached all the way up to `container` —
+    // `felt.appendChild(callLog)` -> `layout.appendChild(felt)` ->
+    // `layout.appendChild(panel)` -> `container.appendChild(layout)` -> ONLY
+    // THEN this call. `scrollTop` is a no-op on a node with no layout yet
+    // (call-log.ts's own doc comment on `scrollCallLogToNewest`;
+    // `call-log.browser.test.ts:236` proves the detached case directly). A
+    // regression here (e.g. reordering these appends, or calling this before
+    // `container.appendChild(layout)`) produces no error and no visible
+    // symptom in this function — the auto-scroll-to-newest just silently
+    // stops working, which is exactly why this comment exists.
     scrollCallLogToNewest(callLog);
 
     // A real ending, mounted as a sibling of `layout` so it overlays the

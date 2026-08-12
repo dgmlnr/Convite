@@ -1,3 +1,4 @@
+import { userEvent } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyAction,
@@ -305,6 +306,99 @@ describe("createMatchTableRenderer — a squeezed container overflows its own sh
     const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
     expectNoCardExceedsClipEdge(container.querySelector('[data-position="left"]')!, felt, "2v2 left opponent hand, squeezed container");
     expectNoCardExceedsClipEdge(container.querySelector('[data-position="right"]')!, felt, "2v2 right opponent hand, squeezed container");
+    container.remove();
+  });
+});
+
+/**
+ * PR2-T7 (VDS-4: "Elevation Is Paint-Only") — no design-named test file
+ * covers this exact scenario (tasks §6 gap), so this is a gap-filling guard,
+ * placed in this file because it is the repo's own existing height-critical
+ * guard file. A playable card's hover/focus state (table-styles.ts) changes
+ * its box-shadow (elevation) and applies a `translateY` transform; this
+ * suite proves that state change never moves the card's own rendered
+ * HEIGHT — only its shadow and its on-screen position — matching the same
+ * `getBoundingClientRect()` measurement round 4/5 above already use.
+ */
+
+/** The hover/focus box-shadow and transform are both animated over
+ * `--hx-motion-fast` (120ms, table-styles.ts) — reading computed style
+ * immediately after the interaction catches an in-flight animation FRAME,
+ * neither the resting nor the settled hover value (confirmed empirically:
+ * an immediate read showed the untouched resting box-shadow AND an identity
+ * transform matrix, even though `card.matches(":hover")` was already true).
+ * Waiting comfortably past the transition duration is what this test needs
+ * to measure the SETTLED state, not the interaction path this suite is not
+ * about (there is no reduced-motion override active in the "browser"
+ * project — only `vitest.visual.config.ts` disables transitions globally). */
+async function waitForHoverTransitionToSettle(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 200));
+}
+
+describe("createMatchTableRenderer — hover/focus elevation never changes a card's own rendered height (VDS-4, paint-only)", () => {
+  it("hovering a playable hand card changes its box-shadow but leaves its height untouched", async () => {
+    container = document.createElement("div");
+    container.style.width = "375px";
+    document.body.appendChild(container);
+
+    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 });
+    const dealt = startHand(base, DEAL_1V1);
+    const view = getViewFor(dealt, SELF);
+    const legal = getLegalActions(dealt, SELF);
+
+    createMatchTableRenderer()(container, view, legal, () => {});
+    await waitForArt(container);
+
+    const card = container.querySelector<HTMLElement>(".hexdev-truco-card--playable");
+    if (card === null) throw new Error("test setup: no playable card rendered — fixture must leave SELF with a legal play-card action");
+
+    const before = card.getBoundingClientRect();
+    const boxShadowBefore = getComputedStyle(card).boxShadow;
+
+    await userEvent.hover(card);
+    await waitForHoverTransitionToSettle();
+
+    const after = card.getBoundingClientRect();
+    const boxShadowAfter = getComputedStyle(card).boxShadow;
+
+    // Prove the hover state actually fired — a card that silently never
+    // entered :hover would make the height assertion below trivially true
+    // for the wrong reason (strict-tdd's own "watch out for a trivially
+    // passing GREEN" rule).
+    expect(boxShadowAfter, "hover did not change box-shadow — the :hover rule never matched").not.toBe(boxShadowBefore);
+    expect(Math.abs(after.height - before.height)).toBe(0);
+
+    container.remove();
+  });
+
+  it("keyboard-focusing a playable hand card changes its box-shadow but leaves its height untouched (triangulates the hover case above via a different pseudo-class and interaction path)", async () => {
+    container = document.createElement("div");
+    container.style.width = "375px";
+    document.body.appendChild(container);
+
+    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 });
+    const dealt = startHand(base, DEAL_1V1);
+    const view = getViewFor(dealt, SELF);
+    const legal = getLegalActions(dealt, SELF);
+
+    createMatchTableRenderer()(container, view, legal, () => {});
+    await waitForArt(container);
+
+    const card = container.querySelector<HTMLElement>(".hexdev-truco-card--playable");
+    if (card === null) throw new Error("test setup: no playable card rendered — fixture must leave SELF with a legal play-card action");
+
+    const before = card.getBoundingClientRect();
+    const boxShadowBefore = getComputedStyle(card).boxShadow;
+
+    card.focus();
+    await waitForHoverTransitionToSettle();
+
+    const after = card.getBoundingClientRect();
+    const boxShadowAfter = getComputedStyle(card).boxShadow;
+
+    expect(boxShadowAfter, "programmatic focus did not change box-shadow — the :focus-visible rule never matched").not.toBe(boxShadowBefore);
+    expect(Math.abs(after.height - before.height)).toBe(0);
+
     container.remove();
   });
 });
