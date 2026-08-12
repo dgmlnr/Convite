@@ -249,7 +249,15 @@ export function buildTableStylesheet(): string {
    * least afford it. A later card-size change could silently invert this
    * inequality — that is exactly why this comment exists. */
   min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 5 + 40px + var(--hx-band-action-total) + var(--hx-felt-gap)));
-  grid-template-columns: minmax(34px, 15vw) 1fr minmax(34px, 15vw);
+  /* cqw, not vw (FU-4): these gutters are seat furniture of a
+   * CONTAINER-driven layout — every other tier decision on this felt already
+   * answers to the hexdev-truco-shell @container axis, so the gutters must
+   * scale with that same container, never with the viewport. cqw resolves
+   * against the nearest ancestor query container (the shell). A widget
+   * embedded narrower than the page viewport used to get over-wide gutters
+   * here, because 15vw read the host page's window instead of the box the
+   * felt actually lives in. */
+  grid-template-columns: minmax(34px, 15cqw) 1fr minmax(34px, 15cqw);
   grid-template-areas: "top top top" "left center right" "bottom bottom bottom" "actions actions actions";
 }
 /* Breakpoint axis (PR3, tasks §7/§3.8): the two viewport @media blocks that
@@ -283,7 +291,15 @@ export function buildTableStylesheet(): string {
     --hx-band-action: 48px;
   }
   .hexdev-truco-table[data-seat-count="4"] {
-    grid-template-columns: minmax(72px, 16vw) 1fr minmax(72px, 16vw);
+    /* cqw, not vw (FU-4) — same container-not-viewport rationale as the
+     * compact gutters above: this whole tier only EXISTS because the shell
+     * container is at least 640px wide, so sizing its gutters against the
+     * viewport contradicted the very axis that selected the rule (a 700px
+     * embed inside a narrower host viewport collapsed both gutters to their
+     * 72px floor; a narrow embed in a wide viewport over-reserved instead).
+     * The wide/ultra tiers below never had this defect — their gutter
+     * tracks already use 16%, a grid-relative unit. */
+    grid-template-columns: minmax(72px, 16cqw) 1fr minmax(72px, 16cqw);
     /* PR5-T5 (tasks §3.8): 2v2 only, from medium onward — two stacked action
      * strips (calls, then señas — design §7.2), not one. Declared ONCE, here
      * — --hx-band-action itself is redeclared at every wider tier below
@@ -303,8 +319,20 @@ export function buildTableStylesheet(): string {
      * a comfortable 71px here); raised to 94px (~8% headroom, this file's
      * own established convention). This 2v2-only override is MORE specific
      * than the base .hexdev-truco-table rule declaring 76px for everyone
-     * else, so it wins regardless of source order. */
-    --hx-band-banner: 94px;
+     * else, so it wins regardless of source order.
+     *
+     * FU-4 RE-MEASURE (94px -> 112px): that 86px measurement was taken
+     * against geometry the 414px test viewport had silently masked — under
+     * 16vw both gutters floor-clamped to 72px, leaving the center ~500px
+     * wide at a 700px container. With honest container-relative gutters
+     * (16cqw = 112px per side at 700px) the center narrows to ~420px and
+     * the pill wraps to the SAME 101px worst case the wide tier's own
+     * comment below already documents — so this lane takes the same 112px
+     * (wide-tier precedent, the file's ~8% headroom convention over 101px).
+     * In a real full-bleed ~700px browser 16vw and 16cqw are identical, so
+     * that 101px-over-94px spill was ALREADY shipping; the vw tracks only
+     * hid it from the test environment, never from production. */
+    --hx-band-banner: 112px;
   }
   /* PR5-T2 (tasks §9, design §7.2): 2v2 only — the action bar stacks its two
    * strips vertically instead of scrolling one row horizontally; each strip
