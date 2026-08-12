@@ -22,6 +22,7 @@ import { renewSessionToken } from "./session-renewal.js";
 import { renderErrorWithRetry, renderStatusMessage } from "./status-view.js";
 import { applyThemeToRoot } from "./theme.js";
 import { renderGameSelection } from "./game-selection.js";
+import { renderUnsupportedGame } from "./unsupported-game-view.js";
 
 /**
  * The widget-app composition root — wires the pieces every other module in
@@ -107,27 +108,26 @@ function main(): void {
    * gets its real table; anything else falls back to the smallest HONEST
    * proof the connection is live, never a broken blank screen.
    */
-  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onPlayAgain: () => void): void {
+  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onLeaveMatch: () => void): void {
     handshake.sendLayout("fullscreen");
     app!.replaceChildren();
 
     const entry = gameUiRegistry.get(gameId);
     if (entry === undefined) {
-      const title = document.createElement("p");
-      title.textContent = STRINGS.matchConnected;
-      const counter = document.createElement("p");
+      // WCR-3/PR6-T12: a real match, a real live connection -- just no
+      // renderer registered for this gameId in this build. The chrome-styled
+      // navigable screen (unsupported-game-view.ts) replaces the former bare
+      // <p> dead end; onLeaveMatch already IS returnToSelection(connection)
+      // at every call site below, so this wires straight through rather than
+      // reimplementing any of its four steps.
+      const view = renderUnsupportedGame(app!, { onBackToLobby: onLeaveMatch });
       let updates = 0;
-      counter.textContent = STRINGS.liveUpdatesReceived(updates);
-      app!.append(title, counter);
-      connection.onView(() => {
-        updates += 1;
-        counter.textContent = STRINGS.liveUpdatesReceived(updates);
-      });
+      connection.onView(() => view.setUpdateCount(++updates));
       return;
     }
 
     const render = entry.createRenderer();
-    connection.onView((payload) => render(app!, payload as GameUiPayload, (action) => connection.sendAction(action as ErasedAction), onPlayAgain));
+    connection.onView((payload) => render(app!, payload as GameUiPayload, (action) => connection.sendAction(action as ErasedAction), onLeaveMatch));
   }
 
   async function boot(): Promise<void> {

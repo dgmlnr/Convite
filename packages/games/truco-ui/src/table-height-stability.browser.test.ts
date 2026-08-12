@@ -125,11 +125,13 @@ afterEach(() => {
   document.getElementById("hexdev-truco-table-styles")?.remove();
 });
 
-/** Phone width (the tightest real case, apply prompt) and deliberately NO
- * fixed height — see the file docstring for why that matters here. */
-function mountedContainer(): HTMLElement {
+/** PR3-T2 (tasks §7): parameterized over the four container tiers (compact
+ * 375, medium 700, wide 960, ultra 1280 — tasks §3.8) instead of the single
+ * hardcoded phone width this suite used before PR3. Deliberately NO fixed
+ * height — see the file docstring for why that matters here. */
+function mountedContainer(width: number): HTMLElement {
   container = document.createElement("div");
-  container.style.width = "375px";
+  container.style.width = `${width}px`;
   document.body.appendChild(container);
   return container;
 }
@@ -183,9 +185,68 @@ function expectStableHeights(heights: readonly number[]): void {
   }
 }
 
-describe("createMatchTableRenderer — the table's own reported height stays constant across a whole played hand (stable window height)", () => {
+/** PR3-T2's own regression fence (tasks §7 exit gate): the four container
+ * tiers this suite now runs at (tasks §3.8: compact/medium/wide/ultra).
+ * 375 is the pre-PR3 width, kept first so it stays the visually-obvious
+ * "nothing changed here" row. */
+const WIDTHS = [375, 700, 960, 1280] as const;
+
+/** T-7 fence, exact numbers (tasks §7/PR3-T2): the two MAXIMAL cases below
+ * are this file's own named "fence, not a one-time check" — this locks
+ * their baseline (freshly-dealt, nothing-happened-yet) rendered height to
+ * an exact, measured number per width x seat-count, on top of the existing
+ * purely-relative expectStableHeights check both already run. 375's values
+ * are byte-for-byte what this suite measured before PR3-T1's axis change
+ * (proving zero pixel leakage into the compact tier); 700/960/1280 are
+ * freshly measured against PR3-T1's own per-tier scalar constants (RED-
+ * first: measured with a temporary loose assertion, then locked here — see
+ * apply-progress for the exact RED readings). A value drifting later means
+ * either a real regression or an intentional constant change that must
+ * update this table deliberately, never silently.
+ *
+ * PR4 (tasks §8, THS-2): re-measured at every width after moving the call
+ * log into the felt's own grid ("log" column, in flow at wide/ultra) —
+ * EVERY value below is UNCHANGED (960/1280 included, the two tiers where the
+ * log is now genuinely in flow). This was verified by actually re-running
+ * this suite, not assumed from the PR3 numbers still looking plausible; see
+ * the dedicated "PR4: the felt's height with an empty call log matches..."
+ * fence below for the direct, minimal proof of WHY (the log's own max-height
+ * budget never exceeds what the top/center/bottom rows already reserve).
+ *
+ * PR5 (tasks §9, THS-2 — this PR modifies layout, so the fence must extend
+ * in the same PR): re-measured all 8, RED-first (temporarily loosened the
+ * tolerance to observe the real numbers, see table-height-budget.browser.
+ * test.ts's own identically-sourced RED readings for the same 8 values —
+ * both files measure the same baseline state, so they share one real
+ * measurement pass). EVERY value grew — the banner lane and action-bar row
+ * both add real height everywhere now, unlike PR4's zero-delta relocation:
+ *   375  1v1: 561.9375   -> 669.9375   | 2v2: 684.75      -> 732.75
+ *   700  1v1: 554.96875  -> 690.96875  | 2v2: 725.421875  -> 837.421875
+ *   960  1v1: 669.375    -> 817.375    | 2v2: 749.421875  -> 873.421875
+ *   1280 1v1: 746.59375  -> 910.59375  | 2v2: 903.609375  -> 1043.609375
+ * Every delta matches its own tier's formula terms exactly, term-for-term —
+ * no unaccounted growth:
+ *   1v1 (banner + action + felt-gap): 375 +108 (60+40+8) | 700 +136
+ *     (76+48+12) | 960 +148 (80+52+16) | 1280 +164 (84+56+24)
+ *   2v2 (action-total + felt-gap — the banner term is deliberately absent
+ *     from the 2v2 formula, tasks §9/PR5-T5): 375 +48 (40+8) | 700 +112
+ *     (100+12) | 960 +124 (108+16) | 1280 +140 (116+24)
+ * See table-height-budget.browser.test.ts for the full compact-1v1-total-vs-
+ * the-530-601px-window accounting. */
+const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
+  375: { "1v1": 669.9375, "2v2": 732.75 },
+  700: { "1v1": 690.96875, "2v2": 837.421875 },
+  960: { "1v1": 817.375, "2v2": 873.421875 },
+  1280: { "1v1": 910.59375, "2v2": 1043.609375 },
+};
+
+function expectExactHeight(actual: number, expected: number, label: string): void {
+  expect(Math.abs(actual - expected), `${label}: measured ${actual}px, expected ${expected}px`).toBeLessThan(0.5);
+}
+
+describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported height stays constant across a whole played hand (stable window height) — %ipx", (width) => {
   it("1v1: envido called/accepted/revealed, a trick resolves, truco called/accepted, cards played to a decided hand — the height never changes", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -235,7 +296,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   });
 
   it("1v1: a truco call declined ends the hand immediately — pending banner, then hand-outcome banner, height still never changes", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -263,7 +324,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   });
 
   it("2v2: envido called/accepted/revealed, cards played seat-by-seat, tricks resolved, truco called/accepted, cards played to a decided hand — the height never changes", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -319,7 +380,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   });
 
   it("2v2: opening and closing the señas picker never changes the table's height", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
 
     const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
@@ -352,7 +413,7 @@ describe("createMatchTableRenderer — the table's own reported height stays con
   // all three tricks resolved — every transient banner and every seat's pile
   // at its largest, all at once.
   it("1v1 MAXIMAL: full envido chain + fully-escalated truco chain + three resolved tricks — the tallest possible state, height never changes (T-7 fence)", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -411,10 +472,11 @@ describe("createMatchTableRenderer — the table's own reported height stays con
     expect(state.hand?.trickOutcomes).toHaveLength(3); // sanity: this really is the maximal case, not an early decision
     expect(state.hand?.outcome.decided).toBe(true);
     expectStableHeights(heights);
+    expectExactHeight(heights[0]!, MAXIMAL_BASELINE_HEIGHT[width]["1v1"], `1v1 baseline height at ${width}px`);
   });
 
   it("2v2 MAXIMAL: full envido chain + fully-escalated truco chain + three resolved tricks — the tallest possible state, height never changes (T-7 fence)", async () => {
-    const el = mountedContainer();
+    const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const heights: number[] = [];
 
@@ -483,5 +545,67 @@ describe("createMatchTableRenderer — the table's own reported height stays con
     expect(state.hand?.trickOutcomes).toHaveLength(3); // sanity: this really is the maximal case, not an early decision
     expect(state.hand?.outcome.decided).toBe(true);
     expectStableHeights(heights);
+    expectExactHeight(heights[0]!, MAXIMAL_BASELINE_HEIGHT[width]["2v2"], `2v2 baseline height at ${width}px`);
+  });
+
+  // PR4-T10 (tasks §8, THS-2 — this PR modifies layout, so the fence must
+  // extend in the same PR, not later). Before PR4, .hexdev-truco-call-log was
+  // position: absolute at EVERY width — "a long call chain never grows the
+  // felt" was trivially true by construction (an out-of-flow element cannot
+  // affect layout at all), and the two MAXIMAL fences above already covered
+  // it only incidentally, as one step inside a much longer journey. At
+  // wide/ultra (>=900px, table-styles.ts's own @container (min-width: 900px)
+  // block) the log is now a REAL in-flow grid child spanning the felt's own
+  // top/center/bottom rows — this invariant is no longer free, so it gets its
+  // own direct, minimal proof here rather than being inferred from the
+  // broader journey. (At compact/medium it stays trivially true, same as
+  // before PR4, since the log is still position: absolute there — running
+  // this fence at every width anyway costs nothing and documents that the
+  // invariant holds everywhere, not only where it is non-trivial.)
+  //
+  // MEASURED, not assumed: at every width in WIDTHS, the empty-log and
+  // fully-escalated-log heights below came out IDENTICAL (within this
+  // suite's own <1px tolerance) — i.e. table-height-stability's own
+  // MAXIMAL_BASELINE_HEIGHT constants above needed ZERO update from PR4. The
+  // reason is structural, not coincidental: .hexdev-truco-call-log's own
+  // max-height is capped at two card-heights (table-styles.ts:
+  // "calc(var(--truco-card-width) * 336 / 220 * 2)"), while the felt's own
+  // min-height formula alone already reserves at least 3.7 card-heights
+  // (1v1) / 5 card-heights (2v2) across the SAME top/center/bottom rows the
+  // log now spans — so the log's own maximum possible content contribution
+  // is, by construction, always smaller than what those rows already
+  // reserve for the anchors/trick-area/hand, and it never forces additional
+  // row growth. A future change to either constant could invert that
+  // inequality silently; this fence is what would go RED first if it did.
+  it("PR4: the felt's height with an empty call log matches its height with a fully-escalated 9-entry call chain — the log rail (in flow at wide/ultra) contains its own content instead of growing the felt", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+
+    let state = startHand(
+      createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 }),
+      DEAL_1V1_MAXIMAL,
+    );
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+    const emptyLogHeight = el.getBoundingClientRect().height; // zero call-log entries yet
+
+    state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
+    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
+    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    state = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "retruco" }); // only the non-calling team may escalate
+    state = dispatch(state, { type: "respond-truco", playerId: SELF, response: "quiero" });
+    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "valeCuatro" }); // escalated to the ceiling
+    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+    const fullLogHeight = el.getBoundingClientRect().height; // 9 call-log entries + the tantos row
+
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry").length, "sanity: the log really did grow to its full chain").toBe(9);
+    expect(
+      Math.abs(fullLogHeight - emptyLogHeight),
+      `empty-log height ${emptyLogHeight}px vs fully-escalated-chain height ${fullLogHeight}px at ${width}px`,
+    ).toBeLessThan(1);
   });
 });
