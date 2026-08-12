@@ -704,6 +704,49 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-score-label { font-size: 0.65rem; opacity: 0.8; }
 .hexdev-truco-score-sticks { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; }
 
+/* FU-3 (debt: compact scoreboard strip, MEASURED 158.59px at 375px against
+ * a ~100px design target). Where the height went, measured piece by piece:
+ * .hexdev-truco-scoreboard had NO rule at all — a default block — so the
+ * malas and buenas groups stacked vertically, paying the 47.8px casita row
+ * height TWICE per team plus two 13px caption lines (16 padding + 15 label
+ * + 2 gap + 13+2+47.8 malas + 13+2+47.8 buenas = 158.6). The fix lays each
+ * team out as ONE horizontal row: team label inline at the left, malas and
+ * buenas side by side, captions rotated vertical beside their sticks.
+ * Every lever below is measurement-forced, not taste: 12 worst-case casitas
+ * (28-27, target 30) at their natural 47.8px are 573.6px of width against
+ * the 351px available inside the panel at 375px, so one sticks row per team
+ * (two rows total) is structurally required — and 16px padding + two
+ * untouched 47.8px rows alone already exceed the target, so the casitas
+ * must also shrink (34px CSS box on the svg overrides its own width/height
+ * attributes; strokes scale to ~71%, verified legible against the
+ * recaptured baseline). Horizontal captions do not fit either: label 75.8
+ * + captions 29.4/36.5 + 6 casitas + gaps = ~379px, over the 351px budget,
+ * while a rotated caption spends 13px of width instead. Result: 8+8 padding
+ * + two 36.5px rows (rotated Buenas caption is the row's tallest box) + 4px
+ * row gap = ~93px, fenced with ~8% headroom by
+ * table-height-budget.browser.test.ts's own FU-3 fence.
+ *
+ * Scoped to the compact tier only via the shell's existing @container axis
+ * — (width < 640px) is the exact complement of the (min-width: 640px) block
+ * above, where the panel becomes a side COLUMN and none of this applies.
+ * Placed AFTER the base rules above because at equal specificity source
+ * order wins regardless of @container nesting (this file's own PR4
+ * correction note); the disjoint query is what keeps wide tiers untouched.
+ * Chrome/felt split (design section 10) unchanged: every rule below is pure
+ * geometry — the panel's colors keep reading their --gx- tokens and the
+ * matchstick tones stay truco's own. */
+@container hexdev-truco-shell (width < 640px) {
+  .hexdev-truco-scoreboard-panel { flex-direction: column; align-items: stretch; gap: 4px; }
+  .hexdev-truco-scoreboard-group { flex-direction: row; justify-content: center; gap: 6px; }
+  .hexdev-truco-scoreboard { display: flex; align-items: center; gap: 6px; }
+  .hexdev-truco-score-group { flex-direction: row; gap: 3px; }
+  /* Reads bottom-to-top — the classic side-label direction: vertical-rl
+   * alone would read top-to-bottom, the 180deg turn flips it. transform
+   * never moves layout, so the box the flex row sizes stays the same. */
+  .hexdev-truco-score-label { writing-mode: vertical-rl; transform: rotate(180deg); }
+  .hexdev-truco-score-sticks svg { width: 34px; height: 34px; }
+}
+
 /* Stable window height (apply prompt, round 3): the pending-call and
  * hand-outcome banners are mutually exclusive in time (a pending call always
  * clears before a hand-outcome event can be derived) but each independently

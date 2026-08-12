@@ -232,9 +232,19 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  *     from the 2v2 formula, tasks §9/PR5-T5): 375 +48 (40+8) | 700 +112
  *     (100+12) | 960 +124 (108+16) | 1280 +140 (116+24)
  * See table-height-budget.browser.test.ts for the full compact-1v1-total-vs-
- * the-530-601px-window accounting. */
+ * the-530-601px-window accounting.
+ *
+ * FU-3 (debt: compact scoreboard strip): the 375px rows drop by exactly
+ * 65.65625px each — the scoreboard panel's own compaction (measured
+ * 158.59375px -> 92.9375px at compact, see table-styles.ts's FU-3 block and
+ * table-height-budget.browser.test.ts's own FU-3 fence), reaching the shell
+ * total unchanged through the felt (the felt itself did not move a pixel):
+ *   375 1v1: 669.9375 -> 604.28125 | 2v2: 732.75 -> 667.09375
+ * 700/960/1280 are untouched — the panel is a side COLUMN there, outside
+ * FU-3's compact-only (width < 640px) container query, re-verified by this
+ * suite staying green at those widths with the values below unchanged. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 669.9375, "2v2": 732.75 },
+  375: { "1v1": 604.28125, "2v2": 667.09375 },
   700: { "1v1": 690.96875, "2v2": 837.421875 },
   960: { "1v1": 817.375, "2v2": 873.421875 },
   1280: { "1v1": 910.59375, "2v2": 1043.609375 },
