@@ -154,6 +154,17 @@ RED run, then reverting:
 | `table-themed` | Same opacity/grayscale regression, AND separately: `.hexdev-truco-scoreboard-panel`'s `background` hardcoded, ignoring `--gx-color-surface` (a "theming silently stops applying" regression) | FAILED (both) |
 | `scoreboard-non-trivial-score` | Matchstick head radius (`HEAD_RX`/`HEAD_RY` in `scoreboard.ts`) changed from `3.9`/`3.3` to `11`/`9` — a pure geometry regression no existing unit test touches | FAILED |
 | `game-selection-mixed-presence` | The prominent-action CSS rule (`chrome-styles.ts`, `[data-prominent="person"] ...`) disabled — the `data-prominent` attribute is still set correctly, so no behavioural test would notice | FAILED |
+| `table-wide-mid-hand` | Same historical opacity/grayscale regression as `table-mid-hand` (this is the identical fixture, re-captured at 960px) | FAILED |
+| `table-wide-truco-pending` | Same opacity/grayscale regression (whole hand locked, so it is hit even harder — same reasoning as `table-truco-pending`) | FAILED |
+| `table-wide-themed` | Same opacity/grayscale regression | FAILED |
+| `table-2v2-mid-hand` | `--truco-card-width` (compact base, shared with 1v1) bumped `60px` → `90px` — every card on all four anchors resizes | FAILED |
+| `table-2v2-senas-open` | Same card-width regression | FAILED |
+| `table-2v2-hand-full-piles` | Same card-width regression | FAILED |
+| `table-ultra-2v2` | The 2v2-only ultra-tier `--truco-card-width` (`table-styles.ts`'s `[data-seat-count="4"]` override inside the `≥1280px` block) bumped `100px` → `140px` | FAILED |
+| `match-over-wide` | `opacity: 0.6` reintroduced on `.hexdev-truco-match-over[data-result="won"]` — the exact "translucent over the cloth" trap D-8 forbids by design; the overlay's own solid-fill contract is precisely what this baseline exists to prove | FAILED |
+| `lobby-wide-grid` | Same prominent-action CSS rule disabled as `game-selection-mixed-presence` above (same catalog fixture, wide tier) — confirmed to independently fail both baselines in the same run | FAILED |
+| `chrome-status-wide` | `.hexdev-chrome-status`'s `background` hardcoded to an arbitrary literal (`#7c1fa2`) instead of reading `--gx-color-primary` — the same "theming silently stops applying" class as `table-themed`'s own scoreboard-panel regression. (A pure geometry regression — `max-width`/`border-radius`/`box-shadow` removed — was tried first and did NOT move enough pixels to cross the 1% tolerance for this baseline specifically; recorded here so a future reader does not re-discover the same dead end.) | FAILED |
+| `chrome-unsupported-game` | Same `.hexdev-chrome-status` background regression (shared class with the status card above) | FAILED |
 
 Every regression above was reverted immediately after confirming the FAIL,
 and the suite was re-run to confirm it returned to GREEN.

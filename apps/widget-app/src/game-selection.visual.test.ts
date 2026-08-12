@@ -1,5 +1,5 @@
 /// <reference types="@vitest/browser/matchers" />
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
@@ -19,12 +19,25 @@ function noop(): void {
   // intentionally empty — this screen is never clicked in a screenshot test
 }
 
+/** Containers this file has mounted, removed after EVERY test — PR8 fix
+ * (verify report's PR7 native-review WARNINGs, same pollution class as
+ * `table.visual.test.ts`'s FU-1): without this cleanup, an accumulated
+ * container from an earlier test stays in the page and can push a later
+ * test's own container below the viewport fold, or simply leave stale DOM
+ * a screenshot-stability retry has to contend with. */
+const mounted: HTMLElement[] = [];
+
+afterEach(() => {
+  while (mounted.length > 0) mounted.pop()!.remove();
+});
+
 /** Parameterized (PR7-T1 adds a second, wider tier to this same file) —
  * `375` is the narrow tier the pre-existing test below always used. */
 function mountedContainer(width: number): HTMLElement {
   const container = document.createElement("div");
   container.style.width = `${width}px`;
   document.body.appendChild(container);
+  mounted.push(container);
   return container;
 }
 
