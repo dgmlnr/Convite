@@ -71,6 +71,10 @@ export function buildTableStylesheet(): string {
   --hx-text-meta: 0.75rem;
   --hx-text-label: 0.7rem;
   --hx-tracking-label: 0.08em;
+  /* Consumed on the CHROME side (chrome-styles.ts's body-copy rule reads
+   * this leading token for status-card/lobby paragraphs, FU-5); no felt
+   * rule reads it, and this declaration stays anyway for cross-stylesheet
+   * token parity (design-token-parity.test.ts scans both declared sets). */
   --hx-leading: 1.35;
   --hx-motion-fast: 120ms;
   --hx-ease: ease-out;

@@ -54,3 +54,17 @@ describe("renderErrorWithRetry (bug fix, obs 2968/issue 2: a rejected join used 
     expect(onRetry).toHaveBeenCalledOnce();
   });
 });
+
+describe("chrome body copy consumes --hx-leading (FU-5: computed line-height contract)", () => {
+  it("gives the single-paragraph status card a computed line-height of 1.35x its computed font-size", () => {
+    const el = freshContainer();
+
+    renderStatusMessage(el, "Buscando rival…");
+
+    const card = el.querySelector<HTMLParagraphElement>("p.hexdev-chrome-status");
+    expect(card).not.toBeNull();
+    const style = getComputedStyle(card!);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    expect(lineHeight).toBeCloseTo(Number.parseFloat(style.fontSize) * 1.35, 0);
+  });
+});
