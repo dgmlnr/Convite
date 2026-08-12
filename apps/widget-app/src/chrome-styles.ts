@@ -58,6 +58,11 @@ export function buildChromeStylesheet(): string {
   --hx-text-meta: 0.75rem;
   --hx-text-label: 0.7rem;
   --hx-tracking-label: 0.08em;
+  /* Consumed by the chrome body-copy rule at the end of this stylesheet
+   * (status-card paragraphs, lobby modality paragraphs, empty/loading
+   * messages -- FU-5). The felt side declares the same leading token but
+   * never reads it; both declarations stay for cross-stylesheet token
+   * parity (design-token-parity.test.ts scans both declared sets). */
   --hx-leading: 1.35;
   --hx-motion-fast: 120ms;
   --hx-ease: ease-out;
@@ -237,14 +242,23 @@ export function buildChromeStylesheet(): string {
   filter: brightness(1.08);
 }
 
-/* WCR-3 (error/retry, PR6-T4): the retry action on the error card gets its
- * own accent-outlined treatment instead of the plain primary-outlined
- * default every other chrome button gets above -- higher specificity
- * (attribute selector) than the base .hexdev-gamify-chrome button rule, so
- * it wins regardless of source order. margin-inline: auto centers it
- * horizontally under the card, the same mechanism .hexdev-chrome-status's
- * own "margin: 0 auto" already uses. */
-.hexdev-gamify-chrome button[data-action="retry"] {
+/* WCR-3 (error/retry, PR6-T4) + FU-2 (unsupported/back-to-lobby): ONE rule,
+ * TWO emergency exits. Retry on the error card and back-to-lobby on the
+ * unregistered-game card (unsupported-game-view.ts) are each the single
+ * escape action on a stranded-state card, so both get the same
+ * accent-outlined, elevated, centered treatment instead of the plain
+ * primary-outlined default every other chrome button gets above -- higher
+ * specificity (attribute selector) than the base .hexdev-gamify-chrome
+ * button rule, so it wins regardless of source order. margin-inline: auto
+ * centers each button horizontally, the same mechanism
+ * .hexdev-chrome-status's own "margin: 0 auto" already uses; display: block
+ * is what makes that centering real for back-to-lobby, which sits INSIDE
+ * the block-level status card, where an inline-block's auto inline margins
+ * resolve to zero -- retry is a flex item of .hexdev-chrome-content and
+ * already blockified, so display: block is a no-op for it. */
+.hexdev-gamify-chrome button[data-action="retry"],
+.hexdev-gamify-chrome button[data-action="back-to-lobby"] {
+  display: block;
   margin-inline: auto;
   border-color: var(--gx-color-accent, var(--hx-gold));
   box-shadow: var(--hx-elev-2);
@@ -268,6 +282,24 @@ export function buildChromeStylesheet(): string {
   margin: 0;
   color: var(--gx-color-on-surface, #1a1a1a);
   opacity: 0.75;
+}
+
+/* FU-5 (--hx-leading consumed): chrome BODY COPY reads the shared 1.35
+ * reading leading -- paragraph-level text only: the status/error card's
+ * single-paragraph form (status-view.ts renders the card itself as a <p>),
+ * the unsupported-game card's body/meta paragraphs
+ * (unsupported-game-view.ts), the lobby modality description/count
+ * paragraphs (game-selection.ts), and the empty/loading messages.
+ * Deliberately NEVER the .hexdev-chrome-status container itself:
+ * line-height inherits, and the unsupported card's own h1 would silently
+ * pick it up -- headings, buttons, badges, and label-style text keep their
+ * UA/own leading. */
+p.hexdev-chrome-status,
+.hexdev-chrome-status p,
+.hexdev-modality p,
+.hexdev-chrome-empty,
+.hexdev-chrome-loading {
+  line-height: var(--hx-leading);
 }
 `.trim();
 }

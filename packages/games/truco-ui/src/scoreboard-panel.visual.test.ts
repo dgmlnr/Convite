@@ -7,10 +7,19 @@ import { ensureTableStyles } from "./table-styles.js";
 const MY_TEAM = "visual-self:team" as TeamId;
 const OPPONENT_TEAM = "visual-opponent:team" as TeamId;
 
+/** The panel mounted inside a real shell-container context, matching where
+ * it ALWAYS lives in production (table.ts mounts it under
+ * .hexdev-truco-table-shell, never bare). FU-3's compact-strip layout is
+ * scoped through the shell's own named @container query — a bare mount has
+ * no ancestor container for that query to resolve against, so it would
+ * silently render the pre-FU-3 stacked layout no player ever sees. */
 function mountedContainer(): HTMLElement {
+  const shell = document.createElement("div");
+  shell.className = "hexdev-truco-table-shell";
+  shell.style.width = "300px";
+  document.body.appendChild(shell);
   const container = document.createElement("div");
-  container.style.width = "300px";
-  document.body.appendChild(container);
+  shell.appendChild(container);
   return container;
 }
 
