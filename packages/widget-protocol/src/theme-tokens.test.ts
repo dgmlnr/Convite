@@ -47,3 +47,31 @@ describe("sanitizeThemeOverride", () => {
     expect(result).toEqual({});
   });
 });
+
+describe("THEME_TOKEN_NAMES (VDS-1 guard: the private --hx-* token layer must never join the closed tenant vocabulary)", () => {
+  // Deliberately placed here rather than truco-ui's table-styles.test.ts
+  // (the tasks artifact's own suggested default): this file already owns
+  // THEME_TOKEN_NAMES's shape, and truco-ui has no existing dependency on
+  // @hexdev/widget-protocol -- keeping the guard beside the vocabulary it
+  // protects avoids adding a new cross-package dependency for a single
+  // assertion.
+  //
+  // Proven capable of failing (not just of passing) before being committed,
+  // both assertions independently, via `pnpm exec vitest run
+  // theme-tokens.test.ts`:
+  //   1. temporarily APPENDED "--hx-test" (length 7 -> 8) -- RED on the
+  //      toHaveLength(7) assertion (expected 7, got 8);
+  //   2. reverted, then temporarily REPLACED an entry with "--hx-test"
+  //      (length held at 7) -- RED on the startsWith loop assertion
+  //      (expected false, got true), proving that assertion is reachable
+  //      and load-bearing, not dead code behind the length check;
+  // reverted after each -- theme-tokens.ts is byte-identical to before this
+  // guard existed -- then re-ran to confirm GREEN again (7/7 passing).
+  it("stays a 7-entry closed vocabulary with no --hx- entry", () => {
+    expect(THEME_TOKEN_NAMES).toHaveLength(7);
+
+    for (const name of THEME_TOKEN_NAMES) {
+      expect(name.startsWith("--hx-")).toBe(false);
+    }
+  });
+});

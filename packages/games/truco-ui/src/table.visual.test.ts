@@ -79,8 +79,21 @@ function dealtMatch(): MatchState {
  * a baseline captured at the top of an empty page stays valid forever. */
 const mounted: HTMLElement[] = [];
 
+/** Every custom property the "themed tenant" test below sets on `<html>`,
+ * reset after EVERY test. Within one Vitest Browser Mode test FILE, tests
+ * share one real `document` — `document.documentElement.style.setProperty(...)`
+ * in one test is still there, unset, for every later test in the same file.
+ * FU-1 (visual-redesign verify report, carried since PR7's own whole-set
+ * audit): without this cleanup, `table-hand-full-piles` — the test that runs
+ * immediately after "themed tenant" — silently inherited the themed accent
+ * (`--gx-color-accent: #22d3ee`) and rendered a themed capture presented as
+ * the default-palette baseline. Same pattern `table-wide.visual.test.ts`
+ * already established for the identical leak. */
+const THEME_PROPS = ["--gx-color-surface", "--gx-color-on-surface", "--gx-color-primary", "--gx-color-on-primary", "--gx-color-accent", "--gx-radius"] as const;
+
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()!.remove();
+  for (const prop of THEME_PROPS) document.documentElement.style.removeProperty(prop);
 });
 
 function mountedContainer(): HTMLElement {

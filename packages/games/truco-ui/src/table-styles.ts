@@ -37,7 +37,56 @@ export function buildTableStylesheet(): string {
 :root {
   ${cssDeclarations(DECK_THEME_DEFAULTS)}
   ${cssDeclarations(MATCHSTICK_THEME_DEFAULTS)}
-  --truco-table-cloth: #1e5c43;
+  --truco-table-cloth: #123f2f;
+  /* --hx-* private token layer (design token-parity, VDS-1): spacing,
+   * radii, elevation, type, motion, and private colour, identical to
+   * chrome-styles.ts's own .hexdev-gamify-chrome block below (proved by
+   * design-token-parity.test.ts). This slice only DECLARES these tokens --
+   * no rule anywhere above or below reads any of them yet, so it repaints
+   * nothing (pnpm test:visual stays at zero baseline diff). Never exposed
+   * through widget-protocol's theme-token vocabulary (see the guard in
+   * theme-tokens.test.ts). */
+  --hx-space-2xs: 4px;
+  --hx-space-xs: 8px;
+  --hx-space-sm: 12px;
+  --hx-space-md: 16px;
+  --hx-space-lg: 24px;
+  --hx-space-xl: 32px;
+  --hx-space-2xl: 48px;
+  --hx-radius-sm: 8px;
+  --hx-radius-md: 12px;
+  --hx-radius-lg: 16px;
+  --hx-radius-xl: 22px;
+  --hx-radius-pill: 999px;
+  --hx-elev-1: 0 1px 2px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.22);
+  --hx-elev-2: 0 2px 4px rgba(0,0,0,.30), 0 6px 14px rgba(0,0,0,.26);
+  --hx-elev-3: 0 4px 8px rgba(0,0,0,.32), 0 14px 28px rgba(0,0,0,.30);
+  --hx-elev-4: 0 8px 16px rgba(0,0,0,.35), 0 28px 56px rgba(0,0,0,.38);
+  --hx-relief: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -1px 0 rgba(0,0,0,.25);
+  --hx-rim: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 12px rgba(0,0,0,.35);
+  --hx-text-display: 1.5rem;
+  --hx-text-display-compact: 1.35rem;
+  --hx-text-title: 1.1rem;
+  --hx-text-body: 0.9rem;
+  --hx-text-meta: 0.75rem;
+  --hx-text-label: 0.7rem;
+  --hx-tracking-label: 0.08em;
+  --hx-leading: 1.35;
+  --hx-motion-fast: 120ms;
+  --hx-ease: ease-out;
+  --hx-chrome-on-felt: #10312a;
+  --hx-gold: #e8c877;
+  --hx-gold-edge: #b8923f;
+  --hx-ink: #1a1a1a;
+  /* New, unused felt-palette tokens (tasks §3.7 boundary note): PR2 changes
+   * --truco-table-cloth's own value above to #123f2f and consumes all four
+   * of these together in one vignette gradient. Declaring them here, now,
+   * unused, keeps THIS PR a true zero-paint slice -- changing
+   * --truco-table-cloth's value itself would repaint the felt before this
+   * PR's own "tokens declared, never consumed" claim holds. */
+  --truco-cloth-lit: #1d6a4d;
+  --truco-cloth-deep: #0d3325;
+  --truco-cloth-lane: rgba(0,0,0,.18);
 }
 /* The outer shell owns the shell-level layout (felt beside/above its own
  * chrome scoreboard panel — Change 2), and establishes an inline-size
@@ -106,17 +155,71 @@ export function buildTableStylesheet(): string {
  * whenever the container around it is shorter than this minimum. */
 .hexdev-truco-table {
   --truco-card-width: 60px;
+  /* --hx-felt-gap / --hx-felt-pad (PR3, tasks §3.8): the per-tier scalar
+   * pair driving this grid's own gap/padding. Declared HERE, never on :root
+   * — design-token-parity.test.ts only scans :root/.hexdev-gamify-chrome,
+   * so a felt-only scalar living outside that block cannot trip the parity
+   * guard or need a chrome-side twin it has no reason to share. */
+  --hx-felt-gap: 8px;
+  --hx-felt-pad: 8px;
+  /* --hx-band-banner / --hx-band-action / --hx-band-action-total (PR5, tasks
+   * §3.8/§9, D-5/D-6, blessed refinement 1 — tasks §1 item 1/§2.2): the two
+   * reserved lanes that make the badge/tray axis conflict structurally
+   * impossible (the action bar gets its own grid row below the bottom
+   * anchor; the banner gets its own padding-top lane on the centre column)
+   * instead of patched by repositioning either one. Never on :root — same
+   * felt-only-scalar discipline as --hx-felt-gap/--hx-felt-pad above.
+   * --hx-band-banner: PR5-T3 MEASUREMENT (real Chromium, real DejaVu-backed
+   * font metrics, via a standalone probe/full-mount comparison against
+   * renderPendingCallBanner): the design's own <=34px assumption did NOT
+   * hold. The common case (level "Truco" + caller "Cantó: Nosotros")
+   * measured 46px; the worst realistic case (level "Falta envido" + the same
+   * caller) measured 58px. Root cause, not a bug PR5 is scoped to fix (task
+   * text: "raise the token value, not the pill's layout"): the pill's
+   * absolutely-positioned ancestor (.hexdev-truco-banner-slot) sizes itself
+   * shrink-to-fit, which computes an available width narrower than the
+   * caller span's own single-line max-content width, so the caller text
+   * (and, at the worst-case level label, the level text too) wraps onto a
+   * second line inside its own flex item — taller than the design's one-line
+   * assumption predicted. Raised to 60px (worst-case 58px + ~2px headroom)
+   * so the pill fits without clipping/overlap even at its tallest realistic
+   * text combination. --hx-band-action-total: equals --hx-band-action at
+   * compact (1 strip, calls+señas share it, tasks §3.8) — the 2v2 two-strip
+   * formula only starts at medium (below). */
+  --hx-band-banner: 60px;
+  --hx-band-action: 40px;
+  --hx-band-action-total: var(--hx-band-action);
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px));
+  /* min-height formula (PR5-T5, tasks §9, design §8.2): the banner lane and
+   * the action band are pure constants added to the existing trick-area
+   * floor, plus one new grid gap for the new "actions" row. */
+  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px + var(--hx-band-banner) + var(--hx-band-action-total) + var(--hx-felt-gap)));
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: auto 1fr auto;
-  grid-template-areas: "top" "center" "bottom";
-  gap: 8px;
-  padding: 8px;
-  background: var(--truco-table-cloth);
+  /* PR5-T1 (tasks §9): the 4th row reserves the action bar's own band, a
+   * fixed track (never auto) so the bar can never grow the felt — contents
+   * scroll inside it instead (design §7.2). */
+  grid-template-rows: auto 1fr auto var(--hx-band-action-total);
+  grid-template-areas: "top" "center" "bottom" "actions";
+  gap: var(--hx-felt-gap);
+  padding: var(--hx-felt-pad);
+  /* Felt palette (PR2, design §10/§3.7): a deterministic CSS vignette, not an
+   * image asset — three layers, weave painted ABOVE the vignette (layer
+   * order matters: the weaves are listed first, so they composite on top).
+   * Two faint diagonal weaves (one lighter, one darker) give the cloth a
+   * woven texture; the radial vignette (lit centre fading to a deeper edge)
+   * reads as "a table under a light", not a flat colour fill. All four
+   * --truco-cloth-* tokens declared unused in PR1 are consumed together
+   * here, for the first time. */
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.030) 0 1px, transparent 1px 6px),
+    radial-gradient(ellipse 120% 90% at 50% 42%, var(--truco-cloth-lit), var(--truco-table-cloth) 55%, var(--truco-cloth-deep) 100%);
+  /* --hx-rim (VDS-4, paint-only): an inner highlight/shadow pair reading as
+   * "a real recessed play surface", never a layout-affecting border. */
+  box-shadow: var(--hx-rim);
   color: var(--gx-color-on-surface, #f2f2f2);
   overflow: hidden;
 }
@@ -137,16 +240,184 @@ export function buildTableStylesheet(): string {
  * exceeds the centre column's own trick-area reservation, so it is what
  * actually drives this row's real minimum. */
 .hexdev-truco-table[data-seat-count="4"] {
-  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 5 + 40px));
+  /* PR5-T5 (tasks §9, design §8.2): the banner term is DELIBERATELY ABSENT
+   * here (unlike the 1v1 formula above) — the middle row's essential need is
+   * max(3 stacked side cards + gaps, trick + banner lane), and the 3-card
+   * column always wins at every tier (compact 3x91.6+8=283 vs
+   * 1.7x91.6+40=196; ultra 3x152.7+8=466 vs 260+84=344), so adding the
+   * banner term here would over-reserve 40-84px on the seat count that can
+   * least afford it. A later card-size change could silently invert this
+   * inequality — that is exactly why this comment exists. */
+  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 5 + 40px + var(--hx-band-action-total) + var(--hx-felt-gap)));
   grid-template-columns: minmax(34px, 15vw) 1fr minmax(34px, 15vw);
-  grid-template-areas: "top top top" "left center right" "bottom bottom bottom";
+  grid-template-areas: "top top top" "left center right" "bottom bottom bottom" "actions actions actions";
 }
-@media (min-width: 640px) {
-  .hexdev-truco-table { gap: 14px; padding: 16px; --truco-card-width: 84px; }
-  .hexdev-truco-table[data-seat-count="4"] { grid-template-columns: minmax(72px, 16vw) 1fr minmax(72px, 16vw); }
+/* Breakpoint axis (PR3, tasks §7/§3.8): the two viewport @media blocks that
+ * used to drive --truco-card-width/gap/padding are replaced by the SAME
+ * hexdev-truco-shell container the shell-layout row-switch above already
+ * established on .hexdev-truco-table-shell — .hexdev-truco-table is a
+ * DESCENDANT of that container (unlike the container element itself, which
+ * cannot be styled by its own container-query rules, see the comment
+ * above), so it is a legal query target. @media now survives only for
+ * prefers-reduced-motion (below). Scalar-only: grid STRUCTURE
+ * (grid-template-columns/areas) is byte-for-byte what it was under the old
+ * @media axis at every tier — the log-rail column and actions row are
+ * PR4/PR5 scope, not this one. */
+@container hexdev-truco-shell (min-width: 640px) {
+  .hexdev-truco-table {
+    --truco-card-width: 84px;
+    /* Deliberate 2px snap to the --hx-space scale (was 14px under the old
+     * @media axis) — covered by table-height-stability's own 700px fence. */
+    --hx-felt-gap: 12px;
+    --hx-felt-pad: 16px;
+    /* PR5-T3/T5 (tasks §3.8/§9): medium-tier band values. --hx-band-banner
+     * restores the full three-line pending-call block's own real height
+     * (D-6 — the compact one-line pill is compact-only); --hx-band-action is
+     * ONE strip's height — --hx-band-action-total below overrides this for
+     * 2v2 into the two-strip formula, and, because --hx-band-action-total is
+     * itself declared via var(--hx-band-action) (derived, not a fixed
+     * literal — same discipline as --hx-play-max's own comment further
+     * below), 1v1 automatically keeps its single-strip total at every wider
+     * tier without needing its own redeclaration anywhere. */
+    --hx-band-banner: 76px;
+    --hx-band-action: 48px;
+  }
+  .hexdev-truco-table[data-seat-count="4"] {
+    grid-template-columns: minmax(72px, 16vw) 1fr minmax(72px, 16vw);
+    /* PR5-T5 (tasks §3.8): 2v2 only, from medium onward — two stacked action
+     * strips (calls, then señas — design §7.2), not one. Declared ONCE, here
+     * — --hx-band-action itself is redeclared at every wider tier below
+     * (unscoped, so it applies to 1v1 and 2v2 alike), and because this
+     * formula reads --hx-band-action via var() it resolves against
+     * whichever value is cascaded for THIS element at used-value time, so it
+     * never needs its own redeclaration at wide/ultra. */
+    --hx-band-action-total: calc(var(--hx-band-action) * 2 + 4px);
+    /* PR5-T3/T7 MEASUREMENT (own zero-overlap "own lane" test finding, not
+     * anticipated by tasks §3.8's own per-tier table): 2v2's center grid
+     * area is narrower than 1v1's at every tier (the side-seat gutters plus,
+     * from 900px on, the log-rail column both eat into it), which — same
+     * shrink-to-fit text-wrap mechanism PR5-T3 found at compact — makes the
+     * pending-call pill wrap onto MORE lines for 2v2 than for 1v1 at this
+     * tier, needing more real height than the shared design-table value
+     * (76px) provides. Measured 86px real worst-case at 700px/2v2 (1v1 stays
+     * a comfortable 71px here); raised to 94px (~8% headroom, this file's
+     * own established convention). This 2v2-only override is MORE specific
+     * than the base .hexdev-truco-table rule declaring 76px for everyone
+     * else, so it wins regardless of source order. */
+    --hx-band-banner: 94px;
+  }
+  /* PR5-T2 (tasks §9, design §7.2): 2v2 only — the action bar stacks its two
+   * strips vertically instead of scrolling one row horizontally; each strip
+   * gets a fixed height (one band) with its own horizontal scroller. These
+   * three selectors are all MORE specific than their own base-rule
+   * counterparts further below (attribute+class beats a bare class), so —
+   * unlike the pending-call override that used to live here — source order
+   * does not matter for them; specificity alone decides the winner. */
+  [data-seat-count="4"] .hexdev-truco-action-bar { flex-direction: column; overflow-x: hidden; }
+  [data-seat-count="4"] .hexdev-truco-calls-row,
+  [data-seat-count="4"] .hexdev-truco-senas { height: var(--hx-band-action); overflow-x: auto; }
 }
-@media (min-width: 960px) {
-  .hexdev-truco-table { --truco-card-width: 100px; }
+@container hexdev-truco-shell (min-width: 900px) {
+  .hexdev-truco-table {
+    --hx-felt-gap: 16px;
+    --hx-felt-pad: 24px;
+    /* PR4 (tasks §8/§3.8, D-4/blessed refinement 2 — tasks §1 item 2/§2.1):
+     * the call-log rail becomes a real column track at wide/ultra —
+     * clamp(min, preferred%, max), never a bare percentage, so it neither
+     * collapses on a container that is only barely wide enough nor runs away
+     * on an extremely wide one. Declared HERE (on .hexdev-truco-table, inside
+     * this @container block), never on :root — design-token-parity.test.ts
+     * only scans :root/.hexdev-gamify-chrome, and a felt-only layout
+     * constant with no chrome-side twin has no reason to risk tripping that
+     * guard (same discipline as --hx-felt-gap/--hx-felt-pad above). */
+    --hx-log-rail: clamp(200px, 22%, 280px);
+    /* --hx-play-max (tasks §3.8): an INLINE-axis cap only — see its own
+     * consumer below — never enters a height-fence formula. Derived from
+     * --truco-card-width via calc(), so it automatically tracks whichever
+     * tier's card size is in effect on THIS specific element: a custom
+     * property's var() reference resolves against the element's own final
+     * cascaded value at used-value time, not the value in effect where
+     * --hx-play-max itself happened to be declared — so, unlike
+     * --hx-log-rail just above (a fixed clamp(), not derived from anything),
+     * no separate ultra-tier redeclaration is needed for this one. */
+    --hx-play-max: calc(var(--truco-card-width) * 7);
+    /* PR5-T3/T5 (tasks §3.8/§9): wide-tier band values. */
+    --hx-band-banner: 80px;
+    --hx-band-action: 52px;
+  }
+  /* 1v1 only grows here — the 4-seat felt is already width-constrained by
+   * its own side gutters, so 2v2 holds at the medium tier's 84px (no
+   * declaration needed: nothing above overrides it for this seat count). */
+  .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 100px; }
+
+  /* PR4-T4 (tasks §8), extended PR5-T1 (tasks §9): the log rail is a real
+   * grid column track, in flow, beside the play — structurally what TRZ-1's
+   * own "the call-log rail, the felt, and the scoreboard rail each occupy a
+   * disjoint horizontal region" scenario needs (tasks §2.1: a rectangle
+   * claim, proven by getBoundingClientRect in the test suite, never by DOM
+   * parentage). PR5 adds the 4th "log actions" row now that the actions row
+   * itself exists — grid STRUCTURE otherwise matches the compact/medium base
+   * rules above, with "log" prepended to every row. */
+  .hexdev-truco-table {
+    grid-template-columns: var(--hx-log-rail) minmax(0, 1fr);
+    grid-template-areas: "log top" "log center" "log bottom" "log actions";
+  }
+  .hexdev-truco-table[data-seat-count="4"] {
+    grid-template-columns: var(--hx-log-rail) minmax(72px, 16%) minmax(0, 1fr) minmax(72px, 16%);
+    grid-template-areas:
+      "log top     top     top"
+      "log left    center  right"
+      "log bottom  bottom  bottom"
+      "log actions actions actions";
+    /* PR5-T3/T7 MEASUREMENT (own zero-overlap "own lane" test finding — see
+     * the 640px block's own identical-purpose comment above for the full
+     * mechanism). At wide the log-rail column reservation narrows 2v2's
+     * center area even further than at medium, so the real worst-case grew
+     * MORE here, not less: measured 101px (1v1 stays a comfortable 71px at
+     * this same width). Raised to 112px (~11% headroom — kept a little
+     * wider than the file's usual ~8%, since this value sits closer to its
+     * own measured floor than the other bands do). 2v2 at ultra measured
+     * only 71px (the felt's own extra ultra-tier width room resolves the
+     * wrap this tier and the one below it both hit) — reset back down in
+     * the 1280px block below, rather than silently inheriting this 112px
+     * forever (D-1: a lane is a fixed, budgeted size, not a worst case that
+     * only ever grows). */
+    --hx-band-banner: 112px;
+  }
+  /* PR4-T6 (tasks §8), joined PR5-T6 (tasks §9): 1v1 only — cap and centre
+   * the play column (now including the action bar) so a very wide felt does
+   * not stretch a 3-card hand across the whole track. */
+  .hexdev-truco-table:not([data-seat-count="4"]) > .hexdev-truco-anchor,
+  .hexdev-truco-table:not([data-seat-count="4"]) > .hexdev-truco-center,
+  .hexdev-truco-table:not([data-seat-count="4"]) > .hexdev-truco-action-bar {
+    justify-self: center;
+    width: min(100%, var(--hx-play-max));
+  }
+}
+@container hexdev-truco-shell (min-width: 1280px) {
+  .hexdev-truco-table {
+    --hx-felt-gap: 24px;
+    --hx-felt-pad: 32px;
+    /* Ultra's own rail width — a distinct clamp(), not derived from
+     * --truco-card-width, so (unlike --hx-play-max, declared once at wide
+     * above and left alone here) it DOES need its own redeclaration at every
+     * tier that changes it. */
+    --hx-log-rail: clamp(240px, 20%, 320px);
+    /* PR5-T3/T5 (tasks §3.8/§9): ultra-tier band values. */
+    --hx-band-banner: 84px;
+    --hx-band-action: 56px;
+  }
+  .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-width: 108px; }
+  /* PR5-T3 MEASUREMENT: resets --hx-band-banner back down to the shared 84px
+   * ultra value for 2v2 specifically — without this, the seat-scoped 112px
+   * set in the 900px block above would keep cascading forward forever (this
+   * selector is MORE specific than the bare .hexdev-truco-table rule just
+   * above, which also sets 84px at this same tier, so specificity alone
+   * would otherwise keep the stale 112px value pinned here regardless of
+   * source order). 2v2 measured 71px at ultra — the felt's own extra
+   * ultra-tier width resolves the medium/wide-tier text wrap, so 84px
+   * (matching 1v1's own value here) is real headroom again, not a guess. */
+  .hexdev-truco-table[data-seat-count="4"] { --truco-card-width: 100px; --hx-band-banner: 84px; }
 }
 
 /* Change 2: a side panel that works wide does not fit narrow, so the two
@@ -166,6 +437,20 @@ export function buildTableStylesheet(): string {
     justify-content: flex-start;
   }
 }
+/* PR4 correction (native review, deterministic CRITICAL): same-specificity
+ * rules resolve by SOURCE ORDER regardless of @container nesting depth. These
+ * two rail-width bumps used to sit BEFORE the 640px block above (inside the
+ * 900/1280 blocks that also style .hexdev-truco-table), so the 168px rule
+ * above always won at every width, even >=900px. Moving them here, AFTER the
+ * 168px base rule, is what actually lets 900/1280 win. */
+@container hexdev-truco-shell (min-width: 900px) {
+  /* PR4-T7 (tasks §8): scoreboard rail width bump — a SHELL-level change. */
+  .hexdev-truco-scoreboard-panel { width: 200px; }
+}
+@container hexdev-truco-shell (min-width: 1280px) {
+  /* PR4-T7: ultra's own scoreboard rail width. */
+  .hexdev-truco-scoreboard-panel { width: 240px; }
+}
 
 .hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
 [data-position="top"] { grid-area: top; align-items: flex-start; }
@@ -180,7 +465,15 @@ export function buildTableStylesheet(): string {
  * pointing at the exact active seat — the piece that keeps meaning "a
  * specific seat" once a fourth anchor exists. */
 .hexdev-truco-anchor--active {
-  box-shadow: inset 0 0 0 3px var(--gx-color-accent, #ffd166), 0 0 0 6px rgba(255, 209, 102, 0.28);
+  /* Elevation (PR2, VDS-4, paint-only): --hx-elev-3 appended to the existing
+   * accent ring — the ring stays the primary "whose turn" signal, elevation
+   * only adds depth behind it.
+   * PR8 (WARNING-2 closure): the ring's fallback now reads --hx-gold. The
+   * 6px glow (rgba(255, 209, 102, 0.28)) is a SEPARATE literal, not one of
+   * the 12 var(--gx-color-accent, #ffd166) fallback sites the verify
+   * report enumerated — left untouched, out of this fix's scope (see
+   * apply-progress for the disposition). */
+  box-shadow: inset 0 0 0 3px var(--gx-color-accent, var(--hx-gold)), 0 0 0 6px rgba(255, 209, 102, 0.28), var(--hx-elev-3);
   border-radius: var(--gx-radius, 12px);
 }
 .hexdev-truco-turn-badge {
@@ -188,16 +481,26 @@ export function buildTableStylesheet(): string {
   top: -11px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
-  font-size: 0.65rem;
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+   * 0.65rem, no exact literal). Safe — position: absolute above takes this
+   * badge out of flow entirely, so its own box can never move a
+   * height-fenced pixel in any ancestor. */
+  font-size: var(--hx-text-label);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 3px 10px;
   border-radius: 999px;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* Elevation (PR2, VDS-4, paint-only), plus PR8's --hx-gold-edge consumer
+   * (design §4.6: "1px lower edge on accent surfaces") — the badge is the
+   * clearest "gold surface" in the felt (task's own hint), so its inset
+   * lower edge gives the solid gold chip a hairline of depth instead of a
+   * flat fill. Additive to the existing shadow list, same convention
+   * --hx-relief/--hx-rim already use. */
+  box-shadow: var(--hx-elev-2), inset 0 -1px 0 var(--hx-gold-edge);
   z-index: 1;
 }
 [data-position="top"] .hexdev-truco-turn-badge { top: auto; bottom: -11px; }
@@ -220,6 +523,15 @@ export function buildTableStylesheet(): string {
   gap: 8px;
   min-height: 0;
   overflow: hidden;
+  /* Banner lane (PR5-T4, tasks §9, design D-5): reserving the banner's own
+   * lane as padding-top removes its rectangle from this column's OWN
+   * centering calculation entirely, so "the trick area never meets the
+   * banner" holds at ANY container height, not only tall ones — unlike
+   * offsetting the trick area itself (.hexdev-truco-played--top set to
+   * top: var(--hx-band-banner)), which stays correct only while the centre
+   * row is tall enough that its own 1fr track does not shrink toward the
+   * trick's min-height first. */
+  padding-top: var(--hx-band-banner);
 }
 
 /* Stable window height (apply prompt): playing the LAST card in hand empties
@@ -292,12 +604,25 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-card img, .hexdev-truco-card svg { width: 100%; height: 100%; object-fit: contain; display: block; }
 .hexdev-truco-card--playable {
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  /* Elevation (PR2, VDS-4, paint-only): resting --hx-elev-2, hover/focus
+   * --hx-elev-3 below — box-shadow and transform only, never a property
+   * that could move layout (card-render-size.browser.test.ts's own zero
+   * height-delta fence proves this). */
+  box-shadow: var(--hx-elev-2);
+  /* Motion (PR2, VDS-5): capped at --hx-motion-fast/--hx-ease, disabled
+   * entirely under prefers-reduced-motion below — "nothing animated at
+   * rest" (refinement 3) plus a restrained, capped transition here. */
+  transition: transform var(--hx-motion-fast) var(--hx-ease), box-shadow var(--hx-motion-fast) var(--hx-ease);
 }
 .hexdev-truco-card--playable:hover, .hexdev-truco-card--playable:focus-visible {
   transform: translateY(-10%);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--hx-elev-3);
+}
+/* VDS-5: a reduced-motion user gets no transition — the hover/focus state
+ * still applies instantly (transform/box-shadow still change), only the
+ * animated interpolation between states is removed. */
+@media (prefers-reduced-motion: reduce) {
+  .hexdev-truco-card--playable { transition: none; }
 }
 /* A card you cannot play right now must read as waiting, not as broken.
  *
@@ -309,9 +634,14 @@ export function buildTableStylesheet(): string {
  *
  * The previous values (0.55 opacity plus 40% grayscale) also went far past
  * "not now" into "this card is disabled forever". The point is only to make
- * the playable ones stand out. */
+ * the playable ones stand out.
+ *
+ * Elevation (PR2, VDS-4): deliberately NO box-shadow here — every other
+ * surface in this file gets --hx-elev-1..4, but a locked card gets none at
+ * all, so "waiting" never reads as "lifted/interactive" the way a hovered
+ * playable card does. */
 .hexdev-truco-card--locked {
-  filter: brightness(0.86) saturate(0.9);
+  filter: brightness(0.80) saturate(0.85);
   cursor: default;
 }
 
@@ -359,10 +689,17 @@ export function buildTableStylesheet(): string {
   color: var(--gx-color-on-surface, #f2f2f2);
   border-radius: var(--gx-radius, 12px);
   padding: 8px 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* Elevation (PR2, VDS-4, paint-only): --hx-elev-1 + --hx-relief. */
+  box-shadow: var(--hx-elev-1), var(--hx-relief);
 }
 .hexdev-truco-scoreboard-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.hexdev-truco-team-label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gx-color-accent, #ffd166); text-align: center; }
+/* PR8 (WARNING-1 closure): font-size 0.75rem === --hx-text-meta exactly
+ * (zero-pixel token swap). letter-spacing was 0.04em, the nearest existing
+ * value below --hx-tracking-label's 0.08em (no exact match anywhere in
+ * either stylesheet) -- letter-spacing changes glyph advance width only,
+ * never a line box's height, so widening it here cannot move any
+ * height-fenced pixel. */
+.hexdev-truco-team-label { display: block; font-size: var(--hx-text-meta); font-weight: 700; text-transform: uppercase; letter-spacing: var(--hx-tracking-label); color: var(--gx-color-accent, var(--hx-gold)); text-align: center; }
 .hexdev-truco-score-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .hexdev-truco-score-label { font-size: 0.65rem; opacity: 0.8; }
 .hexdev-truco-score-sticks { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; }
@@ -394,6 +731,10 @@ export function buildTableStylesheet(): string {
   justify-content: center;
   pointer-events: none;
   max-width: 100%;
+  /* PR5-T4 (tasks §9, design D-5): the banner's own reserved lane height —
+   * paired with .hexdev-truco-center's own padding-top above, which is what
+   * actually removes the lane from that column's centering calculation. */
+  height: var(--hx-band-banner);
 }
 /* Change 1: the pending call is the single most important thing on screen
  * while it is open — an opaque, solid-background block in normal document
@@ -403,24 +744,88 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-pending-call:empty { display: none; }
 .hexdev-truco-pending-call {
   display: flex;
-  flex-direction: column;
+  /* PR5-T4 (tasks §9, design D-6): compact keeps the language but drops to a
+   * one-line pill (level + caller only — the turn line becomes visually
+   * hidden below, see .hexdev-truco-pending-call-turn) — it is the same
+   * sentence the turn badge already shows on the same screen. Medium+
+   * restores the three-line column block (overridden inside the 640px
+   * @container block above). */
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   padding: 8px 22px;
   border-radius: var(--gx-radius, 12px);
   background: var(--gx-color-primary, #2f6f4f);
   color: var(--gx-color-on-primary, #ffffff);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  /* Elevation (PR2, VDS-4, paint-only): the single most important thing on
+   * screen while it is open gets the same depth as a hovered card. */
+  box-shadow: var(--hx-elev-3);
   text-align: center;
 }
 .hexdev-truco-pending-call[data-turn="mine"] {
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
-  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.5), 0 4px 14px rgba(0, 0, 0, 0.4);
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.5), var(--hx-elev-3);
 }
-.hexdev-truco-pending-call-level { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
-.hexdev-truco-pending-call-caller { font-size: 0.75rem; }
-.hexdev-truco-pending-call-turn { font-size: 0.8rem; font-weight: 700; }
+/* PR8 (WARNING-1 closure): both font-sizes are exact-value matches
+ * (1.1rem === --hx-text-title, 0.75rem === --hx-text-meta) -- zero-pixel
+ * token swaps, safe even inside the fixed-height banner lane. */
+.hexdev-truco-pending-call-level { font-size: var(--hx-text-title); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
+.hexdev-truco-pending-call-caller { font-size: var(--hx-text-meta); }
+/* PR5-T4 (tasks §9, design D-6): compact-only, visually hidden but still
+ * announced — the exact same clip-path: inset(50%) treatment
+ * .hexdev-truco-turn-indicator already uses above. Medium+ restores normal
+ * inline flow (the correction block immediately below, per the same
+ * cascade-order discipline the PR4 correction established). */
+.hexdev-truco-pending-call-turn {
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-meta (0.75rem; was
+   * 0.8rem, no exact literal). Safe at both tiers: compact keeps this
+   * position: absolute (out of flow); medium+'s position: static
+   * override below still nests inside .hexdev-truco-banner-slot, which is
+   * itself position: absolute with a fixed height: var(--hx-band-banner)
+   * (D-5) — content height changes inside it clip, they never grow the lane
+   * or the felt's own measured height. */
+  font-size: var(--hx-text-meta);
+  font-weight: 700;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* PR5 correction (own cascade-order self-check, same CRITICAL pattern the
+ * PR4 correction already fixed once in this file): at equal specificity,
+ * the LATER rule in source order wins regardless of @container nesting
+ * depth. .hexdev-truco-pending-call and .hexdev-truco-pending-call-turn
+ * are both bare-class selectors — the SAME specificity as their own base
+ * rules just above — so this medium+ override MUST sit textually AFTER
+ * those base rules (it originally lived inside the 640px @container block
+ * near the top of the file, BEFORE the base rules, where it would have
+ * silently lost every time). Moved here, after the base rules, before ever
+ * being relied on by a real test.
+ *
+ * PR5-T4 (tasks §9, D-6): medium+ restores the three-line pending-call
+ * block — row layout and the visually-hidden turn line were compact-only.
+ * gap reverts to the original 2px vertical spacing (the base rule's own
+ * 8px is for the compact row-pill's level/caller horizontal spacing). */
+@container hexdev-truco-shell (min-width: 640px) {
+  .hexdev-truco-pending-call { flex-direction: column; gap: 2px; }
+  .hexdev-truco-pending-call-turn {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    border: 0;
+  }
+}
 
 .hexdev-truco-trick-feedback {
   margin: 0;
@@ -446,34 +851,56 @@ export function buildTableStylesheet(): string {
   min-height: 0;
 }
 
-/* Stable window height (apply prompt, round 3): the number of legal call
- * buttons (zero, one group, or two stacked groups — a response PLUS an
- * envido escalation can be simultaneously legal, truco-chain.ts's own
- * "envido interrupts a pending truco call" rule) changes constantly during a
- * hand. A FIRST fix reserved a shared worst-case min-height here (two
- * groups' worth); that, added to every other reservation, made the table
- * taller than a real phone's own visible viewport. This tray now floats
- * OVER the felt instead (position: absolute, out of flow entirely) — see
- * table.ts's own doc comment for exactly where and why: directly above this
- * anchor's box (bottom: 100%), which by construction never covers the
- * still-in-flow hand row below it. pointer-events: none on the tray keeps
- * it from intercepting taps over empty space around its own children;
- * pointer-events: auto on each child restores real tappability for the
- * calls and señas buttons themselves. */
-.hexdev-truco-action-tray {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  margin-bottom: 6px;
-  z-index: 1;
+/* PR5-T2 (tasks §9, design §7.2, D-3/blessed refinement 1 — tasks §1 item 1):
+ * the action bar is now a RESERVED GRID ROW below the hand, in flow, at
+ * every tier (the .hexdev-truco-table base rule's own "actions" row/
+ * --hx-band-action-total track above) — not a floating tray. This is what
+ * makes the badge/tray axis conflict structurally impossible: the badge
+ * lives at top: -11px of the bottom anchor; the bar is a sibling GRID ROW
+ * below that same anchor. Different edges, no shared axis, at any tier —
+ * see tasks §2.2 for why no badge-repositioning CSS exists anywhere in this
+ * file. The three floating-only rules that no longer apply to an in-flow
+ * element are gone: position: absolute, bottom: 100%, and the
+ * pointer-events: none / > * { pointer-events: auto } pair (a plain in-flow
+ * box does not swallow taps outside its own box; that pairing only existed
+ * to protect the space AROUND a floating tray whose own footprint used to
+ * cover live cards underneath it).
+ *
+ * Renamed from .hexdev-truco-action-tray — "tray" named a floating surface
+ * that no longer exists. Verified: no test asserts the old class name (only
+ * a comment in table-2v2.visual.test.ts, fixed alongside this rename).
+ *
+ * D-11 (design): this recess is FELT furniture, not chrome — its own
+ * background/box-shadow read the private --truco-cloth-lane/--hx-relief
+ * tokens, never --gx-*. The BUTTONS inside it (.hexdev-truco-call,
+ * .hexdev-truco-senas-toggle, .hexdev-truco-sena) stay chrome and keep
+ * reading var(--gx-*, fallback) unchanged. */
+.hexdev-truco-action-bar {
+  grid-area: actions;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
   align-items: center;
-  pointer-events: none;
+  gap: var(--hx-space-2xs);
+  min-width: 0;
+  /* The band NEVER grows: contents scroll, the track itself is fixed
+   * (--hx-band-action-total on the felt's own grid-template-rows). Both axes
+   * scroll EXPLICITLY, on purpose: overflow: hidden is a shorthand that sets
+   * overflow-y to "hidden", never "visible", so the UA's "one axis
+   * non-visible forces the other to auto" coercion this rule used to rely on
+   * never actually fires — vertical overflow was silently clipped, not
+   * scrollable (PR5 correction, native review CRITICAL). The y-scroller is
+   * real, load-bearing work: 1v1's own edge case where two call groups (a
+   * response plus an envido escalation) are simultaneously legal inside the
+   * single compact/1v1 strip, per envido-chain.ts's own canOpenEnvido rule
+   * that envido may still interrupt a pending, unanswered truco call. */
+  overflow-x: auto;
+  overflow-y: auto;
+  padding-inline: var(--hx-space-2xs);
+  border-radius: var(--gx-radius, var(--hx-radius-md));
+  background: var(--truco-cloth-lane);
+  box-shadow: var(--hx-relief);
 }
-.hexdev-truco-action-tray > * { pointer-events: auto; }
+.hexdev-truco-action-bar > * { flex: 0 0 auto; }
 
 .hexdev-truco-calls-row { display: flex; flex-direction: column; gap: 6px; align-items: center; align-self: stretch; max-width: 100%; }
 /* Change 4: answering a pending call reads as a different decision from
@@ -498,14 +925,21 @@ export function buildTableStylesheet(): string {
   color: var(--gx-color-on-primary, #ffffff);
   font-family: inherit;
   font-weight: 600;
-  font-size: 0.85rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-body (0.9rem; was
+   * 0.85rem, no exact literal). Safe: this button's min-height: 40px is an
+   * explicit floor, not font-derived, and it lives inside
+   * .hexdev-truco-action-bar, whose own box is the fixed --hx-band-action
+   * grid row with overflow: hidden (design §7.2: "the band NEVER grows") —
+   * a taller line box clips, it does not grow the reserved row. */
+  font-size: var(--hx-text-body);
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  /* Elevation (PR2, VDS-4, paint-only). */
+  box-shadow: var(--hx-elev-2);
 }
 .hexdev-truco-call:hover, .hexdev-truco-call:focus-visible { filter: brightness(1.1); }
 .hexdev-truco-calls-group--response .hexdev-truco-call {
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
 }
 .hexdev-truco-calls-group--opening .hexdev-truco-call {
   background: transparent;
@@ -531,15 +965,21 @@ export function buildTableStylesheet(): string {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 .hexdev-truco-hand-outcome[data-result="won"] {
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
 }
 .hexdev-truco-hand-outcome[data-result="lost"] {
   background: #3a3a3a;
   color: #f2f2f2;
 }
-.hexdev-truco-hand-outcome-headline { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.02em; }
-.hexdev-truco-hand-outcome-points { font-size: 0.85rem; opacity: 0.85; }
+/* PR8 (WARNING-1 closure): both nearest-match --hx-text-body (0.9rem; were
+ * 0.95rem/0.85rem, no exact literal). Same banner-slot safety as
+ * .hexdev-truco-pending-call-turn above — this content mounts inside
+ * .hexdev-truco-banner-slot too (design §9.2: mountedHandOutcomeEl
+ * "points at handOutcomeBanner inside bannerSlot"), a fixed-height absolute
+ * lane, not the felt's own flow. */
+.hexdev-truco-hand-outcome-headline { font-size: var(--hx-text-body); text-transform: uppercase; letter-spacing: 0.02em; }
+.hexdev-truco-hand-outcome-points { font-size: var(--hx-text-body); opacity: 0.85; }
 
 /* Change: a real ending, not a blank error state (spec: "losing should feel
  * like a loss, not like an error message"). A full, SOLID-background overlay
@@ -565,19 +1005,43 @@ export function buildTableStylesheet(): string {
   background: var(--gx-color-primary, #1e5c43);
   color: var(--gx-color-on-primary, #ffffff);
 }
-.hexdev-truco-match-over-headline { margin: 0; font-size: 1.6rem; font-weight: 800; }
-.hexdev-truco-match-over-score { margin: 0; font-size: 1.1rem; font-weight: 600; }
+/* PR8 (WARNING-1 closure): the match-over overlay is position: absolute,
+ * out of the felt's own flow and never referenced by table-height-stability/
+ * table-height-budget/table-zone-overlap — a font-size change here cannot
+ * move any height-fenced pixel, which is why it is the nearest-match site
+ * chosen for --hx-text-display. -headline was 1.6rem (nearest to
+ * --hx-text-display's 1.5rem; no exact 1.5rem literal exists anywhere in
+ * either stylesheet) -- a documented ~1.6px shrink. PR8 correction (native
+ * review): the first draft of this comment claimed the shrink was "covered
+ * by this PR's own baseline regeneration" -- FALSE: the regeneration pass
+ * only rewrites baselines whose diff EXCEEDS the visual suite's 1%
+ * tolerance, and this shrink (like the other nearest-match substitutions in
+ * this pass) was silently absorbed instead, leaving the affected baselines
+ * sub-tolerance stale: green today, but latent drift a future small change
+ * could push over the threshold mysteriously. The deliberate force-recapture
+ * of every affected baseline ships as this chain's immediate next candidate
+ * (the lens-context budget caps how many binary baselines one reviewable
+ * candidate can carry, so it cannot ride this one). -score's 1.1rem is an
+ * exact match for --hx-text-title (zero-pixel). */
+.hexdev-truco-match-over-headline { margin: 0; font-size: var(--hx-text-display); font-weight: 800; }
+.hexdev-truco-match-over-score { margin: 0; font-size: var(--hx-text-title); font-weight: 600; }
 .hexdev-truco-match-over button[data-action="play-again"] {
   min-height: 46px;
   padding: 10px 28px;
   border: none;
   border-radius: var(--gx-radius, 999px);
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
   font-family: inherit;
   font-weight: 800;
-  font-size: 1rem;
+  /* PR8 (WARNING-1 closure): nearest match for --hx-text-body (0.9rem); was
+   * 1rem, no exact literal existed. Same out-of-flow safety as the two
+   * rules above. */
+  font-size: var(--hx-text-body);
   cursor: pointer;
+  /* Elevation (PR2, VDS-4, paint-only): the strongest depth on the table,
+   * matching this control's own weight as the match's one remaining action. */
+  box-shadow: var(--hx-elev-4);
 }
 .hexdev-truco-match-over button[data-action="play-again"]:hover,
 .hexdev-truco-match-over button[data-action="play-again"]:focus-visible {
@@ -595,13 +1059,13 @@ export function buildTableStylesheet(): string {
  * the real text label (TABLE_STRINGS.partner/opponent, rendered by a
  * caller of this stylesheet, not by CSS content) carries the rest. */
 .hexdev-truco-table[data-seat-count="4"] .hexdev-truco-anchor[data-relation="partner"] {
-  box-shadow: inset 4px 0 0 0 var(--gx-color-accent, #ffd166);
+  box-shadow: inset 4px 0 0 0 var(--gx-color-accent, var(--hx-gold));
 }
 .hexdev-truco-table[data-seat-count="4"] .hexdev-truco-anchor[data-relation="opponent"] {
   box-shadow: inset 4px 0 0 0 rgba(255, 255, 255, 0.35);
 }
 .hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="partner"] {
-  box-shadow: inset 0 -4px 0 0 var(--gx-color-accent, #ffd166);
+  box-shadow: inset 0 -4px 0 0 var(--gx-color-accent, var(--hx-gold));
 }
 .hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="opponent"] {
   box-shadow: inset 0 -4px 0 0 rgba(255, 255, 255, 0.35);
@@ -631,8 +1095,8 @@ export function buildTableStylesheet(): string {
  * who does not care about señas is not visually nagged into opening it.
  *
  * SOLID background, not the original transparent/opacity outline (apply
- * prompt, round 3): this toggle now floats over the felt inside
- * .hexdev-truco-action-tray instead of sitting on reserved chrome, so
+ * prompt, round 3): this toggle sits inside .hexdev-truco-action-bar's own
+ * recessed cloth lane (PR5, D-11) rather than on reserved chrome, so
  * whatever happens to be behind it (cloth, a card) needs to show through
  * only where deliberately transparent, never blended via opacity — the
  * exact opacity-over-green-cloth TINTING trap this project has already been
@@ -649,7 +1113,8 @@ export function buildTableStylesheet(): string {
   background: var(--gx-color-surface, #26433a);
   color: var(--gx-color-on-surface, #f2f2f2);
   font-family: inherit;
-  font-size: 0.75rem;
+  /* PR8 (WARNING-1 closure): exact match, --hx-text-meta. */
+  font-size: var(--hx-text-meta);
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   cursor: pointer;
@@ -676,10 +1141,11 @@ export function buildTableStylesheet(): string {
   padding: 4px 10px;
   border: none;
   border-radius: var(--gx-radius, 999px);
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
   font-family: inherit;
-  font-size: 0.75rem;
+  /* PR8 (WARNING-1 closure): exact match, --hx-text-meta. */
+  font-size: var(--hx-text-meta);
   font-weight: 600;
   cursor: pointer;
 }
@@ -687,7 +1153,8 @@ export function buildTableStylesheet(): string {
 /* The partner's claimed signal -- small, secondary chrome on their own
  * anchor, never on an opponent's (senas.ts's own structural guarantee). */
 .hexdev-truco-partner-sena {
-  font-size: 0.7rem;
+  /* PR8 (WARNING-1 closure): exact match, --hx-text-label. */
+  font-size: var(--hx-text-label);
   padding: 2px 8px;
   border-radius: var(--gx-radius, 999px);
   background: rgba(0, 0, 0, 0.35);
@@ -695,20 +1162,39 @@ export function buildTableStylesheet(): string {
 }
 
 /* Call-log panel (T-11/T-10, design §5.3: "how it holds by construction").
- * table.ts mounts this as a child of .hexdev-truco-center (already position:
- * relative; overflow: hidden), anchored bottom-left; .hexdev-truco-played's
- * own pile offset above leans up-and-right, so the two floating surfaces
- * lean apart instead of overlapping. max-height is a FIXED length derived
- * from --truco-card-width (this file's own unit convention) -- never vh,
- * never content-driven -- so a long call chain scrolls INSIDE the panel
- * instead of ever growing the felt; not added anywhere to
- * .hexdev-truco-table's own min-height calc, the same out-of-flow discipline
- * .hexdev-truco-action-tray and .hexdev-truco-banner-slot already use.
- * Unlike those two, pointer-events stays auto: this is the one floating
- * surface a player actually scrolls (D-9: auto-scroll to newest; manual
- * scroll survives only between renders). */
+ *
+ * PR4 (tasks §8, D-4/blessed refinement 2 — tasks §1 item 2/§2.1): table.ts
+ * now mounts this as a DIRECT CHILD OF THE FELT (.hexdev-truco-table, a grid
+ * container, already position: relative; overflow: hidden) — no longer a
+ * child of .hexdev-truco-center. grid-area: center below is what makes an
+ * absolutely-positioned grid item with a definite grid-area use that AREA
+ * (not the whole grid) as its containing block (CSS Grid's own rule, design
+ * D-4) — the panel's rect at compact/medium ends up byte-for-byte the SAME
+ * rect it had when it was a DOM child of .hexdev-truco-center: today's
+ * center-anchored bottom-left corner is exactly that grid area's own
+ * bottom-left corner. .hexdev-truco-played's own pile offset above leans
+ * up-and-right, so the two floating surfaces lean apart instead of
+ * overlapping. max-height is a FIXED length derived from --truco-card-width
+ * (this file's own unit convention) -- never vh, never content-driven -- so
+ * a long call chain scrolls INSIDE the panel instead of ever growing the
+ * felt; not added anywhere to .hexdev-truco-table's own min-height calc, the
+ * same out-of-flow discipline .hexdev-truco-banner-slot already uses (PR5:
+ * .hexdev-truco-action-bar is no longer part of that group — it became a
+ * genuine reserved grid row/track, contributing --hx-band-action-total to
+ * the min-height formula on purpose, not floating). Unlike the banner slot,
+ * pointer-events stays auto: this is the one floating surface a player
+ * actually scrolls (D-9: auto-scroll to newest; manual scroll survives only
+ * between renders).
+ *
+ * Wide/ultra (@container hexdev-truco-shell (min-width: 900px) above)
+ * override BOTH grid-area and position — see that block's own PR4-T5
+ * comment — to become a real in-flow column child instead; every other
+ * declaration below (max-width, max-height, overflow, pointer-events, the
+ * elevation) stays exactly as declared here at every tier (design §9.5:
+ * "unchanged"). */
 .hexdev-truco-call-log:empty { display: none; }
 .hexdev-truco-call-log {
+  grid-area: center;
   position: absolute;
   left: 0;
   bottom: 0;
@@ -723,13 +1209,40 @@ export function buildTableStylesheet(): string {
   border-radius: var(--gx-radius, 10px);
   background: var(--gx-color-surface, rgba(20, 20, 20, 0.72));
   color: var(--gx-color-on-surface, #f2f2f2);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  font-size: 0.68rem;
+  /* Elevation (PR2, VDS-4, paint-only): --hx-elev-1 + --hx-relief. */
+  box-shadow: var(--hx-elev-1), var(--hx-relief);
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+   * 0.68rem, no exact literal). Safe per this rule's own comment block
+   * above: "not added anywhere to .hexdev-truco-table's own min-height calc"
+   * — the panel's max-height/overflow: hidden make it height-inert to
+   * the felt regardless of tier. */
+  font-size: var(--hx-text-label);
 }
+/* PR4 correction (native review, deterministic CRITICAL): this override used
+ * to sit inside the 900px block above (alongside the felt's own grid rules),
+ * which put it BEFORE this base rule in source order — same specificity, so
+ * the LATER rule always wins regardless of @container nesting, meaning the
+ * base rule above always won and the log stayed absolutely positioned and
+ * out of flow even at >=900px. This block MUST stay after the base rule.
+ *
+ * PR4-T5 (tasks §8, D-4): the log's rect stops floating over the felt and
+ * becomes a real in-flow grid-column child at wide/ultra — grid-area: log
+ * instead of center, position: static instead of absolute. Every other
+ * declaration above (max-width, max-height, overflow, pointer-events, the
+ * elevation) stays exactly as declared there at every tier (design §9.5). */
+@container hexdev-truco-shell (min-width: 900px) {
+  .hexdev-truco-call-log {
+    grid-area: log;
+    position: static;
+  }
+}
+/* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+ * 0.6rem, no exact literal). Same call-log height-inertness as the panel's
+ * own font-size above. */
 .hexdev-truco-call-log-title,
 .hexdev-truco-call-log-tantos-title {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: var(--hx-text-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -765,17 +1278,21 @@ export function buildTableStylesheet(): string {
  * is the one selector that needs to exist for the accent to reach them. */
 .hexdev-truco-call-log-entry[data-position="bottom"],
 .hexdev-truco-call-log-tantos-entry[data-position="bottom"] {
-  border-left-color: var(--gx-color-accent, #ffd166);
+  border-left-color: var(--gx-color-accent, var(--hx-gold));
 }
 .hexdev-truco-call-log-speaker { font-weight: 700; }
 .hexdev-truco-call-log-mano-tag {
-  font-size: 0.55rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+   * 0.55rem — the largest gap of any substitution in this pass, but still
+   * the nearest of the 6 tokens, and the same call-log height-inertness
+   * applies). */
+  font-size: var(--hx-text-label);
   font-weight: 700;
   text-transform: uppercase;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  background: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
 }
 .hexdev-truco-call-log-points { margin-left: auto; font-weight: 700; }
 `.trim();
