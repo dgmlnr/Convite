@@ -1011,9 +1011,18 @@ export function buildTableStylesheet(): string {
  * move any height-fenced pixel, which is why it is the nearest-match site
  * chosen for --hx-text-display. -headline was 1.6rem (nearest to
  * --hx-text-display's 1.5rem; no exact 1.5rem literal exists anywhere in
- * either stylesheet) -- a documented ~1.6px shrink, covered by this PR's own
- * baseline regeneration. -score's 1.1rem is an exact match for
- * --hx-text-title (zero-pixel). */
+ * either stylesheet) -- a documented ~1.6px shrink. PR8 correction (native
+ * review): the first draft of this comment claimed the shrink was "covered
+ * by this PR's own baseline regeneration" -- FALSE: the regeneration pass
+ * only rewrites baselines whose diff EXCEEDS the visual suite's 1%
+ * tolerance, and this shrink (like the other nearest-match substitutions in
+ * this pass) was silently absorbed instead, leaving the affected baselines
+ * sub-tolerance stale: green today, but latent drift a future small change
+ * could push over the threshold mysteriously. The deliberate force-recapture
+ * of every affected baseline ships as this chain's immediate next candidate
+ * (the lens-context budget caps how many binary baselines one reviewable
+ * candidate can carry, so it cannot ride this one). -score's 1.1rem is an
+ * exact match for --hx-text-title (zero-pixel). */
 .hexdev-truco-match-over-headline { margin: 0; font-size: var(--hx-text-display); font-weight: 800; }
 .hexdev-truco-match-over-score { margin: 0; font-size: var(--hx-text-title); font-weight: 600; }
 .hexdev-truco-match-over button[data-action="play-again"] {
