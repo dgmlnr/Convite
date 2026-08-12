@@ -88,8 +88,9 @@ function mountedContainer(): HTMLElement {
 }
 
 /** The zone under test: the felt. All four seats, every card, the señas
- * toggle/picker (it floats OVER the felt — table-styles.ts's action-tray),
- * and the partner's seña badge all render inside it; only the scoreboard
+ * toggle/picker (it sits inside table-styles.ts's own reserved action-bar
+ * grid row, PR5), and the partner's seña badge all render inside it; only
+ * the scoreboard
  * panel below is dropped, and that chrome has its own dedicated baseline
  * (scoreboard-panel.visual.test.ts) plus the themed 1v1 shot. */
 function feltOf(container: HTMLElement): HTMLElement {
