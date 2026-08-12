@@ -21,10 +21,8 @@ export function buildChromeStylesheet(): string {
 .hexdev-gamify-chrome {
   box-sizing: border-box;
   min-height: 100%;
-  padding: 20px 16px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
   font-family: var(--gx-font-family, system-ui, sans-serif);
   color: var(--gx-color-on-surface, #1a1a1a);
   background: var(--gx-color-surface, #ffffff);
@@ -32,8 +30,9 @@ export function buildChromeStylesheet(): string {
    * table-styles.ts's own :root declaration (proved by
    * design-token-parity.test.ts). Scoped here, not :root: chrome has no
    * <defs>-sibling problem the way the table's matchstick SVG does, so
-   * ordinary descendant scoping is enough. Declared, not consumed, in this
-   * slice -- no rule below reads any of these yet. */
+   * ordinary descendant scoping is enough. Declared unused in PR1 -- PR6
+   * below is this stylesheet's first slice to actually read a --hx-* value
+   * (spacing/radii/elevation, on the surfaces this PR repaints). */
   --hx-space-2xs: 4px;
   --hx-space-xs: 8px;
   --hx-space-sm: 12px;
@@ -69,17 +68,111 @@ export function buildChromeStylesheet(): string {
 }
 .hexdev-gamify-chrome * { box-sizing: border-box; }
 
+/* WCR-1 (container query axis, PR6-T1): the same "a size container cannot
+ * be styled by its own @container rules" split table-styles.ts's felt
+ * already solved (.hexdev-truco-table-shell vs .hexdev-truco-table) --
+ * .hexdev-gamify-chrome establishes the inline-size container here, and its
+ * descendant .hexdev-chrome-content below is what the @container rules
+ * further down actually repaint. A CSS query container can never be
+ * targeted by its OWN container query (proven empirically in
+ * chrome-styles.browser.test.ts's cascade-order suite: a first attempt at
+ * this PR put the wide-tier padding override directly on
+ * .hexdev-gamify-chrome, and it silently never engaged at any width -- this
+ * is why ALL responsive repainting below targets .hexdev-chrome-content or
+ * deeper, never .hexdev-gamify-chrome itself). Gated by [data-chrome-view]
+ * (set once by whichever render function owns the screen --
+ * game-selection.ts / status-view.ts -- the same data-*-as-contract
+ * convention as data-prominent/data-result/data-turn), so this only
+ * activates once a screen has genuinely opted in, never on bare class
+ * presence alone. Deliberately NOT id-qualified (no #hexdev-gamify-app
+ * prefix, even though that is the real production element's id): every
+ * other selector in this stylesheet (and table-styles.ts's own) is
+ * class-only, and every existing test in this package mounts these render
+ * functions into a plain, id-less <div> -- an id-qualified selector would
+ * silently defeat this whole container-query axis under every one of those
+ * tests, and under any future embedding that reuses these render functions
+ * with a differently-id'd root. */
+.hexdev-gamify-chrome[data-chrome-view] {
+  container-type: inline-size;
+  container-name: hexdev-chrome;
+}
+
+/* The inner content column: centers at a comfortable reading/grid width
+ * (1120px) inside the (often much wider) container a host page gives this
+ * widget, owns the vertical gap between its own children (the exact job
+ * .hexdev-gamify-chrome's own gap used to do before this split), and now
+ * carries ALL of the shell's edge padding too -- moved down from
+ * .hexdev-gamify-chrome for the self-query reason above: this element is a
+ * genuine DESCENDANT of the query container, so its padding CAN respond to
+ * the @container override below, at 24px 16px (nearest --hx-space-* pair to
+ * the former hardcoded 20px 16px, a deliberate small snap) by default. */
+.hexdev-chrome-content {
+  width: min(1120px, 100%);
+  margin-inline: auto;
+  padding: var(--hx-space-lg) var(--hx-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-lg);
+}
+
+/* WCR-3 (status/error/unsupported share the language, PR6-T2): these
+ * screens are a single centered card, never a top-anchored block -- the
+ * lobby's own top-anchored list stays the (unmarked) default. */
+.hexdev-gamify-chrome[data-chrome-view="status"],
+.hexdev-gamify-chrome[data-chrome-view="error"],
+.hexdev-gamify-chrome[data-chrome-view="unsupported"] {
+  justify-content: center;
+}
+
+/* WCR-2 (lobby wide grid, PR6-T2): flex column by default (narrow/medium --
+ * one card per row reads better than a cramped 2-up grid at those widths),
+ * a real grid once the container has room. */
+.hexdev-chrome-games {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-lg);
+}
+
+@container hexdev-chrome (min-width: 720px) {
+  .hexdev-chrome-games {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--hx-space-lg);
+  }
+}
+
+@container hexdev-chrome (min-width: 1024px) {
+  /* Cascade note: identical 0-1-0 specificity to .hexdev-chrome-content's
+   * own base padding rule above -- this wins because it is declared LATER
+   * in this same stylesheet string, not because of @container nesting (the
+   * exact cascade-source-order CRITICAL this chain already hit twice,
+   * PR4/PR5). Self-checked: no other rule in this file re-declares padding
+   * on .hexdev-chrome-content after this point. */
+  .hexdev-chrome-content {
+    padding: var(--hx-space-2xl) var(--hx-space-xl);
+  }
+}
+
+/* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-display-compact. */
 .hexdev-chrome-title {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--hx-text-display-compact);
   font-weight: 800;
   color: var(--gx-color-on-surface, #1a1a1a);
 }
 
+/* WCR-3 (status/error card, PR6-T4): a centered card, not the former
+ * edge-to-edge paragraph. "margin: 0 auto" (rather than the parent's
+ * align-items) centers it horizontally regardless of the flex parent's own
+ * cross-axis alignment -- the [data-chrome-view=...] rule above only ever
+ * sets justify-content, the vertical axis. No pulse, no animation
+ * (refinement 3/D-7 -- confirmed nothing below this point animates). */
 .hexdev-chrome-status {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: var(--gx-radius, 10px);
+  margin: 0 auto;
+  padding: var(--hx-space-lg);
+  border-radius: var(--gx-radius, var(--hx-radius-lg));
+  box-shadow: var(--hx-elev-1);
+  max-width: 480px;
   background: var(--gx-color-primary, #2f6f4f);
   color: var(--gx-color-on-primary, #ffffff);
 }
@@ -91,11 +184,15 @@ export function buildChromeStylesheet(): string {
   padding: 16px;
   border-radius: var(--gx-radius, 14px);
   background: color-mix(in srgb, var(--gx-color-primary, #2f6f4f) 6%, var(--gx-color-surface, #ffffff));
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+  /* Elevation (PR6-T3, VDS-4, paint-only): --hx-elev-1 + --hx-relief, the
+   * same combined-shadow-list convention table-styles.ts's own felt-side
+   * surfaces already use for scoreboard-panel/call-log. */
+  box-shadow: var(--hx-elev-1), var(--hx-relief);
 }
+/* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-title. */
 .hexdev-game-card h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--hx-text-title);
   font-weight: 700;
   color: var(--gx-color-on-surface, #1a1a1a);
 }
@@ -107,6 +204,11 @@ export function buildChromeStylesheet(): string {
   padding: 14px;
   border-radius: var(--gx-radius, 10px);
   background: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 5%, transparent);
+  /* Elevation (PR6-T3): relief only, no --hx-elev-N -- keeps the color-mix
+   * tint as the primary depth signal here; [data-prominent] below stays the
+   * primary, non-exclusive prominence signal too (VB-6: elevation is
+   * additive only, never a replacement). */
+  box-shadow: var(--hx-relief);
 }
 .hexdev-modality p { margin: 0; }
 .hexdev-modality-count {
@@ -123,7 +225,8 @@ export function buildChromeStylesheet(): string {
   border-radius: var(--gx-radius, 999px);
   font-family: inherit;
   font-weight: 700;
-  font-size: 0.9rem;
+  /* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-body. */
+  font-size: var(--hx-text-body);
   cursor: pointer;
   background: transparent;
   border-color: var(--gx-color-primary, #2f6f4f);
@@ -132,6 +235,19 @@ export function buildChromeStylesheet(): string {
 .hexdev-gamify-chrome button:hover,
 .hexdev-gamify-chrome button:focus-visible {
   filter: brightness(1.08);
+}
+
+/* WCR-3 (error/retry, PR6-T4): the retry action on the error card gets its
+ * own accent-outlined treatment instead of the plain primary-outlined
+ * default every other chrome button gets above -- higher specificity
+ * (attribute selector) than the base .hexdev-gamify-chrome button rule, so
+ * it wins regardless of source order. margin-inline: auto centers it
+ * horizontally under the card, the same mechanism .hexdev-chrome-status's
+ * own "margin: 0 auto" already uses. */
+.hexdev-gamify-chrome button[data-action="retry"] {
+  margin-inline: auto;
+  border-color: var(--gx-color-accent, var(--hx-gold));
+  box-shadow: var(--hx-elev-2);
 }
 
 /* The prominent action — vs-person when real players are waiting, vs-bot

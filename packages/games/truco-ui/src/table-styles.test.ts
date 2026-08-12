@@ -153,17 +153,74 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
 // which carries no color at all) — this helper collects every one of those,
 // not just the first, so checking only the first found could not silently
 // pass or fail depending on source order.
+//
+// PR4 fix (native-review finding on PR3b): the original single-pass
+// `/([^{}]+)\{([^}]*)\}/g` scan only ever matched TOP-LEVEL rules — its
+// selector-capture group `[^{}]+` and its body-capture group `[^}]*` both
+// stop at the first brace they meet, so for a rule nested inside an at-rule
+// (`@container ... { .foo { ... } }`) the match's "selector" ends up being
+// the at-rule's own prelude (e.g. `@container hexdev-truco-shell
+// (min-width: 900px)`) and the inner selector (`.foo`) was never captured
+// on its own — `ruleBodyForExactSelector` silently returned `""` for any
+// selector whose ONLY rule lived inside an `@container`/`@media` block, even
+// though the comment above previously (incorrectly) claimed this helper
+// "collects every one of those". `collectLeafRules` below replaces the
+// single-pass regex with a small balanced-brace walk: it finds every
+// top-level block, and whenever a block's prelude starts with `@` (an
+// at-rule) it recurses into that block's own body instead of treating the
+// at-rule's prelude as a selector — so a selector's rules are found and
+// aggregated regardless of whether they sit at the top level or nested one
+// (or more) levels inside an at-rule. See the RED-proof for this fix in
+// PR4's apply-progress notes: a synthetic CSS string containing
+// `.hexdev-truco-call-log` ONLY inside a nested `@container` block returned
+// `""` (RED) under the old implementation and the real matched body (GREEN)
+// under this one, while the pre-existing compound-selector false-positive
+// case (`.hexdev-truco-shell-layout > .hexdev-truco-table`) stayed correctly
+// excluded.
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+interface LeafRule {
+  readonly selectorList: string;
+  readonly body: string;
+}
+
+/** Walks `css` with an explicit brace-depth counter (not a regex) so it can
+ * tell an at-rule's prelude (`@container ...`, `@media ...`) apart from a
+ * plain selector list, and recurses into an at-rule's own body to collect
+ * the leaf rules nested inside it — at any nesting depth, not just one
+ * level, since the walk is the same at every depth. */
+function collectLeafRules(css: string): readonly LeafRule[] {
+  const results: LeafRule[] = [];
+  let i = 0;
+  while (i < css.length) {
+    const open = css.indexOf("{", i);
+    if (open === -1) break;
+    const prelude = css.slice(i, open).trim();
+    let depth = 1;
+    let j = open + 1;
+    while (j < css.length && depth > 0) {
+      if (css[j] === "{") depth++;
+      else if (css[j] === "}") depth--;
+      j++;
+    }
+    const body = css.slice(open + 1, j - 1);
+    if (prelude.startsWith("@")) {
+      results.push(...collectLeafRules(body));
+    } else if (prelude.length > 0) {
+      results.push({ selectorList: prelude, body });
+    }
+    i = j;
+  }
+  return results;
+}
+
 function ruleBodyForExactSelector(css: string, exactSelector: string): string {
-  const ruleRegex = /([^{}]+)\{([^}]*)\}/g;
   const bodies: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = ruleRegex.exec(stripComments(css))) !== null) {
-    const selectors = match[1]!.split(",").map((entry) => entry.trim());
-    if (selectors.includes(exactSelector)) bodies.push(match[2]!);
+  for (const { selectorList, body } of collectLeafRules(stripComments(css))) {
+    const selectors = selectorList.split(",").map((entry) => entry.trim());
+    if (selectors.includes(exactSelector)) bodies.push(body);
   }
   return bodies.join("\n");
 }

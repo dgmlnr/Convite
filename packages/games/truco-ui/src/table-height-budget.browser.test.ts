@@ -13,14 +13,6 @@ import { createMatchTableRenderer } from "./table.js";
  * silently blow the table past a reasonable size without this suite going
  * RED first.
  *
- * PROVISIONAL (tasks §7/§12): `BUDGET` below is measured against PR3's own
- * scalar-only layout (card width/gap/padding — no banner/action bands
- * reserve any space yet, since those are consumed starting PR5). PR5-T10
- * re-measures this exact table once the banner lane and action-bar row add
- * real height, and updates these same constants deliberately (never
- * silently) — this file's own name and this docblock are what a PR5
- * implementer finds when they come back to update it.
- *
  * WIDTH LIST — approved deviation from the tasks artifact's own [375, 700,
  * 960, 1280] (PR3a's four container tiers): this file additionally measures
  * at 640 and 900, the exact `@container hexdev-truco-shell` boundary widths
@@ -32,7 +24,61 @@ import { createMatchTableRenderer } from "./table.js";
  * every existing fence and still ship. Adding these two rows closes that gap
  * without touching `table-height-stability.browser.test.ts`'s own width
  * list, which stays scoped to its original four tiers per PR3a.
- */
+ *
+ * PR4 (tasks §8): re-ran this whole suite after moving the call log into the
+ * felt's own grid ("log" column, in flow at 900px/1280px). Re-verified, not
+ * silently skipped: every BUDGET ceiling still held (12/12 green, unchanged)
+ * — the log's own bounded max-height never exceeds what the felt's other
+ * rows already reserve, so nothing needed an update yet.
+ *
+ * PR5-T10 (tasks §9, FINAL — this is the re-measurement the docblock above
+ * used to anticipate): re-measured all 12 (width x seat-count) baselines now
+ * that the banner lane (`--hx-band-banner`, padding-top on
+ * `.hexdev-truco-center`) and the action-bar row (`--hx-band-action-total`,
+ * a real 4th grid-template-row track) both add real height. RED-first,
+ * same-file precedent as PR3-T3's own: a deliberately-unsatisfiable
+ * `toBeLessThanOrEqual(-1)` probe run first, all 12 failing with the real
+ * measured numbers in every message; those 12 were then multiplied by 1.08
+ * (rounded up) and locked in as the new `BUDGET` below. Old (PR3/PR4)
+ * measured baseline -> new (PR5) measured baseline, per (width, mode) —
+ * every one of the 12 grew, as expected (the bands add real height
+ * everywhere, not just at compact):
+ *   375  1v1: 561.9375   -> 669.9375   | 2v2: 684.75      -> 732.75
+ *   640  1v1: 554.96875  -> 690.96875  | 2v2: 725.421875  -> 837.421875
+ *   700  1v1: 554.96875  -> 690.96875  | 2v2: 725.421875  -> 837.421875
+ *   900  1v1: 669.375    -> 817.375    | 2v2: 749.421875  -> 873.421875
+ *   960  1v1: 669.375    -> 817.375    | 2v2: 749.421875  -> 873.421875
+ *   1280 1v1: 746.59375  -> 910.59375  | 2v2: 903.609375  -> 1043.609375
+ * (640/700 and 900/960 share one measured pair each — the same "SAME tier,
+ * confirms the @container boundary is inclusive" fact this file's own width
+ * list exists to prove, still holding after PR5's own changes.)
+ *
+ * COMPACT 1v1 TOTAL vs. the ~530-601px phone-viewport window (design §1/§8.3
+ * accepted risk) — reported honestly, not rounded toward the accepted
+ * figure: 375px 1v1's measured 669.9375px IS already the FULL widget total
+ * (`el` in this file's own `it` blocks below is the shell element itself —
+ * `container.className = "hexdev-truco-table-shell"` in table.ts — so this
+ * number already includes the scoreboard panel, not just the felt). That
+ * total is ABOVE the disclosed 530-601px window's own 601px ceiling by
+ * ~69px, for two compounding, pre-existing (not PR5-introduced) reasons this
+ * measurement surfaced: (1) the real `.hexdev-truco-scoreboard-panel`
+ * measures ~158.6px at this width/state, not the ~100px design §8.3's own
+ * accounting assumed; (2) the felt's own real rendered content has always
+ * exceeded its own `min-height` FLOOR by ~24px at compact (a `min-height` is
+ * a lower bound, not an exact value — CSS Grid's intrinsic sizing naturally
+ * grows past it whenever real content needs more, which it does here even
+ * pre-PR5). PR5's OWN attributable cost is exact and isolated: old (PR4)
+ * 561.9375px -> new 669.9375px is precisely +108px, matching
+ * `--hx-band-banner(60) + --hx-band-action-total(40) + --hx-felt-gap(8) =
+ * 108` term-for-term — no unaccounted growth. That +108px is +20px above
+ * the design's own accepted "+88px" estimate (design §1), the direct,
+ * disclosed consequence of PR5-T3's real measurement finding the compact
+ * pill needed a 60px lane, not the design's originally-assumed 40px. This is
+ * flagged here and in the PR5 apply report as a risk needing product/
+ * orchestrator awareness — not silently normalized to fit the window, and
+ * not something this measurement task is scoped to redesign away (shrinking
+ * the scoreboard panel or another felt row is out of PR5-T1..T13's own
+ * scope). */
 
 const SELF = "budget-self" as PlayerId;
 const OPPONENT = "budget-opponent" as PlayerId;
@@ -128,12 +174,12 @@ const WIDTHS = [375, 640, 700, 900, 960, 1280] as const;
  * `min-width: 900px` boundary) 669.375/749.421875, 1280px
  * 746.59375/903.609375. */
 const BUDGET: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 607, "2v2": 740 },
-  640: { "1v1": 600, "2v2": 784 },
-  700: { "1v1": 600, "2v2": 784 },
-  900: { "1v1": 723, "2v2": 810 },
-  960: { "1v1": 723, "2v2": 810 },
-  1280: { "1v1": 807, "2v2": 976 },
+  375: { "1v1": 724, "2v2": 792 },
+  640: { "1v1": 747, "2v2": 905 },
+  700: { "1v1": 747, "2v2": 905 },
+  900: { "1v1": 883, "2v2": 944 },
+  960: { "1v1": 883, "2v2": 944 },
+  1280: { "1v1": 984, "2v2": 1128 },
 };
 
 describe.each(WIDTHS)("table height BUDGET (PR3-T3, provisional pre-band ceiling) — %ipx", (width) => {
