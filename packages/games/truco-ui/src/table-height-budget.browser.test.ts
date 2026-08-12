@@ -78,7 +78,13 @@ import { createMatchTableRenderer } from "./table.js";
  * orchestrator awareness — not silently normalized to fit the window, and
  * not something this measurement task is scoped to redesign away (shrinking
  * the scoreboard panel or another felt row is out of PR5-T1..T13's own
- * scope). */
+ * scope).
+ *
+ * FU-3 (debt payment of reason (1) above): the compact scoreboard strip was
+ * later compacted to a measured 92.9375px (see the FU-3 fence and BUDGET
+ * note below), bringing the 375px 1v1 total down to 604.28125px — within
+ * ~3px of the 601px window ceiling; reason (2), the felt's own ~24px of
+ * natural growth past its min-height floor, remains open debt. */
 
 const SELF = "budget-self" as PlayerId;
 const OPPONENT = "budget-opponent" as PlayerId;
@@ -174,13 +180,59 @@ const WIDTHS = [375, 640, 700, 900, 960, 1280] as const;
  * `min-width: 900px` boundary) 669.375/749.421875, 1280px
  * 746.59375/903.609375. */
 const BUDGET: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 724, "2v2": 792 },
+  /* FU-3 (debt: compact scoreboard strip): re-measured after compacting the
+   * panel at the compact tier (158.59375px -> 92.9375px, see the FU-3 fence
+   * below) — the 375px shell totals dropped by exactly that 65.65625px
+   * delta: 1v1 669.9375 -> 604.28125 (budget 724 -> 653), 2v2 732.75 ->
+   * 667.09375 (budget 792 -> 721), both x1.08 rounded up per this file's
+   * own convention. 640+ rows are untouched: the panel is a side column
+   * there, outside FU-3's (width < 640px) container query. */
+  375: { "1v1": 653, "2v2": 721 },
   640: { "1v1": 747, "2v2": 905 },
   700: { "1v1": 747, "2v2": 905 },
   900: { "1v1": 883, "2v2": 944 },
   960: { "1v1": 883, "2v2": 944 },
   1280: { "1v1": 984, "2v2": 1128 },
 };
+
+/** FU-3 (debt: compact scoreboard strip): the panel's own height ceiling at
+ * the compact tier, measured at the WORST-CASE score a target-30 match can
+ * show (28-27 -> malas full + buenas near-full on both sides, 6 casitas per
+ * team, 12 total). Before FU-3 the strip measured 158.59px at 375px — the
+ * malas/buenas groups stacked vertically inside an unstyled block
+ * (.hexdev-truco-scoreboard had no CSS rule at all), paying the 47.8px
+ * casita row height twice per team plus two caption lines. RED-first:
+ * measured 158.59px against the pre-FU-3 CSS with this same assertion, then
+ * the compact strip was laid out horizontally (one row per team) and this
+ * ceiling locked to the new measured value (92.9375px) x 1.08 rounded up —
+ * the file's established ~8% headroom convention. */
+const SCOREBOARD_COMPACT_WORST_CASE_BUDGET = 101;
+
+describe("FU-3: the compact scoreboard strip stays a strip, not a block — 375px, worst-case score", () => {
+  it("panel height at 28-27 (target 30, 6 casitas per team) stays under the compact budget", async () => {
+    const el = mountedContainer(375);
+    const render = createMatchTableRenderer();
+    const base = startHand(
+      createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 }),
+      DEAL_1V1_MAXIMAL,
+    );
+    // Score set directly on the constructed state — the same convention
+    // table.visual.test.ts's withNonTrivialScore already uses; a score only
+    // otherwise changes through full played hands this fence has no reason
+    // to replay.
+    const state = { ...base, teams: base.teams.map((team, index) => ({ ...team, score: index === 0 ? 28 : 27 })) };
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const panel = el.querySelector(".hexdev-truco-scoreboard-panel");
+    if (panel === null) throw new Error("fence setup: scoreboard panel not rendered");
+    expect(panel.querySelectorAll("svg").length, "sanity: this really is the 12-casita worst case").toBe(12);
+    const height = panel.getBoundingClientRect().height;
+    expect(height, "compact scoreboard panel height at 375px, worst-case score").toBeLessThanOrEqual(
+      SCOREBOARD_COMPACT_WORST_CASE_BUDGET,
+    );
+  });
+});
 
 describe.each(WIDTHS)("table height BUDGET (PR3-T3, provisional pre-band ceiling) — %ipx", (width) => {
   it("1v1 MAXIMAL: baseline rendered height stays under budget", async () => {
