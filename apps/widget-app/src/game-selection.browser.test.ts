@@ -168,3 +168,20 @@ describe("renderGameSelection — chrome styling (design §10: this screen takes
     expect(el.querySelector(".hexdev-modality")?.getAttribute("data-prominent")).toBe("bot");
   });
 });
+
+describe("chrome body copy consumes --hx-leading (FU-5: computed line-height contract)", () => {
+  it("gives the modality description paragraph a computed line-height of 1.35x its computed font-size", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
+    ]);
+
+    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const description = el.querySelector<HTMLParagraphElement>(".hexdev-modality p");
+    expect(description).not.toBeNull();
+    const style = getComputedStyle(description!);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    expect(lineHeight).toBeCloseTo(Number.parseFloat(style.fontSize) * 1.35, 0);
+  });
+});
