@@ -320,6 +320,40 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
   };
   it.each(["1v1", "2v2"] as const)("%s: .hexdev-truco-action-bar never overlaps a hand card, a played pile, or the (unmoved) turn badge", actionBarVsSurfaces);
 
+  // Call-log vs. action-bar pairing (PR8, verify report WARNING-4/TRZ-5
+  // scenario C: "the call log's bounding rectangle stops short of the tray's
+  // worst-case footprint" — the height half was already proven by
+  // table-height-stability.browser.test.ts, but no test compared the two
+  // RECTANGLES directly). Unlike the call-log-vs-pile pairing below, this one
+  // is NOT scoped to wide+ultra: PR4-T8's documented narrow exception is
+  // specifically about the compact 2v2 --left pile, never about the action
+  // bar. At compact/medium the log is grid-area: center, absolutely
+  // positioned relative to that grid AREA's own box (design D-4 — "a child
+  // with a definite grid position is positioned relative to its grid area");
+  // the action bar occupies a separate actions row, below bottom, in the
+  // same grid. At wide/ultra the log is its own log column, spanning every
+  // row including actions, but the action bar sits in its own play-column
+  // cell within that row — still a distinct box. Structurally disjoint at
+  // every tier, so this pairing is asserted at all four widths x both seat
+  // counts, not gated by width. Reuses the pending-call fixture — the same
+  // call chain that gives the log real entries also drives a non-empty hand
+  // and a rendered action bar.
+  it.each(["1v1", "2v2"] as const)("%s: .hexdev-truco-call-log never overlaps .hexdev-truco-action-bar", async (mode) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = mode === "1v1" ? pendingTrucoAfterTrick1Headshot1v1() : pendingTrucoAfterTrick1Headshot2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const callLog = el.querySelector(".hexdev-truco-call-log");
+    const actionBar = el.querySelector(".hexdev-truco-action-bar");
+    if (callLog === null || actionBar === null) throw new Error("test setup: call log or action bar not rendered — is there really a call chain?");
+    const callLogRect = callLog.getBoundingClientRect();
+    const actionBarRect = actionBar.getBoundingClientRect();
+
+    expect(overlaps(callLogRect, actionBarRect), `call log ${JSON.stringify(callLogRect)} vs action bar ${JSON.stringify(actionBarRect)}`).toBe(false);
+  });
+
   // Call-log pairing (tasks §7/PR4-T8, completed PR5-T7): the log rail only
   // becomes its own grid column (`grid-area: log`, `position: static`) at
   // wide/ultra (PR4-T4/T5) — compact/medium keep the pre-existing, documented
@@ -355,4 +389,37 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     // these two tiers, matching the skeleton's original scope note.
     it.todo(`${width}px: .hexdev-truco-call-log never overlaps a played pile or hand card (compact/medium — PR4-T8 documented exception, not asserted)`);
   }
+
+  // PR8 (user eye-review observation): cards WITHIN one hand never overlap
+  // each other. This was already guaranteed by construction — every hand row
+  // (.hexdev-truco-hand and .hexdev-truco-opponent-hand alike) lays its cards
+  // out with flex + gap: 4px + wrap, and no rule anywhere applies a negative
+  // margin or absolute offset to a hand card — but "guaranteed by
+  // construction" is exactly the kind of claim this suite exists to turn
+  // into a measured assertion: a future fanned-hand styling change or a
+  // negative-margin space-saver would land silently otherwise. Pairwise
+  // check per hand group, both seat modes, every width tier.
+  it.each(["1v1", "2v2"] as const)("%s: no two sibling cards inside any hand ever overlap each other", async (mode) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = mode === "1v1" ? pendingTrucoAfterTrick1Headshot1v1() : pendingTrucoAfterTrick1Headshot2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const hands = [...el.querySelectorAll(".hexdev-truco-hand, .hexdev-truco-opponent-hand")];
+    expect(hands.length, "sanity: every seat should render a hand row").toBeGreaterThan(0);
+    let cardPairsChecked = 0;
+    for (const hand of hands) {
+      const cards = [...hand.querySelectorAll(".hexdev-truco-card")];
+      for (let a = 0; a < cards.length; a += 1) {
+        for (let b = a + 1; b < cards.length; b += 1) {
+          const rectA = cards[a]!.getBoundingClientRect();
+          const rectB = cards[b]!.getBoundingClientRect();
+          expect(overlaps(rectA, rectB), `sibling cards in ${hand.className}: ${JSON.stringify(rectA)} vs ${JSON.stringify(rectB)}`).toBe(false);
+          cardPairsChecked += 1;
+        }
+      }
+    }
+    expect(cardPairsChecked, "sanity: at least one sibling pair must have been compared, or this test proves nothing").toBeGreaterThan(0);
+  });
 });

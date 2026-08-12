@@ -74,16 +74,32 @@ it does:
 | File | What it proves |
 |---|---|
 | `packages/games/truco-ui/src/table.visual.test.ts` | Mid-hand: cards in hand (playable + locked), a card already played, whose turn it is. A pending truco call: the banner shown, the whole hand locked. A themed tenant: chrome takes the brand, felt/cards do not. |
+| `packages/games/truco-ui/src/table-2v2.visual.test.ts` | The 4-seat (2v2) table: partner/opponent obvious at a glance (mid-hand, one seña claimed), the local player's own señas picker opened, and three resolved tricks showing every seat's independent, offset pile. |
+| `packages/games/truco-ui/src/table-wide.visual.test.ts` | The SAME 1v1/2v2 hands `table.visual.test.ts`/`table-2v2.visual.test.ts` already cover, re-captured at the wide (960px) and ultra (1280px) container tiers — proves the log rail sits in flow, the action bar/banner lane stay collision-free, and the scoreboard panel keeps taking the tenant's theme once it moves beside the felt instead of below it. Also the only baseline of `renderMatchOverOverlay` (the solid-fill match-over screen) at any tier. |
 | `packages/games/truco-ui/src/scoreboard-panel.visual.test.ts` | The matchstick scoreboard at a non-trivial, asymmetric score (both malas and buenas casitas populated on both sides). |
-| `apps/widget-app/src/game-selection.visual.test.ts` | The game-selection screen, both branches of the zero-counter UX rule side by side (real waiting count vs. the promoted bot CTA). |
+| `apps/widget-app/src/game-selection.visual.test.ts` | The game-selection screen, both branches of the zero-counter UX rule side by side (real waiting count vs. the promoted bot CTA), narrow AND at the wide (1024px) grid tier. |
+| `apps/widget-app/src/status-view.visual.test.ts` | The centered status card (WCR-3) at the wide (1024px) tier, and the unregistered-game fallback's own card — the same screen, once dead-end `<p>` tags, now a navigable chrome card (WCR-4). |
 
 Each table shot captures the element under test, not the whole test container:
 the mid-hand/pending/2v2 shots screenshot the felt element (dead side cloth
-cropped away), while `table-themed` keeps the whole shell — felt AND scoreboard
-panel — in an auto-height container. The auto height matters: with any explicit
-container height, the felt's `min-height: max(100%, …)` stretches over the full
-box and evicts the panel below the fold, which silently blinded this shot's
-panel-theming proof until the panel was restored to frame.
+cropped away), while `table-themed`/`table-wide-themed`/`match-over-wide`
+keep the whole shell — felt AND scoreboard panel, or felt AND the sibling
+match-over overlay — in an auto-height container. The auto height matters:
+with any explicit container height, the felt's `min-height: max(100%, …)`
+stretches over the full box and evicts the panel below the fold, which
+silently blinded this shot's panel-theming proof until the panel was restored
+to frame.
+
+**Wide/ultra tiers need a wider Browser Mode viewport, not just a wider
+container** (real bug found and fixed writing `table-wide.visual.test.ts`):
+Browser Mode's default viewport is 414×896 (see Determinism controls below);
+a mounted container wider than that renders correctly per
+`getBoundingClientRect()` (real CSS layout, unaffected), but Chromium never
+PAINTS past the viewport edge, so the captured screenshot clips solid white
+past x≈414. Every wide/ultra test explicitly widens the viewport first via
+`page.viewport(width, height)` (`vitest/browser`) — the existing ≤414px-wide
+narrow-tier tests never needed this, which is why it went unnoticed until
+this suite's first 900px+ capture.
 
 ## Updating a baseline — deliberately, on purpose
 
@@ -118,10 +134,12 @@ whether a colour palette is tasteful — only on whether it moved. Concretely:
   silently stopping at the wrong element, a scoreboard geometry regression, a
   CSS rule accidentally deleted, an element disappearing or shifting.
 - **Does NOT catch**: a genuinely bad-looking-but-unchanged design, a colour
-  choice nobody likes, anything about a screen this suite does not cover
-  (2v2/four-seat layout has no coverage yet — it does not exist), or a bug
-  whose only symptom is behavioural (wrong score, illegal move accepted) —
-  that is what the unit and E2E suites are for.
+  choice nobody likes, anything about a screen this suite does not cover, or
+  a bug whose only symptom is behavioural (wrong score, illegal move
+  accepted) — that is what the unit and E2E suites are for. (Correction: an
+  earlier version of this doc claimed "2v2/four-seat layout has no coverage
+  yet — it does not exist". That was false when written — `table-2v2.visual.test.ts`
+  already existed with 3 baselines — and it is false now; see Coverage above.)
 
 ## Proof each snapshot can actually fail
 
@@ -136,6 +154,17 @@ RED run, then reverting:
 | `table-themed` | Same opacity/grayscale regression, AND separately: `.hexdev-truco-scoreboard-panel`'s `background` hardcoded, ignoring `--gx-color-surface` (a "theming silently stops applying" regression) | FAILED (both) |
 | `scoreboard-non-trivial-score` | Matchstick head radius (`HEAD_RX`/`HEAD_RY` in `scoreboard.ts`) changed from `3.9`/`3.3` to `11`/`9` — a pure geometry regression no existing unit test touches | FAILED |
 | `game-selection-mixed-presence` | The prominent-action CSS rule (`chrome-styles.ts`, `[data-prominent="person"] ...`) disabled — the `data-prominent` attribute is still set correctly, so no behavioural test would notice | FAILED |
+| `table-wide-mid-hand` | Same historical opacity/grayscale regression as `table-mid-hand` (this is the identical fixture, re-captured at 960px) | FAILED |
+| `table-wide-truco-pending` | Same opacity/grayscale regression (whole hand locked, so it is hit even harder — same reasoning as `table-truco-pending`) | FAILED |
+| `table-wide-themed` | Same opacity/grayscale regression | FAILED |
+| `table-2v2-mid-hand` | `--truco-card-width` (compact base, shared with 1v1) bumped `60px` → `90px` — every card on all four anchors resizes | FAILED |
+| `table-2v2-senas-open` | Same card-width regression | FAILED |
+| `table-2v2-hand-full-piles` | Same card-width regression | FAILED |
+| `table-ultra-2v2` | The 2v2-only ultra-tier `--truco-card-width` (`table-styles.ts`'s `[data-seat-count="4"]` override inside the `≥1280px` block) bumped `100px` → `140px` | FAILED |
+| `match-over-wide` | `opacity: 0.6` reintroduced on `.hexdev-truco-match-over[data-result="won"]` — the exact "translucent over the cloth" trap D-8 forbids by design; the overlay's own solid-fill contract is precisely what this baseline exists to prove | FAILED |
+| `lobby-wide-grid` | Same prominent-action CSS rule disabled as `game-selection-mixed-presence` above (same catalog fixture, wide tier) — confirmed to independently fail both baselines in the same run | FAILED |
+| `chrome-status-wide` | `.hexdev-chrome-status`'s `background` hardcoded to an arbitrary literal (`#7c1fa2`) instead of reading `--gx-color-primary` — the same "theming silently stops applying" class as `table-themed`'s own scoreboard-panel regression. (A pure geometry regression — `max-width`/`border-radius`/`box-shadow` removed — was tried first and did NOT move enough pixels to cross the 1% tolerance for this baseline specifically; recorded here so a future reader does not re-discover the same dead end.) | FAILED |
+| `chrome-unsupported-game` | Same `.hexdev-chrome-status` background regression (shared class with the status card above) | FAILED |
 
 Every regression above was reverted immediately after confirming the FAIL,
 and the suite was re-run to confirm it returned to GREEN.

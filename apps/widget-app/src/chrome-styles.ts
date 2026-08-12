@@ -153,9 +153,10 @@ export function buildChromeStylesheet(): string {
   }
 }
 
+/* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-display-compact. */
 .hexdev-chrome-title {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--hx-text-display-compact);
   font-weight: 800;
   color: var(--gx-color-on-surface, #1a1a1a);
 }
@@ -188,9 +189,10 @@ export function buildChromeStylesheet(): string {
    * surfaces already use for scoreboard-panel/call-log. */
   box-shadow: var(--hx-elev-1), var(--hx-relief);
 }
+/* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-title. */
 .hexdev-game-card h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--hx-text-title);
   font-weight: 700;
   color: var(--gx-color-on-surface, #1a1a1a);
 }
@@ -223,7 +225,8 @@ export function buildChromeStylesheet(): string {
   border-radius: var(--gx-radius, 999px);
   font-family: inherit;
   font-weight: 700;
-  font-size: 0.9rem;
+  /* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-body. */
+  font-size: var(--hx-text-body);
   cursor: pointer;
   background: transparent;
   border-color: var(--gx-color-primary, #2f6f4f);
