@@ -1147,6 +1147,17 @@ export function buildTableStylesheet(): string {
   cursor: pointer;
 }
 .hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
+/* The OPEN toggle wears the same gold edge its own popover does (FU-1 eye
+ * review): the card floats a full band above the button that raised it, so
+ * without a shared "live right now" signal the two read as unrelated pieces
+ * of chrome. Selects on the aria-expanded senas.ts already maintains — the
+ * a11y state IS the style hook, so the two can never drift apart. Inset
+ * ring, not a border: the toggle's own box stays exactly the height the
+ * fixed action band reserved for it. */
+.hexdev-truco-senas-toggle[aria-expanded="true"] {
+  box-shadow: var(--hx-elev-2), inset 0 0 0 1px var(--hx-gold-edge);
+  color: var(--gx-color-accent, var(--hx-gold));
+}
 /* align-self:stretch gives this box the strip's real cross-axis size instead
  * of its own shrink-to-fit width, so the toggle centres across the whole
  * strip at the tiers where the bar is a column (2v2, medium and up). It used
@@ -1191,8 +1202,10 @@ export function buildTableStylesheet(): string {
  * opacity-over-green TINTING trap this project has already been burned by
  * once (.hexdev-truco-card--locked's own history), and the same
  * var(--gx-color-surface, ...) pattern .hexdev-truco-senas-toggle uses one
- * rule above. --hx-elev-3 is the "lifted off the surface it covers" step this
- * file already gives a raised card and a focused pile.
+ * rule above. The elevation step is --hx-elev-4, the top of the scale (the
+ * rule below carries the full card rationale); it started at --hx-elev-3 and
+ * was raised after the FU-1 eye review found the popover did not read as an
+ * opened selector at elev-3 alone.
  *
  * z-index: 1 is this file's own existing top layer INSIDE the felt
  * (.hexdev-truco-turn-badge, .hexdev-truco-banner-slot); the felt itself sets
@@ -1228,11 +1241,25 @@ export function buildTableStylesheet(): string {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px;
-  padding: 6px;
-  border-radius: var(--gx-radius, var(--hx-radius-md));
+  gap: 6px;
+  /* Card treatment (FU-1 eye review: "que se note que esta abierto el
+   * selector"). A floating strip that merely sits above the bar reads as
+   * part of the bar; a CARD reads as something opened ON TOP of the table.
+   * Three levers, all from this file's own vocabulary, no new tokens:
+   * generous padding so the six signals sit INSIDE a surface instead of
+   * filling it edge to edge, the largest radius the felt already uses, and
+   * --hx-elev-4 -- the top of the elevation scale, correct here because
+   * this is the topmost transient surface a player can raise over the felt
+   * (only .hexdev-truco-match-over outranks it, and that one takes the
+   * whole felt). The gold inset edge is the same "this is live right now"
+   * signal .hexdev-truco-turn-badge already carries, drawn as an inset
+   * ring rather than a border so it never changes the box the popover's
+   * own anchoring math resolved. Solid surface, never opacity over the
+   * cloth -- the tinting trap this file has been burned by once. */
+  padding: 10px;
+  border-radius: var(--gx-radius, var(--hx-radius-lg));
   background: var(--gx-color-surface, #26433a);
-  box-shadow: var(--hx-elev-3);
+  box-shadow: var(--hx-elev-4), inset 0 0 0 1px var(--hx-gold-edge);
 }
 .hexdev-truco-sena {
   min-height: 32px;
