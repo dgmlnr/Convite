@@ -467,8 +467,13 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-anchor--active {
   /* Elevation (PR2, VDS-4, paint-only): --hx-elev-3 appended to the existing
    * accent ring — the ring stays the primary "whose turn" signal, elevation
-   * only adds depth behind it. */
-  box-shadow: inset 0 0 0 3px var(--gx-color-accent, #ffd166), 0 0 0 6px rgba(255, 209, 102, 0.28), var(--hx-elev-3);
+   * only adds depth behind it.
+   * PR8 (WARNING-2 closure): the ring's fallback now reads --hx-gold. The
+   * 6px glow (rgba(255, 209, 102, 0.28)) is a SEPARATE literal, not one of
+   * the 12 var(--gx-color-accent, #ffd166) fallback sites the verify
+   * report enumerated — left untouched, out of this fix's scope (see
+   * apply-progress for the disposition). */
+  box-shadow: inset 0 0 0 3px var(--gx-color-accent, var(--hx-gold)), 0 0 0 6px rgba(255, 209, 102, 0.28), var(--hx-elev-3);
   border-radius: var(--gx-radius, 12px);
 }
 .hexdev-truco-turn-badge {
@@ -476,17 +481,26 @@ export function buildTableStylesheet(): string {
   top: -11px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
-  font-size: 0.65rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+   * 0.65rem, no exact literal). Safe — position: absolute above takes this
+   * badge out of flow entirely, so its own box can never move a
+   * height-fenced pixel in any ancestor. */
+  font-size: var(--hx-text-label);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 3px 10px;
   border-radius: 999px;
   white-space: nowrap;
-  /* Elevation (PR2, VDS-4, paint-only). */
-  box-shadow: var(--hx-elev-2);
+  /* Elevation (PR2, VDS-4, paint-only), plus PR8's --hx-gold-edge consumer
+   * (design §4.6: "1px lower edge on accent surfaces") — the badge is the
+   * clearest "gold surface" in the felt (task's own hint), so its inset
+   * lower edge gives the solid gold chip a hairline of depth instead of a
+   * flat fill. Additive to the existing shadow list, same convention
+   * --hx-relief/--hx-rim already use. */
+  box-shadow: var(--hx-elev-2), inset 0 -1px 0 var(--hx-gold-edge);
   z-index: 1;
 }
 [data-position="top"] .hexdev-truco-turn-badge { top: auto; bottom: -11px; }
@@ -679,7 +693,13 @@ export function buildTableStylesheet(): string {
   box-shadow: var(--hx-elev-1), var(--hx-relief);
 }
 .hexdev-truco-scoreboard-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.hexdev-truco-team-label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gx-color-accent, #ffd166); text-align: center; }
+/* PR8 (WARNING-1 closure): font-size 0.75rem === --hx-text-meta exactly
+ * (zero-pixel token swap). letter-spacing was 0.04em, the nearest existing
+ * value below --hx-tracking-label's 0.08em (no exact match anywhere in
+ * either stylesheet) -- letter-spacing changes glyph advance width only,
+ * never a line box's height, so widening it here cannot move any
+ * height-fenced pixel. */
+.hexdev-truco-team-label { display: block; font-size: var(--hx-text-meta); font-weight: 700; text-transform: uppercase; letter-spacing: var(--hx-tracking-label); color: var(--gx-color-accent, var(--hx-gold)); text-align: center; }
 .hexdev-truco-score-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .hexdev-truco-score-label { font-size: 0.65rem; opacity: 0.8; }
 .hexdev-truco-score-sticks { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; }
@@ -743,19 +763,29 @@ export function buildTableStylesheet(): string {
   text-align: center;
 }
 .hexdev-truco-pending-call[data-turn="mine"] {
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
   box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.5), var(--hx-elev-3);
 }
-.hexdev-truco-pending-call-level { font-size: 1.1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
-.hexdev-truco-pending-call-caller { font-size: 0.75rem; }
+/* PR8 (WARNING-1 closure): both font-sizes are exact-value matches
+ * (1.1rem === --hx-text-title, 0.75rem === --hx-text-meta) -- zero-pixel
+ * token swaps, safe even inside the fixed-height banner lane. */
+.hexdev-truco-pending-call-level { font-size: var(--hx-text-title); font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; }
+.hexdev-truco-pending-call-caller { font-size: var(--hx-text-meta); }
 /* PR5-T4 (tasks §9, design D-6): compact-only, visually hidden but still
  * announced — the exact same clip-path: inset(50%) treatment
  * .hexdev-truco-turn-indicator already uses above. Medium+ restores normal
  * inline flow (the correction block immediately below, per the same
  * cascade-order discipline the PR4 correction established). */
 .hexdev-truco-pending-call-turn {
-  font-size: 0.8rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-meta (0.75rem; was
+   * 0.8rem, no exact literal). Safe at both tiers: compact keeps this
+   * position: absolute (out of flow); medium+'s position: static
+   * override below still nests inside .hexdev-truco-banner-slot, which is
+   * itself position: absolute with a fixed height: var(--hx-band-banner)
+   * (D-5) — content height changes inside it clip, they never grow the lane
+   * or the felt's own measured height. */
+  font-size: var(--hx-text-meta);
   font-weight: 700;
   position: absolute;
   width: 1px;
@@ -895,14 +925,20 @@ export function buildTableStylesheet(): string {
   color: var(--gx-color-on-primary, #ffffff);
   font-family: inherit;
   font-weight: 600;
-  font-size: 0.85rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-body (0.9rem; was
+   * 0.85rem, no exact literal). Safe: this button's min-height: 40px is an
+   * explicit floor, not font-derived, and it lives inside
+   * .hexdev-truco-action-bar, whose own box is the fixed --hx-band-action
+   * grid row with overflow: hidden (design §7.2: "the band NEVER grows") —
+   * a taller line box clips, it does not grow the reserved row. */
+  font-size: var(--hx-text-body);
   cursor: pointer;
   /* Elevation (PR2, VDS-4, paint-only). */
   box-shadow: var(--hx-elev-2);
 }
 .hexdev-truco-call:hover, .hexdev-truco-call:focus-visible { filter: brightness(1.1); }
 .hexdev-truco-calls-group--response .hexdev-truco-call {
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
 }
 .hexdev-truco-calls-group--opening .hexdev-truco-call {
@@ -929,15 +965,21 @@ export function buildTableStylesheet(): string {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 .hexdev-truco-hand-outcome[data-result="won"] {
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
 }
 .hexdev-truco-hand-outcome[data-result="lost"] {
   background: #3a3a3a;
   color: #f2f2f2;
 }
-.hexdev-truco-hand-outcome-headline { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.02em; }
-.hexdev-truco-hand-outcome-points { font-size: 0.85rem; opacity: 0.85; }
+/* PR8 (WARNING-1 closure): both nearest-match --hx-text-body (0.9rem; were
+ * 0.95rem/0.85rem, no exact literal). Same banner-slot safety as
+ * .hexdev-truco-pending-call-turn above — this content mounts inside
+ * .hexdev-truco-banner-slot too (design §9.2: mountedHandOutcomeEl
+ * "points at handOutcomeBanner inside bannerSlot"), a fixed-height absolute
+ * lane, not the felt's own flow. */
+.hexdev-truco-hand-outcome-headline { font-size: var(--hx-text-body); text-transform: uppercase; letter-spacing: 0.02em; }
+.hexdev-truco-hand-outcome-points { font-size: var(--hx-text-body); opacity: 0.85; }
 
 /* Change: a real ending, not a blank error state (spec: "losing should feel
  * like a loss, not like an error message"). A full, SOLID-background overlay
@@ -963,18 +1005,39 @@ export function buildTableStylesheet(): string {
   background: var(--gx-color-primary, #1e5c43);
   color: var(--gx-color-on-primary, #ffffff);
 }
-.hexdev-truco-match-over-headline { margin: 0; font-size: 1.6rem; font-weight: 800; }
-.hexdev-truco-match-over-score { margin: 0; font-size: 1.1rem; font-weight: 600; }
+/* PR8 (WARNING-1 closure): the match-over overlay is position: absolute,
+ * out of the felt's own flow and never referenced by table-height-stability/
+ * table-height-budget/table-zone-overlap — a font-size change here cannot
+ * move any height-fenced pixel, which is why it is the nearest-match site
+ * chosen for --hx-text-display. -headline was 1.6rem (nearest to
+ * --hx-text-display's 1.5rem; no exact 1.5rem literal exists anywhere in
+ * either stylesheet) -- a documented ~1.6px shrink. PR8 correction (native
+ * review): the first draft of this comment claimed the shrink was "covered
+ * by this PR's own baseline regeneration" -- FALSE: the regeneration pass
+ * only rewrites baselines whose diff EXCEEDS the visual suite's 1%
+ * tolerance, and this shrink (like the other nearest-match substitutions in
+ * this pass) was silently absorbed instead, leaving the affected baselines
+ * sub-tolerance stale: green today, but latent drift a future small change
+ * could push over the threshold mysteriously. The deliberate force-recapture
+ * of every affected baseline ships as this chain's immediate next candidate
+ * (the lens-context budget caps how many binary baselines one reviewable
+ * candidate can carry, so it cannot ride this one). -score's 1.1rem is an
+ * exact match for --hx-text-title (zero-pixel). */
+.hexdev-truco-match-over-headline { margin: 0; font-size: var(--hx-text-display); font-weight: 800; }
+.hexdev-truco-match-over-score { margin: 0; font-size: var(--hx-text-title); font-weight: 600; }
 .hexdev-truco-match-over button[data-action="play-again"] {
   min-height: 46px;
   padding: 10px 28px;
   border: none;
   border-radius: var(--gx-radius, 999px);
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
   font-family: inherit;
   font-weight: 800;
-  font-size: 1rem;
+  /* PR8 (WARNING-1 closure): nearest match for --hx-text-body (0.9rem); was
+   * 1rem, no exact literal existed. Same out-of-flow safety as the two
+   * rules above. */
+  font-size: var(--hx-text-body);
   cursor: pointer;
   /* Elevation (PR2, VDS-4, paint-only): the strongest depth on the table,
    * matching this control's own weight as the match's one remaining action. */
@@ -996,13 +1059,13 @@ export function buildTableStylesheet(): string {
  * the real text label (TABLE_STRINGS.partner/opponent, rendered by a
  * caller of this stylesheet, not by CSS content) carries the rest. */
 .hexdev-truco-table[data-seat-count="4"] .hexdev-truco-anchor[data-relation="partner"] {
-  box-shadow: inset 4px 0 0 0 var(--gx-color-accent, #ffd166);
+  box-shadow: inset 4px 0 0 0 var(--gx-color-accent, var(--hx-gold));
 }
 .hexdev-truco-table[data-seat-count="4"] .hexdev-truco-anchor[data-relation="opponent"] {
   box-shadow: inset 4px 0 0 0 rgba(255, 255, 255, 0.35);
 }
 .hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="partner"] {
-  box-shadow: inset 0 -4px 0 0 var(--gx-color-accent, #ffd166);
+  box-shadow: inset 0 -4px 0 0 var(--gx-color-accent, var(--hx-gold));
 }
 .hexdev-truco-table[data-seat-count="4"] [data-position="top"].hexdev-truco-anchor[data-relation="opponent"] {
   box-shadow: inset 0 -4px 0 0 rgba(255, 255, 255, 0.35);
@@ -1050,7 +1113,8 @@ export function buildTableStylesheet(): string {
   background: var(--gx-color-surface, #26433a);
   color: var(--gx-color-on-surface, #f2f2f2);
   font-family: inherit;
-  font-size: 0.75rem;
+  /* PR8 (WARNING-1 closure): exact match, --hx-text-meta. */
+  font-size: var(--hx-text-meta);
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   cursor: pointer;
@@ -1077,10 +1141,11 @@ export function buildTableStylesheet(): string {
   padding: 4px 10px;
   border: none;
   border-radius: var(--gx-radius, 999px);
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
   font-family: inherit;
-  font-size: 0.75rem;
+  /* PR8 (WARNING-1 closure): exact match, --hx-text-meta. */
+  font-size: var(--hx-text-meta);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1088,7 +1153,8 @@ export function buildTableStylesheet(): string {
 /* The partner's claimed signal -- small, secondary chrome on their own
  * anchor, never on an opponent's (senas.ts's own structural guarantee). */
 .hexdev-truco-partner-sena {
-  font-size: 0.7rem;
+  /* PR8 (WARNING-1 closure): exact match, --hx-text-label. */
+  font-size: var(--hx-text-label);
   padding: 2px 8px;
   border-radius: var(--gx-radius, 999px);
   background: rgba(0, 0, 0, 0.35);
@@ -1145,7 +1211,12 @@ export function buildTableStylesheet(): string {
   color: var(--gx-color-on-surface, #f2f2f2);
   /* Elevation (PR2, VDS-4, paint-only): --hx-elev-1 + --hx-relief. */
   box-shadow: var(--hx-elev-1), var(--hx-relief);
-  font-size: 0.68rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+   * 0.68rem, no exact literal). Safe per this rule's own comment block
+   * above: "not added anywhere to .hexdev-truco-table's own min-height calc"
+   * — the panel's max-height/overflow: hidden make it height-inert to
+   * the felt regardless of tier. */
+  font-size: var(--hx-text-label);
 }
 /* PR4 correction (native review, deterministic CRITICAL): this override used
  * to sit inside the 900px block above (alongside the felt's own grid rules),
@@ -1165,10 +1236,13 @@ export function buildTableStylesheet(): string {
     position: static;
   }
 }
+/* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+ * 0.6rem, no exact literal). Same call-log height-inertness as the panel's
+ * own font-size above. */
 .hexdev-truco-call-log-title,
 .hexdev-truco-call-log-tantos-title {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: var(--hx-text-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -1204,16 +1278,20 @@ export function buildTableStylesheet(): string {
  * is the one selector that needs to exist for the accent to reach them. */
 .hexdev-truco-call-log-entry[data-position="bottom"],
 .hexdev-truco-call-log-tantos-entry[data-position="bottom"] {
-  border-left-color: var(--gx-color-accent, #ffd166);
+  border-left-color: var(--gx-color-accent, var(--hx-gold));
 }
 .hexdev-truco-call-log-speaker { font-weight: 700; }
 .hexdev-truco-call-log-mano-tag {
-  font-size: 0.55rem;
+  /* PR8 (WARNING-1 closure): nearest match, --hx-text-label (0.7rem; was
+   * 0.55rem — the largest gap of any substitution in this pass, but still
+   * the nearest of the 6 tokens, and the same call-log height-inertness
+   * applies). */
+  font-size: var(--hx-text-label);
   font-weight: 700;
   text-transform: uppercase;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--gx-color-accent, #ffd166);
+  background: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
 }
 .hexdev-truco-call-log-points { margin-left: auto; font-weight: 700; }
