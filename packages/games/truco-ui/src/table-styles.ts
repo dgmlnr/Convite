@@ -1324,45 +1324,71 @@ export function buildTableStylesheet(): string {
   color: var(--gx-color-on-surface, #f2f2f2);
 }
 
-/* Señas: discoverable without being noisy (spec). The toggle stays small
- * and secondary -- never styled like a primary call button, so a player
- * who does not care about señas is not visually nagged into opening it.
+/* Señas: discoverable without being noisy (spec). The toggle stays SECONDARY
+ * -- never the filled primary treatment, so a player who does not care about
+ * señas is not visually nagged into opening it.
  *
- * SOLID background, not the original transparent/opacity outline (apply
- * prompt, round 3): this toggle sits inside .hexdev-truco-action-bar's own
- * recessed cloth lane (PR5, D-11) rather than on reserved chrome, so
- * whatever happens to be behind it (cloth, a card) needs to show through
- * only where deliberately transparent, never blended via opacity — the
- * exact opacity-over-green-cloth TINTING trap this project has already been
- * burned by once (.hexdev-truco-card--locked's own history). A solid
- * chrome-surface chip plus a real shadow (matching .hexdev-truco-turn-badge
- * and .hexdev-truco-relation-label's own established treatment) stays
- * secondary in TONE (a muted surface colour, not the vivid primary/accent
- * call buttons) without relying on opacity for that distinction. */
+ * A MEMBER OF THE ACTION-BAR BUTTON SYSTEM, not a smaller cousin of it (debt:
+ * the repo owner's own eye review, "que se vea más integrado y estético al
+ * resto"). MEASURED, both rendered side by side in the same strip: this button
+ * was 59.73x32 against .hexdev-truco-call's 76.36x40 -- min-height 32 vs 40,
+ * padding 4px 12px vs 6px 16px, font-size 12px (--hx-text-meta) vs 14.4px
+ * (--hx-text-body) -- and it still carried a HARDCODED
+ * "0 2px 8px rgba(0,0,0,0.4)" from before the --hx-elev-* scale existed, the
+ * last un-migrated shadow on this table. Two buttons on one strip at two
+ * different sizes read as two systems, whatever their colours. All five now
+ * match the call button exactly.
+ *
+ * HIERARCHY BY TONE, NOT BY SHRINKING -- which is this file's own established
+ * pattern, not a new idea: .hexdev-truco-calls-group--opening
+ * .hexdev-truco-call is already an OUTLINED button at the full 40px size,
+ * sitting beside the filled response-group buttons. This toggle now wears that
+ * exact treatment (transparent fill, 2px primary border, on-surface label), so
+ * it is secondary in the same language the strip already speaks.
+ *
+ * WHY TRANSPARENT IS SAFE HERE, since an earlier round of this rule chose a
+ * solid fill for the opposite reason. That decision was about the CSS opacity
+ * PROPERTY -- the opacity-over-green-cloth TINTING trap this project was burned
+ * by once (.hexdev-truco-card--locked's own history) -- and nothing below uses
+ * it. A transparent background is not a blend: it reveals
+ * .hexdev-truco-action-bar's own recessed lane (D-11, background:
+ * --truco-cloth-lane plus --hx-relief), which is a real, deliberate surface,
+ * never bare cloth or a live card. The opening-group call buttons have sat
+ * transparent on that same lane since it existed, which is the direct evidence
+ * that this is a solved problem here, not a re-opened one. */
 .hexdev-truco-senas-toggle {
-  min-height: 32px;
-  padding: 4px 12px;
-  border: none;
+  min-height: 40px;
+  padding: 6px 16px;
+  border: 2px solid var(--gx-color-primary, #2f6f4f);
   border-radius: var(--gx-radius, 999px);
-  background: var(--gx-color-surface, #26433a);
+  background: transparent;
   color: var(--gx-color-on-surface, #f2f2f2);
   font-family: inherit;
-  /* PR8 (WARNING-1 closure): exact match, --hx-text-meta. */
-  font-size: var(--hx-text-meta);
+  font-size: var(--hx-text-body);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  /* Elevation (PR2, VDS-4, paint-only): the same token .hexdev-truco-call
+   * reads, replacing the hardcoded pre-token shadow this rule carried. */
+  box-shadow: var(--hx-elev-2);
   cursor: pointer;
 }
 .hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
-/* The OPEN toggle wears the same gold edge its own popover does (FU-1 eye
- * review): the card floats a full band above the button that raised it, so
- * without a shared "live right now" signal the two read as unrelated pieces
- * of chrome. Selects on the aria-expanded senas.ts already maintains — the
- * a11y state IS the style hook, so the two can never drift apart. Inset
- * ring, not a border: the toggle's own box stays exactly the height the
- * fixed action band reserved for it. */
+/* The OPEN toggle wears the same gold its own popover does (FU-1 eye review):
+ * the card floats a full band above the button that raised it, so without a
+ * shared "live right now" signal the two read as unrelated pieces of chrome.
+ * Selects on the aria-expanded senas.ts already maintains — the a11y state IS
+ * the style hook, so the two can never drift apart.
+ *
+ * A gold BORDER now, not the inset ring this rule used to draw. The ring was
+ * the right answer while the button had no border of its own; against a real
+ * 2px outline a 1px inset ring reads as a muddy double edge rather than a
+ * state change. Recolouring the outline the toggle already has is both
+ * cleaner and stronger: the whole shape changes colour, it costs no box (the
+ * button's own height inside the fixed action band is untouched), and the
+ * open toggle's outline now matches the gold edge its popover is ringed with
+ * instead of merely alluding to it. Still an OUTLINED button — opening the
+ * picker must never promote it to the filled primary treatment. */
 .hexdev-truco-senas-toggle[aria-expanded="true"] {
-  box-shadow: var(--hx-elev-2), inset 0 0 0 1px var(--hx-gold-edge);
+  border-color: var(--gx-color-accent, var(--hx-gold));
   color: var(--gx-color-accent, var(--hx-gold));
 }
 /* align-self:stretch gives this box the strip's real cross-axis size instead
