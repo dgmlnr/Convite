@@ -59,7 +59,7 @@ describe("applyAction — send-sena records the signal without validating it aga
     const state = freshTeamHand(); // players were dealt empty hands
     const signaled = apply(state, { type: "send-sena", playerId: playerA, signal: "asDeEspada" });
 
-    expect(signaled.hand?.senas).toContainEqual({ playerId: playerA, teamId: signaled.players[0]!.teamId, signal: "asDeEspada" });
+    expect(signaled.hand?.senas).toContainEqual({ playerId: playerA, teamId: signaled.players[0]!.teamId, signal: "asDeEspada", seq: 1 });
   });
 
   it("a later signal from the same player REPLACES their earlier one, rather than accumulating", () => {
@@ -67,7 +67,33 @@ describe("applyAction — send-sena records the signal without validating it aga
     const second = apply(first, { type: "send-sena", playerId: playerA, signal: "tres" });
 
     const mine = second.hand?.senas.filter((s) => s.playerId === playerA);
-    expect(mine).toEqual([{ playerId: playerA, teamId: second.players[0]!.teamId, signal: "tres" }]);
+    expect(mine).toEqual([{ playerId: playerA, teamId: second.players[0]!.teamId, signal: "tres", seq: 2 }]);
+  });
+
+  it("re-sending the SAME signal still bumps the ordinal — the only thing that lets a viewer tell 'signaled again' apart from 'nothing happened'", () => {
+    const first = apply(freshTeamHand(), { type: "send-sena", playerId: playerA, signal: "asDeEspada" });
+    const again = apply(first, { type: "send-sena", playerId: playerA, signal: "asDeEspada" });
+
+    const before = first.hand!.senas.find((s) => s.playerId === playerA)!;
+    const after = again.hand!.senas.find((s) => s.playerId === playerA)!;
+    expect(after.signal).toBe(before.signal);
+    expect(after.seq).toBeGreaterThan(before.seq);
+  });
+
+  it("ordinals stay strictly increasing across senders, so a replaced entry never reuses a spent ordinal", () => {
+    let state = apply(freshTeamHand(), { type: "send-sena", playerId: playerA, signal: "asDeEspada" });
+    state = apply(state, { type: "send-sena", playerId: playerC, signal: "tres" });
+    state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+
+    expect(state.hand!.senas.map((s) => s.seq)).toEqual([2, 3]); // playerC's 2 survives, playerA's 1 was replaced by 3
+  });
+
+  it("a fresh hand starts the ordinals over — señas are hand-scoped, exactly like the rest of `HandState`", () => {
+    const signaled = apply(freshTeamHand(), { type: "send-sena", playerId: playerA, signal: "dos" });
+    const redealt = startHand(signaled, [[], [], [], []]);
+    const afterRedeal = apply(redealt, { type: "send-sena", playerId: playerA, signal: "dos" });
+
+    expect(afterRedeal.hand!.senas.map((s) => s.seq)).toEqual([1]);
   });
 
   it("does not mutate the input state", () => {

@@ -30,6 +30,26 @@ export interface OpponentView {
   readonly cardsRemaining: number;
 }
 
+/**
+ * A seña as PROJECTED to someone entitled to see it: the claimed signal
+ * PLUS its hand-scoped ordinal (`SenaEvent.seq`).
+ *
+ * The ordinal travels with the signal in ONE nullable object rather than as a
+ * sibling field, deliberately: a signal and its ordinal are meaningless apart,
+ * and a pair of independently-nullable fields could drift into "a signal with
+ * no ordinal" — a state a consumer would have to defend against and this
+ * shape simply cannot express.
+ *
+ * This type is not a licence to widen the audience. It may only ever be
+ * reached through a field on `TeammateView`/`PlayerView["self"]`; adding a
+ * field of this type (or any part of it) to `OpponentView` is the bug the
+ * redaction docstrings above describe.
+ */
+export interface SenaView {
+  readonly signal: SenaSignal;
+  readonly seq: number;
+}
+
 /** Always empty in v1 (single-player teams) — the shape exists so v2 adds
  * data without changing this type or re-auditing the projection (design §4).
  * `lastSena` is v2's own addition: the teammate's most recent claimed
@@ -40,7 +60,7 @@ export interface TeammateView {
   readonly playerId: PlayerId;
   readonly seat: number;
   readonly cardsRemaining: number;
-  readonly lastSena: SenaSignal | null;
+  readonly lastSena: SenaView | null;
 }
 
 export interface HandView {
@@ -68,7 +88,7 @@ export interface PlayerView {
     /** The viewer's OWN most recent signal — self-confirmation for the
      * sending UI, never another player's data, so this does not touch the
      * redaction guarantee at all (a player always sees their own claim). */
-    readonly lastSena: SenaSignal | null;
+    readonly lastSena: SenaView | null;
   };
   readonly teammates: readonly TeammateView[];
   readonly opponents: readonly OpponentView[];
@@ -95,8 +115,15 @@ export function getViewFor(state: MatchState, playerId: PlayerId): PlayerView {
   // seña slot, or opponent-shaped, with none) a player's data goes into.
   // Weakening this condition is exactly the mutation the redaction proof
   // must catch.
-  const lastSenaFor = (playerId: PlayerId): SenaSignal | null =>
-    state.hand?.senas.find((entry) => entry.playerId === playerId)?.signal ?? null;
+  //
+  // Built field-by-field from the entry, never spread from it: `SenaEvent`
+  // also carries `playerId`/`teamId`, and a spread would quietly widen what
+  // this projection hands out every time the engine's own entry grows a
+  // field. Same explicit-construction discipline as the return value below.
+  const lastSenaFor = (playerId: PlayerId): SenaView | null => {
+    const entry = state.hand?.senas.find((candidate) => candidate.playerId === playerId);
+    return entry === undefined ? null : { signal: entry.signal, seq: entry.seq };
+  };
 
   const teammates: TeammateView[] = [];
   const opponents: OpponentView[] = [];

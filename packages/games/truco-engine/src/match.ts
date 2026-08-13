@@ -78,6 +78,20 @@ export interface SenaEvent {
   readonly playerId: PlayerId;
   readonly teamId: TeamId;
   readonly signal: SenaSignal;
+  /** Strictly increasing within the hand, assigned by `applySenaAction`.
+   *
+   * Load-bearing, not bookkeeping: this array keeps only the LATEST entry per
+   * player (a seña reflects current intent, not a log), so two consecutive
+   * snapshots of a player who re-sent the SAME signal are otherwise
+   * byte-identical — indistinguishable from "nothing happened". A viewer
+   * diffing snapshots to show a transient notice would silently never fire.
+   * The ordinal is what makes "signaled again" observable downstream.
+   *
+   * A pure counter, never a clock: the engine is a deterministic reducer with
+   * no time source, and it must not grow one. `1` for the hand's first seña;
+   * hand-scoped, so it starts over with every deal exactly like the rest of
+   * `HandState`. */
+  readonly seq: number;
 }
 
 /** A single played card, recorded with its player/team/seat so trick

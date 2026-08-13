@@ -434,7 +434,7 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
   it("shows the partner's most recent seña on their own anchor, never on an opponent's", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
-    const view = teamView({ teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: "tres" }] });
+    const view = teamView({ teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: { signal: "tres", seq: 1 } }] });
 
     render(el, view, [], () => {});
 

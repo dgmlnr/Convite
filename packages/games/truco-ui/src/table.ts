@@ -183,7 +183,7 @@ export function createMatchTableRenderer(
       }
       renderOpponentHand(anchor.appendChild(document.createElement("div")), other.cardsRemaining);
       if (other.relation === "partner") {
-        renderPartnerSena(anchor.appendChild(document.createElement("div")), other.lastSena);
+        renderPartnerSena(anchor.appendChild(document.createElement("div")), other.lastSena?.signal ?? null);
       }
       if (isAnchorActive(other.seat, other.teamId)) {
         anchor.classList.add("hexdev-truco-anchor--active");

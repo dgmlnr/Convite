@@ -58,7 +58,16 @@ function isLegalSena(state: MatchState, action: SenaAction): boolean {
  * earlier one from the same player this hand (a seña reflects current
  * intent, not a running log) — never mutates `state`. Never touches score or
  * any other rule state; señas are pure communication, not a game action with
- * consequences the engine enforces. */
+ * consequences the engine enforces.
+ *
+ * The new entry's `seq` is taken from the hand's HIGHEST ordinal so far PLUS
+ * ONE, and — the subtle part — that maximum is read BEFORE the sender's own
+ * earlier entry is filtered out. Reading it after would let a player who is
+ * the hand's only signaler re-use their own spent ordinal forever (filter
+ * leaves `[]`, max falls back to 0, every re-send lands on 1 again), which is
+ * precisely the "re-sent the same signal" case the ordinal exists to make
+ * observable. Deterministic and clock-free: the ordinal is derived from the
+ * state being reduced, never from wall time. */
 export function applySenaAction(state: MatchState, action: SenaAction): ApplySenaResult {
   if (!isLegalSena(state, action)) {
     return { ok: false, violation: `illegal send-sena action: ${JSON.stringify(action)}` };
@@ -66,9 +75,10 @@ export function applySenaAction(state: MatchState, action: SenaAction): ApplySen
   const hand = state.hand!;
   const player = findPlayer(state, action.playerId)!;
 
+  const seq = hand.senas.reduce((highest, entry) => Math.max(highest, entry.seq), 0) + 1;
   const senas = [
     ...hand.senas.filter((entry) => entry.playerId !== action.playerId),
-    { playerId: player.id, teamId: player.teamId, signal: action.signal },
+    { playerId: player.id, teamId: player.teamId, signal: action.signal, seq },
   ];
   const nextHand: HandState = { ...hand, senas };
   return { ok: true, state: { ...state, hand: nextHand } };
