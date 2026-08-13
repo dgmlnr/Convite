@@ -92,3 +92,17 @@ export function renderSenaNotice(container: HTMLElement, props: SenaNoticeProps 
   signal.textContent = SENA_LABELS[props.signal];
   container.appendChild(signal);
 }
+
+/**
+ * The same notice as ONE spoken sentence, for the live region `table.ts`
+ * keeps mounted (see `announcer.ts`). Comma-joined rather than concatenated
+ * from the rendered spans: read out with no separator, "Seña del
+ * compañero7 de oro" is what a reader would actually say.
+ *
+ * Lives here, beside the render function, for the same reason the labels do —
+ * this module owns how a seña is worded; `announcer.ts` owns only the
+ * mechanism and has no Spanish in it at all.
+ */
+export function describeSenaNotice(props: SenaNoticeProps): string {
+  return `${TABLE_STRINGS.senaFromPartner}, ${SENA_LABELS[props.signal]}`;
+}

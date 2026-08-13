@@ -576,6 +576,143 @@ describe("createMatchTableRenderer — a partner's seña is a moment, announced 
   });
 });
 
+/**
+ * Announcements a screen reader can ACTUALLY hear.
+ *
+ * `render` rebuilds this whole table from scratch on every broadcast
+ * (`container.replaceChildren()`, then a fresh `createElement` for every node
+ * beneath it). A live region built that way is a NEW region each time, and a
+ * brand-new region carrying text is not a CHANGE to an existing one — so an
+ * `aria-live` attribute sitting on a rebuilt node announces nothing at all.
+ * Both announcers must therefore be created ONCE per mount and survive the
+ * rebuild, which is the property these tests pin: node IDENTITY across
+ * renders, not the mere presence of an attribute.
+ */
+describe("createMatchTableRenderer — the announcers are real live regions, not attributes on a rebuilt node", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  const handOutcomeAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="hand-outcome"]');
+  const senaAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="partner-sena"]');
+
+  function teamView(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      ...overrides,
+    });
+  }
+
+  const decidedView = (): PlayerView =>
+    baseView({
+      hand: { ...baseView().hand!, outcome: { decided: true, winnerTeamId: MY_TEAM } },
+      teams: [
+        { id: MY_TEAM, score: 6 },
+        { id: OPPONENT_TEAM, score: 2 },
+      ],
+    });
+
+  it.each([
+    ["hand-outcome", handOutcomeAnnouncerOf],
+    ["partner-sena", senaAnnouncerOf],
+  ] as const)("%s: the SAME node survives a re-render — a live region rebuilt per render can never announce", (_name, announcerOf) => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(null), [], () => {});
+    const first = announcerOf(el);
+    expect(first, "the announcer must exist from the very first render").not.toBeNull();
+
+    // A completely different view — the render path below this rebuilds every
+    // other node on the table, which is exactly what the announcer must NOT do.
+    render(el, teamView({ signal: "tres", seq: 1 }), [], () => {});
+    render(el, decidedView(), [], () => {});
+
+    expect(announcerOf(el), "the announcer node's identity must be preserved across renders").toBe(first);
+    expect(first!.isConnected, "the announcer must stay attached, never detached and re-added").toBe(true);
+  });
+
+  it.each([
+    ["hand-outcome", handOutcomeAnnouncerOf],
+    ["partner-sena", senaAnnouncerOf],
+  ] as const)("%s: is a polite, atomic live region — never assertive, never a half-read fragment", (_name, announcerOf) => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+    const announcer = announcerOf(el)!;
+
+    expect(announcer.getAttribute("aria-live")).toBe("polite");
+    expect(announcer.getAttribute("aria-atomic")).toBe("true");
+  });
+
+  it("says nothing at all until something has happened — an empty region on mount is a silent one", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(null), [], () => {});
+
+    expect(handOutcomeAnnouncerOf(el)!.textContent).toBe("");
+    expect(senaAnnouncerOf(el)!.textContent).toBe("");
+  });
+
+  it("announces a partner's seña as ONE statement, source and signal together", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+
+    render(el, teamView({ signal: "sieteDeOro", seq: 1 }), [], () => {});
+
+    expect(senaAnnouncerOf(el)!.textContent).toBe("Seña del compañero, 7 de oro");
+  });
+
+  it("announces the hand's outcome as ONE statement, result and points together", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, baseView(), [], () => {});
+
+    render(el, decidedView(), [], () => {});
+
+    expect(handOutcomeAnnouncerOf(el)!.textContent).toBe("Ganaste la mano, +2 tantos");
+  });
+
+  it("does not repeat itself on an unrelated re-render — the same text rewritten is a second announcement in some readers", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "dos", seq: 1 }), [], () => {});
+    const announcer = senaAnnouncerOf(el)!;
+    const spoken = announcer.textContent;
+
+    // Something else on the table moved; the seña is unchanged.
+    const sameSena = teamView({ signal: "dos", seq: 1 }, { teams: [{ id: MY_TEAM, score: 3 }, { id: OPPONENT_TEAM, score: 1 }] });
+    const textNodeBefore = announcer.firstChild;
+    render(el, sameSena, [], () => {});
+
+    expect(announcer.textContent).toBe(spoken);
+    expect(announcer.firstChild, "an untouched region must not have its text node replaced").toBe(textNodeBefore);
+  });
+
+  it("falls silent when the seña expires, and does so as a REMOVAL — the default aria-relevant never speaks a removal", async () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ senaNoticeMs: 20 });
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "asDeBasto", seq: 1 }), [], () => {});
+    const announcer = senaAnnouncerOf(el)!;
+    expect(announcer.textContent).toBe("Seña del compañero, As de basto");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Emptied by the SAME timer that clears the visible chip, without waiting
+    // for another broadcast — and `aria-relevant` stays at its default
+    // ("additions text"), so emptying it is not itself an announcement.
+    expect(announcer.textContent).toBe("");
+    expect(announcer.getAttribute("aria-relevant")).toBe("additions text");
+  });
+});
+
 describe("createMatchTableRenderer — a real ending, once the match is over (spec: 'a way to play again without hunting')", () => {
   it("renders nothing extra while the match is still in progress", () => {
     const el = freshContainer();

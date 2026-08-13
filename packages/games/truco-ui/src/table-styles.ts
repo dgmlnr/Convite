@@ -1188,6 +1188,30 @@ export function buildTableStylesheet(): string {
    * on the cloth in the same lane, so it lifts off it the same way. */
   box-shadow: var(--hx-elev-3);
 }
+/* The two ARIA live regions (announcer.ts): visually hidden, still announced —
+ * the exact clip-path: inset(50%) treatment .hexdev-truco-turn-indicator
+ * already uses, never display: none or visibility: hidden, both of which
+ * remove an element from the accessibility tree and would silence it.
+ *
+ * position: absolute is load-bearing beyond the hiding: these are direct
+ * children of the shell (they must outlive the render that rebuilds
+ * everything else), so leaving them in flow would put a real box at the top of
+ * every mounted table. Out of flow, they contribute nothing to any layout —
+ * no capture moves, which is the whole basis for adding them without
+ * recapturing a single baseline. */
+.hexdev-truco-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  min-height: 0;
+}
+
 .hexdev-truco-sena-notice-source { font-size: var(--hx-text-meta); font-weight: 600; opacity: 0.85; }
 .hexdev-truco-sena-notice-signal { font-size: var(--hx-text-title); text-transform: uppercase; letter-spacing: 0.02em; color: var(--gx-color-accent, var(--hx-gold)); }
 
