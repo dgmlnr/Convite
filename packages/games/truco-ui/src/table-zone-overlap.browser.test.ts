@@ -625,12 +625,14 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
    * own `overflow: hidden` edge — unusable, which is the FU-1 defect the
    * popover fixes.
    *
-   * WHAT THE MANDATE STILL OWES IT, asserted by the two tests below instead:
-   * (1) every one of the six señas is fully PAINTED — non-degenerate, inside
-   * the popover's own rect, and inside every clip its real ancestor chain
-   * imposes; and (2) the action bar's own height is identical open vs.
-   * closed, the fixed-band contract that made the popover necessary in the
-   * first place.
+   * WHAT THE MANDATE STILL OWES IT, asserted by the three tests below
+   * instead: (1) every one of the six señas is fully PAINTED —
+   * non-degenerate, inside the popover's own rect, and inside every clip its
+   * real ancestor chain imposes; (2) the action bar's own height is identical
+   * open vs. closed, the fixed-band contract that made the popover necessary
+   * in the first place; and (3) at wide/ultra, where the felt grows a
+   * call-log rail COLUMN, the popover's own left edge really clears that rail
+   * instead of stretching across it.
    *
    * 2v2 ONLY, structurally: `table.ts` mounts `renderSenaPicker` only when
    * `view.teammates.length > 0`, so there is no 1v1 picker to assert about —
@@ -690,6 +692,79 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     expect(Math.abs(openBar - closedBar), `action bar open ${openBar}px vs closed ${closedBar}px`).toBeLessThan(0.5);
     expect(Math.abs(openFelt - closedFelt), `felt open ${openFelt}px vs closed ${closedFelt}px`).toBeLessThan(0.5);
   });
+
+  // The popover's HORIZONTAL POSITION (native review of the FU-1 popover PR:
+  // no test asserted it at all). From wide up the felt grows a call-log rail
+  // COLUMN, and the popover's containing block is the whole felt — so the
+  // compact/medium inset (`left: var(--hx-felt-pad)`) would stretch the
+  // popover across the rail and centre its six signals well to the left of
+  // the toggle they belong to. Neither popover fence above can see that: the
+  // rail is an in-flow sibling grid COLUMN, not a clipping ancestor, so all
+  // six señas stay fully painted and the action band's height is untouched
+  // whichever inset wins. The wide-tier rule ALREADY failed silently once
+  // during development — written as a bare-class selector, it lost on source
+  // order to the base rule declared later in the same stylesheet — which is
+  // exactly why it earns a positional fence of its own.
+  //
+  // WHERE THE EXPECTATION COMES FROM: real rendered geometry, never the
+  // stylesheet's own calc() restated in TypeScript (an assertion that merely
+  // copies `calc(--hx-felt-pad + --hx-log-rail + --hx-felt-gap)` proves only
+  // that arithmetic can be transcribed, and would keep passing against a
+  // stylesheet that had stopped applying the rule at all). Two independent
+  // sources, both measured off the DOM:
+  //   - `.hexdev-truco-action-bar` IS the "actions" grid area at this tier
+  //     (`grid-area: actions`, spanning every column except the log one), so
+  //     its own border-box left edge is literally "where the actions area
+  //     starts". Its `padding-inline` cannot skew this — a rect is the BORDER
+  //     box.
+  //   - `.hexdev-truco-call-log` is the rail's real occupant at this tier
+  //     (`grid-area: log`, `position: static` — an in-flow column child), so
+  //     its right edge is a directly-observed floor the popover must clear.
+  // Both were confirmed to fail INDEPENDENTLY (each run first, so neither
+  // hid behind the other) against a stylesheet with this one rule locally
+  // neutralised back to `left: var(--hx-felt-pad)`. MEASURED at 960px: the
+  // popover started at 24px — the felt's own padding, i.e. the log's own LEFT
+  // edge — against an actions area starting at 240px and a log right edge of
+  // 140px, so the two assertions missed by 216px and 116px respectively.
+  //
+  // Uses the PENDING-CALL 2v2 fixture rather than the
+  // `selfTurnActiveAfterTrick1Win2v2` the two fences above use: only a state
+  // with a real call chain gives `.hexdev-truco-call-log` entries to render,
+  // and an EMPTY log is `display: none` (a 0x0 rect at the viewport origin),
+  // which would make the clearance assertion vacuously true. Señas stay legal
+  // throughout — truco-engine's `getLegalSenaActions` gates only on "hand in
+  // progress and the sender has a teammate", never on a pending call.
+  //
+  // Wide + ultra ONLY, structurally: `--hx-log-rail` and this inset override
+  // exist solely inside `@container hexdev-truco-shell (min-width: 900px)`.
+  // At compact/medium the log is an absolutely-positioned overlay with no
+  // column track at all, so the base inset is the CORRECT answer there and a
+  // 375/700px case would assert the opposite of the rule under test.
+  if (width >= 900) {
+    it("2v2: the open señas popover starts where the actions area starts, clear of the call-log rail (wide + ultra only)", async () => {
+      const el = mountedContainer(width);
+      const render = createMatchTableRenderer();
+      const state = pendingTrucoAfterTrick1Headshot2v2();
+      render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+      await waitForArt(el);
+
+      const actionBar = el.querySelector(".hexdev-truco-action-bar");
+      const callLog = el.querySelector(".hexdev-truco-call-log");
+      if (actionBar === null || callLog === null) throw new Error("test setup: action bar or call log not rendered — is there really a call chain?");
+      const callLogRect = callLog.getBoundingClientRect();
+      expect(callLogRect.width, "sanity: an empty call log is display: none, which would make the clearance check below vacuous").toBeGreaterThan(0);
+
+      const popoverRect = openSenaPicker(el).getBoundingClientRect();
+      const actionBarRect = actionBar.getBoundingClientRect();
+
+      // Same 0.5px epsilon as `overlaps`/`contains`.
+      expect(
+        Math.abs(popoverRect.left - actionBarRect.left),
+        `popover left ${popoverRect.left}px vs the actions area's own left edge ${actionBarRect.left}px`,
+      ).toBeLessThan(0.5);
+      expect(popoverRect.left, `popover left ${popoverRect.left}px vs call log right ${callLogRect.right}px`).toBeGreaterThanOrEqual(callLogRect.right - 0.5);
+    });
+  }
 });
 
 /** The same partner-row fence as inside the loop above, at the two widths the
