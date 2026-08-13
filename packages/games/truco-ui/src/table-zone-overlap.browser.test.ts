@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { applyAction, createHeadToHeadMatch, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
-import type { Action, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
+import type { Action, DealInput, MatchState, PlayerId, SenaSignal } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 /**
@@ -257,6 +257,76 @@ function selfTurnActiveAfterTrick1Win2v2(): MatchState {
  * only, per that file's docblock — this suite's own scope is unaffected). */
 const WIDTHS = [375, 700, 960, 1280] as const;
 
+/** A FRESHLY DEALT 2v2 hand — every seat still holds all three cards, which
+ * is the only state in which the partner's top anchor renders three card
+ * backs at once (every other fixture in this file has already played trick 1,
+ * so the top hand is down to two and the three-across worst case never
+ * appears). `sena` optionally puts the partner's claimed-signal chip on the
+ * SAME anchor, through the real reducer — never a hand-authored view. */
+function freshlyDealt2v2(sena: SenaSignal | null): MatchState {
+  const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+  const state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2_MAXIMAL);
+  return sena === null ? state : dispatch(state, { type: "send-sena", playerId: TEAMMATE, signal: sena });
+}
+
+/**
+ * The partner's three card backs all sit on ONE row (debt: the repo owner's
+ * own screenshot — at 375px the third back had dropped below the other two,
+ * 2 + 1, at the top of the felt).
+ *
+ * Asserts a shared horizontal BAND, not merely "they do not overlap": a
+ * wrapped third card does not overlap its siblings either (the sibling-card
+ * fence above stayed green through the whole defect), so non-overlap can
+ * never tell a broken row apart from an intact one. Same 0.5px epsilon as
+ * `overlaps`/`contains`.
+ */
+async function expectPartnerBacksOnOneRow(width: number, sena: SenaSignal | null): Promise<void> {
+  const el = mountedContainer(width);
+  const render = createMatchTableRenderer();
+  const state = freshlyDealt2v2(sena);
+  render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+  await waitForArt(el);
+
+  const topHand = el.querySelector('[data-position="top"] .hexdev-truco-opponent-hand');
+  if (topHand === null) throw new Error("fence setup: the partner's top hand is not rendered");
+  if (sena !== null && el.querySelector('[data-position="top"] .hexdev-truco-partner-sena') === null) {
+    throw new Error("fence setup: the partner's seña chip is not on the top anchor — did the reducer really record it?");
+  }
+
+  const backs = [...topHand.querySelectorAll(".hexdev-truco-card")];
+  expect(backs.length, "sanity: a freshly dealt partner holds exactly three cards").toBe(3);
+
+  const rects = backs.map((back) => back.getBoundingClientRect());
+  const first = rects[0]!;
+  for (const rect of rects.slice(1)) {
+    expect(Math.abs(rect.top - first.top), `card backs must share one top edge: ${JSON.stringify(rects)}`).toBeLessThan(0.5);
+    expect(Math.abs(rect.bottom - first.bottom), `card backs must share one bottom edge: ${JSON.stringify(rects)}`).toBeLessThan(0.5);
+  }
+  // The row's own box must not be taller than the single card row it draws
+  // either — the direct proof that `.hexdev-truco-opponent-hand`'s own
+  // one-card-row `min-height` reservation still describes its real height.
+  const handHeight = topHand.getBoundingClientRect().height;
+  expect(handHeight, `the partner's hand box is ${handHeight}px, one card row is ${first.height}px`).toBeLessThan(first.height + 0.5);
+}
+
+/** The widest of the six closed señas labels (`SENA_LABELS`, strings.ts) —
+ * "As de espada", 12 characters. The chip is what steals the anchor's width
+ * from the hand, so the fence has to measure the widest chip the closed
+ * vocabulary can ever produce, not a comfortable one: MEASURED, at 375px the
+ * chip is 88.66px for "7 de oro" and 106.14px for "As de espada", and that
+ * 17.5px difference is by itself enough to flip 414px, 700px and 960px from
+ * intact to wrapped. */
+const WIDEST_SENA: SenaSignal = "asDeEspada";
+
+/** The two container widths this suite's shared `WIDTHS` list does not carry,
+ * both of which the debt measurement found genuinely broken: 320px (the
+ * narrowest supported width) and 640px (the medium tier's own lower boundary,
+ * where the felt is at its NARROWEST relative to its card size — the
+ * scoreboard has just become a 168px side column while the cards have just
+ * grown 60px -> 84px). Kept as their own block rather than widening `WIDTHS`,
+ * which every other pairing in this file shares and has its own scope note. */
+const PARTNER_ROW_EXTRA_WIDTHS = [320, 640] as const;
+
 /**
  * PR5-T4/T7 RESOLUTION (tasks §9): every ONE of the 7 collisions
  * PR3b/PR4 found and honestly reported (`{375,700,960}px x {1v1,2v2}` plus
@@ -500,6 +570,20 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     expect(cardPairsChecked, "sanity: at least one sibling pair must have been compared, or this test proves nothing").toBeGreaterThan(0);
   });
 
+  // Debt (repo owner's own screenshot, 2v2 at 375px): the partner's three
+  // card backs had wrapped to 2 + 1 at the top of the felt. The sibling-card
+  // pairing directly above could never have caught it — a wrapped card sits
+  // BELOW its siblings, so it overlaps nothing — which is exactly why this
+  // fence asserts a shared top/bottom BAND instead. See
+  // `expectPartnerBacksOnOneRow` for the full rationale and the widest-chip
+  // choice. 2v2 only, structurally: the top anchor carries a relation label
+  // and a seña chip alongside the hand ONLY when there is a partner to
+  // label; a 1v1 top anchor holds nothing but the opponent's hand, so a 1v1
+  // case would be vacuous.
+  it.each([null, WIDEST_SENA])("2v2, seña=%s: all three of the partner's card backs sit on one row", async (sena) => {
+    await expectPartnerBacksOnOneRow(width, sena);
+  });
+
   /*
    * ─── THE MANDATE'S ONE DELIBERATE EXCEPTION: the OPEN señas picker (FU-1) ──
    *
@@ -681,4 +765,15 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
       expect(popoverRect.left, `popover left ${popoverRect.left}px vs call log right ${callLogRect.right}px`).toBeGreaterThanOrEqual(callLogRect.right - 0.5);
     });
   }
+});
+
+/** The same partner-row fence as inside the loop above, at the two widths the
+ * shared `WIDTHS` list does not carry — see `PARTNER_ROW_EXTRA_WIDTHS` for
+ * why those two and not others. Its own top-level block rather than a wider
+ * `WIDTHS`, so every other pairing in this file keeps the exact four-tier
+ * scope its own notes describe. */
+describe.each(PARTNER_ROW_EXTRA_WIDTHS)("the partner's hand stays one row at the widths outside this suite's shared list — %ipx", (width) => {
+  it.each([null, WIDEST_SENA])("2v2, seña=%s: all three of the partner's card backs sit on one row", async (sena) => {
+    await expectPartnerBacksOnOneRow(width, sena);
+  });
 });
