@@ -105,7 +105,7 @@ describe("getViewFor — señas are delivered ONLY to the teammate, never the op
     // playerC is playerA's TEAMMATE (seats 0 and 2 — createTeamMatch's alternating pattern).
     const teammateView = getViewFor(signaled.state, playerC);
     expect(teammateView.teammates).toContainEqual(
-      expect.objectContaining({ playerId: playerA, lastSena: "asDeEspada" }),
+      expect.objectContaining({ playerId: playerA, lastSena: { signal: "asDeEspada", seq: 1 } }),
     );
 
     // playerB and playerD are OPPONENTS of playerA — the signal must not appear anywhere in their view.
@@ -120,7 +120,17 @@ describe("getViewFor — señas are delivered ONLY to the teammate, never the op
     if (!signaled.ok) throw new Error("expected ok");
 
     const ownView = getViewFor(signaled.state, playerA);
-    expect(ownView.self.lastSena).toBe("tres");
+    expect(ownView.self.lastSena).toEqual({ signal: "tres", seq: 1 });
+  });
+
+  it("carries the ordinal through to the teammate, so a RE-SENT identical signal is still observably new downstream", () => {
+    const first = apply(freshTeamHandFor2v2(), { type: "send-sena", playerId: playerA, signal: "sieteDeOro" });
+    const again = apply(first, { type: "send-sena", playerId: playerA, signal: "sieteDeOro" });
+
+    const before = getViewFor(first, playerC).teammates.find((t) => t.playerId === playerA)!.lastSena!;
+    const after = getViewFor(again, playerC).teammates.find((t) => t.playerId === playerA)!.lastSena!;
+    expect(after.signal).toBe(before.signal);
+    expect(after.seq).toBeGreaterThan(before.seq);
   });
 });
 
@@ -160,6 +170,33 @@ describe("getViewFor — señas redaction property, for any reachable 2v2 state"
             // `lastSena` key at all — OpponentView's type has no such field.
             return signalerEntry !== undefined && !("lastSena" in signalerEntry);
           });
+        });
+      }),
+    );
+  });
+
+  /** Shape-AGNOSTIC redaction proof: the test above names `lastSena`, so it
+   * only fences the field that exists today — a future seña carrier under any
+   * other name (an ordinal, a timestamp, a nested envelope) would slip past
+   * it. This one walks the whole serialized opponent view and fails on ANY
+   * key from the seña vocabulary, wherever it appears and whatever it is
+   * called, so widening the projection's shape can never quietly widen its
+   * audience too. */
+  const SENA_KEYS = ["lastSena", "senas", "sena", "signal", "seq"] as const;
+  const senaShapedKeysIn = (value: unknown): readonly string[] => {
+    if (Array.isArray(value)) return value.flatMap(senaShapedKeysIn);
+    if (typeof value !== "object" || value === null) return [];
+    return Object.entries(value).flatMap(([key, nested]) =>
+      SENA_KEYS.includes(key as (typeof SENA_KEYS)[number]) ? [key] : senaShapedKeysIn(nested),
+    );
+  };
+
+  it("an opponent's view carries NO seña-shaped key anywhere in it — not the signal, not the ordinal, not under any other name", () => {
+    fc.assert(
+      fc.property(reachableTeamStateArb, (state) => {
+        return state.players.every((player) => {
+          const view = getViewFor(state, player.id);
+          return view.opponents.every((opponent) => senaShapedKeysIn(opponent).length === 0);
         });
       }),
     );
