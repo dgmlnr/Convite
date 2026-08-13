@@ -79,9 +79,17 @@ function mountedContainer(): HTMLElement {
   // auto-height container hugs the content instead, so nothing can clip
   // (clipped content was the trigger of the screenshot-stability hang this
   // suite once bisected). The two shots here screenshot the FELT element,
-  // which at auto height takes its own natural size: 375x613 for the
-  // mid-hand fixture (the partner's seña badge wraps the top hand to two
-  // rows) and 375x517 with the señas picker open.
+  // which at auto height takes its own natural size: RE-MEASURED with the
+  // partner-hand-row fix, 375x590.16 for the mid-hand fixture and 375x566.16
+  // with the señas picker open. Both numbers here were stale before that
+  // re-measurement (they read 375x613 and 375x517, from before the reserved
+  // action-bar row existed), and the parenthetical on the first one — "the
+  // partner's seña badge wraps the top hand to two rows" — described the very
+  // defect this fix removes: that chip used to squeeze the partner's hand
+  // below its own three-card width, and [data-position="top"]'s own flex-wrap
+  // (table-styles.ts) now gives the chip its own line instead, which is
+  // exactly the 71.62px this shot lost. The picker-open shot puts no chip on
+  // the top anchor at all, so it did not move a pixel.
   document.body.appendChild(container);
   mounted.push(container);
   return container;
