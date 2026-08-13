@@ -20,6 +20,7 @@ import { renderSenaPicker } from "./senas.js";
 import { TABLE_STRINGS } from "./strings.js";
 import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
+import { formatCountdown } from "./turn-clock.js";
 import { describeTurn } from "./turn.js";
 
 /** "Long enough to register, short enough not to be in the way" (spec) —
@@ -37,9 +38,22 @@ const DEFAULT_HAND_OUTCOME_BANNER_MS = 2600;
  * seconds in real time. */
 const DEFAULT_SENA_NOTICE_MS = 2000;
 
+/** How often the turn countdown redraws itself between broadcasts. One second
+ * is the whole point (the pill shows whole seconds), and it is injectable for
+ * exactly the reason `senaNoticeMs` above is: so a test — and a visual
+ * baseline — never has to wait real seconds to observe it. */
+const DEFAULT_TURN_CLOCK_TICK_MS = 1000;
+
 export interface MatchTableRendererOptions {
   readonly handOutcomeBannerMs?: number;
   readonly senaNoticeMs?: number;
+  /** The clock the turn countdown measures the server's absolute deadline
+   * against. Injected rather than calling `Date.now()` inline so a test can
+   * assert an exact number, and so a visual baseline can freeze one — a live
+   * countdown is otherwise the single most nondeterministic thing that could
+   * possibly land in a screenshot. */
+  readonly now?: () => number;
+  readonly turnClockTickMs?: number;
 }
 
 /** `outcome === null` while the match is still in progress — the ONLY
@@ -65,11 +79,35 @@ function anchorShell(position: TableAnchor): HTMLElement {
  * that owes the next move, so it points at a specific seat rather than a
  * generic "it's someone's turn" signal — the piece that keeps working once a
  * fourth seat exists. */
-function appendTurnBadge(anchor: HTMLElement, text: string): void {
+function appendTurnBadge(anchor: HTMLElement, text: string, remainingMs: number | null): HTMLElement | null {
   const badge = document.createElement("span");
   badge.className = "hexdev-truco-turn-badge";
   badge.textContent = text;
   anchor.appendChild(badge);
+  if (remainingMs === null) return null;
+  const clock = badge.appendChild(document.createElement("span"));
+  clock.className = "hexdev-truco-turn-clock";
+  // THE ACCESSIBILITY DECISION, and the reason this element is a separate
+  // node rather than more text in the badge. A countdown changes ONCE A
+  // SECOND. This table carries three ARIA live regions (announcer.ts), and a
+  // reader speaks a live region every time its content changes — so a
+  // per-second number reaching one would be read out sixty times a turn.
+  //
+  // Two independent things keep that from happening, and the fences in
+  // `turn-clock.browser.test.ts` hold both: the badge lives in the felt, a
+  // completely separate subtree from the announcers (which are direct
+  // children of the shell), so no live region CONTAINS this node; and
+  // `aria-hidden` means the number never joins the badge's accessible name
+  // either, so navigating onto the badge reads "Tu turno" rather than a
+  // second that is already stale by the time it is spoken.
+  //
+  // What a screen-reader user loses is the seconds themselves. What they keep
+  // is the turn announcement, which is the actionable half. Announcing the
+  // remaining time usefully would need its own throttled, coarse region
+  // ("te queda poco"), which is a separate feature, not a detail of this one.
+  clock.setAttribute("aria-hidden", "true");
+  clock.textContent = formatCountdown(remainingMs);
+  return clock;
 }
 
 /**
@@ -85,7 +123,14 @@ function appendTurnBadge(anchor: HTMLElement, text: string): void {
  */
 export function createMatchTableRenderer(
   options?: MatchTableRendererOptions,
-): (container: HTMLElement, view: PlayerView, legalActions: readonly Action[], dispatch: (action: Action) => void, matchEnd?: MatchEndInfo) => void {
+): (
+  container: HTMLElement,
+  view: PlayerView,
+  legalActions: readonly Action[],
+  dispatch: (action: Action) => void,
+  matchEnd?: MatchEndInfo,
+  turnDeadline?: number | null,
+) => void {
   let previousTrickCount = 0;
   let trickFeedback = "";
   let previousView: PlayerView | null = null;
@@ -114,12 +159,23 @@ export function createMatchTableRenderer(
   // even momentarily detached.
   let announcers: { readonly handOutcome: HTMLElement; readonly sena: HTMLElement; readonly turn: HTMLElement } | null = null;
 
+  const now = options?.now ?? Date.now;
+  const turnClockTickMs = options?.turnClockTickMs ?? DEFAULT_TURN_CLOCK_TICK_MS;
+  // The countdown's own repeating timer, plus the two things it reads AT FIRE
+  // TIME rather than capturing at schedule time — the same discipline
+  // `mountedHandOutcomeEl` already documents above: whichever render is
+  // CURRENTLY mounted is the one the tick must redraw.
+  let turnClockTimer: ReturnType<typeof setInterval> | undefined;
+  let mountedTurnClockEl: HTMLElement | null = null;
+  let mountedTurnDeadline: number | null = null;
+
   return function render(
     container: HTMLElement,
     view: PlayerView,
     legalActions: readonly Action[],
     dispatch: (action: Action) => void,
     matchEnd?: MatchEndInfo,
+    turnDeadline?: number | null,
   ): void {
     ensureMatchstickDefs(container.ownerDocument);
     ensureTableStyles(container.ownerDocument);
@@ -219,6 +275,18 @@ export function createMatchTableRenderer(
       return forSelf ? TABLE_STRINGS.yourTurn : TABLE_STRINGS.opponentTurn;
     };
 
+    // ONE clock for the whole table, on the one badge that already names the
+    // seat owing the move — only one seat is ever on the clock, so "visible to
+    // everyone" is the ACTIVE seat's countdown, which all four players read
+    // off the same badge. The deadline is absolute and server-issued, so every
+    // client shows the same number without any per-second traffic.
+    //
+    // `null` (or an omitted argument) means this table is untimed: no clock
+    // node is created at all, which is what keeps every pre-existing render —
+    // and every visual baseline — byte-identical.
+    mountedTurnDeadline = turnDeadline ?? null;
+    const remainingMs = mountedTurnDeadline === null ? null : mountedTurnDeadline - now();
+
     // Was `container.replaceChildren()`. The announcers are the ONE thing on
     // this table that must not be rebuilt, and `replaceChildren` removes every
     // child before re-inserting — even a child handed straight back to it — so
@@ -275,14 +343,41 @@ export function createMatchTableRenderer(
       // how many cards they hold, and whether they owe the next move.
       if (isAnchorActive(other.seat, other.teamId)) {
         anchor.classList.add("hexdev-truco-anchor--active");
-        appendTurnBadge(anchor, turnBadgeText(false));
+        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(false), remainingMs) ?? mountedTurnClockEl;
       }
     }
 
     const bottom = anchors.get("bottom")!;
     if (isAnchorActive(view.self.seat, view.self.teamId)) {
       bottom.classList.add("hexdev-truco-anchor--active");
-      appendTurnBadge(bottom, turnBadgeText(true));
+      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText(true), remainingMs) ?? mountedTurnClockEl;
+    }
+    // Re-armed on every render, because the node it drives is rebuilt on every
+    // render like everything else on this table. Cleared outright when there
+    // is no deadline (a finished match, an untimed table), so no interval is
+    // ever left running against a table that has stopped counting.
+    if (turnClockTimer !== undefined) {
+      clearInterval(turnClockTimer);
+      turnClockTimer = undefined;
+    }
+    if (remainingMs === null) {
+      mountedTurnClockEl = null;
+    } else if (mountedTurnClockEl !== null) {
+      turnClockTimer = setInterval(() => {
+        const clock = mountedTurnClockEl;
+        const deadline = mountedTurnDeadline;
+        // Self-healing: this renderer has no unmount hook, so the one way an
+        // interval could outlive its table is the widget tearing the container
+        // down between broadcasts (`main.ts`'s own `replaceChildren` on
+        // leaving a match). A detached node is that signal, and stopping here
+        // is what keeps a left match from ticking forever in the background.
+        if (clock === null || deadline === null || !clock.isConnected) {
+          if (turnClockTimer !== undefined) clearInterval(turnClockTimer);
+          turnClockTimer = undefined;
+          return;
+        }
+        clock.textContent = formatCountdown(deadline - now());
+      }, turnClockTickMs);
     }
     // PR5 (D-3/blessed refinement 1, tasks §1 item 1/§2.2, §9): the action
     // bar is now a RESERVED GRID ROW below the hand, in flow, at every tier —

@@ -163,6 +163,38 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
     await expect.element(feltOf(container)).toMatchScreenshot("table-mid-hand");
   });
 
+  /**
+   * The per-turn countdown, and the one baseline in this suite whose subject
+   * is a CLOCK — which is exactly why it is captured through frozen time.
+   *
+   * A countdown reading real wall-clock time is the most nondeterministic
+   * thing that could possibly land in a screenshot: every capture would show
+   * a different number and every run would diff. Both inputs are injected
+   * instead — `now` is a constant, and the deadline is that same constant
+   * plus a fixed offset — so this pill renders "0:47" on every machine, on
+   * every run, forever. `turnClockTickMs` is parked far beyond the capture so
+   * the interval cannot repaint the number mid-screenshot either; the suite's
+   * own setup already freezes animations and fonts, but neither of those
+   * would have touched a `setInterval` writing text.
+   *
+   * Every OTHER baseline in this suite passes no deadline at all, which is
+   * why none of them changed: an untimed table renders no clock node.
+   */
+  it("the turn countdown: the active seat's badge carries the time left on its turn", async () => {
+    const container = mountedContainer();
+    const played = applyAction(dealtMatch(), { type: "play-card", playerId: SELF, card: FIXED_DEAL[0]![0]! });
+    if (!played.ok) throw new Error(`visual fixture setup: illegal action — ${played.violation}`);
+    const view = getViewFor(played.state, SELF);
+    const legalActions = getLegalActions(played.state, SELF);
+
+    const FROZEN_NOW = 1_700_000_000_000;
+    const render = createMatchTableRenderer({ now: () => FROZEN_NOW, turnClockTickMs: 10 * 60 * 1000 });
+    render(container, view, legalActions, () => {}, undefined, FROZEN_NOW + 47_000);
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-turn-clock");
+  });
+
   // Also the first log-affected baseline (T-12 part 2): the call-truco
   // action below is this fixture's only CallEvent, so once the call-log
   // panel is mounted (P4-T3) it renders exactly one entry, bottom-left,
