@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action, PlayerId } from "@hexdev/truco-engine";
-import { renderPartnerSena, renderSenaPicker } from "./senas.js";
+import { renderSenaPicker } from "./senas.js";
 
 const PLAYER = "player-a" as PlayerId;
 
@@ -87,23 +87,5 @@ describe("renderSenaPicker — discoverable without being noisy (2v2 only, absen
     el.querySelector<HTMLButtonElement>('button[data-action="send-sena"]')!.click();
 
     expect(dispatch).toHaveBeenCalledExactlyOnceWith(asDeEspada);
-  });
-});
-
-describe("renderPartnerSena — the teammate's most recent claimed signal (structurally never available for an opponent)", () => {
-  it("renders nothing when the teammate has not signaled this hand", () => {
-    const el = freshContainer();
-
-    renderPartnerSena(el, null);
-
-    expect(el.textContent).toBe("");
-  });
-
-  it("shows the teammate's claimed signal in authentic Spanish vocabulary", () => {
-    const el = freshContainer();
-
-    renderPartnerSena(el, "sieteDeOro");
-
-    expect(el.textContent).toContain("7 de oro");
   });
 });

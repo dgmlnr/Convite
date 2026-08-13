@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Action, CallEvent, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import type { Action, CallEvent, HandPlay, PlayerId, PlayerView, SenaView, TeamId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 const SELF = "player-a" as PlayerId;
@@ -431,16 +431,22 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
     expect(el.querySelector(".hexdev-truco-relation-label")).toBeNull();
   });
 
-  it("shows the partner's most recent seña on their own anchor, never on an opponent's", () => {
+  // A seña is a MOMENT, not a badge someone wears for the rest of the hand
+  // (product decision: "si no la viste, la perdiste"). A standing claim leaves
+  // NOTHING on the partner's anchor — no chip, no label, no residue on any
+  // anchor at all. The transient notice in the banner lane is the whole of the
+  // partner-seña UI now; see the seña-notice describe block below.
+  it("leaves no persistent seña chip on the partner's anchor — a standing claim is not table furniture", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const view = teamView({ teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: { signal: "tres", seq: 1 } }] });
 
     render(el, view, [], () => {});
 
-    expect(el.querySelector('[data-position="top"]')!.textContent).toContain("Tres");
-    expect(el.querySelector('[data-position="left"]')!.textContent).not.toContain("Tres");
-    expect(el.querySelector('[data-position="right"]')!.textContent).not.toContain("Tres");
+    expect(el.querySelector(".hexdev-truco-partner-sena")).toBeNull();
+    for (const position of ["top", "left", "right", "bottom"]) {
+      expect(el.querySelector(`[data-position="${position}"]`)!.textContent, `${position} anchor`).not.toContain("Tres");
+    }
   });
 
   it("renders the señas toggle when send-sena is legal, absent when it is not (1v1 stays untouched)", () => {
@@ -453,6 +459,257 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
 
     render(el, baseView(), [], () => {}); // back to a plain 1v1-shaped view, no legal señas
     expect(el.querySelector('button[data-action="senas-toggle"]')).toBeNull();
+  });
+});
+
+/**
+ * A partner's seña is TRANSIENT, exactly like the real table: "si no la
+ * viste, la perdiste". It is the one overlay on this table that is PUSHED by
+ * someone else rather than opened by the person seeing it, which is why it
+ * lives in the reserved banner lane and never over the trick area a player is
+ * reading while they decide.
+ *
+ * Duration is injected the same way `handOutcomeBannerMs` already is, so
+ * these tests never wait multiple seconds in real time.
+ */
+describe("createMatchTableRenderer — a partner's seña is a moment, announced then gone", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  function teamView(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      ...overrides,
+    });
+  }
+
+  it("announces nothing on the very first render, even when the partner already has a seña standing", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView({ signal: "tres", seq: 1 }), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toBe("");
+  });
+
+  it("announces the partner's seña the moment it arrives between two snapshots, in authentic table vocabulary", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+
+    render(el, teamView({ signal: "sieteDeOro", seq: 1 }), [], () => {});
+
+    const notice = el.querySelector(".hexdev-truco-sena-notice")!;
+    expect(notice.textContent).toContain("7 de oro");
+    expect(notice.textContent).toContain("compañero");
+  });
+
+  it("announces a RE-SENT identical signal — the partner insisting is an event, not a no-op", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ senaNoticeMs: 20 });
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "tres", seq: 1 }), [], () => {});
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toContain("Tres");
+
+    render(el, teamView({ signal: "tres", seq: 2 }), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toContain("Tres");
+  });
+
+  it("clears itself after its own injected duration, never waiting on another broadcast to arrive", async () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ senaNoticeMs: 20 });
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "asDeBasto", seq: 1 }), [], () => {});
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toContain("As de basto");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toBe("");
+  });
+
+  it("survives an unrelated re-render while it is up, then still self-clears — the timer owns the clear, not the next broadcast", async () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ senaNoticeMs: 40 });
+    const sena: SenaView = { signal: "dos", seq: 1 };
+    render(el, teamView(null), [], () => {});
+    render(el, teamView(sena), [], () => {});
+
+    // A perfectly ordinary next broadcast: the seña is unchanged, something
+    // else on the table moved.
+    render(el, teamView(sena, { teams: [{ id: MY_TEAM, score: 3 }, { id: OPPONENT_TEAM, score: 1 }] }), [], () => {});
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toContain("Dos");
+
+    await new Promise((resolve) => setTimeout(resolve, 90));
+
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toBe("");
+  });
+
+  it("does not RE-announce a stale seña once its notice has expired — a missed seña stays missed", async () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ senaNoticeMs: 20 });
+    const sena: SenaView = { signal: "asDeEspada", seq: 1 };
+    render(el, teamView(null), [], () => {});
+    render(el, teamView(sena), [], () => {});
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toBe("");
+
+    // The same standing seña arrives again in every later broadcast of the
+    // hand — it must stay silent, or the notice would strobe on every render.
+    render(el, teamView(sena), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-sena-notice")!.textContent).toBe("");
+  });
+
+  it("mounts the notice inside the reserved banner lane, alongside the pending-call and hand-outcome banners", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "tres", seq: 1 }), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-banner-slot > .hexdev-truco-sena-notice")).not.toBeNull();
+  });
+});
+
+/**
+ * Announcements a screen reader can ACTUALLY hear.
+ *
+ * `render` rebuilds this whole table from scratch on every broadcast
+ * (`container.replaceChildren()`, then a fresh `createElement` for every node
+ * beneath it). A live region built that way is a NEW region each time, and a
+ * brand-new region carrying text is not a CHANGE to an existing one — so an
+ * `aria-live` attribute sitting on a rebuilt node announces nothing at all.
+ * Both announcers must therefore be created ONCE per mount and survive the
+ * rebuild, which is the property these tests pin: node IDENTITY across
+ * renders, not the mere presence of an attribute.
+ */
+describe("createMatchTableRenderer — the announcers are real live regions, not attributes on a rebuilt node", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  const handOutcomeAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="hand-outcome"]');
+  const senaAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="partner-sena"]');
+
+  function teamView(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      ...overrides,
+    });
+  }
+
+  const decidedView = (): PlayerView =>
+    baseView({
+      hand: { ...baseView().hand!, outcome: { decided: true, winnerTeamId: MY_TEAM } },
+      teams: [
+        { id: MY_TEAM, score: 6 },
+        { id: OPPONENT_TEAM, score: 2 },
+      ],
+    });
+
+  it.each([
+    ["hand-outcome", handOutcomeAnnouncerOf],
+    ["partner-sena", senaAnnouncerOf],
+  ] as const)("%s: the SAME node survives a re-render — a live region rebuilt per render can never announce", (_name, announcerOf) => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(null), [], () => {});
+    const first = announcerOf(el);
+    expect(first, "the announcer must exist from the very first render").not.toBeNull();
+
+    // A completely different view — the render path below this rebuilds every
+    // other node on the table, which is exactly what the announcer must NOT do.
+    render(el, teamView({ signal: "tres", seq: 1 }), [], () => {});
+    render(el, decidedView(), [], () => {});
+
+    expect(announcerOf(el), "the announcer node's identity must be preserved across renders").toBe(first);
+    expect(first!.isConnected, "the announcer must stay attached, never detached and re-added").toBe(true);
+  });
+
+  it.each([
+    ["hand-outcome", handOutcomeAnnouncerOf],
+    ["partner-sena", senaAnnouncerOf],
+  ] as const)("%s: is a polite, atomic live region — never assertive, never a half-read fragment", (_name, announcerOf) => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+    const announcer = announcerOf(el)!;
+
+    expect(announcer.getAttribute("aria-live")).toBe("polite");
+    expect(announcer.getAttribute("aria-atomic")).toBe("true");
+  });
+
+  it("says nothing at all until something has happened — an empty region on mount is a silent one", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamView(null), [], () => {});
+
+    expect(handOutcomeAnnouncerOf(el)!.textContent).toBe("");
+    expect(senaAnnouncerOf(el)!.textContent).toBe("");
+  });
+
+  it("announces a partner's seña as ONE statement, source and signal together", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+
+    render(el, teamView({ signal: "sieteDeOro", seq: 1 }), [], () => {});
+
+    expect(senaAnnouncerOf(el)!.textContent).toBe("Seña del compañero, 7 de oro");
+  });
+
+  it("announces the hand's outcome as ONE statement, result and points together", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, baseView(), [], () => {});
+
+    render(el, decidedView(), [], () => {});
+
+    expect(handOutcomeAnnouncerOf(el)!.textContent).toBe("Ganaste la mano, +2 tantos");
+  });
+
+  it("does not repeat itself on an unrelated re-render — the same text rewritten is a second announcement in some readers", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "dos", seq: 1 }), [], () => {});
+    const announcer = senaAnnouncerOf(el)!;
+    const spoken = announcer.textContent;
+
+    // Something else on the table moved; the seña is unchanged.
+    const sameSena = teamView({ signal: "dos", seq: 1 }, { teams: [{ id: MY_TEAM, score: 3 }, { id: OPPONENT_TEAM, score: 1 }] });
+    const textNodeBefore = announcer.firstChild;
+    render(el, sameSena, [], () => {});
+
+    expect(announcer.textContent).toBe(spoken);
+    expect(announcer.firstChild, "an untouched region must not have its text node replaced").toBe(textNodeBefore);
+  });
+
+  it("falls silent when the seña expires, and does so as a REMOVAL — the default aria-relevant never speaks a removal", async () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ senaNoticeMs: 20 });
+    render(el, teamView(null), [], () => {});
+    render(el, teamView({ signal: "asDeBasto", seq: 1 }), [], () => {});
+    const announcer = senaAnnouncerOf(el)!;
+    expect(announcer.textContent).toBe("Seña del compañero, As de basto");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    // Emptied by the SAME timer that clears the visible chip, without waiting
+    // for another broadcast — and `aria-relevant` stays at its default
+    // ("additions text"), so emptying it is not itself an announcement.
+    expect(announcer.textContent).toBe("");
+    expect(announcer.getAttribute("aria-relevant")).toBe("additions text");
   });
 });
 

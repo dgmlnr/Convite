@@ -183,10 +183,15 @@ describe("visual: the game table at the wide/ultra container tiers (VB-3 — new
 
   it("ultra (1280px), 2v2 mid-hand: the same deal table-2v2-mid-hand captures, at the ultra card-width/gap tier", async () => {
     const container = await mountedContainer(1280);
-    const signaled = applyAction(dealtTeamMatch(), { type: "send-sena", playerId: PARTNER, signal: "sieteDeOro" });
-    if (!signaled.ok) throw new Error(`visual fixture setup: illegal action — ${signaled.violation}`);
-    const view = getViewFor(signaled.state, SELF);
-    const legalActions = getLegalActions(signaled.state, SELF);
+    // No seña in this fixture any more: the partner's claim used to leave a
+    // persistent chip on their anchor, which this shot existed partly to
+    // capture at the ultra tier. A seña is transient now — it shows once in
+    // the banner lane and is gone — so sending one here would leave nothing
+    // on screen for a single-snapshot capture to record. The narrow-tier
+    // table-2v2-sena-notice baseline owns the notice itself.
+    const state = dealtTeamMatch();
+    const view = getViewFor(state, SELF);
+    const legalActions = getLegalActions(state, SELF);
 
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);

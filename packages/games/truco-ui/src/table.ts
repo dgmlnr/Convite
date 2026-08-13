@@ -1,7 +1,8 @@
 import type { Action, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { announce, createAnnouncer } from "./announcer.js";
 import { renderCallLog, scrollCallLogToNewest } from "./call-log.js";
 import { renderCalls } from "./calls.js";
-import { deriveHandOutcomeEvent, renderHandOutcomeBanner } from "./hand-outcome.js";
+import { deriveHandOutcomeEvent, describeHandOutcome, renderHandOutcomeBanner } from "./hand-outcome.js";
 import type { HandOutcomeEvent } from "./hand-outcome.js";
 import { renderHand } from "./hand.js";
 import type { MatchOutcomeInfo } from "./match-outcome.js";
@@ -13,7 +14,9 @@ import { renderScoreboardPanel } from "./scoreboard-panel.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 import type { TableAnchor } from "./seat-position.js";
-import { renderPartnerSena, renderSenaPicker } from "./senas.js";
+import { derivePartnerSenaEvent, describeSenaNotice, renderSenaNotice } from "./sena-notice.js";
+import type { PartnerSenaEvent } from "./sena-notice.js";
+import { renderSenaPicker } from "./senas.js";
 import { TABLE_STRINGS } from "./strings.js";
 import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
@@ -26,8 +29,17 @@ import { describeTurn } from "./turn.js";
  * need to wait multiple seconds in real time. */
 const DEFAULT_HAND_OUTCOME_BANNER_MS = 2600;
 
+/** A seña is TRANSIENT, exactly like the real table: "si no la viste, la
+ * perdiste". Deliberately shorter than the hand-outcome banner above — that
+ * one acknowledges something already settled and can afford to linger, while
+ * this one interrupts live play and must clear out of the way fast. Same
+ * duration-injection discipline, for the same reason: these tests never wait
+ * seconds in real time. */
+const DEFAULT_SENA_NOTICE_MS = 2000;
+
 export interface MatchTableRendererOptions {
   readonly handOutcomeBannerMs?: number;
+  readonly senaNoticeMs?: number;
 }
 
 /** `outcome === null` while the match is still in progress — the ONLY
@@ -84,6 +96,23 @@ export function createMatchTableRenderer(
   // mounted gets cleared, however many intervening renders happened first.
   let mountedHandOutcomeEl: HTMLElement | null = null;
   const handOutcomeBannerMs = options?.handOutcomeBannerMs ?? DEFAULT_HAND_OUTCOME_BANNER_MS;
+  let senaNoticeEvent: PartnerSenaEvent | null = null;
+  let senaNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+  // Read AT FIRE TIME, never captured at schedule time — same reason as
+  // `mountedHandOutcomeEl` above: whichever render is CURRENTLY mounted is
+  // the one the timer must clear, however many renders happened in between.
+  let mountedSenaNoticeEl: HTMLElement | null = null;
+  const senaNoticeMs = options?.senaNoticeMs ?? DEFAULT_SENA_NOTICE_MS;
+
+  // The two live regions (announcer.ts). Unlike EVERY other node this renderer
+  // touches, these are built ONCE per mount and then left alone: an
+  // announcement is a CHANGE to a region already sitting in the accessibility
+  // tree, so a region rebuilt each render — the shape every other node here
+  // has — could never announce anything. They are created lazily on the first
+  // render because that is when a `Document` is first in hand, and they are
+  // exempted from the wipe below rather than re-appended, so they are never
+  // even momentarily detached.
+  let announcers: { readonly handOutcome: HTMLElement; readonly sena: HTMLElement } | null = null;
 
   return function render(
     container: HTMLElement,
@@ -94,6 +123,20 @@ export function createMatchTableRenderer(
   ): void {
     ensureMatchstickDefs(container.ownerDocument);
     ensureTableStyles(container.ownerDocument);
+
+    // Built on the first render, and re-built only if this renderer is ever
+    // remounted into a different container/document (in which case the old
+    // pair belongs to a tree nobody is reading any more).
+    if (announcers === null || announcers.handOutcome.ownerDocument !== container.ownerDocument) {
+      announcers = {
+        handOutcome: createAnnouncer(container.ownerDocument, "hand-outcome"),
+        sena: createAnnouncer(container.ownerDocument, "partner-sena"),
+      };
+    }
+    if (announcers.handOutcome.parentElement !== container) {
+      container.append(announcers.handOutcome, announcers.sena);
+    }
+    const { handOutcome: handOutcomeAnnouncer, sena: senaAnnouncer } = announcers;
 
     // A hand ending is a POINT-IN-TIME event, not an ongoing view field — it
     // must survive past the very next broadcast (usually the freshly-dealt
@@ -107,7 +150,29 @@ export function createMatchTableRenderer(
       handOutcomeTimer = setTimeout(() => {
         handOutcomeEvent = null;
         if (mountedHandOutcomeEl !== null) renderHandOutcomeBanner(mountedHandOutcomeEl, null);
+        // The region empties with the chip, not on the next broadcast. Silent:
+        // emptying is a REMOVAL, and `aria-relevant` stays at its default
+        // ("additions text"), which excludes removals (announcer.ts).
+        announce(handOutcomeAnnouncer, null);
       }, handOutcomeBannerMs);
+    }
+
+    // A partner's seña is the other POINT-IN-TIME event on this table, and the
+    // only one PUSHED by someone else rather than opened by the person seeing
+    // it — which is why it gets the banner lane rather than a centre overlay
+    // that would cover the trick area while a player is deciding. Same
+    // timer/re-arm shape as the hand-outcome banner immediately above; both
+    // derive from `previousView`, so BOTH must be derived before the
+    // assignment below replaces it.
+    const newSenaEvent = derivePartnerSenaEvent(previousView, view);
+    if (newSenaEvent !== null) {
+      senaNoticeEvent = newSenaEvent;
+      if (senaNoticeTimer !== undefined) clearTimeout(senaNoticeTimer);
+      senaNoticeTimer = setTimeout(() => {
+        senaNoticeEvent = null;
+        if (mountedSenaNoticeEl !== null) renderSenaNotice(mountedSenaNoticeEl, null);
+        announce(senaAnnouncer, null);
+      }, senaNoticeMs);
     }
     previousView = view;
 
@@ -118,7 +183,11 @@ export function createMatchTableRenderer(
     // re-derived from teamId at render time in more than one place.
     const others = [
       ...view.teammates.map((teammate) => ({ ...teammate, teamId: view.self.teamId, relation: "partner" as const })),
-      ...view.opponents.map((opponent) => ({ ...opponent, relation: "opponent" as const, lastSena: null })),
+      // No `lastSena: null` filler on this side any more: it only ever existed
+      // to give both branches the uniform shape the anchor's seña chip read
+      // from, and that chip is gone. Nothing on an anchor reads a seña now, so
+      // the opponent branch goes back to carrying strictly public seat facts.
+      ...view.opponents.map((opponent) => ({ ...opponent, relation: "opponent" as const })),
     ];
     const seatCount = 1 + others.length;
     const positions = resolveSeatPositions({ mySeat: view.self.seat, seatCount });
@@ -149,7 +218,16 @@ export function createMatchTableRenderer(
       return forSelf ? TABLE_STRINGS.yourTurn : TABLE_STRINGS.opponentTurn;
     };
 
-    container.replaceChildren();
+    // Was `container.replaceChildren()`. The announcers are the ONE thing on
+    // this table that must not be rebuilt, and `replaceChildren` removes every
+    // child before re-inserting — even a child handed straight back to it — so
+    // it cannot express "wipe all but these two". Removing the others
+    // individually leaves both live regions continuously attached, never
+    // detached for even a single render, which is what makes an announcement
+    // register at all.
+    for (const child of [...container.children]) {
+      if (child !== handOutcomeAnnouncer && child !== senaAnnouncer) child.remove();
+    }
     container.className = "hexdev-truco-table-shell";
     // Own container-query note: a size container (declared on `container`
     // via table-styles.ts) cannot be styled by its own `@container` rules —
@@ -182,9 +260,11 @@ export function createMatchTableRenderer(
         label.textContent = other.relation === "partner" ? TABLE_STRINGS.partner : TABLE_STRINGS.opponent;
       }
       renderOpponentHand(anchor.appendChild(document.createElement("div")), other.cardsRemaining);
-      if (other.relation === "partner") {
-        renderPartnerSena(anchor.appendChild(document.createElement("div")), other.lastSena?.signal ?? null);
-      }
+      // No seña chip here, deliberately. A partner's claim used to hang on
+      // this anchor for the rest of the hand; it is a MOMENT now, announced
+      // once in the banner lane and gone (see `renderSenaNotice` above). The
+      // anchor carries only what is permanently true of a seat: who they are,
+      // how many cards they hold, and whether they owe the next move.
       if (isAnchorActive(other.seat, other.teamId)) {
         anchor.classList.add("hexdev-truco-anchor--active");
         appendTurnBadge(anchor, turnBadgeText(false));
@@ -267,10 +347,27 @@ export function createMatchTableRenderer(
 
     const handOutcomeBanner = bannerSlot.appendChild(document.createElement("div"));
     mountedHandOutcomeEl = handOutcomeBanner;
-    renderHandOutcomeBanner(
-      handOutcomeBanner,
-      handOutcomeEvent === null ? null : { event: handOutcomeEvent, wonBySelf: handOutcomeEvent.winnerTeamId === view.self.teamId },
-    );
+    const handOutcomeProps =
+      handOutcomeEvent === null ? null : { event: handOutcomeEvent, wonBySelf: handOutcomeEvent.winnerTeamId === view.self.teamId };
+    renderHandOutcomeBanner(handOutcomeBanner, handOutcomeProps);
+    // Spoken from the SAME props the banner draws, so the two can never
+    // describe different things; `announce` itself no-ops when the sentence
+    // has not changed, which is what keeps a re-render silent.
+    announce(handOutcomeAnnouncer, handOutcomeProps === null ? null : describeHandOutcome(handOutcomeProps));
+
+    // Third occupant of the SAME reserved lane, on the same `:empty { display:
+    // none }` terms as the two above. Unlike those two it is not mutually
+    // exclusive with them in time — señas stay legal while a call is open
+    // (truco-engine's `getLegalSenaActions`) — so the lane genuinely holds two
+    // chips at once here, side by side in its flex row rather than stacked on
+    // top of each other. Neither chip is ever hidden to make room for the
+    // other: the pending call is the most important thing on screen while it
+    // is open, and a seña the player never sees is a seña lost.
+    const senaNotice = bannerSlot.appendChild(document.createElement("div"));
+    mountedSenaNoticeEl = senaNotice;
+    const senaNoticeProps = senaNoticeEvent === null ? null : { signal: senaNoticeEvent.signal };
+    renderSenaNotice(senaNotice, senaNoticeProps);
+    announce(senaAnnouncer, senaNoticeProps === null ? null : describeSenaNotice(senaNoticeProps));
 
     const trickArea = center.appendChild(document.createElement("div"));
     // Every card played THIS HAND, not only the trick in progress (spec:

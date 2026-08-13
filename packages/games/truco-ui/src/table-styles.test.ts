@@ -72,6 +72,23 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
     expect(overlayBlock).not.toMatch(/opacity\s*:/);
   });
 
+  // The chip lives on the cloth for about two seconds, which is exactly when
+  // an `opacity` dim would be least forgivable: it would tint the whole thing
+  // toward the felt for the entire time it is readable at all (visual/README:
+  // the historical bug this project already shipped once). Same regex-guard
+  // shape as the hand-outcome banner's own anti-opacity assertion above.
+  it("shows a partner's transient seña on a solid surface, never dimmed toward the felt with opacity", () => {
+    const css = buildTableStylesheet();
+    const noticeBlock = css.match(/\.hexdev-truco-sena-notice\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(noticeBlock.length, "expected a .hexdev-truco-sena-notice rule to exist").toBeGreaterThan(0);
+    expect(noticeBlock).toMatch(/background:\s*var\(--gx-color-surface/);
+    expect(noticeBlock).not.toMatch(/opacity\s*:/);
+    // The lane hides an unoccupied slot the same way the two banners already
+    // do — without this the empty div would still take space in the flex row.
+    expect(css).toContain(".hexdev-truco-sena-notice:empty");
+  });
+
   it("2v2: styles partner vs opponent distinctly via the data-relation attribute (spec: 'obvious at a glance who you are helping')", () => {
     const css = buildTableStylesheet();
 
@@ -85,7 +102,6 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
 
     expect(css).toContain(".hexdev-truco-senas-toggle");
     expect(css).toContain(".hexdev-truco-sena");
-    expect(css).toContain(".hexdev-truco-partner-sena");
   });
 
   // PR2-T4 (VDS-4/design §14 item 3): locked-card readability is the exact
@@ -244,6 +260,9 @@ const CHROME_SURFACES_ON_FELT = [
   ".hexdev-truco-sena",
   ".hexdev-truco-match-over",
   ".hexdev-truco-hand-outcome",
+  // The transient partner-seña notice: the 11th, and the newest chip to sit
+  // physically on the cloth with a background of its own to get wrong.
+  ".hexdev-truco-sena-notice",
 ] as const;
 
 describe("VDS-2 (design §10, hybrid theming by zone): chrome-on-felt surfaces read the tenant's --gx- tokens, the felt itself never does", () => {

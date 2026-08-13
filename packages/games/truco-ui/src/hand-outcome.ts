@@ -83,3 +83,18 @@ export function renderHandOutcomeBanner(container: HTMLElement, props: HandOutco
   points.textContent = TABLE_STRINGS.handPoints(props.event.pointsDelta);
   container.appendChild(points);
 }
+
+/**
+ * The same banner as ONE spoken sentence, for the live region `table.ts`
+ * keeps mounted (see `announcer.ts`). Built from the same two strings the
+ * banner renders, comma-joined: read out with no separator, "Ganaste la
+ * mano+2 tantos" is what a reader would actually say.
+ *
+ * Deliberately mirrors `describeSenaNotice` in `sena-notice.ts` — one
+ * announcer mechanism, one wording function per feature, so neither module
+ * has to know anything about the other.
+ */
+export function describeHandOutcome(props: HandOutcomeBannerProps): string {
+  const headline = props.wonBySelf ? TABLE_STRINGS.wonHand : TABLE_STRINGS.lostHand;
+  return `${headline}, ${TABLE_STRINGS.handPoints(props.event.pointsDelta)}`;
+}
