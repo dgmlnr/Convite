@@ -204,6 +204,18 @@ export class MatchRoom extends Room {
    * attached to a promise that will reject.
    */
   private advanceChain: Promise<void> = Promise.resolve();
+  /**
+   * Set once, at disposal, and never cleared — the room is gone from here on.
+   * Colyseus gives `onDispose` exactly ONE synchronous moment, but this room
+   * has work that comes BACK after it: a timed-out turn's bot is mid-decision
+   * (production wraps every truco strategy in `withThinkingDelay`'s ~1s pause,
+   * so that gap is a real second, not a microtask), and an in-flight
+   * `advance()` still has its own decision to return from. Both resume into
+   * `broadcastViews`, which is why clearing the timer at disposal could never
+   * be enough on its own: there was nothing armed to clear at that instant,
+   * and the re-arm happens afterwards.
+   */
+  private disposed = false;
 
   override onCreate(options: MatchRoomCreateOptions): void {
     const module = options.registry.get(options.gameId);
@@ -619,6 +631,12 @@ export class MatchRoom extends Room {
     // is what makes "no timer outlives the room" true rather than merely
     // likely — a timer left armed would wake up a minute later, drive a bot
     // against a disposed room, and send on dead connections.
+    //
+    // The flag first, and it is the half that actually earns that sentence:
+    // the clear alone only covers a timer armed RIGHT NOW. Work already in
+    // flight returns after this method and re-arms one (see the field's own
+    // doc comment); `broadcastViews` is where the flag stops it.
+    this.disposed = true;
     this.clearTurnTimer();
     return this.advanceChain;
   }
@@ -853,6 +871,15 @@ export class MatchRoom extends Room {
   private broadcastViews(): void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) return;
+    // The whole fence a disposed room needs, and the reason it belongs HERE:
+    // this is the single funnel through which a clock is ever armed
+    // (`armTurnTimer` has no other caller) and the single place anything is
+    // ever sent to a client. Every path that resumes after teardown — the
+    // expired turn's bot, an `advance()` mid-decision — comes back through
+    // this method, so one check covers them all, and neither a fresh timer nor
+    // a send on a dead connection gets past it. Guarding `armTurnTimer`
+    // instead would leave the sends, and would be unreachable code besides.
+    if (this.disposed) return;
     // BEFORE the sends, never after: this is what makes every message below
     // carry the deadline belonging to the state it describes.
     this.armTurnTimer();

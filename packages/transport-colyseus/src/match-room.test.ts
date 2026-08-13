@@ -183,7 +183,15 @@ describe("MatchRoom", () => {
     const { seat0, seat1 } = await createJoinedRoom();
     expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null, turnDeadline: expect.any(Number) } });
     expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number) } });
-    expect(JSON.stringify(seat1.sent[0]?.message)).not.toContain("11");
+    // Deliberately NOT the whole message: `turnDeadline` is an epoch
+    // millisecond, and roughly half of all of them contain the digits "11" by
+    // pure accident — sweeping the server's clock for a game secret proves
+    // nothing about redaction and fails at random (it did, ~50% of runs, the
+    // moment the deadline joined this message). The redacted view and this
+    // seat's own legal actions are the entire surface a secret can leak
+    // through, and they are exactly what this sweeps now.
+    const leakSurface = seat1.sent[0]?.message as { view: unknown; legalActions: unknown };
+    expect(JSON.stringify({ view: leakSurface.view, legalActions: leakSurface.legalActions })).not.toContain("11");
   });
 
   it("applies a legal, in-turn action and broadcasts the resulting view to both seats", async () => {
@@ -833,6 +841,11 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     await joinPromise;
     await disposePromise;
     expect(disposeSettled).toBe(true);
+    // Settling that work broadcast one more view on its way out, and a
+    // broadcast is what arms a clock. A disposed room must not come away from
+    // it holding a timer — same fence the turn-clock suite's own dispose race
+    // proves, reached here through `advance()` instead of an expired turn.
+    expect(room.hasPendingTurnTimer()).toBe(false);
   });
 });
 
@@ -936,6 +949,12 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     const afterTimeout = deadlineOf(seat0.sent.at(-1));
     expect(afterTimeout!).toBeGreaterThan(original!);
 
+    // The same deliberate pause the "moves the deadline when the turn moves"
+    // test above already takes, and for the same reason: `waitFor` returns
+    // within ~2ms of the expiry, so acting immediately can arm the next clock
+    // inside the SAME millisecond and leave two equal deadlines. One tick of
+    // real separation is what makes "started now" observable at all.
+    await sleep(2);
     await room.handleAction(seat1.client, { type: "advance", playerId: P1 });
     // Seat 0 is on the clock again, with a clock that started now — not a
     // leftover deadline from the turn it missed.
@@ -987,9 +1006,14 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
 
     const armed = deadlineOf(seat0.sent[0]);
     expect(typeof armed).toBe("number"); // guards this assertion against passing on two nulls
+    const beforeSignal = seat0.sent.length;
     await sleep(20);
     await room.handleAction(seat1.client, { type: "signal", playerId: P1 });
 
+    // The signal really did reach seat 0. Without this, the deadline check
+    // below could pass VACUOUSLY: `at(-1)` would still be seat 0's own join
+    // message, whose deadline trivially equals the one armed with it.
+    expect(seat0.sent.length).toBeGreaterThan(beforeSignal);
     // Seat 0 still owes the only BLOCKING action, so it is still seat 0's
     // turn and seat 0's clock — untouched to the millisecond.
     expect(deadlineOf(seat0.sent.at(-1))).toBe(armed);
@@ -1022,10 +1046,16 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     expect(seat0.sent).toHaveLength(settled);
   });
 
-  it("never lets a turn timer outlive the room — disposal clears it, and the deadline passing afterwards drives nothing", async () => {
+  it("clears a STILL-ARMED turn timer on disposal — the deadline passing afterwards drives nothing", async () => {
     const { room, seat0 } = await twoHumanSeats({ turnTimeoutSeconds: 0.05 });
     const before = seat0.sent.length;
 
+    // Named for the narrow case it actually covers: disposal lands while the
+    // timer is still armed, where one synchronous clear genuinely is enough.
+    // It does NOT earn the broader "no timer outlives the room" claim — the
+    // case that does is the test below, where the timer has already fired and
+    // its bot is mid-decision, so there is nothing here left to clear and the
+    // re-arm happens after this method has already returned.
     await room.onDispose();
     expect(room.hasPendingTurnTimer()).toBe(false);
 
@@ -1033,6 +1063,51 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     // The deadline has now passed by a wide margin. Nothing fired: no bot
     // played, no view was broadcast against a room the framework already
     // considers torn down.
+    expect(seat0.sent).toHaveLength(before);
+  });
+
+  it("never re-arms a turn timer on a room disposed while the expired turn's bot is still thinking", async () => {
+    // The gap this reproduces is real, not synthetic: production wraps every
+    // truco strategy in `withThinkingDelay`'s ~1s pause, so a room disposed
+    // mid-decision spends a full second in a state where the timer has
+    // ALREADY fired (so disposal's own clear finds nothing) and the bot has
+    // not yet come back to re-arm. The held-open promise below IS that second.
+    const releases: Array<() => void> = [];
+    const heldBotModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+      ...fixtureModule,
+      createBot: () => ({
+        chooseAction: async (_view, legal) => {
+          await new Promise<void>((resolve) => releases.push(resolve));
+          return legal[0]!;
+        },
+      }),
+    };
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([heldBotModule]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds: 0.03 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+
+    // One held decision means seat 0's clock expired and `onTurnExpired`
+    // already cleared it — nothing is armed right now, by construction.
+    await waitFor(() => releases.length === 1);
+    const before = seat0.sent.length;
+
+    const disposePromise = room.onDispose();
+    expect(room.hasPendingTurnTimer()).toBe(false); // disposal's clear found nothing to clear
+
+    releases[0]!();
+    await disposePromise;
+
+    // The bot has now come back into a torn-down room. Neither of these may
+    // happen: a fresh timer would wake up a whole minute later and drive a bot
+    // against a room the framework already released, with no second disposal
+    // left to ever clear it, and the broadcast that arms it goes out on
+    // connections that are already dead.
+    expect(room.hasPendingTurnTimer()).toBe(false);
     expect(seat0.sent).toHaveLength(before);
   });
 });
