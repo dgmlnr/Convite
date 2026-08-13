@@ -512,7 +512,42 @@ export function buildTableStylesheet(): string {
 }
 
 .hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
-[data-position="top"] { grid-area: top; align-items: flex-start; }
+/* flex-wrap (debt: the repo owner's own screenshot — the partner's three card
+ * backs wrapped to 2 + 1 at the top of a 375px felt).
+ *
+ * MECHANISM, measured rather than guessed. This is the ONLY anchor that stays
+ * a flex ROW (bottom/left/right are all flex-direction: column below), and in
+ * 2v2 it is the only one carrying three competing children: the relation
+ * label, the partner's hand, and the partner's seña chip. As a NOWRAP row it
+ * was over-constrained, and the flex algorithm resolves that by SHRINKING its
+ * items — the hand included. The hand is itself a wrapping flex container, so
+ * every pixel shaved off its width past its own 3-card max-content size came
+ * straight out of its third card, which then wrapped to a second line. The
+ * cards were never too big for the felt: the hand was handed less width than
+ * it asked for. MEASURED at 375px, "As de espada" (the widest of the six
+ * closed señas labels): the anchor's content box is 359px, the three
+ * children's natural widths total 79.58 + 188 + 106.14 = 373.72px plus 2 x
+ * 6px of gap = 385.72px — a 26.72px overrun the hand alone paid for, shrinking
+ * to 161.28px and dropping to two rows.
+ *
+ * WRAP, not shrink: a wrapping flex container breaks lines using each item's
+ * own HYPOTHETICAL main size (the hand's full 3-card max-content width), so
+ * the chip moves to a second line of the anchor and the hand keeps every pixel
+ * it asked for. Adaptive by construction, which is why it is the whole fix
+ * rather than a compact-scoped patch: it costs nothing at the widths where all
+ * three children already fit on one line (byte-identical there, 1280px
+ * included), and no flex-shrink/width/card-size override is stacked on top —
+ * the wrap alone is what the measurement justified.
+ *
+ * WIDER THAN REPORTED, and this is the reason the fix is not tier-scoped: with
+ * the WIDEST label the anchor wrapped at 320, 375, 414, 640, 700 AND 960px —
+ * everything except 1280px. 640px is the worst tier of all (a 408px anchor:
+ * the scoreboard has just become a 168px side column while the cards have just
+ * grown 60px -> 84px). Without a chip on the anchor there is no overrun at any
+ * width, which is why the height fences never saw this: none of their fixtures
+ * sends a seña. See table-zone-overlap.browser.test.ts's own partner-row
+ * fence, which asserts a shared top/bottom band at all six of those widths. */
+[data-position="top"] { grid-area: top; align-items: flex-start; flex-wrap: wrap; }
 [data-position="bottom"] { grid-area: bottom; flex-direction: column; }
 [data-position="left"] { grid-area: left; flex-direction: column; }
 [data-position="right"] { grid-area: right; flex-direction: column; }
@@ -601,11 +636,29 @@ export function buildTableStylesheet(): string {
  * the card itself is sized from (matching .hexdev-truco-trick's own calc()
  * convention below), keeps that one-row worst case constant across 3, 2, 1,
  * or 0 remaining cards — for the ROW-layout case (this player's own hand,
- * and a 1v1 opponent / 2v2 partner at top/bottom, where up to 3 cards always
- * fit on one line at every supported width, so the row never needs a second
- * line). The column-layout case (a 2v2 left/right opponent) is NOT covered
- * by this rule and needs its own reservation below — a card removed one at a
- * time shrinks a vertical stack continuously, not just at the 1-to-0 edge. */
+ * and a 1v1 opponent / 2v2 partner at top/bottom).
+ *
+ * WHAT "ONE ROW" ACTUALLY DEPENDS ON (corrected: this comment used to claim
+ * "up to 3 cards always fit on one line at every supported width, so the row
+ * never needs a second line" — the repo owner's own 2v2 screenshot falsified
+ * it, the partner's third card back sitting below the other two). A
+ * min-height RESERVES one row; it does not ENFORCE one. flex-wrap: wrap is
+ * still on below, and a hand handed less width than its own 3-card
+ * max-content size still wraps — min-height only stops this box collapsing,
+ * never stops it growing. Width alone was never the binding constraint:
+ * three cards are comfortably narrower than the felt everywhere (MEASURED
+ * worst case, 640px 2v2 — 260px of cards inside a 408px anchor). The real
+ * constraint is the CONTAINING ANCHOR: this row stays one row exactly as long
+ * as nothing sharing its flex line squeezes it below that max-content width.
+ * Only one anchor has co-tenants at all — the 2v2 top anchor, which also
+ * carries the relation label and the partner's seña chip — and it is a
+ * WRAPPING flex row for precisely this reason (see [data-position="top"]'s
+ * own comment above, and the partner-row fence in
+ * table-zone-overlap.browser.test.ts).
+ *
+ * The column-layout case (a 2v2 left/right opponent) is NOT covered by this
+ * rule and needs its own reservation below — a card removed one at a time
+ * shrinks a vertical stack continuously, not just at the 1-to-0 edge. */
 .hexdev-truco-hand, .hexdev-truco-opponent-hand {
   display: flex;
   flex-wrap: wrap;
