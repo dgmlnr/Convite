@@ -935,7 +935,7 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-pending-call-caller { font-size: var(--hx-text-meta); }
 /* PR5-T4 (tasks §9, design D-6): compact-only, visually hidden but still
  * announced — the exact same clip-path: inset(50%) treatment
- * .hexdev-truco-turn-indicator already uses above. Medium+ restores normal
+ * .hexdev-truco-announcer uses below. Medium+ restores normal
  * inline flow (the correction block immediately below, per the same
  * cascade-order discipline the PR4 correction established). */
 .hexdev-truco-pending-call-turn {
@@ -993,23 +993,6 @@ export function buildTableStylesheet(): string {
   min-height: 1.2em;
   text-align: center;
   font-size: 0.85rem;
-}
-/* Visually hidden, still announced. The per-anchor badge is what a sighted
- * player reads — it says the state and points at the seat — so this line is
- * removed from the visual layout instead of repeating it. Screen readers
- * still get it, and its aria-live means a turn change is spoken rather than
- * silently swapping a badge somewhere on the table. */
-.hexdev-truco-turn-indicator {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-  min-height: 0;
 }
 
 /* PR5-T2 (tasks §9, design §7.2, D-3/blessed refinement 1 — tasks §1 item 1):
@@ -1188,10 +1171,13 @@ export function buildTableStylesheet(): string {
    * on the cloth in the same lane, so it lifts off it the same way. */
   box-shadow: var(--hx-elev-3);
 }
-/* The two ARIA live regions (announcer.ts): visually hidden, still announced —
- * the exact clip-path: inset(50%) treatment .hexdev-truco-turn-indicator
- * already uses, never display: none or visibility: hidden, both of which
- * remove an element from the accessibility tree and would silence it.
+/* Every ARIA live region on this table (announcer.ts): visually hidden, still
+ * announced — never display: none or visibility: hidden, both of which remove
+ * an element from the accessibility tree and would silence it. This rule is
+ * now the single home of that treatment: .hexdev-truco-turn-indicator used to
+ * carry a byte-identical copy of it, back when whose-turn was a bespoke
+ * element rebuilt inside the render path (and therefore never announced at
+ * all); it goes through createAnnouncer now, and its old rule is gone.
  *
  * position: absolute is load-bearing beyond the hiding: these are direct
  * children of the shell (they must outlive the render that rebuilds
