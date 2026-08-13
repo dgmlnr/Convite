@@ -102,7 +102,6 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
 
     expect(css).toContain(".hexdev-truco-senas-toggle");
     expect(css).toContain(".hexdev-truco-sena");
-    expect(css).toContain(".hexdev-truco-partner-sena");
   });
 
   // PR2-T4 (VDS-4/design §14 item 3): locked-card readability is the exact

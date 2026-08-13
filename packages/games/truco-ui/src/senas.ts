@@ -1,4 +1,4 @@
-import type { Action, SenaSignal } from "@hexdev/truco-engine";
+import type { Action } from "@hexdev/truco-engine";
 import { SENA_LABELS, TABLE_STRINGS } from "./strings.js";
 
 type SendSena = Extract<Action, { type: "send-sena" }>;
@@ -69,20 +69,4 @@ export function renderSenaPicker(container: HTMLElement, legalActions: readonly 
   });
 
   container.append(toggle, row);
-}
-
-/**
- * The teammate's most recent claimed signal (`TeammateView.lastSena`) —
- * structurally the ONLY place this can ever render from, since
- * `OpponentView` has no field capable of holding one at all (design §4's
- * redaction discipline, extended to señas). Renders nothing when the
- * teammate has not signaled this hand.
- */
-export function renderPartnerSena(container: HTMLElement, signal: SenaSignal | null): void {
-  container.replaceChildren();
-  if (signal === null) return;
-  container.className = "hexdev-truco-partner-sena";
-  const label = document.createElement("span");
-  label.textContent = `${TABLE_STRINGS.senaSentBy} ${SENA_LABELS[signal]}`;
-  container.appendChild(label);
 }

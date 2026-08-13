@@ -431,16 +431,22 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
     expect(el.querySelector(".hexdev-truco-relation-label")).toBeNull();
   });
 
-  it("shows the partner's most recent seña on their own anchor, never on an opponent's", () => {
+  // A seña is a MOMENT, not a badge someone wears for the rest of the hand
+  // (product decision: "si no la viste, la perdiste"). A standing claim leaves
+  // NOTHING on the partner's anchor — no chip, no label, no residue on any
+  // anchor at all. The transient notice in the banner lane is the whole of the
+  // partner-seña UI now; see the seña-notice describe block below.
+  it("leaves no persistent seña chip on the partner's anchor — a standing claim is not table furniture", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const view = teamView({ teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: { signal: "tres", seq: 1 } }] });
 
     render(el, view, [], () => {});
 
-    expect(el.querySelector('[data-position="top"]')!.textContent).toContain("Tres");
-    expect(el.querySelector('[data-position="left"]')!.textContent).not.toContain("Tres");
-    expect(el.querySelector('[data-position="right"]')!.textContent).not.toContain("Tres");
+    expect(el.querySelector(".hexdev-truco-partner-sena")).toBeNull();
+    for (const position of ["top", "left", "right", "bottom"]) {
+      expect(el.querySelector(`[data-position="${position}"]`)!.textContent, `${position} anchor`).not.toContain("Tres");
+    }
   });
 
   it("renders the señas toggle when send-sena is legal, absent when it is not (1v1 stays untouched)", () => {

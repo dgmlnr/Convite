@@ -261,12 +261,10 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * is the only state in which the partner's top anchor renders three card
  * backs at once (every other fixture in this file has already played trick 1,
  * so the top hand is down to two and the three-across worst case never
- * appears). `sena` optionally puts the partner's claimed-signal chip on the
- * SAME anchor, through the real reducer — never a hand-authored view. */
-function freshlyDealt2v2(sena: SenaSignal | null): MatchState {
+ * appears). */
+function freshlyDealt2v2(): MatchState {
   const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
-  const state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2_MAXIMAL);
-  return sena === null ? state : dispatch(state, { type: "send-sena", playerId: TEAMMATE, signal: sena });
+  return startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2_MAXIMAL);
 }
 
 /**
@@ -279,19 +277,25 @@ function freshlyDealt2v2(sena: SenaSignal | null): MatchState {
  * fence above stayed green through the whole defect), so non-overlap can
  * never tell a broken row apart from an intact one. Same 0.5px epsilon as
  * `overlaps`/`contains`.
+ *
+ * No longer parametrized by a standing seña. The original defect was the
+ * partner's seña CHIP stealing the anchor's width from the hand, so this
+ * fence used to run twice — once bare, once with the widest label the closed
+ * vocabulary can produce. That chip is gone (a seña is transient now and
+ * lives in the banner lane), which means a standing seña puts exactly nothing
+ * on this anchor and the second case had become a byte-identical rerun of the
+ * first, asserting nothing extra. The bare case is kept: the three-across row
+ * is still the anchor's own worst case, chip or no chip.
  */
-async function expectPartnerBacksOnOneRow(width: number, sena: SenaSignal | null): Promise<void> {
+async function expectPartnerBacksOnOneRow(width: number): Promise<void> {
   const el = mountedContainer(width);
   const render = createMatchTableRenderer();
-  const state = freshlyDealt2v2(sena);
+  const state = freshlyDealt2v2();
   render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
   await waitForArt(el);
 
   const topHand = el.querySelector('[data-position="top"] .hexdev-truco-opponent-hand');
   if (topHand === null) throw new Error("fence setup: the partner's top hand is not rendered");
-  if (sena !== null && el.querySelector('[data-position="top"] .hexdev-truco-partner-sena') === null) {
-    throw new Error("fence setup: the partner's seña chip is not on the top anchor — did the reducer really record it?");
-  }
 
   const backs = [...topHand.querySelectorAll(".hexdev-truco-card")];
   expect(backs.length, "sanity: a freshly dealt partner holds exactly three cards").toBe(3);
@@ -310,12 +314,16 @@ async function expectPartnerBacksOnOneRow(width: number, sena: SenaSignal | null
 }
 
 /** The widest of the six closed señas labels (`SENA_LABELS`, strings.ts) —
- * "As de espada", 12 characters. The chip is what steals the anchor's width
- * from the hand, so the fence has to measure the widest chip the closed
- * vocabulary can ever produce, not a comfortable one: MEASURED, at 375px the
- * chip is 88.66px for "7 de oro" and 106.14px for "As de espada", and that
- * 17.5px difference is by itself enough to flip 414px, 700px and 960px from
- * intact to wrapped. */
+ * "As de espada", 12 characters. A closed vocabulary means the widest label
+ * is knowable, so any fence that measures a seña-bearing surface can measure
+ * its true worst case rather than a comfortable one.
+ *
+ * It used to size the partner's anchor CHIP (measured then: 88.66px for
+ * "7 de oro" against 106.14px for "As de espada" at 375px — a 17.5px spread
+ * that by itself flipped several tiers from intact to wrapped). That chip is
+ * gone; the same worst-case reasoning now applies to the transient notice
+ * that replaced it, which has to share the banner lane with an open pending
+ * call. */
 const WIDEST_SENA: SenaSignal = "asDeEspada";
 
 /** The two container widths this suite's shared `WIDTHS` list does not carry,
@@ -622,13 +630,12 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
   // pairing directly above could never have caught it — a wrapped card sits
   // BELOW its siblings, so it overlaps nothing — which is exactly why this
   // fence asserts a shared top/bottom BAND instead. See
-  // `expectPartnerBacksOnOneRow` for the full rationale and the widest-chip
-  // choice. 2v2 only, structurally: the top anchor carries a relation label
-  // and a seña chip alongside the hand ONLY when there is a partner to
-  // label; a 1v1 top anchor holds nothing but the opponent's hand, so a 1v1
-  // case would be vacuous.
-  it.each([null, WIDEST_SENA])("2v2, seña=%s: all three of the partner's card backs sit on one row", async (sena) => {
-    await expectPartnerBacksOnOneRow(width, sena);
+  // `expectPartnerBacksOnOneRow` for the full rationale. 2v2 only,
+  // structurally: the top anchor carries a relation label alongside the hand
+  // ONLY when there is a partner to label; a 1v1 top anchor holds nothing but
+  // the opponent's hand, so a 1v1 case would be vacuous.
+  it("2v2: all three of the partner's card backs sit on one row", async () => {
+    await expectPartnerBacksOnOneRow(width);
   });
 
   /*
@@ -820,7 +827,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
  * `WIDTHS`, so every other pairing in this file keeps the exact four-tier
  * scope its own notes describe. */
 describe.each(PARTNER_ROW_EXTRA_WIDTHS)("the partner's hand stays one row at the widths outside this suite's shared list — %ipx", (width) => {
-  it.each([null, WIDEST_SENA])("2v2, seña=%s: all three of the partner's card backs sit on one row", async (sena) => {
-    await expectPartnerBacksOnOneRow(width, sena);
+  it("2v2: all three of the partner's card backs sit on one row", async () => {
+    await expectPartnerBacksOnOneRow(width);
   });
 });

@@ -1458,17 +1458,6 @@ export function buildTableStylesheet(): string {
   cursor: pointer;
 }
 
-/* The partner's claimed signal -- small, secondary chrome on their own
- * anchor, never on an opponent's (senas.ts's own structural guarantee). */
-.hexdev-truco-partner-sena {
-  /* PR8 (WARNING-1 closure): exact match, --hx-text-label. */
-  font-size: var(--hx-text-label);
-  padding: 2px 8px;
-  border-radius: var(--gx-radius, 999px);
-  background: rgba(0, 0, 0, 0.35);
-  color: var(--gx-color-on-surface, #f2f2f2);
-}
-
 /* Call-log panel (T-11/T-10, design §5.3: "how it holds by construction").
  *
  * PR4 (tasks §8, D-4/blessed refinement 2 — tasks §1 item 2/§2.1): table.ts

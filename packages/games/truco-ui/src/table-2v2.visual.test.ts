@@ -78,18 +78,17 @@ function mountedContainer(): HTMLElement {
   // `min-height: max(100%, …)` stretch over the full container, and an
   // auto-height container hugs the content instead, so nothing can clip
   // (clipped content was the trigger of the screenshot-stability hang this
-  // suite once bisected). The two shots here screenshot the FELT element,
-  // which at auto height takes its own natural size: RE-MEASURED with the
-  // partner-hand-row fix, 375x590.16 for the mid-hand fixture and 375x566.16
-  // with the señas picker open. Both numbers here were stale before that
-  // re-measurement (they read 375x613 and 375x517, from before the reserved
-  // action-bar row existed), and the parenthetical on the first one — "the
-  // partner's seña badge wraps the top hand to two rows" — described the very
-  // defect this fix removes: that chip used to squeeze the partner's hand
-  // below its own three-card width, and [data-position="top"]'s own flex-wrap
-  // (table-styles.ts) now gives the chip its own line instead, which is
-  // exactly the 71.62px this shot lost. The picker-open shot puts no chip on
-  // the top anchor at all, so it did not move a pixel.
+  // suite once bisected). The shots here screenshot the FELT element, which
+  // at auto height takes its own natural size.
+  //
+  // The measurements this note used to carry (375x590.16 mid-hand, 375x566.16
+  // picker-open) belonged to a table that still hung a persistent seña chip on
+  // the partner's anchor. That chip is gone — a seña is transient now and
+  // shows in the banner lane, which is position: absolute and cannot affect
+  // the felt's height at all — so the mid-hand shot no longer reserves a line
+  // for it. Deliberately not restated as fresh numbers: they were only ever
+  // narrative, the baselines themselves are the record, and a stale number in
+  // a comment is worse than none.
   document.body.appendChild(container);
   mounted.push(container);
   return container;
@@ -97,9 +96,9 @@ function mountedContainer(): HTMLElement {
 
 /** The zone under test: the felt. All four seats, every card, the señas
  * toggle/picker (it sits inside table-styles.ts's own reserved action-bar
- * grid row, PR5), and the partner's seña badge all render inside it; only
- * the scoreboard
- * panel below is dropped, and that chrome has its own dedicated baseline
+ * grid row, PR5), and the transient partner-seña notice (the banner lane,
+ * PR5's own reserved zone) all render inside it; only the scoreboard panel
+ * below is dropped, and that chrome has its own dedicated baseline
  * (scoreboard-panel.visual.test.ts) plus the themed 1v1 shot. */
 function feltOf(container: HTMLElement): HTMLElement {
   const felt = container.querySelector<HTMLElement>(".hexdev-truco-table");
@@ -113,20 +112,36 @@ async function waitForArt(container: HTMLElement): Promise<void> {
 }
 
 describe("visual: the 4-seat (2v2) game table — partner obvious at a glance, señas affordance", () => {
-  it("mid-hand: four anchors, partner opposite with a claimed seña, two opponents on the sides", async () => {
+  it("mid-hand: four anchors, partner opposite, two opponents on the sides", async () => {
     const container = mountedContainer();
-    // The partner (seat 2) sends a real seña through the actual reducer —
-    // not a hand-authored view — so its rendered badge reflects genuine
-    // engine state.
-    const signaled = applyAction(dealtTeamMatch(), { type: "send-sena", playerId: PARTNER, signal: "sieteDeOro" });
-    if (!signaled.ok) throw new Error(`visual fixture setup: illegal action — ${signaled.violation}`);
-    const view = getViewFor(signaled.state, SELF);
-    const legalActions = getLegalActions(signaled.state, SELF);
+    const view = getViewFor(dealtTeamMatch(), SELF);
+    const legalActions = getLegalActions(dealtTeamMatch(), SELF);
 
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
     await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-mid-hand");
+  });
+
+  it("a partner' seña, the moment it lands: the transient notice in the banner lane, nothing left on their anchor", async () => {
+    const container = mountedContainer();
+    // Long enough to survive the capture — this shot is about how the notice
+    // LOOKS, not how long it lasts (table.browser.test.ts owns the timing).
+    const render = createMatchTableRenderer({ senaNoticeMs: 60_000 });
+    const before = dealtTeamMatch();
+    // The partner (seat 2) sends a real seña through the actual reducer — not
+    // a hand-authored view — so the captured notice reflects genuine engine
+    // state, including the ordinal the derivation actually reads.
+    const signaled = applyAction(before, { type: "send-sena", playerId: PARTNER, signal: "sieteDeOro" });
+    if (!signaled.ok) throw new Error(`visual fixture setup: illegal action — ${signaled.violation}`);
+
+    // TWO renders, because the notice is derived from a TRANSITION — a single
+    // snapshot can never produce it, exactly as a real client experiences it.
+    render(container, getViewFor(before, SELF), getLegalActions(before, SELF), () => {});
+    render(container, getViewFor(signaled.state, SELF), getLegalActions(signaled.state, SELF), () => {});
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-sena-notice");
   });
 
   it("the señas picker, opened: the local player's own six-signal row, discoverable without being noisy", async () => {

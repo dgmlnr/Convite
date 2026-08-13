@@ -15,7 +15,7 @@ import type { PartnerSenaEvent } from "./sena-notice.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 import type { TableAnchor } from "./seat-position.js";
-import { renderPartnerSena, renderSenaPicker } from "./senas.js";
+import { renderSenaPicker } from "./senas.js";
 import { TABLE_STRINGS } from "./strings.js";
 import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
@@ -153,7 +153,11 @@ export function createMatchTableRenderer(
     // re-derived from teamId at render time in more than one place.
     const others = [
       ...view.teammates.map((teammate) => ({ ...teammate, teamId: view.self.teamId, relation: "partner" as const })),
-      ...view.opponents.map((opponent) => ({ ...opponent, relation: "opponent" as const, lastSena: null })),
+      // No `lastSena: null` filler on this side any more: it only ever existed
+      // to give both branches the uniform shape the anchor's seña chip read
+      // from, and that chip is gone. Nothing on an anchor reads a seña now, so
+      // the opponent branch goes back to carrying strictly public seat facts.
+      ...view.opponents.map((opponent) => ({ ...opponent, relation: "opponent" as const })),
     ];
     const seatCount = 1 + others.length;
     const positions = resolveSeatPositions({ mySeat: view.self.seat, seatCount });
@@ -217,9 +221,11 @@ export function createMatchTableRenderer(
         label.textContent = other.relation === "partner" ? TABLE_STRINGS.partner : TABLE_STRINGS.opponent;
       }
       renderOpponentHand(anchor.appendChild(document.createElement("div")), other.cardsRemaining);
-      if (other.relation === "partner") {
-        renderPartnerSena(anchor.appendChild(document.createElement("div")), other.lastSena?.signal ?? null);
-      }
+      // No seña chip here, deliberately. A partner's claim used to hang on
+      // this anchor for the rest of the hand; it is a MOMENT now, announced
+      // once in the banner lane and gone (see `renderSenaNotice` above). The
+      // anchor carries only what is permanently true of a seat: who they are,
+      // how many cards they hold, and whether they owe the next move.
       if (isAnchorActive(other.seat, other.teamId)) {
         anchor.classList.add("hexdev-truco-anchor--active");
         appendTurnBadge(anchor, turnBadgeText(false));
