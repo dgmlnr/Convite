@@ -317,8 +317,15 @@ export function createMatchTableRenderer(
     // Keeping the node mounted for the whole 2v2 match means
     // `renderSenaPicker` can still legitimately render nothing inside it
     // once send-sena stops being legal, without a visible element vanishing.
+    //
+    // The quota comes off `view.self` and nowhere else — it is the one place
+    // the engine projects it (truco-engine's `view.ts`), and reading it here
+    // rather than deriving anything locally is what keeps the UI's notion of
+    // "spent" identical to the engine's own legality rule.
     if (view.teammates.length > 0) {
-      renderSenaPicker(actionBar.appendChild(document.createElement("div")), legalActions, dispatch);
+      renderSenaPicker(actionBar.appendChild(document.createElement("div")), legalActions, dispatch, {
+        remaining: view.self.senasRemaining,
+      });
     }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });

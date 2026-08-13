@@ -1357,7 +1357,35 @@ export function buildTableStylesheet(): string {
   box-shadow: var(--hx-elev-2);
   cursor: pointer;
 }
-.hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
+.hexdev-truco-senas-toggle:hover:not(:disabled), .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
+/* THE SPENT STATE (per-hand cap, truco-engine's MAX_SENAS_PER_HAND). The
+ * control stays on the band, disabled, rather than disappearing the moment a
+ * player spends their last seña -- a button that vanishes mid-hand reads as a
+ * broken UI, never as a rule, and a rule the player cannot see is not one they
+ * can play around.
+ *
+ * filter, NEVER opacity. This is the exact opacity-over-green TINTING trap the
+ * project already shipped once (.hexdev-truco-card--locked's own history,
+ * further down this file): over the cloth, opacity blends a surface toward the
+ * felt instead of dimming it. Nothing to blend here either way -- this button's
+ * background is transparent, so brightness dims only its border and its label,
+ * which is precisely the present-but-unavailable reading wanted.
+ *
+ * The hover rule above carries :not(:disabled) rather than leaning on source
+ * order to out-cascade it: the two selectors have identical specificity, so
+ * whichever came last would win, and that is far too quiet a dependency for a
+ * state whose whole job is to look unavailable. :focus-visible needs no such
+ * guard -- a disabled button is not focusable at all.
+ *
+ * cursor: not-allowed, not default: the label says WHAT happened, the pointer
+ * says the click will do nothing, and the title attribute senas.ts sets says
+ * WHY. No size, padding or border change anywhere here -- this button lives in
+ * a fixed-height action band that must never grow, so the spent state is
+ * paint-only by construction. */
+.hexdev-truco-senas-toggle:disabled {
+  filter: brightness(0.6);
+  cursor: not-allowed;
+}
 /* The OPEN toggle wears the same gold its own popover does (FU-1 eye review):
  * the card floats a full band above the button that raised it, so without a
  * shared "live right now" signal the two read as unrelated pieces of chrome.

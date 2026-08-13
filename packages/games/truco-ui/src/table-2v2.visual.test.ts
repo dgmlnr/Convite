@@ -1,6 +1,6 @@
 /// <reference types="@vitest/browser/matchers" />
 import { afterEach, describe, expect, it } from "vitest";
-import { applyAction, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND, applyAction, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
 import type { Card, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
@@ -154,6 +154,28 @@ describe("visual: the 4-seat (2v2) game table — partner obvious at a glance, s
     container.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.click();
 
     await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-senas-open");
+  });
+
+  it("the per-hand cap spent: the Señas control still on the band, dimmed and unavailable — never a hole where a button used to be", async () => {
+    const container = mountedContainer();
+    // The whole quota spent through the ACTUAL reducer, not a hand-authored
+    // view, so this captures the state the engine really produces at the cap
+    // (no legal send-sena, senasRemaining 0). SELF's own señas raise no
+    // partner notice, so nothing else is on the felt to confuse the shot.
+    let state = dealtTeamMatch();
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+      const signaled = applyAction(state, { type: "send-sena", playerId: SELF, signal: "tres" });
+      if (!signaled.ok) throw new Error(`visual fixture setup: illegal action — ${signaled.violation}`);
+      state = signaled.state;
+    }
+
+    createMatchTableRenderer()(container, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(container);
+
+    // Same felt-only framing every sibling capture uses, which is also what
+    // makes this shot a fence on the fixed action band: a spent state that
+    // grew the band would move every row above it.
+    await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-senas-spent");
   });
 
   it("three tricks resolved: all four seats show their own persistent, offset pile, most recent on top (spec: Persistent Per-Seat Card Piles)", async () => {

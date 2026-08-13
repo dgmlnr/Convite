@@ -45,7 +45,22 @@ export const TABLE_STRINGS = {
   opponent: "Rival",
   // Señas affordance: discoverable (a real, visible toggle) without being
   // noisy (collapsed by default, never auto-opened) — spec's own framing.
-  senasToggle: "Señas",
+  //
+  // The count rides ON the label rather than in a chip beside it, for a
+  // layout reason as much as a copy one: this button sits in a FIXED-height
+  // action band that must never grow, and a parenthesised number costs the
+  // band nothing while a second element would have to find room in it.
+  senasToggle: (remaining: number): string => `Señas (${remaining})`,
+  // The spent state, said in words rather than as "Señas (0)": a zero in
+  // parentheses reads as a counter that happens to be empty, "Sin señas"
+  // reads as a state the player is in. Same terse register as "Sin envido"
+  // would have at a real table — short enough to keep the button one line.
+  senasSpent: "Sin señas",
+  // The RULE behind the spent state, as a tooltip/title rather than visible
+  // copy: it explains the cap to anyone who did not count their own señas,
+  // and being out of the layout it costs the fixed band nothing. Reads the
+  // engine's own MAX_SENAS_PER_HAND — the number is never written here.
+  senasSpentHint: (limit: number): string => `Ya hiciste las ${limit} señas de la mano`,
   // The transient partner-seña notice. Names WHO without naming a player:
   // in 2v2 there is exactly one compañero, and the notice is deliberately
   // detached from their anchor (it lives in the banner lane), so the source

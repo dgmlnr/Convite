@@ -104,6 +104,23 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
     expect(css).toContain(".hexdev-truco-sena");
   });
 
+  // The per-hand cap keeps this button on the band instead of removing it, so
+  // for the first time it has a real dimmed state — and a dimmed state is
+  // exactly where this project's one historical visual bug lives (visual/
+  // README.md: opacity over the green cloth tinted the surface instead of
+  // dimming it). Same regex-guard shape as the locked-card assertion below.
+  it("dims the spent señas toggle with filter, never opacity — and does not leave the hover brighten fighting it", () => {
+    const css = buildTableStylesheet();
+    const disabledBlock = css.match(/\.hexdev-truco-senas-toggle:disabled\s*\{[^}]*\}/)?.[0] ?? "";
+
+    expect(disabledBlock.length, "expected a .hexdev-truco-senas-toggle:disabled rule to exist").toBeGreaterThan(0);
+    expect(disabledBlock).not.toMatch(/opacity\s*:/);
+    expect(disabledBlock).toMatch(/filter:\s*brightness\(/);
+    // The hover brighten must exclude the disabled button explicitly, rather
+    // than relying on source order to out-cascade it.
+    expect(css).toMatch(/\.hexdev-truco-senas-toggle:hover:not\(:disabled\)/);
+  });
+
   // PR2-T4 (VDS-4/design §14 item 3): locked-card readability is the exact
   // historical bug this project already shipped once (visual/README.md:
   // opacity: 0.55 tinted the card green through the felt). filter never
