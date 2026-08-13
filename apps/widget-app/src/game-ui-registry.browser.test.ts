@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import { createGameUiRegistry } from "./game-ui-registry.js";
 
 let container: HTMLElement;
@@ -12,7 +13,7 @@ afterEach(() => {
 
 const SELF = "player-a" as PlayerId;
 const view: PlayerView = {
-  self: { playerId: SELF, teamId: "player-a:team" as TeamId, seat: 0, hand: [], lastSena: null },
+  self: { playerId: SELF, teamId: "player-a:team" as TeamId, seat: 0, hand: [], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
   teammates: [],
   opponents: [],
   teams: [{ id: "player-a:team" as TeamId, score: 0 }],

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Action, Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { createHardBot } from "./hard.js";
 
@@ -21,7 +22,7 @@ function seededRng(seed: number): RandomSource {
 
 function viewWith(overrides: { hand: readonly Card[]; cardsRemaining?: number; currentTrickPlays?: readonly HandPlay[] }): PlayerView {
   return {
-    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null },
+    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining ?? 3 }],
     teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],
@@ -106,7 +107,7 @@ describe("createHardBot — 2v2: considers BOTH opponents, not just opponents[0]
   function viewWithTwoOpponents(overrides: { hand: readonly Card[] }): PlayerView {
     const OPPONENT_2 = "player-d" as PlayerId;
     return {
-      self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null },
+      self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
       teammates: [],
       // opponents[0] is GUARANTEED empty (0 cards remaining, samples to [])
       // — the OLD code (`sampleOpponentHand` reads only opponents[0]) would

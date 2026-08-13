@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerId, PlayerView, SenaView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import { derivePartnerSenaEvent } from "./sena-notice.js";
 
 const TEAM_A = "team-a" as TeamId;
@@ -11,7 +12,7 @@ const OTHER_PARTNER = "other-partner" as PlayerId;
  * shape `getViewFor` projects, never a hand-authored variant of it. */
 function view(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
   return {
-    self: { playerId: "self" as PlayerId, teamId: TEAM_A, seat: 0, hand: [], lastSena: null },
+    self: { playerId: "self" as PlayerId, teamId: TEAM_A, seat: 0, hand: [], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: [{ playerId: PARTNER, seat: 2, cardsRemaining: 3, lastSena }],
     opponents: [
       { playerId: "opp-1" as PlayerId, teamId: TEAM_B, seat: 1, cardsRemaining: 3 },

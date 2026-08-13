@@ -94,6 +94,29 @@ export interface SenaEvent {
   readonly seq: number;
 }
 
+/** How many señas ONE player has SENT this hand — the state the per-hand cap
+ * (`MAX_SENAS_PER_HAND`) is enforced from.
+ *
+ * IT HAS TO BE ITS OWN STATE, and that is the whole subtlety of the cap.
+ * `HandState.senas` holds at most ONE entry per player, because
+ * `applySenaAction` REPLACES the sender's earlier entry rather than appending
+ * — so counting entries there gives the number of SIGNALERS, never the number
+ * of señas sent, and a player who re-sends the same signal three times still
+ * shows up as exactly one entry. `SenaEvent.seq` is no substitute either: it
+ * is a maximum across ALL senders in the hand, so it counts the opponents'
+ * señas as readily as your own. Neither can be made to answer "how many have
+ * YOU sent", so this counter exists.
+ *
+ * A plain array of records rather than a keyed map, matching `senas`,
+ * `callEvents` and `currentTrickPlays`: `HandState` is JSON that crosses the
+ * transport untouched, and every sibling collection here already reads that
+ * way. Entries appear lazily — a player who has not signaled this hand simply
+ * has none, which reads as a count of zero. */
+export interface SenaSendCount {
+  readonly playerId: PlayerId;
+  readonly count: number;
+}
+
 /** A single played card, recorded with its player/team/seat so trick
  * advancement and turn validation can be driven off it (card play is public
  * once played — the redaction constraint only covers UNPLAYED hand cards). */
@@ -145,6 +168,14 @@ export interface HandState {
    * always empty in a 1v1 match, since `getLegalSenaActions` never offers
    * `send-sena` to a player without a teammate). */
   readonly senas: readonly SenaEvent[];
+  /** How many señas each player has sent this hand, for the per-hand cap —
+   * NOT derivable from `senas` above (see `SenaSendCount`'s own docstring for
+   * why neither its length nor `SenaEvent.seq` can answer that question).
+   *
+   * Hand-scoped exactly like every other field here, which is the entire
+   * reset mechanism: `startHand` seeds it empty, so a new deal hands every
+   * player their whole quota back with no expiry logic and no clock. */
+  readonly senasSent: readonly SenaSendCount[];
   /** Every trick already resolved this hand, oldest first, each holding that
    * trick's own plays in play order. INDEX-ALIGNED with `trickOutcomes` —
    * both are appended in the same atomic transition in `card-play.ts`.
@@ -273,6 +304,7 @@ export function startHand(state: MatchState, deal: DealInput): MatchState {
       trickOutcomes: [],
       outcome: { decided: false },
       senas: [],
+      senasSent: [],
       resolvedTrickPlays: [],
       callEvents: [],
     },

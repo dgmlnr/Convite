@@ -2,6 +2,7 @@ import type { Card } from "./card.js";
 import type { HandOutcome } from "./hand-winner.js";
 import type { PlayerId, TeamId } from "./ids.js";
 import type { CallEvent, EnvidoState, HandPlay, MatchConfig, MatchState, TrucoState } from "./match.js";
+import { getSenasRemaining } from "./senas.js";
 import type { SenaSignal } from "./senas.js";
 import type { TrickOutcome } from "./trick.js";
 
@@ -17,6 +18,13 @@ import type { TrickOutcome } from "./trick.js";
  * could forget (design §4's own redaction discipline, extended — never
  * weakened — to señas). If a future change ever adds a seña-shaped field
  * here, that is the bug; do not "fix" the type to make it compile.
+ *
+ * THAT INCLUDES THE PER-HAND QUOTA, and it is the least obvious case, because
+ * a remaining-count looks like harmless bookkeeping rather than a signal. It
+ * is not: "this rival has 0 señas left" is "this rival signaled three times"
+ * restated, and how many times an opponent signaled is a count nothing in this
+ * contract has ever carried. The quota lives on `PlayerView["self"]` alone —
+ * not here, and not on `TeammateView` either, which has no use for it.
  */
 export interface OpponentView {
   readonly playerId: PlayerId;
@@ -89,6 +97,20 @@ export interface PlayerView {
      * sending UI, never another player's data, so this does not touch the
      * redaction guarantee at all (a player always sees their own claim). */
     readonly lastSena: SenaView | null;
+    /** How many señas the viewer may still send this hand, out of
+     * `MAX_SENAS_PER_HAND` (truco-engine's `senas.ts`). Same terms as
+     * `lastSena` above: the viewer's OWN quota, which they could count for
+     * themselves anyway, so projecting it leaks nothing.
+     *
+     * ON `self` AND NOWHERE ELSE. It is here so the señas control can show
+     * how many are left instead of silently vanishing at the cap; nobody else
+     * needs it, and an opponent must never receive it — see `OpponentView`'s
+     * docstring for why a remaining-count is a send-count in disguise.
+     *
+     * Pure quota arithmetic, never a legality flag: a 1v1 player who can
+     * never signal at all still reads the full cap here, because 0 means
+     * "spent" to every consumer. */
+    readonly senasRemaining: number;
   };
   readonly teammates: readonly TeammateView[];
   readonly opponents: readonly OpponentView[];
@@ -137,7 +159,18 @@ export function getViewFor(state: MatchState, playerId: PlayerId): PlayerView {
   }
 
   return {
-    self: { playerId: self.id, teamId: self.teamId, seat: self.seat, hand: self.hand, lastSena: lastSenaFor(self.id) },
+    self: {
+      playerId: self.id,
+      teamId: self.teamId,
+      seat: self.seat,
+      hand: self.hand,
+      lastSena: lastSenaFor(self.id),
+      // Read for `self.id` ONLY — never in the teammate/opponent loop above.
+      // `hand.senasSent` holds every player's count, so the single thing
+      // keeping the cap from becoming a leak is that this call sits here and
+      // nowhere else.
+      senasRemaining: getSenasRemaining(state, self.id),
+    },
     teammates,
     opponents,
     teams: state.teams.map((team) => ({ id: team.id, score: team.score })),

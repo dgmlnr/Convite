@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Action, Card, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { createBotStrategy } from "./index.js";
 
@@ -7,7 +8,7 @@ const SELF = "player-a" as PlayerId;
 const SELF_TEAM = "player-a:team" as TeamId;
 
 const fixtureView: PlayerView = {
-  self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: [], lastSena: null },
+  self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: [], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
   teammates: [],
   opponents: [],
   teams: [],
