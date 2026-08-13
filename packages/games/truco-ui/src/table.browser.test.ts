@@ -400,6 +400,36 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
     });
   }
 
+  /**
+   * The per-hand cap's wiring, at the level where it can actually break: the
+   * picker reads the quota, but only the table can hand it the RIGHT one. A
+   * hardcoded cap, or a stale/derived count, would pass every picker test in
+   * senas.browser.test.ts and still show the wrong number in the product.
+   */
+  it("shows the viewer's own remaining señas on the toggle, straight from view.self.senasRemaining", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }];
+
+    render(el, teamView({ self: { ...baseView().self, senasRemaining: 2 } }), legal, () => {});
+
+    expect(el.querySelector('button[data-action="senas-toggle"]')!.textContent).toBe("Señas (2)");
+  });
+
+  it("keeps the Señas control on the action bar once the quota is spent — disabled, never removed mid-hand", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    // The engine's real state at the cap: send-sena is no longer legal, and
+    // the viewer's own quota reads zero.
+    render(el, teamView({ self: { ...baseView().self, senasRemaining: 0 } }), [], () => {});
+
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]');
+    expect(toggle, "the control must not vanish when the cap bites").not.toBeNull();
+    expect(toggle!.disabled).toBe(true);
+    expect(toggle!.textContent).toBe("Sin señas");
+  });
+
   it("marks the partner's anchor data-relation=partner and both opponents' anchors data-relation=opponent", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
