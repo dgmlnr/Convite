@@ -9,8 +9,10 @@
  * brand-new region that happens to contain text is not a change to anything,
  * it is a new region. So an `aria-live` attribute placed on a node inside that
  * render path announces nothing at all, however correct it looks in the DOM.
- * (`.hexdev-truco-turn-indicator` in `table.ts` is exactly that shape today —
- * see this module's own note in the apply report.) The only way to make an
+ * (`.hexdev-truco-turn-indicator` was exactly that shape, and had therefore
+ * never announced anything in its life while its own comment claimed it was
+ * "read out" — it is gone, and whose-turn goes through this module now.) The
+ * only way to make an
  * announcement real here is for the element to OUTLIVE the render, which is
  * what `createAnnouncer` is for and what `table.browser.test.ts` fences by
  * asserting node identity across renders rather than attribute presence.

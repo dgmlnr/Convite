@@ -242,11 +242,11 @@ describe("createMatchTableRenderer — the pending call stays on the table until
 
     render(el, view, [], () => {});
 
-    // The indicator is now permanently hidden from sight (the per-anchor
-    // badge is what a sighted player reads) and exists only as the live
+    // Whose turn it is is permanently hidden from sight (the per-anchor badge
+    // is what a sighted player reads) and exists only as the live
     // announcement — so what matters is that it ANNOUNCES nothing that
     // contradicts the banner, not that it is display-hidden.
-    expect(el.querySelector<HTMLElement>(".hexdev-truco-turn-indicator")!.textContent).toBe("");
+    expect(el.querySelector<HTMLElement>('[data-announces="turn"]')!.textContent).toBe("");
   });
 
   it("announces whose turn it is for screen readers even though the line is not painted", () => {
@@ -255,7 +255,7 @@ describe("createMatchTableRenderer — the pending call stays on the table until
 
     render(el, baseView(), [], () => {});
 
-    const indicator = el.querySelector<HTMLElement>(".hexdev-truco-turn-indicator")!;
+    const indicator = el.querySelector<HTMLElement>('[data-announces="turn"]')!;
     expect(indicator.textContent).not.toBe("");
     expect(indicator.getAttribute("aria-live")).toBe("polite");
     // Removed from the visual layout, not from the accessibility tree.
@@ -594,6 +594,7 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
 
   const handOutcomeAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="hand-outcome"]');
   const senaAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="partner-sena"]');
+  const turnAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn"]');
 
   function teamView(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
     return baseView({
@@ -618,6 +619,7 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
   it.each([
     ["hand-outcome", handOutcomeAnnouncerOf],
     ["partner-sena", senaAnnouncerOf],
+    ["turn", turnAnnouncerOf],
   ] as const)("%s: the SAME node survives a re-render — a live region rebuilt per render can never announce", (_name, announcerOf) => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
@@ -638,6 +640,7 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
   it.each([
     ["hand-outcome", handOutcomeAnnouncerOf],
     ["partner-sena", senaAnnouncerOf],
+    ["turn", turnAnnouncerOf],
   ] as const)("%s: is a polite, atomic live region — never assertive, never a half-read fragment", (_name, announcerOf) => {
     const el = freshContainer();
     const render = createMatchTableRenderer();

@@ -112,7 +112,7 @@ export function createMatchTableRenderer(
   // render because that is when a `Document` is first in hand, and they are
   // exempted from the wipe below rather than re-appended, so they are never
   // even momentarily detached.
-  let announcers: { readonly handOutcome: HTMLElement; readonly sena: HTMLElement } | null = null;
+  let announcers: { readonly handOutcome: HTMLElement; readonly sena: HTMLElement; readonly turn: HTMLElement } | null = null;
 
   return function render(
     container: HTMLElement,
@@ -131,12 +131,13 @@ export function createMatchTableRenderer(
       announcers = {
         handOutcome: createAnnouncer(container.ownerDocument, "hand-outcome"),
         sena: createAnnouncer(container.ownerDocument, "partner-sena"),
+        turn: createAnnouncer(container.ownerDocument, "turn"),
       };
     }
     if (announcers.handOutcome.parentElement !== container) {
-      container.append(announcers.handOutcome, announcers.sena);
+      container.append(announcers.handOutcome, announcers.sena, announcers.turn);
     }
-    const { handOutcome: handOutcomeAnnouncer, sena: senaAnnouncer } = announcers;
+    const { handOutcome: handOutcomeAnnouncer, sena: senaAnnouncer, turn: turnAnnouncer } = announcers;
 
     // A hand ending is a POINT-IN-TIME event, not an ongoing view field — it
     // must survive past the very next broadcast (usually the freshly-dealt
@@ -221,12 +222,19 @@ export function createMatchTableRenderer(
     // Was `container.replaceChildren()`. The announcers are the ONE thing on
     // this table that must not be rebuilt, and `replaceChildren` removes every
     // child before re-inserting — even a child handed straight back to it — so
-    // it cannot express "wipe all but these two". Removing the others
-    // individually leaves both live regions continuously attached, never
-    // detached for even a single render, which is what makes an announcement
-    // register at all.
+    // it cannot express "wipe all but these". Removing the others individually
+    // leaves every live region continuously attached, never detached for even
+    // a single render, which is what makes an announcement register at all.
+    //
+    // Membership is tested against the announcers OBJECT rather than against
+    // named locals: adding a fourth announcer and forgetting to add it to a
+    // hand-written list here would silently delete it on the very first
+    // re-render and leave a live region that announces nothing — which is the
+    // exact bug class this whole helper exists to kill, and which a list of
+    // named comparisons had already reintroduced once.
+    const liveRegions = new Set<Element>(Object.values(announcers));
     for (const child of [...container.children]) {
-      if (child !== handOutcomeAnnouncer && child !== senaAnnouncer) child.remove();
+      if (!liveRegions.has(child)) child.remove();
     }
     container.className = "hexdev-truco-table-shell";
     // Own container-query note: a size container (declared on `container`
@@ -392,13 +400,26 @@ export function createMatchTableRenderer(
     //
     // The badge wins because it carries strictly more information (which
     // seat), and it is the piece that keeps working once a fourth anchor
-    // exists and "whose turn" stops being a two-way question. This line
-    // survives only as the accessible announcement, off-screen but read out.
-    const turnIndicator = document.createElement("p");
-    turnIndicator.className = "hexdev-truco-turn-indicator";
-    turnIndicator.setAttribute("aria-live", "polite");
-    turnIndicator.textContent = pendingCall === null ? describeTurn(view.self.seat, turnSeat) : "";
-    center.appendChild(turnIndicator);
+    // exists and "whose turn" stops being a two-way question. Whose turn it
+    // is survives only as the accessible announcement, off-screen but read
+    // out.
+    //
+    // It goes through the SAME announcer the other two point-in-time
+    // announcements use, and that is a bug fix, not tidying. This used to be
+    // a <p class="hexdev-truco-turn-indicator"> built right here, inside the
+    // render path, carrying its own aria-live -- which means it was a fresh
+    // node on every broadcast, and a live region only announces when the node
+    // PERSISTS across content changes. It had therefore never announced
+    // anything, while its own comment claimed it was "read out". The
+    // announcer is created once per mount and stays continuously attached,
+    // so the announcement is real; `announce` also skips rewriting unchanged
+    // text, which matters here because this line is recomputed on every
+    // single broadcast and would otherwise re-announce the same sentence.
+    //
+    // Silent while a call is pending, exactly as before: the pending-call
+    // banner is the thing to read then, and emptying a region is a REMOVAL,
+    // which `aria-relevant`'s default excludes.
+    announce(turnAnnouncer, pendingCall === null ? describeTurn(view.self.seat, turnSeat) : null);
 
     // Call-log panel (spec: "Call-Log Panel With Bounded Footprint", "History
     // Persists Through the Outcome Banner"). Reads the SAME `positions` map
