@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { sampleAllOpponentHands, sampleOpponentHand } from "./determinize.js";
 
@@ -24,7 +25,7 @@ function seededRng(seed: number): RandomSource {
 
 function baseView(overrides: { selfHand: readonly Card[]; cardsRemaining: number }): PlayerView {
   return {
-    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.selfHand, lastSena: null },
+    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.selfHand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining }],
     teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],

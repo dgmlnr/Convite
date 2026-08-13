@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Action, Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import { createNormalBot } from "./normal.js";
 
 const SELF = "player-a" as PlayerId;
@@ -13,7 +14,7 @@ function viewWith(overrides: {
   teammates?: PlayerView["teammates"];
 }): PlayerView {
   return {
-    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null },
+    self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: overrides.teammates ?? [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 }],
     teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],

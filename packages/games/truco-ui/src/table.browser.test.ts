@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action, CallEvent, HandPlay, PlayerId, PlayerView, SenaView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 const SELF = "player-a" as PlayerId;
@@ -24,7 +25,7 @@ const OPPONENT_TEAM = "player-b:team" as TeamId;
 
 function baseView(overrides: Partial<PlayerView> = {}): PlayerView {
   return {
-    self: { playerId: SELF, teamId: MY_TEAM, seat: 0, hand: [{ suit: "espada", rank: 1 }], lastSena: null },
+    self: { playerId: SELF, teamId: MY_TEAM, seat: 0, hand: [{ suit: "espada", rank: 1 }], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: [],
     opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 }],
     teams: [

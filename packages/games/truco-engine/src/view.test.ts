@@ -7,6 +7,7 @@ import type { PlayerId } from "./ids.js";
 import { calculateEnvidoPoints } from "./envido-chain.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
 import type { MatchState } from "./match.js";
+import { MAX_SENAS_PER_HAND } from "./senas.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 import { getViewFor } from "./view.js";
@@ -181,8 +182,16 @@ describe("getViewFor — señas redaction property, for any reachable 2v2 state"
    * it. This one walks the whole serialized opponent view and fails on ANY
    * key from the seña vocabulary, wherever it appears and whatever it is
    * called, so widening the projection's shape can never quietly widen its
-   * audience too. */
-  const SENA_KEYS = ["lastSena", "senas", "sena", "signal", "seq"] as const;
+   * audience too.
+   *
+   * THIS LIST IS THE MAINTENANCE BURDEN OF THAT PROMISE: every new seña-shaped
+   * name has to be added to it, or the property silently stops covering the
+   * newest carrier. `senasSent`/`senasRemaining` are the per-hand cap's own two
+   * names — the count in `HandState` and the quota projected onto
+   * `PlayerView["self"]`. The quota is deliberately NOT on `OpponentView`:
+   * "this rival has 0 señas left" is "this rival signaled three times", which
+   * is exactly the count the current contract never leaks. */
+  const SENA_KEYS = ["lastSena", "senas", "sena", "signal", "seq", "senasSent", "senasRemaining"] as const;
   const senaShapedKeysIn = (value: unknown): readonly string[] => {
     if (Array.isArray(value)) return value.flatMap(senaShapedKeysIn);
     if (typeof value !== "object" || value === null) return [];
@@ -208,6 +217,88 @@ function apply(state: MatchState, action: Action): MatchState {
   if (!result.ok) throw new Error(`expected legal action, got violation: ${result.violation}`);
   return result.state;
 }
+
+/**
+ * The per-hand seña quota reaches its OWNER and no one else. The sender needs
+ * it (the UI shows how many are left); a teammate does not, and an opponent
+ * must not — a rival's remaining quota is their send COUNT restated, which is
+ * information no field in this contract has ever carried. So it lives on
+ * `PlayerView["self"]` alone, and the shape-agnostic property above (with
+ * `senasRemaining`/`senasSent` in its vocabulary) is what keeps it there.
+ */
+describe("getViewFor — the seña quota is projected to its OWNER only", () => {
+  it("starts every player at the full cap on a fresh hand and counts down with each of their OWN sends", () => {
+    const fresh = freshTeamHandFor2v2();
+    expect(getViewFor(fresh, playerA).self.senasRemaining).toBe(MAX_SENAS_PER_HAND);
+
+    const once = apply(fresh, { type: "send-sena", playerId: playerA, signal: "tres" });
+    expect(getViewFor(once, playerA).self.senasRemaining).toBe(MAX_SENAS_PER_HAND - 1);
+
+    // A re-send of the SAME signal spends quota too — `senas` would look
+    // unchanged here, which is the whole reason the count is its own state.
+    const twice = apply(once, { type: "send-sena", playerId: playerA, signal: "tres" });
+    expect(getViewFor(twice, playerA).self.senasRemaining).toBe(MAX_SENAS_PER_HAND - 2);
+  });
+
+  it("bottoms out at zero once the cap is spent, never a negative remainder", () => {
+    let state = freshTeamHandFor2v2();
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+      state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+    }
+
+    expect(getViewFor(state, playerA).self.senasRemaining).toBe(0);
+  });
+
+  it("is the VIEWER's own quota, never a mirror of whoever signaled — a partner spending theirs leaves the viewer's untouched", () => {
+    const state = apply(freshTeamHandFor2v2(), { type: "send-sena", playerId: playerA, signal: "dos" });
+
+    expect(getViewFor(state, playerA).self.senasRemaining).toBe(MAX_SENAS_PER_HAND - 1);
+    expect(getViewFor(state, playerC).self.senasRemaining).toBe(MAX_SENAS_PER_HAND); // playerA's PARTNER
+    expect(getViewFor(state, playerB).self.senasRemaining).toBe(MAX_SENAS_PER_HAND); // an OPPONENT
+  });
+
+  it("puts the quota on `self` and NOWHERE else — no teammate entry and no opponent entry carries it, in any shape", () => {
+    let state = freshTeamHandFor2v2();
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+      state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+    }
+
+    for (const viewer of [playerA, playerB, playerC, playerD]) {
+      const view = getViewFor(state, viewer);
+      expect(view.self).toHaveProperty("senasRemaining");
+      for (const entry of [...view.teammates, ...view.opponents]) {
+        expect(entry).not.toHaveProperty("senasRemaining");
+        expect(entry).not.toHaveProperty("senasSent");
+      }
+    }
+  });
+
+  it("keeps a spent opponent indistinguishable from an untouched one — the whole view of a rival is byte-identical before and after they burn their quota", () => {
+    const fresh = freshTeamHandFor2v2();
+    let spent = fresh;
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+      spent = apply(spent, { type: "send-sena", playerId: playerA, signal: "dos" });
+    }
+
+    // playerB is playerA's OPPONENT: nothing in their entry for playerA may
+    // move, or the count has leaked by another name.
+    const before = getViewFor(fresh, playerB).opponents.find((entry) => entry.playerId === playerA);
+    const after = getViewFor(spent, playerB).opponents.find((entry) => entry.playerId === playerA);
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+  });
+
+  it("is hand-scoped: a fresh deal hands the full quota back", () => {
+    let state = freshTeamHandFor2v2();
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+      state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+    }
+    expect(getViewFor(state, playerA).self.senasRemaining).toBe(0);
+
+    const redealt = startHand(state, [[], [], [], []]);
+
+    expect(getViewFor(redealt, playerA).self.senasRemaining).toBe(MAX_SENAS_PER_HAND);
+  });
+});
 
 /**
  * Envido declaration redaction (spec: "Envido Declaration Redaction Is

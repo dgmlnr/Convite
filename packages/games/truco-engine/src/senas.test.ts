@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { Card } from "./card.js";
 import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
 import type { MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
-import { SENA_SIGNALS } from "./senas.js";
+import { MAX_SENAS_PER_HAND, SENA_SIGNALS } from "./senas.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
@@ -20,6 +21,29 @@ function apply(state: MatchState, action: Action): MatchState {
 function freshTeamHand(): MatchState {
   const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
   return startHand(state, [[], [], [], []]);
+}
+
+/** Like `freshTeamHand`, but with REAL cards dealt, so truco/envido/card-play
+ * are genuinely on offer — the only way the "cap gates nothing else" fence
+ * below has something other than `send-sena` to lose. */
+function dealtTeamHand(): MatchState {
+  const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
+  const deal: readonly (readonly Card[])[] = [
+    [{ suit: "espada", rank: 1 }, { suit: "espada", rank: 2 }, { suit: "espada", rank: 3 }],
+    [{ suit: "basto", rank: 1 }, { suit: "basto", rank: 2 }, { suit: "basto", rank: 3 }],
+    [{ suit: "oro", rank: 1 }, { suit: "oro", rank: 2 }, { suit: "oro", rank: 3 }],
+    [{ suit: "copa", rank: 1 }, { suit: "copa", rank: 2 }, { suit: "copa", rank: 3 }],
+  ];
+  return startHand(state, deal);
+}
+
+/** Spends `playerId`'s whole per-hand quota, one legal seña at a time. */
+function spendWholeQuota(state: MatchState, playerId: PlayerId): MatchState {
+  let spent = state;
+  for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+    spent = apply(spent, { type: "send-sena", playerId, signal: "dos" });
+  }
+  return spent;
 }
 
 function freshHeadToHeadHand(): MatchState {
@@ -107,5 +131,100 @@ describe("applyAction — send-sena records the signal without validating it aga
     const state = freshHeadToHeadHand();
     const result = applyAction(state, { type: "send-sena", playerId: playerA, signal: "dos" });
     expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * The per-hand cap (product decision: at a real table abusing señas gets you
+ * SEEN by the opponent, a cost the digital table lost entirely — the cap is
+ * what puts a price back on the side channel).
+ */
+describe("señas — at most MAX_SENAS_PER_HAND per PLAYER per hand", () => {
+  it("caps a hand at three señas per player — a PRODUCT number (enough to describe three cards, a fourth is abuse), fenced here so moving it is a deliberate act", () => {
+    expect(MAX_SENAS_PER_HAND).toBe(3);
+  });
+
+  it("counts every SEND, which is not what `senas` records — that array keeps only the latest entry per player, so its length can never be the count", () => {
+    let state = apply(freshTeamHand(), { type: "send-sena", playerId: playerA, signal: "dos" });
+    state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+
+    // The trap, asserted from both sides: ONE entry in `senas` (the second
+    // send replaced the first), but TWO sends against the quota.
+    expect(state.hand!.senas.filter((entry) => entry.playerId === playerA)).toHaveLength(1);
+    expect(state.hand!.senasSent).toContainEqual({ playerId: playerA, count: 2 });
+  });
+
+  it("is per PLAYER, never per team — a partner burning their own quota leaves yours untouched", () => {
+    // playerC is playerA's PARTNER (seats 0 and 2 — createTeamMatch's alternating pattern).
+    let state = apply(freshTeamHand(), { type: "send-sena", playerId: playerA, signal: "dos" });
+    state = apply(state, { type: "send-sena", playerId: playerC, signal: "tres" });
+    state = apply(state, { type: "send-sena", playerId: playerC, signal: "tres" });
+
+    expect(state.hand!.senasSent).toContainEqual({ playerId: playerA, count: 1 });
+    expect(state.hand!.senasSent).toContainEqual({ playerId: playerC, count: 2 });
+  });
+
+  it("keeps the LAST seña of the quota legal and drops send-sena only once the cap is actually reached", () => {
+    let state = freshTeamHand();
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND; sent += 1) {
+      expect(getLegalActions(state, playerA).some((action) => action.type === "send-sena")).toBe(true);
+      state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+    }
+
+    expect(getLegalActions(state, playerA).some((action) => action.type === "send-sena")).toBe(false);
+  });
+
+  it("does not narrow WHICH signals are offered on the way to the cap — all six stay on the table (bluffing rule), the cap limits HOW MANY", () => {
+    let state = freshTeamHand();
+    for (let sent = 0; sent < MAX_SENAS_PER_HAND - 1; sent += 1) {
+      state = apply(state, { type: "send-sena", playerId: playerA, signal: "dos" });
+    }
+
+    const offered = getLegalActions(state, playerA).filter((action) => action.type === "send-sena");
+    expect(offered.map((action) => (action as { signal: string }).signal).sort()).toEqual([...SENA_SIGNALS].sort());
+  });
+
+  it("rejects an over-cap send through the SAME legality path everything else uses — a violation, and nothing recorded", () => {
+    const state = spendWholeQuota(freshTeamHand(), playerA);
+
+    const result = applyAction(state, { type: "send-sena", playerId: playerA, signal: "tres" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a violation");
+    expect(result.violation).toContain("send-sena");
+    // The rejected send left no trace: neither the claim nor the count moved.
+    expect(state.hand!.senasSent).toContainEqual({ playerId: playerA, count: MAX_SENAS_PER_HAND });
+    expect(state.hand!.senas.find((entry) => entry.playerId === playerA)?.signal).toBe("dos");
+  });
+
+  it("takes ONLY send-sena away at the cap — every other action type the player had stays legal", () => {
+    const state = dealtTeamHand();
+    const before = getLegalActions(state, playerA);
+    expect(before.some((action) => action.type !== "send-sena")).toBe(true); // sanity: there is something else that could break
+
+    const after = getLegalActions(spendWholeQuota(state, playerA), playerA);
+
+    // Exact-equality, not a spot check: anything the cap accidentally gated
+    // would go missing from this list, and anything it accidentally UNLOCKED
+    // would appear in it.
+    expect(after).toEqual(before.filter((action) => action.type !== "send-sena"));
+  });
+
+  it("resets the quota on a fresh deal — the count is hand-scoped, exactly like the rest of `HandState`", () => {
+    const spent = spendWholeQuota(freshTeamHand(), playerA);
+    expect(getLegalActions(spent, playerA).some((action) => action.type === "send-sena")).toBe(false);
+
+    const redealt = startHand(spent, [[], [], [], []]);
+
+    expect(redealt.hand!.senasSent).toEqual([]);
+    expect(getLegalActions(redealt, playerA).some((action) => action.type === "send-sena")).toBe(true);
+  });
+
+  it("spends one player's quota without touching anyone else's — the other three can still signal at will", () => {
+    const state = spendWholeQuota(freshTeamHand(), playerA);
+
+    for (const other of [playerB, playerC, playerD]) {
+      expect(getLegalActions(state, other).some((action) => action.type === "send-sena")).toBe(true);
+    }
   });
 });

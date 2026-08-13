@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlayerView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import { deriveHandOutcomeEvent } from "./hand-outcome.js";
 
 const TEAM_A = "team-a" as TeamId;
@@ -7,7 +8,7 @@ const TEAM_B = "team-b" as TeamId;
 
 function view(overrides: Partial<PlayerView> & { readonly dealerSeat?: number } = {}): PlayerView {
   return {
-    self: { playerId: "p1" as never, teamId: TEAM_A, seat: 0, hand: [], lastSena: null },
+    self: { playerId: "p1" as never, teamId: TEAM_A, seat: 0, hand: [], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: [],
     opponents: [{ playerId: "p2" as never, teamId: TEAM_B, seat: 1, cardsRemaining: 0 }],
     teams: [
