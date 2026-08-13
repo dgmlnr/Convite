@@ -87,7 +87,7 @@ async function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}) {
   // matching exactly what `apps/server/src/index.ts` wires in production.
   const verifier = await createSessionTokenVerifier(issuer.publicKey);
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race"] },
+    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal"] },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
   // Generous default so unrelated tests never accidentally trip the limit —
@@ -181,8 +181,8 @@ describe("MatchRoom", () => {
 
   it("sends each client only its own per-seat view — the opponent's secret never appears", async () => {
     const { seat0, seat1 } = await createJoinedRoom();
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null } });
-    expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null } });
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null, turnDeadline: expect.any(Number) } });
+    expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number) } });
     expect(JSON.stringify(seat1.sent[0]?.message)).not.toContain("11");
   });
 
@@ -191,7 +191,7 @@ describe("MatchRoom", () => {
     room.handleAction(seat0.client, { type: "advance", playerId: P0 });
     expect(seat0.sent).toHaveLength(2);
     expect(seat1.sent).toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 1 }, legalActions: [], outcome: null } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 1 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number) } });
   });
 
   it("rejects an out-of-turn action and leaves state unchanged (server-authoritative)", async () => {
@@ -444,8 +444,8 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     // system action's resulting (dealt) view — applied without any client
     // ever sending an "action" message.
     expect(seat0.sent).toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null } });
-    expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
+    expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
   });
 
   it("never advances a module with no requestSystemAction registered, even with zero legal actions", async () => {
@@ -458,7 +458,7 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
     await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
     expect(seat0.sent).toHaveLength(1); // stuck: no second broadcast ever arrives
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [], outcome: null } });
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [], outcome: null, turnDeadline: null } });
   });
 });
 
@@ -833,5 +833,206 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     await joinPromise;
     await disposePromise;
     expect(disposeSettled).toBe(true);
+  });
+});
+
+describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-turn time limit, bot plays the expired turn)", () => {
+  /** Same duration-injection discipline `reconnectionWindowSeconds` already
+   * established in this file: the production default is a whole minute, and
+   * every test here passes a tiny value instead of waiting for one. */
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** Returns the instant `predicate` first holds, rather than sleeping a
+   * fixed multiple of the timeout. BOTH seats here are human, so each one
+   * gets its own clock and a fixed sleep long enough to be safe would span
+   * SEVERAL expiries — which would make "exactly one action per expiry"
+   * untestable by construction. Polling returns within a few ms of the first
+   * expiry, well inside the next seat's own window. */
+  async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error("waitFor: condition never became true");
+      await sleep(2);
+    }
+  }
+
+  async function twoHumanSeats(overrides: { turnTimeoutSeconds?: number } = {}) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([fixtureModule]);
+    const room = new MatchRoom();
+    room.onCreate({
+      gameId: "fixture-secret",
+      config: undefined,
+      registry,
+      auth,
+      rng: DEFAULT_RNG,
+      turnTimeoutSeconds: overrides.turnTimeoutSeconds ?? 0.03,
+    });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    return { room, seat0, seat1 };
+  }
+
+  const deadlineOf = (entry: { message: unknown } | undefined): number | null =>
+    (entry?.message as { turnDeadline: number | null } | undefined)?.turnDeadline ?? null;
+
+  it("carries an absolute turn deadline on the view message — the SAME instant for every client, not a per-client countdown", async () => {
+    const { seat0, seat1 } = await twoHumanSeats({ turnTimeoutSeconds: 30 });
+
+    const seat0Deadline = deadlineOf(seat0.sent[0]);
+    const seat1Deadline = deadlineOf(seat1.sent[0]);
+    expect(typeof seat0Deadline).toBe("number");
+    // The seat NOT on the clock still sees the same clock: "visible to
+    // everyone" is one deadline, the active seat's, never a private per-seat
+    // number each client would have to reconcile.
+    expect(seat1Deadline).toBe(seat0Deadline);
+    expect(seat0Deadline!).toBeGreaterThan(Date.now());
+  });
+
+  it("moves the deadline when the turn moves — the seat that just began owes the new clock, not the seat that just acted", async () => {
+    const { room, seat0 } = await twoHumanSeats({ turnTimeoutSeconds: 30 });
+    const first = deadlineOf(seat0.sent[0]);
+
+    await sleep(5);
+    await room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+
+    // Seat 1 is now the seat that owes a blocking action, so the clock is
+    // theirs and it started when seat 0's action resolved.
+    expect(deadlineOf(seat0.sent[1])!).toBeGreaterThan(first!);
+  });
+
+  it("plays exactly ONE action for the expired seat and leaves that seat human — the player keeps their seat", async () => {
+    const { room, seat0, seat1 } = await twoHumanSeats({ turnTimeoutSeconds: 0.05 });
+    const before = seat0.sent.length;
+
+    await waitFor(() => seat0.sent.length > before);
+
+    // Exactly one further broadcast: the bot resolved seat 0's own obligation
+    // and stopped. Seat 1 (a human) owes the next action, so nothing else is
+    // auto-driven.
+    expect(seat0.sent.length - before).toBe(1);
+    expect(seat0.sent.at(-1)).toMatchObject({ type: "view", message: { view: { turnSeat: 1 } } });
+
+    // THE seat-ownership proof: `seatOfClient` only ever matches a HUMAN
+    // controller, so if the timeout had swapped seat 0 to a bot the way a
+    // disconnect takeover does, this action would come back "actor-mismatch"
+    // instead of being applied.
+    await room.handleAction(seat1.client, { type: "advance", playerId: P1 });
+    await room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+    expect(seat0.sent.filter((entry) => entry.type === "action-rejected")).toEqual([]);
+    expect(seat0.sent.at(-1)).toMatchObject({ type: "view", message: { view: { turnSeat: 1 } } });
+  });
+
+  it("gives the returning seat a fresh deadline — one timeout costs one turn, never the seat", async () => {
+    const { room, seat0, seat1 } = await twoHumanSeats({ turnTimeoutSeconds: 0.05 });
+    const original = deadlineOf(seat0.sent[0]);
+    const before = seat0.sent.length;
+
+    await waitFor(() => seat0.sent.length > before);
+    const afterTimeout = deadlineOf(seat0.sent.at(-1));
+    expect(afterTimeout!).toBeGreaterThan(original!);
+
+    await room.handleAction(seat1.client, { type: "advance", playerId: P1 });
+    // Seat 0 is on the clock again, with a clock that started now — not a
+    // leftover deadline from the turn it missed.
+    expect(deadlineOf(seat0.sent.at(-1))!).toBeGreaterThan(afterTimeout!);
+  });
+
+  it("never restarts a live clock for a non-blocking action — a seña from another seat cannot buy the thinking seat more time", async () => {
+    interface SignalState {
+      readonly players: readonly [PlayerId, PlayerId];
+      readonly turnSeat: 0 | 1;
+      readonly signals: number;
+    }
+    type SignalAction = { readonly type: "advance"; readonly playerId: PlayerId } | { readonly type: "signal"; readonly playerId: PlayerId };
+    const signalModule: GameModule<SignalState, SignalAction, { readonly turnSeat: 0 | 1 }, void> = {
+      ...(fixtureModule as unknown as GameModule<SignalState, SignalAction, { readonly turnSeat: 0 | 1 }, void>),
+      id: "fixture-signal",
+      createMatch: (_config, seats: readonly SeatAssignment[]) => {
+        const sorted = [...seats].sort((a, b) => a.seat - b.seat);
+        return { players: [sorted[0]!.playerId, sorted[1]!.playerId], turnSeat: 0, signals: 0 };
+      },
+      applyAction: (state, action): ApplyResult<SignalState> => {
+        if (action.type === "signal") return { ok: true, state: { ...state, signals: state.signals + 1 } };
+        const seat = state.players.indexOf(action.playerId);
+        if (seat !== state.turnSeat) return { ok: false, violation: { code: "not-your-turn", message: "out of turn" } };
+        return { ok: true, state: { ...state, turnSeat: state.turnSeat === 0 ? 1 : 0 } };
+      },
+      // `signal` is legal for EVERY seat at all times — truco's own `send-sena`
+      // shape, the exact reason `isNonBlockingAction` exists.
+      getLegalActions: (state, playerId) => {
+        const seat = state.players.indexOf(playerId);
+        const actions: SignalAction[] = [{ type: "signal", playerId }];
+        if (seat === state.turnSeat) actions.unshift({ type: "advance", playerId });
+        return actions;
+      },
+      getViewFor: (state) => ({ turnSeat: state.turnSeat }),
+      getOutcome: () => null,
+    };
+
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      { module: signalModule as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>, isNonBlockingAction: (action) => (action as { type?: string }).type === "signal" },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-signal", config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds: 30 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+
+    const armed = deadlineOf(seat0.sent[0]);
+    expect(typeof armed).toBe("number"); // guards this assertion against passing on two nulls
+    await sleep(20);
+    await room.handleAction(seat1.client, { type: "signal", playerId: P1 });
+
+    // Seat 0 still owes the only BLOCKING action, so it is still seat 0's
+    // turn and seat 0's clock — untouched to the millisecond.
+    expect(deadlineOf(seat0.sent.at(-1))).toBe(armed);
+  });
+
+  it("has no deadline once the match is over — a finished match never keeps a clock running", async () => {
+    const auth = await createAuth();
+    const terminalModule: GameModule<{ readonly done: boolean }, { readonly playerId: PlayerId }, { readonly done: boolean }, void> = {
+      ...(fixtureModule as unknown as GameModule<{ readonly done: boolean }, { readonly playerId: PlayerId }, { readonly done: boolean }, void>),
+      id: "fixture-terminal",
+      createMatch: () => ({ done: true }),
+      getLegalActions: () => [],
+      getViewFor: (state) => state,
+      getOutcome: () => ({ winnerIds: [P0] }),
+    };
+    const registry = createGameModuleRegistry([terminalModule as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-terminal", config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds: 0.03 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+
+    // Explicitly the FIELD, not `deadlineOf`'s own `?? null` fallback: a
+    // finished match must send a present, null deadline (the client's cue to
+    // clear its countdown), never an absent one it would have to guess about.
+    expect((seat0.sent[0]!.message as Record<string, unknown>).turnDeadline).toBeNull();
+    const settled = seat0.sent.length;
+    await sleep(120);
+    expect(seat0.sent).toHaveLength(settled);
+  });
+
+  it("never lets a turn timer outlive the room — disposal clears it, and the deadline passing afterwards drives nothing", async () => {
+    const { room, seat0 } = await twoHumanSeats({ turnTimeoutSeconds: 0.05 });
+    const before = seat0.sent.length;
+
+    await room.onDispose();
+    expect(room.hasPendingTurnTimer()).toBe(false);
+
+    await sleep(160);
+    // The deadline has now passed by a wide margin. Nothing fired: no bot
+    // played, no view was broadcast against a room the framework already
+    // considers torn down.
+    expect(seat0.sent).toHaveLength(before);
   });
 });
