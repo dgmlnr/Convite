@@ -264,6 +264,25 @@ export function buildChromeStylesheet(): string {
   box-shadow: var(--hx-elev-2);
 }
 
+/* A button INSIDE the status card takes the card's own text colour, not the
+ * page's. Every chrome button is transparent, so what shows through it is
+ * whatever it sits on -- and .hexdev-chrome-status paints itself
+ * --gx-color-primary, the deep green, while the base button rule above
+ * hands out --gx-color-on-surface, a near-black meant for the plain
+ * surface. On the card that pairing measures 2.91:1, well under the 4.5:1
+ * WCAG AA needs for normal text: the back-to-lobby button was genuinely
+ * hard to read, reported from a real screenshot.
+ *
+ * Scoped by the card, deliberately, rather than repainting every chrome
+ * button: status-view.ts appends the RETRY button to .hexdev-chrome-content
+ * as a sibling of the card, never a child, so retry really does sit on the
+ * plain surface where --gx-color-on-surface is the correct token and
+ * already passes. chrome-contrast.browser.test.ts asserts both halves, so
+ * neither can regress into the other. */
+.hexdev-chrome-status button {
+  color: var(--gx-color-on-primary, #ffffff);
+}
+
 /* The prominent action — vs-person when real players are waiting, vs-bot
  * when the zero-counter UX rule (spec) hides the count instead — gets the
  * solid, filled treatment; the secondary action stays outlined. Driven by
