@@ -225,12 +225,14 @@ function ruleBodyForExactSelector(css: string, exactSelector: string): string {
   return bodies.join("\n");
 }
 
-// The exact 9 felt-mounted CHROME surfaces (tasks §7): every one of these
+// The exact 10 felt-mounted CHROME surfaces (tasks §7): every one of these
 // sits physically on top of the felt (a scoreboard panel, a call log, calls,
 // the pending-call banner, the turn badge, señas, the match-over overlay,
 // the hand-outcome chip) but is still CHROME by design §10's own hybrid
 // theming rule — a tenant's brand must reach it, unlike the felt/cards
-// beneath it.
+// beneath it. FU-1 adds the 10th: the open señas picker became its own
+// elevated popover surface (.hexdev-truco-senas-row), so it now has a
+// background of its own to get wrong, exactly what this guard is for.
 const CHROME_SURFACES_ON_FELT = [
   ".hexdev-truco-scoreboard-panel",
   ".hexdev-truco-call-log",
@@ -238,6 +240,7 @@ const CHROME_SURFACES_ON_FELT = [
   ".hexdev-truco-pending-call",
   ".hexdev-truco-turn-badge",
   ".hexdev-truco-senas-toggle",
+  ".hexdev-truco-senas-row",
   ".hexdev-truco-sena",
   ".hexdev-truco-match-over",
   ".hexdev-truco-hand-outcome",

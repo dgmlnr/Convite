@@ -416,6 +416,33 @@ export function buildTableStylesheet(): string {
      * only ever grows). */
     --hx-band-banner: 112px;
   }
+  /* FU-1: from wide up the felt grows a log-rail COLUMN, and the popover's
+   * containing block is the whole felt — so the compact/medium inset would
+   * stretch it across the rail and centre its six signals well to the left of
+   * the toggle they belong to. Re-inset to where the "actions" area actually
+   * starts: the felt's own padding, plus the rail track, plus the one grid
+   * gap between them. 2v2 only in practice (1v1 mounts no picker at all), so
+   * the 1v1 play-column cap right below never interacts with this.
+   *
+   * DISCLOSED IMPRECISION: --hx-log-rail is a clamp() whose middle term is a
+   * percentage, and a percentage resolves against the grid's CONTENT box
+   * inside grid-template-columns but against the containing block's PADDING
+   * box here — bases that differ by exactly 2 x --hx-felt-pad. It cannot
+   * matter at any tier this table is tested at (the clamp's own 200px/240px
+   * minimum wins on both bases until the felt itself passes ~909px/~1200px of
+   * content, which the scoreboard rail keeps it well short of), and where it
+   * ever did the popover would sit a bounded ~11-13px off its ideal left
+   * edge — never clipped, since the right edge and the felt's own clip box
+   * are unaffected.
+   *
+   * The descendant selector is load-bearing, not decoration: unlike the
+   * medium-tier overrides above (attribute+class, so specificity alone
+   * decides), this rule's own base counterpart is a BARE class declared LATER
+   * in this file, which would win on source order at equal specificity —
+   * measured, not assumed: a first draft written as a bare
+   * .hexdev-truco-senas-row here had no effect at all at 960px or 1280px.
+   * Class+class beats it outright, whatever the order. */
+  .hexdev-truco-table .hexdev-truco-senas-row { left: calc(var(--hx-felt-pad) + var(--hx-log-rail) + var(--hx-felt-gap)); }
   /* PR4-T6 (tasks §8), joined PR5-T6 (tasks §9): 1v1 only — cap and centre
    * the play column (now including the action bar) so a very wide felt does
    * not stretch a 3-card hand across the whole track. */
@@ -1195,21 +1222,119 @@ export function buildTableStylesheet(): string {
   cursor: pointer;
 }
 .hexdev-truco-senas-toggle:hover, .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
-/* The picker must take the tray's real width, not its own max-content — the
- * tray is a column flex with align-items:center, so an unstretched child is
- * sized shrink-to-fit and reports the full unwrapped six-signal row as its
- * width, overflowing on both sides (the toggle was visibly clipped off the
- * left edge). align-self:stretch gives it a real bound, so the row below has
- * an actual width to scroll horizontally within instead of shrinking to its
- * content. */
+/* The OPEN toggle wears the same gold edge its own popover does (FU-1 eye
+ * review): the card floats a full band above the button that raised it, so
+ * without a shared "live right now" signal the two read as unrelated pieces
+ * of chrome. Selects on the aria-expanded senas.ts already maintains — the
+ * a11y state IS the style hook, so the two can never drift apart. Inset
+ * ring, not a border: the toggle's own box stays exactly the height the
+ * fixed action band reserved for it. */
+.hexdev-truco-senas-toggle[aria-expanded="true"] {
+  box-shadow: var(--hx-elev-2), inset 0 0 0 1px var(--hx-gold-edge);
+  color: var(--gx-color-accent, var(--hx-gold));
+}
+/* align-self:stretch gives this box the strip's real cross-axis size instead
+ * of its own shrink-to-fit width, so the toggle centres across the whole
+ * strip at the tiers where the bar is a column (2v2, medium and up). It used
+ * to carry a second, load-bearing job — bounding the in-flow six-signal row's
+ * unwrapped max-content width, which otherwise overflowed the bar on both
+ * sides — that FU-1 retired: the row is out of flow now (see below), so the
+ * only thing left in this box is the toggle. */
 .hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: column; align-items: center; }
+/* FU-1: the OPEN picker is a transient ELEVATED POPOVER anchored above the
+ * action bar, not a third row inside it.
+ *
+ * WHY IT HAD TO LEAVE THE BAND. The action bar is a FIXED grid track
+ * (--hx-band-action-total on the felt's own grid-template-rows) whose
+ * contract is "the band NEVER grows: contents scroll, the track is fixed" —
+ * a growing band would shift the felt mid-hand and invalidate every fence in
+ * table-height-stability/table-height-budget. Inside that track the row was
+ * unusable, measured not assumed: at 375px it collapsed to height 0 inside a
+ * 25px client area (0 of its 49px of content painted) and pushed the last
+ * three signals past the felt's own right edge; at 700px only 12px of a 34px
+ * row survived, and all six buttons landed below the felt's bottom edge.
+ * Letting the band grow was rejected for the reason above; scrolling inside a
+ * 40px strip was rejected as unusable.
+ *
+ * WHY THE FELT IS THE POSITIONING CONTEXT, and not the bar or this picker's
+ * own box. An absolutely positioned box is still clipped by an ancestor
+ * scroller when that scroller is its containing block or an ancestor of it —
+ * so making .hexdev-truco-action-bar (overflow-x/y: auto) or
+ * .hexdev-truco-senas (overflow-x: auto from medium up) position: relative
+ * would have changed nothing: the popover would have been clipped by the very
+ * band it needs to escape. Left position: static, both of them sit BELOW the
+ * containing block instead, where a scroller does not clip at all, and the
+ * nearest positioned ancestor is .hexdev-truco-table itself (position:
+ * relative, already, for the banner slot and turn badges) — the same felt
+ * whose own overflow: hidden is the edge this popover SHOULD respect. The
+ * offsets below are read off that felt's own grid tokens rather than
+ * hardcoded, so the popover tracks every tier and both seat counts: bottom =
+ * the felt's own padding + the whole action band + one grid gap lands its
+ * lower edge exactly one gap above the bar, and the inline pair inset it to
+ * the felt's content box.
+ *
+ * SOLID chrome surface, never opacity over the cloth — the exact
+ * opacity-over-green TINTING trap this project has already been burned by
+ * once (.hexdev-truco-card--locked's own history), and the same
+ * var(--gx-color-surface, ...) pattern .hexdev-truco-senas-toggle uses one
+ * rule above. The elevation step is --hx-elev-4, the top of the scale (the
+ * rule below carries the full card rationale); it started at --hx-elev-3 and
+ * was raised after the FU-1 eye review found the popover did not read as an
+ * opened selector at elev-3 alone.
+ *
+ * z-index: 1 is this file's own existing top layer INSIDE the felt
+ * (.hexdev-truco-turn-badge, .hexdev-truco-banner-slot); the felt itself sets
+ * no z-index, so it creates no stacking context and those three compete
+ * directly. Painting order breaks the tie in the popover's favour: table.ts
+ * appends the action bar to the felt AFTER the anchors and the centre column
+ * that own the other two. Deliberately NOT 2 — that is
+ * .hexdev-truco-match-over's step, and a match that has ended must cover an
+ * open picker, never the other way round.
+ *
+ * flex-wrap: wrap replaces the old nowrap + overflow-x: auto scroller: all
+ * six signals are readable at once at every tier, no swipe. MEASURED, not
+ * assumed: freed from the old nowrap row's flex-shrink the six take their
+ * real max-content widths and total 452px, so at 375px (a 347px content box)
+ * they wrap to TWO rows — an 80px popover, all six painted — and from 700px
+ * up they fit on one 44px row. Wrapping is the deliberate answer here, not a
+ * fallback: the popover is out of flow, so a second row costs the table
+ * nothing, whereas a scroller costs a player a signal they cannot see.
+ *
+ * :empty { display: none } is this file's own established convention for a
+ * slot that renders nothing (.hexdev-truco-pending-call,
+ * .hexdev-truco-hand-outcome, .hexdev-truco-match-over) and is REQUIRED here:
+ * senas.ts empties this node to close the picker, and an empty out-of-flow
+ * box with a background and a shadow would otherwise paint a bare chrome
+ * strip over the felt for the whole match. */
+.hexdev-truco-senas-row:empty { display: none; }
 .hexdev-truco-senas-row {
+  position: absolute;
+  left: var(--hx-felt-pad);
+  right: var(--hx-felt-pad);
+  bottom: calc(var(--hx-felt-pad) + var(--hx-band-action-total) + var(--hx-felt-gap));
+  z-index: 1;
   display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 4px;
-  margin-top: 4px;
-  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  /* Card treatment (FU-1 eye review: "que se note que esta abierto el
+   * selector"). A floating strip that merely sits above the bar reads as
+   * part of the bar; a CARD reads as something opened ON TOP of the table.
+   * Three levers, all from this file's own vocabulary, no new tokens:
+   * generous padding so the six signals sit INSIDE a surface instead of
+   * filling it edge to edge, the largest radius the felt already uses, and
+   * --hx-elev-4 -- the top of the elevation scale, correct here because
+   * this is the topmost transient surface a player can raise over the felt
+   * (only .hexdev-truco-match-over outranks it, and that one takes the
+   * whole felt). The gold inset edge is the same "this is live right now"
+   * signal .hexdev-truco-turn-badge already carries, drawn as an inset
+   * ring rather than a border so it never changes the box the popover's
+   * own anchoring math resolved. Solid surface, never opacity over the
+   * cloth -- the tinting trap this file has been burned by once. */
+  padding: 10px;
+  border-radius: var(--gx-radius, var(--hx-radius-lg));
+  background: var(--gx-color-surface, #26433a);
+  box-shadow: var(--hx-elev-4), inset 0 0 0 1px var(--hx-gold-edge);
 }
 .hexdev-truco-sena {
   min-height: 32px;

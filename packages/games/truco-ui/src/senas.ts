@@ -36,6 +36,12 @@ export function renderSenaPicker(container: HTMLElement, legalActions: readonly 
   toggle.className = "hexdev-truco-senas-toggle";
   toggle.dataset.action = "senas-toggle";
   toggle.textContent = TABLE_STRINGS.senasToggle;
+  // Present from the first render, never merely added on open: a control
+  // that owns a revealable region always announces its state. It is also
+  // the hook table-styles.ts selects on to give the open toggle its own
+  // active treatment, so a player can tell at a glance that the picker
+  // above the bar belongs to this button (FU-1 eye review).
+  toggle.setAttribute("aria-expanded", "false");
 
   const row = document.createElement("div");
   row.className = "hexdev-truco-senas-row";
@@ -58,6 +64,7 @@ export function renderSenaPicker(container: HTMLElement, legalActions: readonly 
 
   toggle.addEventListener("click", () => {
     open = !open;
+    toggle.setAttribute("aria-expanded", String(open));
     renderRow();
   });
 

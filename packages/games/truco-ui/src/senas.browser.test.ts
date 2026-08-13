@@ -57,6 +57,26 @@ describe("renderSenaPicker — discoverable without being noisy (2v2 only, absen
     expect(buttons.map((b) => b.textContent)).toEqual(["As de espada", "Tres"]);
   });
 
+  it("marks the toggle's own open state, so the picker reads as an open selector rather than a floating strip", () => {
+    const el = freshContainer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: PLAYER, signal: "asDeEspada" }];
+
+    renderSenaPicker(el, legal, () => {});
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
+
+    // Collapsed: the attribute must be PRESENT and false, never absent —
+    // it is both the a11y contract (a control that owns a revealable
+    // region always announces its state) and the styling hook the open
+    // toggle's own active treatment selects on.
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("clicking a seña button dispatches EXACTLY that legal action", () => {
     const el = freshContainer();
     const asDeEspada: Action = { type: "send-sena", playerId: PLAYER, signal: "asDeEspada" };

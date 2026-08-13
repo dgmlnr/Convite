@@ -101,6 +101,83 @@ function overlaps(a: DOMRect, b: DOMRect): boolean {
   return a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
 }
 
+interface Edges {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** `inner` sits entirely within `outer`, same 0.5px epsilon as `overlaps`. */
+function contains(outer: Edges, inner: DOMRect): boolean {
+  return inner.left >= outer.left - 0.5 && inner.right <= outer.right + 0.5 && inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
+}
+
+const isOutOfFlow = (position: string): boolean => position === "absolute" || position === "fixed";
+
+/**
+ * The rectangle a box is actually PAINTED within, after intersecting every
+ * ancestor that genuinely clips it — the thing `getBoundingClientRect` alone
+ * can never tell you, because a rect keeps reporting a box's layout position
+ * long after an ancestor's `overflow` has stopped painting it (measured
+ * directly on the pre-popover señas row: six buttons reporting a full 32px
+ * rect each while 0 of those pixels reached the screen).
+ *
+ * CSS's own containing-block rule is the crux of the FU-1 popover, so it is
+ * reimplemented here rather than assumed: an out-of-flow box is clipped by an
+ * ancestor scroller only when that scroller IS its containing block or an
+ * ancestor of it. A scroller sitting BELOW the containing block — such as
+ * `.hexdev-truco-action-bar`, whose `overflow-x`/`overflow-y` are both `auto`
+ * — never clips it at all. That asymmetry is exactly why the popover can
+ * escape the fixed action band while still honouring the felt's own
+ * `overflow: hidden` edge, and this helper is what proves it happened rather
+ * than merely being intended.
+ *
+ * Uses each clipper's BORDER box (`getBoundingClientRect`) where CSS clips to
+ * the padding box. Every clipping ancestor on this table is borderless, so
+ * the two coincide today; where they ever diverge this helper is the more
+ * PERMISSIVE of the two, so it can only ever miss a real clip, never invent
+ * one.
+ */
+function paintedClipRect(el: Element): Edges {
+  let clip: Edges = { left: -Infinity, top: -Infinity, right: Infinity, bottom: Infinity };
+  let escaping = isOutOfFlow(getComputedStyle(el).position);
+  for (let ancestor = el.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+    const style = getComputedStyle(ancestor);
+    // The containing block for an out-of-flow box: the nearest ancestor that
+    // is itself positioned, or that paints into its own coordinate space
+    // (transform/filter). Reaching it ENDS the escape — that same element,
+    // and everything above it, clips normally again.
+    if (escaping && (style.position !== "static" || style.transform !== "none" || style.filter !== "none")) escaping = false;
+    if (!escaping && (style.overflowX !== "visible" || style.overflowY !== "visible")) {
+      const box = ancestor.getBoundingClientRect();
+      clip = {
+        left: Math.max(clip.left, box.left),
+        top: Math.max(clip.top, box.top),
+        right: Math.min(clip.right, box.right),
+        bottom: Math.min(clip.bottom, box.bottom),
+      };
+    }
+    // An out-of-flow ancestor starts its OWN escape for everything above it.
+    if (isOutOfFlow(style.position)) escaping = true;
+  }
+  return clip;
+}
+
+/** The picker-open state, reached the same way a player reaches it: by
+ * clicking the real toggle `renderSenaPicker` mounts. Never hand-authored —
+ * open/closed is closed-over per-mount state inside `senas.ts` with no other
+ * door into it, the same discipline `table-height-stability.browser.test.ts`'s
+ * own señas case already uses. */
+function openSenaPicker(el: HTMLElement): HTMLElement {
+  const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]');
+  if (toggle === null) throw new Error("test setup: señas toggle not rendered — is send-sena really legal for this 2v2 fixture?");
+  toggle.click();
+  const row = el.querySelector<HTMLElement>(".hexdev-truco-senas-row");
+  if (row === null) throw new Error("test setup: señas row not rendered");
+  return row;
+}
+
 /** The reachable state this whole suite mounts: a PENDING call still
  * awaiting a response (the banner is on screen), a played pile on every
  * seat (trick 1 already resolved), and a HAND that still has cards left to
@@ -421,5 +498,112 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
       }
     }
     expect(cardPairsChecked, "sanity: at least one sibling pair must have been compared, or this test proves nothing").toBeGreaterThan(0);
+  });
+
+  /*
+   * ─── THE MANDATE'S ONE DELIBERATE EXCEPTION: the OPEN señas picker (FU-1) ──
+   *
+   * `.hexdev-truco-senas-row` is the one felt-mounted surface this suite
+   * deliberately does NOT pair against a hand card, a played pile, the turn
+   * badge, or the call log. That omission is a decision, not an oversight,
+   * and this comment exists so a future reader cannot read it as one.
+   *
+   * WHAT IS EXCLUDED, EXACTLY. Every structural assertion above measures the
+   * table with the picker CLOSED — no fixture in this file clicks
+   * `button[data-action="senas-toggle"]`, so the row is empty (and
+   * `display: none`) in all of them. Concretely, the open picker is excluded
+   * from the four zero-overlap pairings this suite asserts:
+   *   - "the pending-call banner never overlaps a played pile"
+   *   - ".hexdev-truco-action-bar never overlaps a hand card, a played pile,
+   *     or the (unmoved) turn badge"
+   *   - ".hexdev-truco-call-log never overlaps .hexdev-truco-action-bar"
+   *   - ".hexdev-truco-call-log never overlaps a played pile or hand card"
+   * and no fifth pairing naming the row itself was added. While it is open,
+   * the popover genuinely DOES cover part of the felt beneath it — hand cards
+   * and played piles included — and adding such a pairing would fail on
+   * purpose.
+   *
+   * WHY THAT IS NOT A WEAKENED MANDATE. The mandate governs STRUCTURAL
+   * surfaces: the reserved zones this table always shows, that a player never
+   * asked for and cannot dismiss. The open picker is neither. It is
+   * user-invoked and ephemeral, dismissed by the very same tap that opened it
+   * — exactly the category `.hexdev-truco-match-over` already occupies (a
+   * full-felt solid overlay this suite has likewise never asserted against).
+   *
+   * WHY IT HAD TO LEAVE THE BAND, on measurement rather than taste. The
+   * action band is a FIXED grid track (--hx-band-action-total) whose contract
+   * is "the band NEVER grows: contents scroll, the track is fixed", because a
+   * growing band would shift the felt mid-hand and invalidate every fence in
+   * table-height-stability/table-height-budget. Kept inside that track, the
+   * six-signal row measured 0px of its 49px of content actually painted at
+   * 375px (the row's own box collapsed to height 0 inside a 25px client area)
+   * and 12px of 34px at 700px, with all six buttons landing past the felt's
+   * own `overflow: hidden` edge — unusable, which is the FU-1 defect the
+   * popover fixes.
+   *
+   * WHAT THE MANDATE STILL OWES IT, asserted by the two tests below instead:
+   * (1) every one of the six señas is fully PAINTED — non-degenerate, inside
+   * the popover's own rect, and inside every clip its real ancestor chain
+   * imposes; and (2) the action bar's own height is identical open vs.
+   * closed, the fixed-band contract that made the popover necessary in the
+   * first place.
+   *
+   * 2v2 ONLY, structurally: `table.ts` mounts `renderSenaPicker` only when
+   * `view.teammates.length > 0`, so there is no 1v1 picker to assert about —
+   * a vacuous 1v1 case would prove nothing, so none is written.
+   */
+
+  it("2v2: every one of the six señas is fully painted once the picker is open (FU-1 popover, not clipped by the fixed action band)", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = selfTurnActiveAfterTrick1Win2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const popover = openSenaPicker(el);
+    const popoverRect = popover.getBoundingClientRect();
+    const popoverClip = paintedClipRect(popover);
+    expect(contains(popoverClip, popoverRect), `popover ${JSON.stringify(popoverRect)} vs its own painted clip ${JSON.stringify(popoverClip)}`).toBe(true);
+
+    const buttons = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-sena")];
+    expect(buttons.length, "sanity: the closed señas vocabulary is six signals — all six must be on screen at once").toBe(6);
+
+    for (const button of buttons) {
+      const rect = button.getBoundingClientRect();
+      const label = button.textContent ?? "";
+      // Non-degenerate: a zero-height/zero-width button is "present" to
+      // querySelector and invisible to a player.
+      expect(rect.width, `seña "${label}" width`).toBeGreaterThan(0);
+      expect(rect.height, `seña "${label}" height`).toBeGreaterThan(0);
+      // Inside the popover's own painted surface — the popover must SIZE to
+      // its six children, never scroll them out of sight.
+      expect(contains(popoverRect, rect), `seña "${label}" ${JSON.stringify(rect)} vs popover ${JSON.stringify(popoverRect)}`).toBe(true);
+      // And inside every clip its real ancestor chain imposes — the direct
+      // proof that the popover escaped the fixed band instead of being
+      // painted through it.
+      const clip = paintedClipRect(button);
+      expect(contains(clip, rect), `seña "${label}" ${JSON.stringify(rect)} vs painted clip ${JSON.stringify(clip)}`).toBe(true);
+    }
+  });
+
+  it("2v2: opening the señas picker never changes the action bar's own height (the fixed-band contract that made the popover necessary)", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = selfTurnActiveAfterTrick1Win2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const bar = el.querySelector(".hexdev-truco-action-bar");
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (bar === null || felt === null) throw new Error("test setup: action bar or felt not rendered");
+    const closedBar = bar.getBoundingClientRect().height;
+    const closedFelt = felt.getBoundingClientRect().height;
+
+    openSenaPicker(el);
+
+    const openBar = bar.getBoundingClientRect().height;
+    const openFelt = felt.getBoundingClientRect().height;
+    expect(Math.abs(openBar - closedBar), `action bar open ${openBar}px vs closed ${closedBar}px`).toBeLessThan(0.5);
+    expect(Math.abs(openFelt - closedFelt), `felt open ${openFelt}px vs closed ${closedFelt}px`).toBeLessThan(0.5);
   });
 });
