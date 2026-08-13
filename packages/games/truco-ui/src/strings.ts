@@ -47,6 +47,11 @@ export const TABLE_STRINGS = {
   // noisy (collapsed by default, never auto-opened) — spec's own framing.
   senasToggle: "Señas",
   senaSentBy: "Seña:",
+  // The transient partner-seña notice. Names WHO without naming a player:
+  // in 2v2 there is exactly one compañero, and the notice is deliberately
+  // detached from their anchor (it lives in the banner lane), so the source
+  // has to be said rather than implied by position.
+  senaFromPartner: "Seña del compañero",
   // Call-log panel (spec: "Call-Log Panel With Bounded Footprint", "Mano-
   // Ordered Envido Row"; design §5.4). Speaker labels are derived from seat
   // geometry, never a player id/name — see call-log.ts's own `speakerLabel`.

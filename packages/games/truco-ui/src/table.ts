@@ -10,6 +10,8 @@ import { renderOpponentHand } from "./opponent-hand.js";
 import { renderPlayedCards } from "./played-cards.js";
 import { derivePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
 import { renderScoreboardPanel } from "./scoreboard-panel.js";
+import { derivePartnerSenaEvent, renderSenaNotice } from "./sena-notice.js";
+import type { PartnerSenaEvent } from "./sena-notice.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 import type { TableAnchor } from "./seat-position.js";
@@ -26,8 +28,17 @@ import { describeTurn } from "./turn.js";
  * need to wait multiple seconds in real time. */
 const DEFAULT_HAND_OUTCOME_BANNER_MS = 2600;
 
+/** A seña is TRANSIENT, exactly like the real table: "si no la viste, la
+ * perdiste". Deliberately shorter than the hand-outcome banner above — that
+ * one acknowledges something already settled and can afford to linger, while
+ * this one interrupts live play and must clear out of the way fast. Same
+ * duration-injection discipline, for the same reason: these tests never wait
+ * seconds in real time. */
+const DEFAULT_SENA_NOTICE_MS = 2000;
+
 export interface MatchTableRendererOptions {
   readonly handOutcomeBannerMs?: number;
+  readonly senaNoticeMs?: number;
 }
 
 /** `outcome === null` while the match is still in progress — the ONLY
@@ -84,6 +95,13 @@ export function createMatchTableRenderer(
   // mounted gets cleared, however many intervening renders happened first.
   let mountedHandOutcomeEl: HTMLElement | null = null;
   const handOutcomeBannerMs = options?.handOutcomeBannerMs ?? DEFAULT_HAND_OUTCOME_BANNER_MS;
+  let senaNoticeEvent: PartnerSenaEvent | null = null;
+  let senaNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+  // Read AT FIRE TIME, never captured at schedule time — same reason as
+  // `mountedHandOutcomeEl` above: whichever render is CURRENTLY mounted is
+  // the one the timer must clear, however many renders happened in between.
+  let mountedSenaNoticeEl: HTMLElement | null = null;
+  const senaNoticeMs = options?.senaNoticeMs ?? DEFAULT_SENA_NOTICE_MS;
 
   return function render(
     container: HTMLElement,
@@ -108,6 +126,23 @@ export function createMatchTableRenderer(
         handOutcomeEvent = null;
         if (mountedHandOutcomeEl !== null) renderHandOutcomeBanner(mountedHandOutcomeEl, null);
       }, handOutcomeBannerMs);
+    }
+
+    // A partner's seña is the other POINT-IN-TIME event on this table, and the
+    // only one PUSHED by someone else rather than opened by the person seeing
+    // it — which is why it gets the banner lane rather than a centre overlay
+    // that would cover the trick area while a player is deciding. Same
+    // timer/re-arm shape as the hand-outcome banner immediately above; both
+    // derive from `previousView`, so BOTH must be derived before the
+    // assignment below replaces it.
+    const newSenaEvent = derivePartnerSenaEvent(previousView, view);
+    if (newSenaEvent !== null) {
+      senaNoticeEvent = newSenaEvent;
+      if (senaNoticeTimer !== undefined) clearTimeout(senaNoticeTimer);
+      senaNoticeTimer = setTimeout(() => {
+        senaNoticeEvent = null;
+        if (mountedSenaNoticeEl !== null) renderSenaNotice(mountedSenaNoticeEl, null);
+      }, senaNoticeMs);
     }
     previousView = view;
 
@@ -271,6 +306,18 @@ export function createMatchTableRenderer(
       handOutcomeBanner,
       handOutcomeEvent === null ? null : { event: handOutcomeEvent, wonBySelf: handOutcomeEvent.winnerTeamId === view.self.teamId },
     );
+
+    // Third occupant of the SAME reserved lane, on the same `:empty { display:
+    // none }` terms as the two above. Unlike those two it is not mutually
+    // exclusive with them in time — señas stay legal while a call is open
+    // (truco-engine's `getLegalSenaActions`) — so the lane genuinely holds two
+    // chips at once here, side by side in its flex row rather than stacked on
+    // top of each other. Neither chip is ever hidden to make room for the
+    // other: the pending call is the most important thing on screen while it
+    // is open, and a seña the player never sees is a seña lost.
+    const senaNotice = bannerSlot.appendChild(document.createElement("div"));
+    mountedSenaNoticeEl = senaNotice;
+    renderSenaNotice(senaNotice, senaNoticeEvent === null ? null : { signal: senaNoticeEvent.signal });
 
     const trickArea = center.appendChild(document.createElement("div"));
     // Every card played THIS HAND, not only the trick in progress (spec:

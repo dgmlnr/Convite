@@ -884,6 +884,12 @@ export function buildTableStylesheet(): string {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Only ever between two SIMULTANEOUS occupants (a pending call and a
+   * partner's seña notice, the one non-exclusive pair this lane can hold).
+   * A display:none child is not a flex item at all, so with the usual single
+   * occupant this declaration changes nothing — no existing capture moves by
+   * a pixel because of it. */
+  gap: 8px;
   pointer-events: none;
   max-width: 100%;
   /* PR5-T4 (tasks §9, design D-5): the banner's own reserved lane height —
@@ -1135,6 +1141,55 @@ export function buildTableStylesheet(): string {
  * lane, not the felt's own flow. */
 .hexdev-truco-hand-outcome-headline { font-size: var(--hx-text-body); text-transform: uppercase; letter-spacing: 0.02em; }
 .hexdev-truco-hand-outcome-points { font-size: var(--hx-text-body); opacity: 0.85; }
+
+/* Change: a partner's seña is TRANSIENT — shown for about two seconds and
+ * gone, exactly like the real table ("si no la viste, la perdiste"). Third
+ * occupant of the banner lane, on the same :empty convention as the two
+ * banners above, and the same anti-opacity rule: a SOLID background, never
+ * something translucent that tints toward the felt behind it. table.ts owns
+ * the timed clear; this stylesheet only owns how it looks while present.
+ *
+ * A COLUMN, unlike the hand-outcome chip's baseline row. This is the one lane
+ * occupant that is NOT mutually exclusive in time with the pending-call
+ * banner (señas stay legal while a call is open), so both can share the lane's
+ * flex row at once — stacking these two short lines keeps the chip narrow
+ * enough that the pair still fits the narrowest tier side by side, which
+ * table-zone-overlap.browser.test.ts fences directly. Its own height stays
+ * well inside the lane, and the lane is position: absolute regardless, so
+ * nothing here can move the felt.
+ *
+ * Surface (not primary/accent) on purpose: the pending-call banner owns
+ * primary, its waiting-on-me state owns accent, and the hand-outcome chip owns
+ * accent/dark-grey. A seña is our team's own private aside, not a call on the
+ * table, and it reads as a distinct fourth thing rather than a fifth shade of
+ * the same three. */
+.hexdev-truco-sena-notice:empty { display: none; }
+.hexdev-truco-sena-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 16px;
+  border-radius: var(--gx-radius, 999px);
+  background: var(--gx-color-surface, #1c1c1c);
+  color: var(--gx-color-on-surface, #f2f2f2);
+  font-weight: 700;
+  text-align: center;
+  /* MEASURED, not assumed: allowed to wrap, this chip rendered 86px tall at
+   * the compact tier against a 60px lane (and 86px against 84px at ultra) —
+   * it wrapped BOTH of its lines once the pending-call banner was sharing the
+   * row, and a lane occupant that outgrows its lane is exactly what
+   * --hx-band-banner exists to prevent. Safe to forbid wrapping outright
+   * because the content is bounded by construction: the señas vocabulary is
+   * CLOSED (six labels, widest "As de espada"), so there is no user text here
+   * that could ever grow past what the fence measures. */
+  white-space: nowrap;
+  /* Elevation: the same depth the pending-call banner uses — this chip sits
+   * on the cloth in the same lane, so it lifts off it the same way. */
+  box-shadow: var(--hx-elev-3);
+}
+.hexdev-truco-sena-notice-source { font-size: var(--hx-text-meta); font-weight: 600; opacity: 0.85; }
+.hexdev-truco-sena-notice-signal { font-size: var(--hx-text-title); text-transform: uppercase; letter-spacing: 0.02em; color: var(--gx-color-accent, var(--hx-gold)); }
 
 /* Change: a real ending, not a blank error state (spec: "losing should feel
  * like a loss, not like an error message"). A full, SOLID-background overlay

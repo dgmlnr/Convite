@@ -424,6 +424,53 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     expect(bannerRect.height, `banner height ${bannerRect.height}px vs its own lane ${bandBanner}px`).toBeLessThanOrEqual(bandBanner + 0.5);
   });
 
+  /**
+   * The banner lane's ONE genuinely simultaneous pair. Every other occupant
+   * of this lane is mutually exclusive in time with the others (a pending
+   * call always clears before a hand-outcome event can be derived — see
+   * pending-call.ts/hand-outcome.ts), which is exactly why the lane could get
+   * away with a single centred flex row until now. A partner's seña is
+   * different: `getLegalSenaActions` (truco-engine) has no pending-call gate,
+   * so a partner can and will signal while a call is open, and the lane then
+   * holds two chips at once for real.
+   *
+   * Neither chip may be suppressed to dodge this — an unanswered call is the
+   * most important thing on screen, and a seña nobody sees is a seña lost —
+   * so the pair has to genuinely FIT, at every tier, with the widest label the
+   * closed vocabulary can produce. That is what this asserts.
+   */
+  it("2v2: a partner's seña notice and an open pending call share the banner lane without colliding, both inside the felt", async () => {
+    const el = mountedContainer(width);
+    // Far longer than the test needs: the notice must still be mounted when
+    // it is measured, and this suite measures layout rather than timing.
+    const render = createMatchTableRenderer({ senaNoticeMs: 60_000 });
+    const state = pendingTrucoAfterTrick1Headshot2v2();
+    // Two snapshots, because the notice is derived from a TRANSITION — the
+    // same way a real client receives it, never hand-authored.
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    const signaled = dispatch(state, { type: "send-sena", playerId: TEAMMATE, signal: WIDEST_SENA });
+    render(el, getViewFor(signaled, SELF), getLegalActions(signaled, SELF), () => {});
+    await waitForArt(el);
+
+    const felt = el.querySelector(".hexdev-truco-table");
+    const banner = el.querySelector(".hexdev-truco-pending-call");
+    const notice = el.querySelector(".hexdev-truco-sena-notice");
+    if (felt === null || banner === null) throw new Error("test setup: felt or pending-call banner not rendered");
+    if (notice === null || notice.textContent === "") {
+      throw new Error("test setup: the partner's seña notice is not up — did the transition really carry a new ordinal?");
+    }
+
+    const feltRect = felt.getBoundingClientRect();
+    const bannerRect = banner.getBoundingClientRect();
+    const noticeRect = notice.getBoundingClientRect();
+    const bandBanner = parseFloat(getComputedStyle(felt).getPropertyValue("--hx-band-banner"));
+
+    expect(overlaps(bannerRect, noticeRect), `pending call ${JSON.stringify(bannerRect)} vs seña notice ${JSON.stringify(noticeRect)}`).toBe(false);
+    expect(contains({ left: feltRect.left, top: feltRect.top, right: feltRect.right, bottom: feltRect.bottom }, noticeRect), `seña notice ${JSON.stringify(noticeRect)} outside felt ${JSON.stringify(feltRect)}`).toBe(true);
+    expect(contains({ left: feltRect.left, top: feltRect.top, right: feltRect.right, bottom: feltRect.bottom }, bannerRect), `pending call ${JSON.stringify(bannerRect)} outside felt ${JSON.stringify(feltRect)}`).toBe(true);
+    expect(noticeRect.height, `seña notice height ${noticeRect.height}px vs its own lane ${bandBanner}px`).toBeLessThanOrEqual(bandBanner + 0.5);
+  });
+
   // Action-bar-related pairings (tasks §7/§9, PR5-T7 — THE MANDATE): the
   // action bar is now a genuine reserved grid row (PR5-T1/T8), so these can
   // finally be asserted for real. Uses `selfTurnActiveAfterTrick1Win*`, NOT
