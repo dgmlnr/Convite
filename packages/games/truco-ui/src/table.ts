@@ -417,10 +417,27 @@ export function createMatchTableRenderer(
     // the engine projects it (truco-engine's `view.ts`), and reading it here
     // rather than deriving anything locally is what keeps the UI's notion of
     // "spent" identical to the engine's own legality rule.
+    //
+    // `layout` is handed over as the picker's DISMISS SURFACE, and the choice
+    // of node is the load-bearing part (see `senas.ts`'s own block comment on
+    // those listeners). It is the widest thing on this table that is still
+    // built fresh by THIS render and dropped by the next one — the whole
+    // visible table hangs off it, so every click a player could mean as "not
+    // the picker" bubbles through it, and it is discarded both on the next
+    // broadcast and when `main.ts` empties the widget root. `container` would
+    // have looked like the more natural choice and is exactly wrong: it is
+    // `main.ts`'s own `app` element, which SURVIVES that teardown
+    // (`replaceChildren` empties it, it does not remove it), so a listener
+    // there would outlive the match with nothing left to remove it, no better
+    // than `document`.
     if (view.teammates.length > 0) {
-      renderSenaPicker(actionBar.appendChild(document.createElement("div")), legalActions, dispatch, {
-        remaining: view.self.senasRemaining,
-      });
+      renderSenaPicker(
+        actionBar.appendChild(document.createElement("div")),
+        legalActions,
+        dispatch,
+        { remaining: view.self.senasRemaining },
+        layout,
+      );
     }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
