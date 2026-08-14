@@ -915,6 +915,41 @@ export function buildTableStylesheet(): string {
    * paired with .hexdev-truco-center's own padding-top above, which is what
    * actually removes the lane from that column's centering calculation. */
   height: var(--hx-band-banner);
+  /* Font-independence (banner-lane-line-box.browser.test.ts), the same defect
+   * .hexdev-truco-trick-feedback carries its own note about further below.
+   * "--hx-band-banner" is a hardcoded pixel constant — the same 60/76/80/84/112
+   * on every machine — but every line of text this lane holds was
+   * "line-height: normal", which each font answers out of its own
+   * ascent/descent/line-gap. So the lane was budgeted against one desktop's
+   * font and handed to everyone: measured headless at 700px, the pending-call
+   * pill came out 78px against its 76px lane and painted over the top of a
+   * played card. The lane's own token comment sizes it as "worst-case 58px +
+   * ~2px headroom"; ~2px over text with no fixed leading is not headroom.
+   *
+   * Declared HERE, on the lane, rather than three times on its occupants:
+   * "line-height" inherits, and a unitless value inherits as a FACTOR that each
+   * descendant recomputes against its own font-size — so one declaration pins
+   * the pending-call pill's three spans (1.1rem level, 0.75rem caller, 0.75rem
+   * turn), the seña notice's two and the hand-outcome chip's two at once, and a
+   * fourth occupant added to this slot later is covered the day it is added.
+   * Measured across four faces spanning squat to towering vertical metrics:
+   * 30/44/88/172px before, one number after, at every tier and seat count.
+   *
+   * 1.2, matching the trick-feedback line's own choice, NOT "var(--hx-leading)"
+   * (1.35): that is the chrome's body-copy rhythm, and at 1.35 the compact
+   * two-line pill alone wants 63.5px of a 60px lane. It also lands within a
+   * pixel of what this desktop already drew (69px -> 69.89px at 700px/1v1), so
+   * pinning the leading is not also a redesign of how the pill looks.
+   *
+   * WHAT THIS DOES NOT PIN, deliberately: how MANY line boxes there are. Line
+   * count follows glyph advance widths, so a genuinely wider font still wraps
+   * differently. Forbidding the wrap ("white-space: nowrap", which the seña
+   * notice below does get away with on a closed six-label vocabulary) was
+   * measured and rejected here: at 375px/2v2 the widest reachable row-pill
+   * needs ~264px against a 223px centre column, trading a vertical overflow for
+   * a horizontal one. Lane containment against real text stays
+   * table-zone-overlap.browser.test.ts's job. */
+  line-height: 1.2;
 }
 /* Change 1: the pending call is the single most important thing on screen
  * while it is open — an opaque, solid-background block in normal document
