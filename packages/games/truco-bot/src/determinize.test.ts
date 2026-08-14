@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Card, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import type { Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { sampleAllOpponentHands, sampleOpponentHand } from "./determinize.js";
@@ -23,7 +23,11 @@ function seededRng(seed: number): RandomSource {
   };
 }
 
-function baseView(overrides: { selfHand: readonly Card[]; cardsRemaining: number }): PlayerView {
+function baseView(overrides: {
+  selfHand: readonly Card[];
+  cardsRemaining: number;
+  resolvedTrickPlays?: readonly (readonly HandPlay[])[];
+}): PlayerView {
   return {
     self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.selfHand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: [],
@@ -35,7 +39,7 @@ function baseView(overrides: { selfHand: readonly Card[]; cardsRemaining: number
       envido: { status: "none" },
       turnSeat: 0,
       currentTrickPlays: [],
-      resolvedTrickPlays: [],
+      resolvedTrickPlays: overrides.resolvedTrickPlays ?? [],
       callEvents: [],
       trickOutcomes: [],
       outcome: { decided: false },
@@ -44,6 +48,26 @@ function baseView(overrides: { selfHand: readonly Card[]; cardsRemaining: number
     dealerSeat: 1,
   };
 }
+
+/** An rng that always returns 0 therefore always samples `pool[0]`: whatever
+ * the head of the pool is, it lands in the sample. That makes "card X was
+ * still in the pool" an assertion about a FIXED sample rather than a
+ * probabilistic one — the same trick the self-hand exclusion test below
+ * already relies on. */
+const alwaysFirst: RandomSource = () => 0;
+
+function play(playerId: PlayerId, teamId: TeamId, seat: number, card: Card): HandPlay {
+  return { playerId, teamId, seat, card };
+}
+
+/** `buildDeck()` walks SUITS then RANKS, so its first cards are espada
+ * 1/2/3/4/5/6 in that exact order. Naming them here keeps the expectations
+ * below readable: with `alwaysFirst`, the sample is simply the first N cards
+ * the pool still contains. */
+const ESPADA_1: Card = { suit: "espada", rank: 1 };
+const ESPADA_2: Card = { suit: "espada", rank: 2 };
+const ESPADA_3: Card = { suit: "espada", rank: 3 };
+const ESPADA_4: Card = { suit: "espada", rank: 4 };
 
 describe("sampleOpponentHand", () => {
   it("samples exactly the opponent's cardsRemaining count", () => {
@@ -56,9 +80,8 @@ describe("sampleOpponentHand", () => {
     // buildDeck()'s first three cards, in order, are espada 1/2/3 (SUITS/RANKS
     // order). A zero-returning rng always samples pool[0]; without the
     // exclusion filter it would deterministically re-draw exactly these.
-    const selfHand: readonly Card[] = [{ suit: "espada", rank: 1 }, { suit: "espada", rank: 2 }, { suit: "espada", rank: 3 }];
+    const selfHand: readonly Card[] = [ESPADA_1, ESPADA_2, ESPADA_3];
     const view = baseView({ selfHand, cardsRemaining: 3 });
-    const alwaysFirst: RandomSource = () => 0;
     const sample = sampleOpponentHand(view, alwaysFirst);
     for (const card of selfHand) {
       expect(sample.some((c) => c.suit === card.suit && c.rank === card.rank)).toBe(false);
@@ -78,6 +101,44 @@ describe("sampleOpponentHand", () => {
     const b = sampleOpponentHand(view, seededRng(999));
     expect(a).not.toEqual(b);
   });
+
+  it("never includes a card the OPPONENT already played in a resolved trick — it is face up on the table, not in a hand", () => {
+    // The opponent led espada 1 in trick 1 and it is now lying on the table.
+    // No sampled hand may contain it: `alwaysFirst` would otherwise draw it
+    // as pool[0], the very first card `buildDeck()` produces.
+    const view = baseView({
+      selfHand: [],
+      cardsRemaining: 2,
+      resolvedTrickPlays: [[play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_1), play(SELF, SELF_TEAM, 0, ESPADA_2)]],
+    });
+    expect(sampleOpponentHand(view, alwaysFirst)).toEqual([ESPADA_3, ESPADA_4]);
+  });
+
+  it("never includes a card the BOT ITSELF already played in a resolved trick — `self.hand` only holds what is still UNPLAYED", () => {
+    // The bot's own spent cards leave `self.hand`, so they are only knowable
+    // through the trick log. Espada 2 below is one of them, and it is just as
+    // impossible for the opponent to hold as the opponent's own espada 1.
+    const view = baseView({
+      selfHand: [ESPADA_3],
+      cardsRemaining: 1,
+      resolvedTrickPlays: [[play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_1), play(SELF, SELF_TEAM, 0, ESPADA_2)]],
+    });
+    expect(sampleOpponentHand(view, alwaysFirst)).toEqual([ESPADA_4]);
+  });
+
+  it("excludes plays from EVERY resolved trick, not just the most recent one", () => {
+    // `resolvedTrickPlays` is one entry PER trick, so a fix that reads only
+    // the last entry (or forgets to flatten) still leaks trick 1's cards.
+    const view = baseView({
+      selfHand: [],
+      cardsRemaining: 1,
+      resolvedTrickPlays: [
+        [play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_1), play(SELF, SELF_TEAM, 0, ESPADA_2)],
+        [play(SELF, SELF_TEAM, 0, ESPADA_3), play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_4)],
+      ],
+    });
+    expect(sampleOpponentHand(view, alwaysFirst)).toEqual([{ suit: "espada", rank: 5 }]);
+  });
 });
 
 /** A 2v2 view fixture — TWO real opponents, unlike `baseView`'s single one.
@@ -89,11 +150,22 @@ describe("sampleOpponentHand", () => {
 describe("sampleAllOpponentHands — one sampled hand PER real opponent (1v1: same as sampleOpponentHand; 2v2: both opponents, drawn from a shared pool so no card is double-counted)", () => {
   const OPPONENT_2 = "player-d" as PlayerId;
   const OPPONENT_2_TEAM = "player-b:team" as TeamId; // same team as OPPONENT — teammates across the table
+  const PARTNER = "player-c" as PlayerId;
 
-  function twoOpponentView(overrides: { selfHand: readonly Card[]; cardsRemaining: [number, number] }): PlayerView {
-    const base = baseView({ selfHand: overrides.selfHand, cardsRemaining: overrides.cardsRemaining[0] });
+  function twoOpponentView(overrides: {
+    selfHand: readonly Card[];
+    cardsRemaining: [number, number];
+    partnerCardsRemaining?: number;
+    resolvedTrickPlays?: readonly (readonly HandPlay[])[];
+  }): PlayerView {
+    const base = baseView({
+      selfHand: overrides.selfHand,
+      cardsRemaining: overrides.cardsRemaining[0],
+      resolvedTrickPlays: overrides.resolvedTrickPlays,
+    });
     return {
       ...base,
+      teammates: [{ playerId: PARTNER, seat: 2, cardsRemaining: overrides.partnerCardsRemaining ?? 3, lastSena: null }],
       opponents: [
         { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining[0] },
         { playerId: OPPONENT_2, teamId: OPPONENT_2_TEAM, seat: 3, cardsRemaining: overrides.cardsRemaining[1] },
@@ -121,5 +193,44 @@ describe("sampleAllOpponentHands — one sampled hand PER real opponent (1v1: sa
     const hands = sampleAllOpponentHands(view, seededRng(42));
     const ids = [...hands[0]!, ...hands[1]!].map((c) => `${c.rank}-${c.suit}`);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("2v2: a resolved trick's cards are gone from the pool no matter WHOSE they were — all four seats play face up", () => {
+    // One complete 2v2 trick: the bot, both opponents AND the bot's own
+    // partner each put a card on the table. Every one of those four is public
+    // information the moment it lands, so none may come back as a sampled
+    // opponent card. `alwaysFirst` pins the answer: the first two cards the
+    // pool still holds after espada 1-4 are removed.
+    const view = twoOpponentView({
+      selfHand: [],
+      cardsRemaining: [1, 1],
+      resolvedTrickPlays: [[
+        play(SELF, SELF_TEAM, 0, ESPADA_1),
+        play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_2),
+        play(PARTNER, SELF_TEAM, 2, ESPADA_3),
+        play(OPPONENT_2, OPPONENT_2_TEAM, 3, ESPADA_4),
+      ]],
+    });
+    expect(sampleAllOpponentHands(view, alwaysFirst)).toEqual([[{ suit: "espada", rank: 5 }], [{ suit: "espada", rank: 6 }]]);
+  });
+
+  it("2v2: the partner's UNPLAYED cards stay in the pool — seeing a partner play a card is not seeing their hand", () => {
+    // The exact boundary the test above must not overshoot. The partner still
+    // holds two cards; those are hidden from the bot and remain legitimate
+    // candidates. Asking for more cards than exist drains the pool, so the
+    // sample length IS the pool size: 40 minus the bot's own 1 remaining card
+    // minus the 4 played ones — and NOT minus the partner's 2 hidden ones.
+    const view = twoOpponentView({
+      selfHand: [{ suit: "copa", rank: 12 }],
+      cardsRemaining: [99, 0],
+      partnerCardsRemaining: 2,
+      resolvedTrickPlays: [[
+        play(SELF, SELF_TEAM, 0, ESPADA_1),
+        play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_2),
+        play(PARTNER, SELF_TEAM, 2, ESPADA_3),
+        play(OPPONENT_2, OPPONENT_2_TEAM, 3, ESPADA_4),
+      ]],
+    });
+    expect(sampleAllOpponentHands(view, alwaysFirst)[0]).toHaveLength(35);
   });
 });
