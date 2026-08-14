@@ -78,10 +78,25 @@ export interface MatchRoomCreateOptions {
    * as "normal" — easy would hand the match to the remaining player, hard
    * would punish them for a network drop that was never their fault). */
   readonly takeoverTier?: BotTier;
+  /**
+   * Per-turn time limit: how long a HUMAN seat may sit on a turn before a bot
+   * resolves that ONE turn for it (repo owner's decision — chosen over a full
+   * bot takeover and over escalating after N timeouts, because someone who
+   * looked away for a single turn should not lose their seat).
+   *
+   * A configurable DURATION, deliberately the same shape as
+   * `reconnectionWindowSeconds` above rather than an injected clock port: the
+   * room has never needed one, and tests make this fast by passing a tiny
+   * value exactly the way the reconnection tests already pass `0.01`.
+   */
+  readonly turnTimeoutSeconds?: number;
 }
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 30;
 const DEFAULT_TAKEOVER_TIER: BotTier = "normal";
+/** "~1 minute per turn" (repo owner). Long enough that a thinking player is
+ * never rushed, short enough that a table is never held hostage. */
+const DEFAULT_TURN_TIMEOUT_SECONDS = 60;
 
 interface MatchRoomJoinOptions {
   readonly token?: string;
@@ -159,6 +174,25 @@ export class MatchRoom extends Room {
   private rng: RandomSource | undefined;
   private reconnectionWindowSeconds = DEFAULT_RECONNECTION_WINDOW_SECONDS;
   private takeoverTier: BotTier = DEFAULT_TAKEOVER_TIER;
+  private turnTimeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
+  private turnTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The absolute instant the seat currently on the clock runs out — computed
+   * ONCE when the timer is armed and then read by `viewMessageFor`, so every
+   * client is handed the identical number rather than a per-client remaining
+   * count each would have to reconcile against its own idea of "now". An
+   * absolute instant is also the only shape a client can count down from
+   * locally: a per-second server tick would be per-match-per-second traffic
+   * for a number the client can derive itself.
+   */
+  private turnDeadline: number | null = null;
+  /** Which seat that deadline belongs to — the key that decides whether a
+   * broadcast re-arms the clock (a genuinely new turn) or leaves it alone. */
+  private turnTimerSeat: number | undefined;
+  /** Built lazily and reused: a `BotStrategy` is stateless (it is handed the
+   * view and the legal actions on every call), so one instance can resolve a
+   * timed-out turn for any seat. */
+  private timeoutBot: BotStrategy<unknown, ErasedAction> | undefined;
   private readonly controllers = new Map<number, Controller>();
   /**
    * The serialization boundary for `advance()` (closes the disclosed
@@ -170,6 +204,18 @@ export class MatchRoom extends Room {
    * attached to a promise that will reject.
    */
   private advanceChain: Promise<void> = Promise.resolve();
+  /**
+   * Set once, at disposal, and never cleared — the room is gone from here on.
+   * Colyseus gives `onDispose` exactly ONE synchronous moment, but this room
+   * has work that comes BACK after it: a timed-out turn's bot is mid-decision
+   * (production wraps every truco strategy in `withThinkingDelay`'s ~1s pause,
+   * so that gap is a real second, not a microtask), and an in-flight
+   * `advance()` still has its own decision to return from. Both resume into
+   * `broadcastViews`, which is why clearing the timer at disposal could never
+   * be enough on its own: there was nothing armed to clear at that instant,
+   * and the re-arm happens afterwards.
+   */
+  private disposed = false;
 
   override onCreate(options: MatchRoomCreateOptions): void {
     const module = options.registry.get(options.gameId);
@@ -184,6 +230,7 @@ export class MatchRoom extends Room {
     this.rng = options.rng;
     this.reconnectionWindowSeconds = options.reconnectionWindowSeconds ?? DEFAULT_RECONNECTION_WINDOW_SECONDS;
     this.takeoverTier = options.takeoverTier ?? DEFAULT_TAKEOVER_TIER;
+    this.turnTimeoutSeconds = options.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
     if (options.botTier !== undefined) {
       // Unguessable on purpose: `/embed?p=` is client-suppliable (design
       // §7), so a fixed or predictable bot id would be an identity a client
@@ -578,6 +625,19 @@ export class MatchRoom extends Room {
    * doc comment), so this can never hang disposal indefinitely.
    */
   override onDispose(): Promise<void> {
+    // Synchronously, BEFORE returning the chain: a pending turn timer is the
+    // one piece of this room that can still fire after teardown on its own
+    // initiative (every other trigger needs a live client). Clearing it here
+    // is what makes "no timer outlives the room" true rather than merely
+    // likely — a timer left armed would wake up a minute later, drive a bot
+    // against a disposed room, and send on dead connections.
+    //
+    // The flag first, and it is the half that actually earns that sentence:
+    // the clear alone only covers a timer armed RIGHT NOW. Work already in
+    // flight returns after this method and re-arms one (see the field's own
+    // doc comment); `broadcastViews` is where the flag stops it.
+    this.disposed = true;
+    this.clearTurnTimer();
     return this.advanceChain;
   }
 
@@ -623,17 +683,206 @@ export class MatchRoom extends Room {
   private viewMessageFor(
     module: GameModule<unknown, ErasedAction, unknown, unknown>,
     playerId: PlayerId,
-  ): { readonly view: unknown; readonly legalActions: readonly ErasedAction[]; readonly outcome: MatchOutcome | null } {
+  ): {
+    readonly view: unknown;
+    readonly legalActions: readonly ErasedAction[];
+    readonly outcome: MatchOutcome | null;
+    readonly turnDeadline: number | null;
+  } {
     return {
       view: module.getViewFor(this.matchState, playerId),
       legalActions: module.getLegalActions(this.matchState, playerId),
       outcome: module.getOutcome(this.matchState),
+      // Deliberately the SAME field for every client, not a per-seat one:
+      // only one seat is ever on the clock, so "visible to everyone" is one
+      // deadline all four see. A seat that is not on the clock still needs it
+      // — that is how the table shows the countdown on the ACTIVE seat's own
+      // badge. This is also the piece that keeps `truco-engine` untouched:
+      // the deadline rides on the view MESSAGE, never inside the engine's
+      // `PlayerView`, so the engine stays a pure reducer with no clock.
+      turnDeadline: this.turnDeadline,
     };
+  }
+
+  /**
+   * THE single place a turn deadline is started, and therefore the single
+   * answer to "when does a turn begin". Called at the top of
+   * `broadcastViews`, which is the one funnel every accepted mutation already
+   * passes through — so a deadline is set exactly when the previous action
+   * RESOLVED, and every "view" message a client receives already carries the
+   * deadline matching the state in that same message (view, legal actions,
+   * outcome and deadline stay in sync by construction, with no extra
+   * per-turn message on the wire).
+   *
+   * The seat on the clock is the first HUMAN seat owing at least one BLOCKING
+   * action — the exact mirror of `findActingBot`'s own rule, and it is what
+   * makes a pending call answered by seat B restart B's clock rather than A's:
+   * while the call is open, B is the seat that owes the blocking response.
+   *
+   * A live clock is left ALONE when the same seat is still the one owing a
+   * blocking action. That is what stops a NON-blocking action (2v2's
+   * `send-sena`, the only one in this codebase) from resetting the thinking
+   * seat's clock: a partner signalling — or signalling repeatedly — can
+   * neither buy that seat more time nor cut it short.
+   *
+   * A bot-driven seat never gets a deadline, and not merely because this
+   * method skips non-human controllers: by the time any broadcast happens,
+   * `runAdvanceOnce` has already driven every bot that owed a blocking
+   * action, so a bot seat structurally cannot be the seat on the clock. Bots
+   * act immediately; there is nothing to wait for.
+   */
+  private armTurnTimer(): void {
+    const module = this.module;
+    // No match, or a match already decided — a finished match must never keep
+    // a clock running, and `getOutcome` is the module's own authority on that.
+    if (module === undefined || this.matchState === undefined || module.getOutcome(this.matchState) !== null) {
+      this.clearTurnTimer();
+      return;
+    }
+    const seat = this.seatOnTheClock();
+    if (seat === undefined) {
+      this.clearTurnTimer();
+      return;
+    }
+    // Same seat, clock already running: this broadcast is a state change that
+    // did not end that seat's turn, so its deadline stands untouched.
+    if (seat === this.turnTimerSeat && this.turnTimer !== undefined) return;
+    this.clearTurnTimer();
+    const timeoutMs = this.turnTimeoutSeconds * 1000;
+    this.turnTimerSeat = seat;
+    this.turnDeadline = Date.now() + timeoutMs;
+    this.turnTimer = setTimeout(() => this.onTurnExpired(seat), timeoutMs);
+    // A pending turn timer must never be the reason a Node process stays
+    // alive: a real server is held open by its own listening sockets, and a
+    // test process should exit the moment its assertions are done rather than
+    // waiting out a minute-long game clock. `unref` is optional-chained
+    // because only Node's `Timeout` has it (`@types/node` is a devDependency
+    // here, so the type is right, but the guard costs nothing and keeps this
+    // honest if the timer type ever changes).
+    this.turnTimer.unref?.();
+  }
+
+  private clearTurnTimer(): void {
+    if (this.turnTimer !== undefined) clearTimeout(this.turnTimer);
+    this.turnTimer = undefined;
+    this.turnTimerSeat = undefined;
+    this.turnDeadline = null;
+  }
+
+  /** Public for the same reason `handleAction` is: it is the only way a test
+   * can prove a timer does not OUTLIVE the room, which a purely behavioural
+   * assertion can only ever prove by waiting and seeing nothing happen. */
+  hasPendingTurnTimer(): boolean {
+    return this.turnTimer !== undefined;
+  }
+
+  /** The human mirror of `findActingBot`: the seat owing a real decision. The
+   * BLOCKING filter is what keeps a continuously-legal side action (2v2's
+   * `send-sena`) from being mistaken for "this seat owes the table a move" —
+   * the same deadlock this codebase already reproduced once on the bot side. */
+  private seatOnTheClock(): number | undefined {
+    const module = this.module;
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return undefined;
+    for (const [seat, controller] of this.controllers) {
+      if (controller.kind !== "human") continue;
+      const legal = module.getLegalActions(this.matchState, controller.playerId);
+      if (legal.some((action) => !registry.isNonBlockingAction(gameId, action))) return seat;
+    }
+    return undefined;
+  }
+
+  /**
+   * The deadline passed. A bot resolves THIS ONE TURN and nothing more — the
+   * seat's controller is deliberately NOT swapped, which is the whole
+   * difference between this and `takeOverSeat`: a disconnect means nobody is
+   * there, so the seat changes hands; a timeout means somebody looked away for
+   * a minute, so the seat stays theirs and the very next turn is theirs again
+   * with a fresh clock.
+   *
+   * Chained onto `advanceChain` exactly the way `advance()` is, for exactly
+   * the same reason: a timer firing while a bot decision is already in flight
+   * must queue behind it, never run concurrently against the same
+   * `matchState`.
+   */
+  private onTurnExpired(seat: number): void {
+    this.clearTurnTimer();
+    const scheduled = this.advanceChain.then(() => this.runTimedOutTurnOnce(seat));
+    this.advanceChain = scheduled.catch(() => {
+      // Same defensive contract as `advance()`: `runTimedOutTurnOnce` already
+      // swallows its own exceptions, and this keeps a violation of that
+      // contract from poisoning the chain for whoever is queued behind it.
+    });
+  }
+
+  private async runTimedOutTurnOnce(seat: number): Promise<void> {
+    await this.playOneBotActionFor(seat);
+    // The turn the bot just resolved can unblock the rest of the table (a bot
+    // seat's reply, a system action). That is the SAME stepping logic every
+    // other trigger uses — called directly rather than through `advance()`,
+    // because we are already inside the serialized chain and re-entering it
+    // from here would deadlock (see `runAdvanceOnce`'s own doc comment).
+    await this.runAdvanceOnce();
+  }
+
+  /**
+   * One action, for one seat, from a bot — the timeout's entire effect.
+   *
+   * Only BLOCKING actions are offered to the strategy. A timeout must resolve
+   * the obligation that stalled the table without gambling anything the
+   * player did not choose to gamble: handing over the full legal list would
+   * let a tier fall through to a `send-sena` and silently spend one of the
+   * player's three per-hand señas on their behalf.
+   */
+  private async playOneBotActionFor(seat: number): Promise<void> {
+    try {
+      const module = this.module;
+      const registry = this.registry;
+      const gameId = this.gameId;
+      const controller = this.controllers.get(seat);
+      if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return;
+      // Anything may have changed while this timer sat queued behind an
+      // in-flight advance: the seat may have been taken over by a disconnect,
+      // the match may have ended, or the player may have acted after all.
+      if (controller === undefined || controller.kind !== "human") return;
+      if (module.getOutcome(this.matchState) !== null) return;
+      const blocking = module.getLegalActions(this.matchState, controller.playerId).filter((action) => !registry.isNonBlockingAction(gameId, action));
+      if (blocking.length === 0) return;
+      this.timeoutBot ??= module.createBot(this.takeoverTier);
+      const view = module.getViewFor(this.matchState, controller.playerId);
+      const action = await this.timeoutBot.chooseAction(view, blocking, BOT_BUDGET_MS);
+      const result = module.applyAction(this.matchState, action);
+      if (!result.ok) return; // a misbehaving strategy must not crash the room
+      this.matchState = result.state;
+      // Re-arms the clock for whoever owes the next action — which, after a
+      // timeout, is normally the OTHER seat, and after their move is this
+      // player again with a full fresh minute.
+      this.broadcastViews();
+    } catch (error) {
+      // NEVER re-throw: this runs from a timer callback, so an escaping
+      // exception is an unhandled rejection, which Node treats as fatal to
+      // the WHOLE process (see `runAdvanceOnce`'s own doc comment for the
+      // real crash this contract exists to prevent).
+      console.error("MatchRoom: caught an exception resolving a timed-out turn — the room stays alive, only this one turn is left unplayed:", error);
+    }
   }
 
   private broadcastViews(): void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) return;
+    // The whole fence a disposed room needs, and the reason it belongs HERE:
+    // this is the single funnel through which a clock is ever armed
+    // (`armTurnTimer` has no other caller) and the single place anything is
+    // ever sent to a client. Every path that resumes after teardown — the
+    // expired turn's bot, an `advance()` mid-decision — comes back through
+    // this method, so one check covers them all, and neither a fresh timer nor
+    // a send on a dead connection gets past it. Guarding `armTurnTimer`
+    // instead would leave the sends, and would be unreachable code besides.
+    if (this.disposed) return;
+    // BEFORE the sends, never after: this is what makes every message below
+    // carry the deadline belonging to the state it describes.
+    this.armTurnTimer();
     for (const controller of this.controllers.values()) {
       if (controller.kind === "human") controller.client.send("view", this.viewMessageFor(module, controller.playerId));
     }
