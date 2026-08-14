@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsc -b && vitest run",
-    "test:watch": "vitest watch",
+    "test": "tsc -b && node scripts/run-vitest.mjs run",
+    "test:watch": "node scripts/run-vitest.mjs watch",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:redis": "vitest run --config vitest.redis.config.ts",
     "test:visual": "vitest run --config vitest.visual.config.ts",
