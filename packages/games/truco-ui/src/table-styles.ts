@@ -607,6 +607,25 @@ export function buildTableStylesheet(): string {
 }
 [data-position="left"] .hexdev-truco-turn-badge { right: auto; left: -6px; transform: translate(-50%, -50%); }
 
+/* The per-turn countdown, INSIDE the badge that already names the seat on the
+ * clock. Adds no box of its own: it is an inline span in a pill that is
+ * already position: absolute and white-space: nowrap, so it widens the pill
+ * symmetrically about its centre and cannot move a height fence.
+ *
+ * tabular-nums is load-bearing, not polish. Proportional digits have
+ * different advance widths, so a countdown would make the pill breathe
+ * in and out by a pixel or two every single second, right next to the
+ * player's own cards. Tabular figures pin every digit to one width, so the
+ * pill's width changes only when the MINUTE digit drops a character. */
+.hexdev-truco-turn-clock {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  /* Slightly recessive against the label it follows: the seat name is the
+   * message, the seconds are the qualifier. */
+  opacity: 0.8;
+}
+
 .hexdev-truco-center {
   grid-area: center;
   position: relative;

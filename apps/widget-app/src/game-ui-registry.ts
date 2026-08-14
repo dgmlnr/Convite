@@ -14,6 +14,12 @@ export interface GameUiPayload {
   readonly view: unknown;
   readonly legalActions: readonly unknown[];
   readonly outcome?: unknown;
+  /** The absolute instant the seat on the clock runs out of turn time, or
+   * `null` when nothing is being timed (`MatchRoom.viewMessageFor`). Optional
+   * and nullable on the same terms as `outcome` above: a fallback game never
+   * reaches for it, and an older or partial payload that simply lacks the
+   * field renders an untimed table rather than crashing. */
+  readonly turnDeadline?: number | null;
 }
 
 export interface GameUiEntry {
@@ -42,10 +48,17 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
   return () => {
     const render = createMatchTableRenderer();
     return (container, payload, dispatch, onPlayAgain) => {
-      render(container, payload.view as PlayerView, payload.legalActions as readonly Action[], (action) => dispatch(action), {
-        outcome: (payload.outcome ?? null) as { readonly winnerIds: readonly PlayerId[] } | null,
-        onPlayAgain,
-      });
+      render(
+        container,
+        payload.view as PlayerView,
+        payload.legalActions as readonly Action[],
+        (action) => dispatch(action),
+        {
+          outcome: (payload.outcome ?? null) as { readonly winnerIds: readonly PlayerId[] } | null,
+          onPlayAgain,
+        },
+        payload.turnDeadline ?? null,
+      );
     };
   };
 }
