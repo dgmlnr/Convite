@@ -570,6 +570,15 @@ export class MatchRoom extends Room {
   private async runAdvanceOnce(): Promise<void> {
     try {
       for (;;) {
+        // Checked before every other loop exit because it is the only one that
+        // means "stop SPENDING". `broadcastViews`'s fence already makes what
+        // follows harmless, but harmless is not free: a bot decision is a real
+        // ~1s `withThinkingDelay` in production, and `onDispose` returns
+        // `advanceChain`, so teardown sits and waits through every step this
+        // loop still chooses to take. Both resume points come back through
+        // here — the `continue` after a bot action, and a step that was queued
+        // behind an in-flight one and only starts once disposal has happened.
+        if (this.disposed) return;
         const module = this.module;
         const registry = this.registry;
         const gameId = this.gameId;
@@ -635,7 +644,10 @@ export class MatchRoom extends Room {
     // The flag first, and it is the half that actually earns that sentence:
     // the clear alone only covers a timer armed RIGHT NOW. Work already in
     // flight returns after this method and re-arms one (see the field's own
-    // doc comment); `broadcastViews` is where the flag stops it.
+    // doc comment); `broadcastViews` is where the flag stops it. The same flag
+    // is also what keeps the chain returned below SHORT: `runAdvanceOnce` and
+    // `playOneBotActionFor` read it and stop taking steps, so teardown never
+    // waits out a bot decision whose result this method's own fence discards.
     this.disposed = true;
     this.clearTurnTimer();
     return this.advanceChain;
@@ -837,6 +849,13 @@ export class MatchRoom extends Room {
    */
   private async playOneBotActionFor(seat: number): Promise<void> {
     try {
+      // Same exit as `runAdvanceOnce`'s own first one, and this is where it
+      // saves the most: `onTurnExpired` chains onto `advanceChain`, so a turn
+      // that expired while a bot decision was in flight does not start until
+      // that decision returns — which is easily after disposal. Without this,
+      // teardown would wait out a SECOND `chooseAction` below just to apply an
+      // action into a room nobody will ever see again.
+      if (this.disposed) return;
       const module = this.module;
       const registry = this.registry;
       const gameId = this.gameId;
@@ -871,14 +890,29 @@ export class MatchRoom extends Room {
   private broadcastViews(): void {
     const module = this.module;
     if (module === undefined || this.matchState === undefined) return;
-    // The whole fence a disposed room needs, and the reason it belongs HERE:
-    // this is the single funnel through which a clock is ever armed
-    // (`armTurnTimer` has no other caller) and the single place anything is
-    // ever sent to a client. Every path that resumes after teardown — the
-    // expired turn's bot, an `advance()` mid-decision — comes back through
-    // this method, so one check covers them all, and neither a fresh timer nor
-    // a send on a dead connection gets past it. Guarding `armTurnTimer`
-    // instead would leave the sends, and would be unreachable code besides.
+    // The fence a disposed room needs, and the reason it belongs HERE: this is
+    // the single funnel through which a clock is ever armed (`armTurnTimer` has
+    // no other caller) and the single place a view is ever BROADCAST. Every
+    // path that resumes after teardown — the expired turn's bot, an `advance()`
+    // mid-decision — comes back through this method, so one check covers them
+    // all, and neither a fresh timer nor a send on dead connections gets past
+    // it. Guarding `armTurnTimer` instead would leave the sends, and would be
+    // unreachable code besides.
+    //
+    // Deliberately NOT "the single place anything is sent to a client": five
+    // other `client.send` calls in this file are unfenced, and the honest
+    // reason the fence is still complete is a SECOND fact, not this check.
+    // Four are `handleAction`'s `action-rejected` replies, which exist only as
+    // answers to an inbound client message — a torn-down room has no live
+    // socket to carry one, and a rejection arms no clock and carries no state
+    // regardless. The fifth is a view: `onReconnect`. What keeps THAT one out
+    // is the framework. `onReconnect` fires only for a reconnection this room
+    // is already holding open, and a pending `allowReconnection` both reserves
+    // a seat (so `#_disposeIfEmpty`, which requires zero reserved seats, can
+    // never fire underneath it) and is rejected outright by `disconnect()`
+    // before disposal — both verified in the installed `@colyseus/core` source
+    // (`Room.ts`), the same discipline `onLeave` already used to lean on that
+    // guarantee for its own `Error("disposing")` early return.
     if (this.disposed) return;
     // BEFORE the sends, never after: this is what makes every message below
     // carry the deadline belonging to the state it describes.
