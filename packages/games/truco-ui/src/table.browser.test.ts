@@ -789,7 +789,7 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
   // gets that area as its containing block" rule (table-styles.ts's own
   // .hexdev-truco-call-log rule: grid-area: center; position: absolute; left:
   // 0; bottom: 0), not by DOM nesting under .hexdev-truco-center anymore.
-  it("mounts renderCallLog as a direct child of the felt (.hexdev-truco-table), positioned into the center grid area at compact — fed from view.hand.callEvents and the SAME positions map the piles use", () => {
+  it("mounts renderCallLog as a direct child of the felt (.hexdev-truco-table), positioned into the center grid area at compact — fed from view.hand.callEvents and labelled by the same seat geometry the piles use", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
@@ -907,6 +907,46 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
 
     const turnLineRect = turnLine.getBoundingClientRect();
     expect(turnLineRect.height, "the turn line must have real, visible height again, not the 1px visually-hidden box").toBeGreaterThan(5);
+  });
+});
+
+/**
+ * `view.hand === null` is not an edge case this renderer merely tolerates: it
+ * is the FIRST view of every match. `MatchRoom.onJoin` builds the match and
+ * broadcasts it before `advance()` deals (transport-colyseus's own
+ * `match-room.ts`), so the opening render of every table — 1v1 and 2v2 alike —
+ * goes through the `view.hand?.… ?? …` fallbacks below rather than through a
+ * hand. `HandView | null` is what makes that expressible, and optional
+ * chaining short-circuits on `null` exactly as it does on `undefined`.
+ */
+describe("createMatchTableRenderer — the opening view of a match, broadcast before the deal (view.hand === null)", () => {
+  it("comes up as a real, empty table: seats and scoreboard, no call log, no piles, nobody on the clock", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    // Undealt means no cards either, on the local seat as much as anywhere —
+    // the shape the room actually broadcasts, not a hand with its cards kept.
+    const view = baseView({ hand: null, self: { ...baseView().self, hand: [] } });
+
+    render(el, view, [], () => {});
+
+    // The table itself is up: whatever is permanently true of a match — its
+    // seats and its score — never depended on a hand being in progress.
+    expect([...el.querySelectorAll<HTMLElement>(".hexdev-truco-anchor")].map((a) => a.dataset.position).sort()).toEqual([
+      "bottom",
+      "left",
+      "right",
+      "top",
+    ]);
+    expect(el.querySelectorAll(".hexdev-truco-scoreboard")).toHaveLength(2);
+
+    // And everything a hand would have supplied reads as genuinely empty
+    // rather than as leftovers: no history to log, no cards on the felt.
+    expect(el.querySelector(".hexdev-truco-call-log")!.children).toHaveLength(0);
+    expect(el.querySelectorAll("[data-played-by-seat]")).toHaveLength(0);
+    // Nobody owes a move between hands, so no seat is highlighted and no badge
+    // (nor its countdown) claims one is late.
+    expect(el.querySelectorAll(".hexdev-truco-anchor--active")).toHaveLength(0);
+    expect(el.querySelectorAll(".hexdev-truco-turn-badge")).toHaveLength(0);
   });
 });
 
