@@ -184,12 +184,13 @@ describe("MatchRoom", () => {
     expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null, turnDeadline: expect.any(Number) } });
     expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number) } });
     // Deliberately NOT the whole message: `turnDeadline` is an epoch
-    // millisecond, and roughly half of all of them contain the digits "11" by
-    // pure accident — sweeping the server's clock for a game secret proves
-    // nothing about redaction and fails at random (it did, ~50% of runs, the
-    // moment the deadline joined this message). The redacted view and this
-    // seat's own legal actions are the entire surface a secret can leak
-    // through, and they are exactly what this sweeps now.
+    // millisecond, and a real slice of them contain the digits "11" by pure
+    // accident — sweeping the server's clock for a game secret proves nothing
+    // about redaction and fails at random (it did, 3 runs in 20, the moment the
+    // deadline joined this message; sampling epoch milliseconds directly puts
+    // the underlying rate at 7-11% depending on the window). The redacted view
+    // and this seat's own legal actions are the entire surface a secret can
+    // leak through, and they are exactly what this sweeps now.
     const leakSurface = seat1.sent[0]?.message as { view: unknown; legalActions: unknown };
     expect(JSON.stringify({ view: leakSurface.view, legalActions: leakSurface.legalActions })).not.toContain("11");
   });
@@ -698,8 +699,17 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     let concurrentCalls = 0;
     let maxConcurrentCalls = 0;
     let totalCalls = 0;
+    let legalActionQueries = 0;
     const module: GameModule<RaceState, RaceAction, RaceView, void> = {
       ...raceModule,
+      // Counted because every step the drive loop takes asks this first
+      // (`findActingBot`, then `anySeatCanAct`). A disposal test watching only
+      // sends and timers cannot tell "the room stopped working" apart from "the
+      // room worked and `broadcastViews` threw the result away" — this can.
+      getLegalActions: (state, playerId) => {
+        legalActionQueries += 1;
+        return raceModule.getLegalActions(state, playerId);
+      },
       createBot: () => ({
         chooseAction: async (_view, legal): Promise<RaceAction> => {
           totalCalls += 1;
@@ -723,14 +733,15 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
       pendingCount: () => pendingReleases.length,
       totalCalls: () => totalCalls,
       maxConcurrentCalls: () => maxConcurrentCalls,
+      legalActionQueries: () => legalActionQueries,
     };
   }
 
-  async function createRaceRoom(module: GameModule<RaceState, RaceAction, RaceView, void>) {
+  async function createRaceRoom(module: GameModule<RaceState, RaceAction, RaceView, void>, overrides: { turnTimeoutSeconds?: number } = {}) {
     const auth = await createAuth();
     const registry = createGameModuleRegistry([module]);
     const room = new MatchRoom();
-    room.onCreate({ gameId: "fixture-race", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy" });
+    room.onCreate({ gameId: "fixture-race", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "easy", turnTimeoutSeconds: overrides.turnTimeoutSeconds });
     const seat0 = fakeClient("s0");
     return { room, seat0, auth };
   }
@@ -822,7 +833,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
   });
 
   it("onDispose() waits for any in-flight or queued advance() work to settle before the room finishes disposing", async () => {
-    const { module, releaseNextBotDecision } = controllableRaceModule();
+    const { module, releaseNextBotDecision, legalActionQueries } = controllableRaceModule();
     const { room, seat0, auth } = await createRaceRoom(module);
 
     const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
@@ -837,6 +848,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     // resolved yet, or a chain would be left running past teardown.
     expect(disposeSettled).toBe(false);
 
+    const queriesAtDisposal = legalActionQueries();
     releaseNextBotDecision();
     await joinPromise;
     await disposePromise;
@@ -845,6 +857,50 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     // broadcast is what arms a clock. A disposed room must not come away from
     // it holding a timer — same fence the turn-clock suite's own dispose race
     // proves, reached here through `advance()` instead of an expired turn.
+    expect(room.hasPendingTurnTimer()).toBe(false);
+    // And the work is not merely suppressed, it stops: the released decision
+    // was the LAST step this room took. Without the disposal exit at the top of
+    // `runAdvanceOnce`'s loop, the `continue` after it would go right back to
+    // asking the module what to drive next, on a room the framework has already
+    // released — with `onDispose` still waiting on every bit of it.
+    expect(legalActionQueries()).toBe(queriesAtDisposal);
+  });
+
+  it("never asks a bot to resolve a timed-out turn that was still queued when the room was disposed", async () => {
+    const { module, releaseNextBotDecision, totalCalls } = controllableRaceModule();
+    // Short enough that seat 0's clock expires while the bot's own decision is
+    // still held open. That is the one state in which disposal can land BEFORE
+    // the timed-out turn has started any work of its own: `onTurnExpired`
+    // chains onto `advanceChain`, so its turn sits queued behind that decision.
+    // Neither older dispose test reaches this: both release into a method that
+    // had already begun, where the ~1s decision is by then already spent.
+    const { room, seat0, auth } = await createRaceRoom(module, { turnTimeoutSeconds: 0.03 });
+
+    const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await flush();
+    expect(totalCalls()).toBe(1); // the bot's `call`, parked
+
+    // Polled, not slept: `onTurnExpired` clears the timer as its first act, so
+    // this returns within a couple of ms of the real expiry.
+    const deadline = Date.now() + 2000;
+    while (room.hasPendingTurnTimer()) {
+      if (Date.now() > deadline) throw new Error("seat 0's turn clock never expired");
+      await new Promise<void>((resolve) => setTimeout(resolve, 2));
+    }
+
+    const disposePromise = room.onDispose();
+    releaseNextBotDecision(); // the bot's `call` returns; the queued turn is next
+    await flush();
+
+    // THE assertion: the queued turn took its disposal exit instead of building
+    // a strategy and awaiting one — in production a full `withThinkingDelay`
+    // second that `onDispose` sits and waits through, only for `broadcastViews`
+    // to discard the result. This fixture never releases that decision at all,
+    // so without the exit `onDispose` would also never settle.
+    expect(totalCalls()).toBe(1);
+
+    await joinPromise;
+    await disposePromise;
     expect(room.hasPendingTurnTimer()).toBe(false);
   });
 });
@@ -1073,8 +1129,16 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     // ALREADY fired (so disposal's own clear finds nothing) and the bot has
     // not yet come back to re-arm. The held-open promise below IS that second.
     const releases: Array<() => void> = [];
+    let legalActionQueries = 0;
     const heldBotModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
       ...fixtureModule,
+      // Same instrument as the race suite's own counter, and for the same
+      // reason: it is the only way to see the room STOP working rather than
+      // merely see the fence throw its output away.
+      getLegalActions: (state, playerId) => {
+        legalActionQueries += 1;
+        return fixtureModule.getLegalActions(state, playerId);
+      },
       createBot: () => ({
         chooseAction: async (_view, legal) => {
           await new Promise<void>((resolve) => releases.push(resolve));
@@ -1098,6 +1162,7 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
 
     const disposePromise = room.onDispose();
     expect(room.hasPendingTurnTimer()).toBe(false); // disposal's clear found nothing to clear
+    const queriesAtDisposal = legalActionQueries;
 
     releases[0]!();
     await disposePromise;
@@ -1109,5 +1174,10 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     // connections that are already dead.
     expect(room.hasPendingTurnTimer()).toBe(false);
     expect(seat0.sent).toHaveLength(before);
+    // Beyond the effects: the room does not keep DRIVING either. Once
+    // `playOneBotActionFor` returns, `runTimedOutTurnOnce` still calls
+    // `runAdvanceOnce`, and that call's own disposal exit is what stops it
+    // asking the module for a next step on a room that is already gone.
+    expect(legalActionQueries).toBe(queriesAtDisposal);
   });
 });
