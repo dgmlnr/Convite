@@ -5,7 +5,7 @@ import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
 import type { MatchState } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
-import { MAX_SENAS_PER_HAND, SENA_SIGNALS } from "./senas.js";
+import { MAX_SENAS_PER_HAND, SENA_SIGNALS, getSenasRemaining } from "./senas.js";
 
 const playerA = "player-a" as PlayerId;
 const playerB = "player-b" as PlayerId;
@@ -218,6 +218,22 @@ describe("señas — at most MAX_SENAS_PER_HAND per PLAYER per hand", () => {
 
     expect(redealt.hand!.senasSent).toEqual([]);
     expect(getLegalActions(redealt, playerA).some((action) => action.type === "send-sena")).toBe(true);
+  });
+
+  it("reads the FULL cap while no hand is in progress — a match that has not been dealt yet has spent nothing", () => {
+    // Not a hypothetical state: `MatchRoom.onJoin` creates the match and
+    // broadcasts a view BEFORE the first deal, so this is the very first
+    // number every player's señas control is drawn from. Reporting 0 there —
+    // "you spent them", to every consumer — would greet a 2v2 table with a
+    // control that looks used up before a single card exists.
+    const undealt = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
+    expect(undealt.hand).toBeNull();
+
+    expect(getSenasRemaining(undealt, playerA)).toBe(MAX_SENAS_PER_HAND);
+    // Full, yet not on offer: the quota is arithmetic, never a legality flag.
+    // Both halves matter — a "fix" that folded legality in here would satisfy
+    // the second expectation by breaking the first.
+    expect(getLegalActions(undealt, playerA).some((action) => action.type === "send-sena")).toBe(false);
   });
 
   it("spends one player's quota without touching anyone else's — the other three can still signal at will", () => {
