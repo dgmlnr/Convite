@@ -96,9 +96,13 @@ afterEach(() => {
  * each hardcode a single tier) — this file's whole purpose is the SAME shell
  * at the wide (900px axis, 960px chosen) and ultra (1280px) tiers, so one
  * helper serves every test here. Height stays unset for the same reason both
- * source files document: `.hexdev-truco-table`'s own `min-height: max(100%,
- * …)` needs an auto-height ancestor to hug real content instead of
- * stretching over an explicit one and evicting the scoreboard panel.
+ * source files document (table.visual.test.ts's own mountedContainer carries
+ * it in full): width-only reproduces the real widget document, which has no
+ * definite height chain at all — embed-shell.ts declares no height on
+ * html/body, so the shell's own `height: 100%` computes to auto — and an
+ * auto-height ancestor lets the felt hug its real content so nothing can
+ * clip. Panel POSITION under a definite height is fenced in
+ * table-panel-in-frame.browser.test.ts, not here.
  *
  * `page.viewport(...)` (real bug found writing this file, not present in
  * either source file — both stay under 414px): Browser Mode's default
