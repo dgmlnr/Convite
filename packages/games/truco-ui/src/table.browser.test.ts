@@ -430,6 +430,76 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
     expect(toggle!.textContent).toBe("Sin señas");
   });
 
+  /**
+   * The picker's dismissal, at the level where it can actually break. The
+   * mechanism itself is fenced in senas.browser.test.ts against a stand-in
+   * surface; what only the table can get wrong is WHICH node it hands over,
+   * and every wrong answer still passes every test in that file.
+   */
+  it("dismisses the open señas picker when the click lands anywhere else on the table", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }];
+
+    render(el, teamView(), legal, () => {});
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
+    toggle.click();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    // The middle of the felt — not a stand-in, the real node a player's eyes
+    // and thumb are on while a hand is in play.
+    el.querySelector<HTMLElement>(".hexdev-truco-center")!.click();
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(el.querySelectorAll('button[data-action="send-sena"]')).toHaveLength(0);
+  });
+
+  it("re-arms that dismissal on every broadcast, never only on the first render", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }];
+
+    render(el, teamView(), legal, () => {});
+    render(el, teamView(), legal, () => {});
+    render(el, teamView(), legal, () => {});
+
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
+    toggle.click();
+    el.querySelector<HTMLElement>(".hexdev-truco-center")!.click();
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  /**
+   * The anti-`container` fence, and the reason the surface is a parameter at
+   * all. `container` is `main.ts`'s own `app` element: leaving a match calls
+   * `replaceChildren()` on it, which EMPTIES it without removing it — so a
+   * dismissal listener parked there (or on `document`) would outlive the match
+   * with no render left to take it back, which is the exact leak the whole
+   * mechanism exists to avoid. It looks like the obvious node to pass and is
+   * the one node that must never be passed.
+   */
+  it("parks the picker's dismissal on none of the nodes that survive leaving a match — not the widget root, not the body, not the document", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }];
+    render(el, teamView(), legal, () => {});
+
+    const survivors: readonly [string, EventTarget][] = [
+      ["the widget root, which `replaceChildren` empties without removing", el],
+      ["the body", document.body],
+      ["the document", document],
+    ];
+    const spies = survivors.map(([reason, target]) => [reason, vi.spyOn(target, "addEventListener")] as const);
+    try {
+      el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.click();
+
+      for (const [reason, spy] of spies) expect(spy, `nothing may still be listening on ${reason}`).not.toHaveBeenCalled();
+    } finally {
+      for (const [, spy] of spies) spy.mockRestore();
+    }
+  });
+
   it("marks the partner's anchor data-relation=partner and both opponents' anchors data-relation=opponent", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();

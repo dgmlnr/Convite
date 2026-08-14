@@ -47,12 +47,17 @@ export interface SenaQuota {
  * player only discovers by hitting it is a trap, and the whole point of the
  * cap is that it should change how señas are spent, which it can only do if
  * it is visible while there are still some to spend.
+ *
+ * `dismissSurface` is what makes the picker DISMISSABLE, and it is a
+ * parameter rather than a `document` lookup for one reason — see the block
+ * comment on the listeners themselves further down.
  */
 export function renderSenaPicker(
   container: HTMLElement,
   legalActions: readonly Action[],
   dispatch: (action: Action) => void,
   quota: SenaQuota,
+  dismissSurface: HTMLElement,
 ): void {
   container.replaceChildren();
   // Stable window height (apply prompt): the class is set BEFORE the early
@@ -112,11 +117,92 @@ export function renderSenaPicker(
     }
   };
 
-  toggle.addEventListener("click", () => {
-    open = !open;
+  /**
+   * WHERE THESE LIVE IS THE WHOLE DESIGN, and `document` is the one place
+   * they must not.
+   *
+   * This renderer has NO UNMOUNT HOOK. `table.ts`'s `render` rebuilds the
+   * entire table on every broadcast, and `main.ts` empties the widget root
+   * when a match is left — with no render following it. A `document`-level
+   * listener registered here would therefore leak one closure over a detached
+   * tree per broadcast (dozens per hand, hundreds per match), and removing it
+   * "on the next render" fixes only the first of those two paths: after
+   * teardown there IS no next render, so the last one would sit on `document`
+   * forever.
+   *
+   * So the lifetime is expressed STRUCTURALLY instead of being managed.
+   * `dismissSurface` is the per-render subtree this picker itself hangs
+   * under (`table.ts` passes its `.hexdev-truco-shell-layout`, built fresh
+   * every render and dropped both by the next one and by teardown). A
+   * listener there cannot outlive the picker, because the node it is
+   * registered on is thrown away by exactly the two events that throw the
+   * picker away — and a listener on an unreachable detached node is collected
+   * with the tree that holds it, not left behind on a live one.
+   *
+   * That is the OPPOSITE of `announcer.ts`'s shape, deliberately and for the
+   * same underlying reason. An announcement is a change to a region that
+   * PERSISTS, so those nodes are built once and must survive the render; a
+   * popover's dismissal is meaningless the moment its popover is gone, so it
+   * must NOT survive it. Both are answers to "there is no unmount hook"; they
+   * differ because the two things want opposite lifetimes. The turn clock's
+   * interval in `table.ts` takes the third road — re-armed per render and
+   * self-healing on a detached node — because a timer fires itself and can
+   * notice; a listener that waits for an event no one will ever send cannot.
+   */
+  const onSurfaceClick = (event: MouseEvent): void => {
+    // DOM CONTAINMENT, never geometry. The row is `position: absolute` and
+    // deliberately escapes the action bar's own scroll box (table-styles.ts),
+    // so "is this click inside the picker" is a question about the tree, not
+    // about rectangles — a hit test would call a click on the felt beneath
+    // the open row "inside" and a click on the row itself "outside".
+    //
+    // It is also what keeps the toggle's own click honest. That click runs
+    // the toggle's handler FIRST, which registers this listener, and then
+    // keeps bubbling until it reaches the surface — where a listener added
+    // mid-dispatch on a not-yet-reached ancestor genuinely does fire. The
+    // containment check is what stops the opening click from being read as an
+    // outside click and closing what it just opened.
+    if (event.target instanceof Node && container.contains(event.target)) return;
+    setOpen(false);
+  };
+
+  const onSurfaceKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape") return;
+    // Focus moves BEFORE the close, not after, and the order is load-bearing.
+    // A keyboard player who tabbed into the row is standing on one of the six
+    // buttons the close is about to destroy; handing them back to the toggle
+    // returns them to the control that owns the region they just closed
+    // instead of dropping them on <body> with their place in the action bar
+    // gone. Doing it afterwards looks equivalent and is not — removing the
+    // focused node triggers the browser's own focus fix-up, which can land
+    // AFTER our `focus()` call and undo it (it does, in Chromium). Never
+    // removing the focused node in the first place sidesteps the race.
+    //
+    // A player whose focus was elsewhere keeps it: Escape closes the picker,
+    // it does not summon it.
+    const focused = container.ownerDocument.activeElement;
+    if (focused !== null && container.contains(focused)) toggle.focus();
+    setOpen(false);
+  };
+
+  const setOpen = (next: boolean): void => {
+    if (open === next) return;
+    open = next;
     toggle.setAttribute("aria-expanded", String(open));
     renderRow();
-  });
+    // Armed only while there is something to dismiss: a closed picker holds
+    // no listener at all, which is what makes "no listener survives N
+    // renders" a fact about every render rather than about tidy bookkeeping.
+    if (open) {
+      dismissSurface.addEventListener("click", onSurfaceClick);
+      dismissSurface.addEventListener("keydown", onSurfaceKeydown);
+    } else {
+      dismissSurface.removeEventListener("click", onSurfaceClick);
+      dismissSurface.removeEventListener("keydown", onSurfaceKeydown);
+    }
+  };
+
+  toggle.addEventListener("click", () => setOpen(!open));
 
   container.append(toggle, row);
 }
