@@ -1007,9 +1007,30 @@ export function buildTableStylesheet(): string {
   }
 }
 
+/* Stable window height, font-independence (trick-feedback-line-box.browser.
+ * test.ts): this is the one line on the table that is EMPTY for most of a hand
+ * and fills the instant a trick resolves, so what it costs filled has to equal
+ * what it reserves empty or the whole table steps every time.
+ *
+ * "min-height" alone only bought half of that. The reservation is a fixed
+ * multiple of this element's own font-size — the same on every machine — but
+ * with no "line-height" the FILLED line box was "normal", which each font
+ * answers out of its own ascent/descent/line-gap. Measured at 0.85rem against
+ * this 16.3125px reservation: Liberation Sans 15, Adwaita Sans 16, DejaVu Sans
+ * 16, Noto Sans 19. So the table held still for whoever drew it in the first
+ * three and grew 2.6875px mid-hand for anyone on the fourth — including this
+ * repo's own headless runs, where fontconfig picks exactly that.
+ *
+ * The two numbers below are therefore ONE number and must stay equal: a
+ * unitless "line-height" is the same fraction of font-size that "1.2em" is, so
+ * a filled line box lands exactly on the floor for EVERY font instead of
+ * clearing it by whatever that font's metrics happen to be. Not
+ * "var(--hx-leading)" (1.35): that is the chrome's body-copy rhythm and it
+ * would overflow this reservation by design. */
 .hexdev-truco-trick-feedback {
   margin: 0;
   min-height: 1.2em;
+  line-height: 1.2;
   text-align: center;
   font-size: 0.85rem;
 }
