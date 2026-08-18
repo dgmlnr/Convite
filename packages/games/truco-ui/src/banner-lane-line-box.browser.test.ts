@@ -29,9 +29,9 @@ import { CALL_LABELS, SENA_LABELS } from "./strings.js";
  * "filled costs what it reserved" was the whole mechanism there. This banner
  * is a COLUMN of three spans (level, caller, turn — two at compact, where the
  * turn line is visually hidden), any of which can itself wrap to two or three
- * lines inside a slot whose shrink-to-fit width is capped at half the centre
- * column. So its height is not one line box but a sum of them, and there is no
- * single reservation on the element to compare a filled measurement against.
+ * lines inside a slot only as wide as its own centre column. So its height is
+ * not one line box but a sum of them, and there is no single reservation on
+ * the element to compare a filled measurement against.
  *
  * These tests are therefore NOT about a number and NOT about a font, exactly
  * like the sibling's: they pin the PROPERTY that makes the lane's number
@@ -175,11 +175,13 @@ afterEach(() => {
  *
  * The whole renderer rather than a hand-built shell, because the geometry this
  * lane's occupants wrap inside is not reconstructible by hand: the slot is
- * `position: absolute; left: 50%` inside `.hexdev-truco-center`, which is
- * `position: relative`, so its shrink-to-fit width is capped at HALF the
- * centre grid area — an area whose width depends on the seat-count gutters and,
- * from 900px up, the call-log rail column. Measured directly: the same pill at
- * the same 700px container is 171px wide at 1v1 and 110px at 2v2.
+ * `position: absolute; inset-inline: 0` inside `.hexdev-truco-center`, which
+ * is `position: relative`, so the width its occupants wrap at IS the centre
+ * grid area's own — an area whose width depends on the seat-count gutters and,
+ * from 900px up, the call-log rail column. (An earlier left: 50% + translate
+ * anchor capped that width at HALF the area — the defect `table-zone-overlap`'s
+ * vocabulary sweep now fences — and the same pill at the same 700px container
+ * measured 171px wide at 1v1 against 110px at 2v2 under it.)
  *
  * `--gx-font-family` on the container is how a tenant's own theme reaches this
  * text in production (`table-styles.ts`: `.hexdev-truco-table-shell` sets

@@ -187,7 +187,11 @@ export function buildTableStylesheet(): string {
    * second line inside its own flex item — taller than the design's one-line
    * assumption predicted. Raised to 60px (worst-case 58px + ~2px headroom)
    * so the pill fits without clipping/overlap even at its tallest realistic
-   * text combination. --hx-band-action-total: equals --hx-band-action at
+   * text combination. (The half-column shrink-to-fit anchor described above
+   * has since been replaced — the slot now pins both inline edges, see its
+   * own rule below — but the 60px stands: re-measured over the full
+   * vocabulary at this tier, the 2v2 worst case is 58.22px from the full
+   * column too.) --hx-band-action-total: equals --hx-band-action at
    * compact (1 strip, calls+señas share it, tasks §3.8) — the 2v2 two-strip
    * formula only starts at medium (below). */
   --hx-band-banner: 60px;
@@ -1123,8 +1127,23 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-banner-slot {
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Spans the WHOLE centre column, replacing the old left: 50% +
+   * translateX(-50%) anchor. That anchor centred the slot but quietly capped
+   * its shrink-to-fit width at HALF the column: an absolutely positioned box
+   * with an auto width resolves its available width from its own left edge
+   * to the containing block's right edge, so anchoring at 50% halves it
+   * before the translate ever runs. At 2v2 the centre column is narrow
+   * enough that the pending pill's spans wrapped into extra line boxes
+   * inside that halved width and outgrew the lane it floats over — measured
+   * worst case 119.78px in a 112px lane at medium (even plain "Truco" from
+   * the responder's view came out 113.06px), the top of the level line
+   * clipped by .hexdev-truco-center's own overflow: hidden. Pinning both
+   * inline edges gives occupants the full column to lay out in before any
+   * wrap (worst case drops to 69.89px, under every 2v2 lane), and the
+   * justify-content: center below keeps them exactly as centred as the
+   * transform did — a flex item still shrink-wraps to its content, only the
+   * width it may wrap AT has changed. */
+  inset-inline: 0;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -1136,7 +1155,6 @@ export function buildTableStylesheet(): string {
    * a pixel because of it. */
   gap: 8px;
   pointer-events: none;
-  max-width: 100%;
   /* PR5-T4 (tasks §9, design D-5): the banner's own reserved lane height —
    * paired with .hexdev-truco-center's own padding-top above, which is what
    * actually removes the lane from that column's centering calculation. */

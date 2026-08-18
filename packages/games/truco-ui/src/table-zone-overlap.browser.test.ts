@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { applyAction, createHeadToHeadMatch, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
-import type { Action, DealInput, MatchState, PlayerId, SenaSignal } from "@hexdev/truco-engine";
+import type { Action, DealInput, EnvidoCallLevel, MatchState, PlayerId, SenaSignal, TeamId, TrucoCallLevel } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
+import { renderPendingCallBanner } from "./pending-call.js";
+import { CALL_LABELS } from "./strings.js";
 
 /**
  * PR3-T4 (tasks §7, skeleton) → PR5-T7/T9 (tasks §9, COMPLETED): the
@@ -361,6 +363,33 @@ const PARTNER_ROW_EXTRA_WIDTHS = [320, 640] as const;
  */
 const KNOWN_BANNER_PILE_COLLISIONS: ReadonlyArray<{ readonly width: (typeof WIDTHS)[number]; readonly mode: "1v1" | "2v2" }> = [];
 
+/**
+ * The pending-call banner's FULL reachable vocabulary — mirrored, not
+ * imported, from `banner-lane-line-box.browser.test.ts`, and for that file's
+ * own stated reason: it exports nothing, and importing a `.browser.test.ts`
+ * module for its fixtures would re-register its suites inside this run.
+ *
+ * Read from the engine's own unions, not retyped: a level added to either
+ * chain stops this file compiling until it is measured here too.
+ * `waitingOnMe` and `callerLabel` are LOCKED TOGETHER by the engine (neither
+ * `getLegalTrucoActions` nor `getLegalEnvidoActions` ever offers the CALLING
+ * team a respond action — see the sibling's derivation note), so these two
+ * pairs are the only reachable ones and a cross product would measure two
+ * states no player can ever see.
+ */
+const TRUCO_LEVELS: readonly TrucoCallLevel[] = ["truco", "retruco", "valeCuatro"];
+const ENVIDO_LEVELS: readonly EnvidoCallLevel[] = ["envido", "envidoEnvido", "realEnvido", "faltaEnvido"];
+const TURNS = [
+  { callerLabel: "Ellos", waitingOnMe: true },
+  { callerLabel: "Nosotros", waitingOnMe: false },
+] as const;
+const PENDING_CASES = [
+  ...TRUCO_LEVELS.map((level) => ({ kind: "truco" as const, level })),
+  ...ENVIDO_LEVELS.map((level) => ({ kind: "envido" as const, level })),
+].flatMap(({ kind, level }) =>
+  TURNS.map((turn) => ({ kind, label: `${CALL_LABELS[level]} / ${turn.callerLabel}`, levelLabel: CALL_LABELS[level], ...turn })),
+);
+
 describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9, TRZ-2/3/4/5/6 — THE MANDATE) — %ipx", (width) => {
   const bannerVsAnyPile = async (mode: "1v1" | "2v2"): Promise<void> => {
     const el = mountedContainer(width);
@@ -406,7 +435,20 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
   // the lane genuinely CONTAINS the banner rather than merely not spilling
   // past the felt's outer edge (a much weaker property the old stand-in
   // could not tell apart from "the lane happens to be big enough today").
-  it.each(["1v1", "2v2"] as const)("%s: the pending-call banner's own rendered height never exceeds its reserved lane (--hx-band-banner)", async (mode) => {
+  //
+  // Over the FULL reachable vocabulary, not only the fixture's own call. The
+  // fixture pins level "truco" with SELF as the caller — the SHORTEST text
+  // this banner can ever hold — so measuring only the mounted state proved
+  // the lane contains its cheapest occupant and said nothing about the other
+  // thirteen. That gap was real: the longer labels wrap into more line boxes
+  // inside the narrow 2v2 centre column and outgrow the lane while this
+  // fence stayed green. So every level x caller/turn pair the engine can
+  // reach is re-rendered into the SAME mounted banner (the same technique,
+  // and the same mirrored case list, as
+  // `banner-lane-line-box.browser.test.ts`) and measured against the same
+  // lane. Violations are collected rather than thrown one at a time, so a
+  // red run names every offending call at once instead of the first.
+  it.each(["1v1", "2v2"] as const)("%s: the pending-call banner's own rendered height never exceeds its reserved lane (--hx-band-banner) for any reachable call", async (mode) => {
     const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const state = mode === "1v1" ? pendingTrucoAfterTrick1Headshot1v1() : pendingTrucoAfterTrick1Headshot2v2();
@@ -414,22 +456,36 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     await waitForArt(el);
 
     const felt = el.querySelector(".hexdev-truco-table");
-    const banner = el.querySelector(".hexdev-truco-pending-call");
+    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call");
     if (felt === null || banner === null) throw new Error("test setup: felt or pending-call banner not rendered");
     const feltRect = felt.getBoundingClientRect();
     const bandBanner = parseFloat(getComputedStyle(felt).getPropertyValue("--hx-band-banner"));
     expect(bandBanner, "sanity: --hx-band-banner must resolve to a real pixel number on the felt").toBeGreaterThan(0);
-    const bannerRect = banner.getBoundingClientRect();
 
-    // Restored (native review SUGGESTION): the "own lane" height check alone
-    // dropped the only proof of the horizontal containment invariant — a
-    // banner that stays under its own height budget could still spill past
-    // the felt's left/right edges without either assertion below catching it.
-    expect(bannerRect.left, "banner left edge").toBeGreaterThanOrEqual(feltRect.left - 0.5);
-    expect(bannerRect.right, "banner right edge").toBeLessThanOrEqual(feltRect.right + 0.5);
-    expect(bannerRect.top, "banner top edge").toBeGreaterThanOrEqual(feltRect.top - 0.5);
-    expect(bannerRect.bottom, "banner bottom edge").toBeLessThanOrEqual(feltRect.bottom + 0.5);
-    expect(bannerRect.height, `banner height ${bannerRect.height}px vs its own lane ${bandBanner}px`).toBeLessThanOrEqual(bandBanner + 0.5);
+    const violations: string[] = [];
+    for (const call of PENDING_CASES) {
+      renderPendingCallBanner(banner, {
+        call: { kind: call.kind, levelLabel: call.levelLabel, callingTeamId: "overlap-caller:team" as TeamId },
+        callerLabel: call.callerLabel,
+        waitingOnMe: call.waitingOnMe,
+      });
+      const bannerRect = banner.getBoundingClientRect();
+
+      if (bannerRect.height > bandBanner + 0.5) {
+        violations.push(`"${call.label}" (turn ${call.waitingOnMe ? "mine" : "theirs"}): height ${bannerRect.height}px vs its own ${bandBanner}px lane`);
+      }
+      // Restored (native review SUGGESTION), now held per case: the "own
+      // lane" height check alone dropped the only proof of the horizontal
+      // containment invariant — a banner under its own height budget could
+      // still spill past the felt's left/right edges without the height
+      // check catching it, and the widest labels are exactly the ones that
+      // would.
+      if (bannerRect.left < feltRect.left - 0.5) violations.push(`"${call.label}": left edge ${bannerRect.left} past the felt's ${feltRect.left}`);
+      if (bannerRect.right > feltRect.right + 0.5) violations.push(`"${call.label}": right edge ${bannerRect.right} past the felt's ${feltRect.right}`);
+      if (bannerRect.top < feltRect.top - 0.5) violations.push(`"${call.label}": top edge ${bannerRect.top} past the felt's ${feltRect.top}`);
+      if (bannerRect.bottom > feltRect.bottom + 0.5) violations.push(`"${call.label}": bottom edge ${bannerRect.bottom} past the felt's ${feltRect.bottom}`);
+    }
+    expect(violations, `${violations.length} of ${PENDING_CASES.length} reachable calls escape the banner's own lane or the felt:\n${violations.join("\n")}`).toEqual([]);
   });
 
   /**
