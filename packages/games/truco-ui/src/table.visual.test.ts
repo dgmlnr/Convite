@@ -105,20 +105,37 @@ function mountedContainer(): HTMLElement {
   // content height is width-independent at this card size (395.3px at 375,
   // 340, and 320 alike), so this narrows the frame without moving anything.
   container.style.width = "320px";
-  // Height deliberately NOT set. With ANY explicit height, the felt's own
-  // `min-height: max(100%, …)` (table-styles.ts) stretches the felt to the
-  // full container and pushes the scoreboard panel — a flex sibling BELOW
-  // the felt — entirely out of frame (measured: panel at y=628 in the old
-  // 375x620 container). The old fixed-height baselines therefore contained
-  // no scoreboard panel at all, silently, while README claimed the themed
-  // shot proves panel theming. An auto-height container hugs its content:
-  // the felt takes its essential floor, the panel is genuinely in frame,
-  // and nothing can clip — the screenshot-stability hang this suite once
-  // bisected needed CLIPPED content to trigger, which auto height rules
-  // out by construction. Tradeoff, disclosed: baseline height now tracks
-  // content height, so a future change to the table's natural height shows
-  // up as a dimension mismatch (slow ~30s timeout, not a clean pixel diff)
-  // until the baseline is regenerated per visual/README.md.
+  // Height deliberately NOT set, for two reasons — and this file is where
+  // the reasoning lives; `table-2v2`/`table-wide` point back here.
+  //
+  // 1. IT IS WHAT PRODUCTION DOES. The host sets `style.height` on the
+  //    IFRAME element; inside it, `apps/server/src/embed-shell.ts` declares
+  //    no height on `html`/`body`, so `.hexdev-truco-table-shell`'s own
+  //    `height: 100%` resolves against an auto-height body and computes to
+  //    auto. The widget document has no definite height chain at all. A
+  //    width-only fixture is therefore the FAITHFUL one — it reproduces the
+  //    ancestor chain the widget actually gets, rather than avoiding a
+  //    hazard.
+  // 2. NOTHING CAN CLIP. An auto-height container hugs its content, so the
+  //    screenshot-stability hang this suite once bisected — which needs
+  //    CLIPPED content to trigger — is ruled out by construction.
+  //
+  // CORRECTION (this note used to give a third reason that was overstated):
+  // it said any explicit height made the felt's `min-height: max(100%, …)`
+  // stretch over the full container and evict the scoreboard panel, and it
+  // read as if real hosts did that. The mechanism was real where a definite
+  // height chain existed — measured, panel at y=628 in the old 375x620
+  // container — but it never fired in production, for reason 1 above, and
+  // the `max(100%, …)` is gone from table-styles.ts now regardless. Do not
+  // rely on a mounting choice to forbid it either way:
+  // `table-panel-in-frame.browser.test.ts` is the fence that asserts the
+  // panel stays in frame under a DEFINITE height, which is a thing no visual
+  // fixture here mounts.
+  //
+  // Tradeoff, disclosed: baseline height tracks content height, so a future
+  // change to the table's natural height shows up as a dimension mismatch
+  // (slow ~30s timeout, not a clean pixel diff) until the baseline is
+  // regenerated per visual/README.md.
   document.body.appendChild(container);
   mounted.push(container);
   return container;

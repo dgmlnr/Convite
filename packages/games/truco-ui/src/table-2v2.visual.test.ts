@@ -74,12 +74,15 @@ function mountedContainer(): HTMLElement {
   // Still the narrow branch of the shell's container query (< 640px).
   container.style.width = "375px";
   // Height deliberately NOT set — same reasoning as table.visual.test.ts's
-  // mountedContainer: any explicit height makes the felt's
-  // `min-height: max(100%, …)` stretch over the full container, and an
-  // auto-height container hugs the content instead, so nothing can clip
-  // (clipped content was the trigger of the screenshot-stability hang this
-  // suite once bisected). The shots here screenshot the FELT element, which
-  // at auto height takes its own natural size.
+  // mountedContainer, which carries it in full: width-only is what the real
+  // widget document gets (embed-shell.ts declares no height on html/body, so
+  // the shell's own `height: 100%` computes to auto and there is no definite
+  // height chain to inherit), and an auto-height container hugs the content
+  // so nothing can clip (clipped content was the trigger of the
+  // screenshot-stability hang this suite once bisected). The shots here
+  // screenshot the FELT element, which at auto height takes its own natural
+  // size. Panel POSITION under a definite height is fenced separately, in
+  // table-panel-in-frame.browser.test.ts — not by this mounting choice.
   //
   // The measurements this note used to carry (375x590.16 mid-hand, 375x566.16
   // picker-open) belonged to a table that still hung a persistent seña chip on

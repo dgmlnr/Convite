@@ -198,8 +198,44 @@ export function buildTableStylesheet(): string {
   width: 100%;
   /* min-height formula (PR5-T5, tasks §9, design §8.2): the banner lane and
    * the action band are pure constants added to the existing trick-area
-   * floor, plus one new grid gap for the new "actions" row. */
-  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px + var(--hx-band-banner) + var(--hx-band-action-total) + var(--hx-felt-gap)));
+   * floor, plus one new grid gap for the new "actions" row.
+   *
+   * THE DROPPED "100%" (this used to read min-height: max(100%, calc(...)),
+   * same at the [data-seat-count="4"] override below). Traced with git log
+   * -S: the 100% predates the scoreboard panel entirely — it was written
+   * when the felt was the only element in this stylesheet and "fill the
+   * shell" and "fill the layout" were the same sentence. They stopped being
+   * the same sentence the moment the felt got a sibling.
+   *
+   * Not load-bearing: .hexdev-truco-shell-layout > .hexdev-truco-table has
+   * flex: 1 1 auto (above), which already makes the felt fill the space the
+   * layout has left over. That is the correct claim — the REMAINDER. The
+   * 100% claimed the WHOLE layout height instead, so the panel below it was
+   * pushed out of frame by exactly its own height plus one gap. Measured
+   * counterfactual (re-measured here, headed Chromium — the mode this repo
+   * calibrates layout against, see vitest.config.ts): a compact-width host
+   * with a definite 900px height chain, with the bare calc() below, gives a
+   * felt of 799.0625px and a panel whose bottom lands at exactly 900px. The
+   * felt still fills everything available; it just no longer claims the part
+   * the panel was already standing in (799.0625 + 92.9375 panel + 8 gap =
+   * 900).
+   *
+   * What it cost: where a definite height chain DOES exist, the 100% drove a
+   * divergent host/document relay. The felt asks for max(100%, floor), the
+   * document measures felt + panel + gap and reports it, the host applies
+   * that as the new height, and the 100% re-resolves against it. It does not
+   * converge and does not oscillate — it grows without bound, measured
+   * 721 -> 822 -> 923 -> 1024 -> ... -> 1428.
+   *
+   * Honest scope: this is a no-op in production TODAY, and the change is not
+   * claimed to fix any shipping symptom. embed-shell.ts declares no height on
+   * html/body, so .hexdev-truco-table-shell height: 100% resolves against an
+   * auto-height body and computes to auto; the percentage was unresolvable
+   * and contributed zero. The loop above is what it costs the first time
+   * someone gives this document a definite height chain — which is why it is
+   * removed now rather than after. table-panel-in-frame.browser.test.ts is
+   * the fence that keeps it removed. */
+  min-height: calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px + var(--hx-band-banner) + var(--hx-band-action-total) + var(--hx-felt-gap));
   display: grid;
   grid-template-columns: 1fr;
   /* PR5-T1 (tasks §9): the 4th row reserves the action bar's own band, a
@@ -251,8 +287,13 @@ export function buildTableStylesheet(): string {
    * 1.7x91.6+40=196; ultra 3x152.7+8=466 vs 260+84=344), so adding the
    * banner term here would over-reserve 40-84px on the seat count that can
    * least afford it. A later card-size change could silently invert this
-   * inequality — that is exactly why this comment exists. */
-  min-height: max(100%, calc((var(--truco-card-width) * 336 / 220) * 5 + 40px + var(--hx-band-action-total) + var(--hx-felt-gap)));
+   * inequality — that is exactly why this comment exists.
+   *
+   * The 100% this used to wrap in a max() is gone for the reason the 1v1
+   * formula above documents in full: flex: 1 1 auto already fills the
+   * REMAINDER, the 100% claimed the WHOLE layout height and evicted the
+   * panel, and it is what drove the unbounded host/document height relay. */
+  min-height: calc((var(--truco-card-width) * 336 / 220) * 5 + 40px + var(--hx-band-action-total) + var(--hx-felt-gap));
   /* cqw, not vw (FU-4): these gutters are seat furniture of a
    * CONTAINER-driven layout — every other tier decision on this felt already
    * answers to the hexdev-truco-shell @container axis, so the gutters must

@@ -84,11 +84,25 @@ Each table shot captures the element under test, not the whole test container:
 the mid-hand/pending/2v2 shots screenshot the felt element (dead side cloth
 cropped away), while `table-themed`/`table-wide-themed`/`match-over-wide`
 keep the whole shell — felt AND scoreboard panel, or felt AND the sibling
-match-over overlay — in an auto-height container. The auto height matters:
-with any explicit container height, the felt's `min-height: max(100%, …)`
-stretches over the full box and evicts the panel below the fold, which
-silently blinded this shot's panel-theming proof until the panel was restored
-to frame.
+match-over overlay — in an auto-height container.
+
+Every fixture in this suite mounts **width-only, height unset**, and that is
+fidelity, not avoidance: the real widget document has no definite height
+chain. The host sets `style.height` on the *iframe element*, but
+`apps/server/src/embed-shell.ts` declares no height on `html`/`body`, so
+`.hexdev-truco-table-shell`'s own `height: 100%` resolves against an
+auto-height body and computes to auto. A width-only container is the ancestor
+chain the widget actually gets. It also means nothing can clip, which keeps
+the screenshot-stability hang this suite once bisected out of reach by
+construction.
+
+This paragraph used to claim instead that an explicit height made the felt's
+`min-height: max(100%, …)` evict the panel below the fold — true of the
+mechanism where a definite height chain existed, but never reached in
+production, and the `max(100%, …)` has since been removed from
+`table-styles.ts`. Panel position under a definite height is now asserted by
+`packages/games/truco-ui/src/table-panel-in-frame.browser.test.ts`; no visual
+fixture here is load-bearing for it.
 
 **Wide/ultra tiers need a wider Browser Mode viewport, not just a wider
 container** (real bug found and fixed writing `table-wide.visual.test.ts`):
