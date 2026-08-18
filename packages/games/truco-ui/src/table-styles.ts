@@ -234,7 +234,36 @@ export function buildTableStylesheet(): string {
    * and contributed zero. The loop above is what it costs the first time
    * someone gives this document a definite height chain — which is why it is
    * removed now rather than after. table-panel-in-frame.browser.test.ts is
-   * the fence that keeps it removed. */
+   * the fence that keeps it removed.
+   *
+   * WHAT THE 32px IS, AND WHAT IT IS NOT — corrected, because the terms above
+   * read like a complete accounting of this box and are not one. The written
+   * formula omits the felt's own two paddings, two of its three row gaps, and
+   * the trick-feedback line inside the centre column. Measured at the compact
+   * tier, where this constant was calibrated: 3.7c + 32 + banner + action +
+   * gap = 479.05px against 503.34px of real rendered content — the floor sits
+   * 24.29px BELOW what the felt actually draws. The honest constant there is
+   * 56.3px (2 x pad(8) + 2 x gap(8), plus the centre column's own 8px gap and
+   * 16.3px feedback line).
+   *
+   * The 32px is nevertheless LEFT ALONE, deliberately. This is a squeeze floor,
+   * not a height: real content already exceeds it at every tier, so raising it
+   * to 56.3px would change nothing except to start binding at compact by
+   * ~0.007px — which Chromium rounds up to a whole 1/64px layout unit, so every
+   * compact screenshot baseline in this repo would need recapturing for a floor
+   * that protects the same content either way. The number is wrong and this
+   * comment now says so, with the measured figure for whoever next needs it to
+   * be exact. Note also that it is compact-calibrated: at wider tiers pad and
+   * gap both grow, so the same literal under-reserves by more — unchanged from
+   * before this note existed, and equally true of the 4-seat formula's own
+   * constant inside the 640px block below.
+   *
+   * SECOND READER, 2v2: from this change on, this formula is ALSO the compact
+   * 4-seat floor. The [data-seat-count="4"] rule below no longer overrides it
+   * at compact, because the side seats' backs shrank to 45px and the middle
+   * row's essential need became the centre column's — the same one this
+   * formula's 1.7c + banner term already reserves (215.79px, against the
+   * 214.18px a 3-stack of 45px backs needs). */
   min-height: calc((var(--truco-card-width) * 336 / 220) * 3.7 + 32px + var(--hx-band-banner) + var(--hx-band-action-total) + var(--hx-felt-gap));
   display: grid;
   grid-template-columns: 1fr;
@@ -273,27 +302,9 @@ export function buildTableStylesheet(): string {
  * tight (opponent backs stack vertically, shrunk) — a disclosed tradeoff,
  * not a hidden one: 2-seat truco is the common case and stays uncompromised.
  *
- * min-height override (stable window height, apply prompt round 5): the
- * 4-seat middle row's own essential need is taller than 2-seat's — the
- * left/right 3-card column reservation (table-styles' own
- * [data-position=left/right] .hexdev-truco-opponent-hand rule) always
- * exceeds the centre column's own trick-area reservation, so it is what
- * actually drives this row's real minimum. */
+ * min-height: this rule NO LONGER overrides the felt's own floor, and that is
+ * the whole point of the compact fix below — see the block after this one. */
 .hexdev-truco-table[data-seat-count="4"] {
-  /* PR5-T5 (tasks §9, design §8.2): the banner term is DELIBERATELY ABSENT
-   * here (unlike the 1v1 formula above) — the middle row's essential need is
-   * max(3 stacked side cards + gaps, trick + banner lane), and the 3-card
-   * column always wins at every tier (compact 3x91.6+8=283 vs
-   * 1.7x91.6+40=196; ultra 3x152.7+8=466 vs 260+84=344), so adding the
-   * banner term here would over-reserve 40-84px on the seat count that can
-   * least afford it. A later card-size change could silently invert this
-   * inequality — that is exactly why this comment exists.
-   *
-   * The 100% this used to wrap in a max() is gone for the reason the 1v1
-   * formula above documents in full: flex: 1 1 auto already fills the
-   * REMAINDER, the 100% claimed the WHOLE layout height and evicted the
-   * panel, and it is what drove the unbounded host/document height relay. */
-  min-height: calc((var(--truco-card-width) * 336 / 220) * 5 + 40px + var(--hx-band-action-total) + var(--hx-felt-gap));
   /* cqw, not vw (FU-4): these gutters are seat furniture of a
    * CONTAINER-driven layout — every other tier decision on this felt already
    * answers to the hexdev-truco-shell @container axis, so the gutters must
@@ -304,6 +315,67 @@ export function buildTableStylesheet(): string {
    * felt actually lives in. */
   grid-template-columns: minmax(34px, 15cqw) 1fr minmax(34px, 15cqw);
   grid-template-areas: "top top top" "left center right" "bottom bottom bottom" "actions actions actions";
+}
+/* THE INEQUALITY THE OLD COMMENT HERE PREDICTED, deliberately inverted — and
+ * this block is the honoured half of that prediction. It used to read: "the
+ * 3-card column always wins at every tier (compact 3x91.6+8=283 vs
+ * 1.7x91.6+40=196) ... a later card-size change could silently invert this
+ * inequality — that is exactly why this comment exists". It was right, and this
+ * is that change. It is not silent.
+ *
+ * THE PROBLEM. At the compact tier the whole widget measured 667.09px for 2v2
+ * against a 601px phone viewport — the window this table has been designed
+ * against since commit 2ece04e, quoted in three comments and asserted nowhere.
+ * The scoreboard sat below the fold: a player had to scroll to see their own
+ * score.
+ *
+ * WHAT THIS CHANGE BUYS, AND WHAT IT LEAVES. 2v2 lands on 604.28px — exactly
+ * 1v1's own number, which is the shape of the fix rather than a coincidence
+ * (see WHY 45px below) — and 1v1 itself is untouched, because everything here
+ * is scoped to [data-seat-count="4"]. So this pays the 62.81px only 2v2 was
+ * paying; BOTH seat counts are still 3.28px over the 601px window afterwards.
+ * The compact scoreboard panel is the remaining 16.94px, and it is a separate
+ * change with a separate argument — the follow-up that closes it is also what
+ * turns that 601 into an assertion instead of a fourth comment quoting it.
+ *
+ * WHERE THE HEIGHT WAS. Measured box by box, every part of the compact felt is
+ * byte-identical between 1v1 and 2v2 — both card anchors, the panel, the bands,
+ * the gaps, the padding. The entire 62.81px difference is the middle row, and
+ * the middle row is the two side seats: a 282.91px vertical stack (3 x 91.63 +
+ * 2 x 4px gap) whose whole job is to render an integer in 0..3 as full-size card
+ * backs the player is forbidden to read. Nothing else about 2v2 costs a pixel.
+ *
+ * WHY 45px, MEASURED not chosen. The shell total against side-card width:
+ * 60 -> 667.09 | 50 -> 621.27 | 48 -> 612.11 | 46 -> 604.28 | 45 -> 604.28.
+ * It SATURATES at 46: below that the side column stops driving the middle row
+ * and the centre column (trick area + banner lane, identical in both seat
+ * counts) takes over, so 2v2 lands on exactly 1v1's own number and cannot go
+ * lower by shrinking these backs further. 45 rather than 46 because of the
+ * felt's own floor, not its height: the base min-height reserves 1.7 card
+ * heights + the banner lane (215.79px) for the middle row, and a 3-stack of
+ * 45px backs needs 214.18px — inside it. At 46px the stack needs 218.75px and
+ * the floor would quietly stop covering the essential content it exists to
+ * protect. Same rendered height, one of the two is honest.
+ *
+ * AND IT FIXES A SECOND, UNRELATED THING. These backs never fitted their own
+ * gutter track: the track is minmax(34px, 15cqw) — 56.25px at a 375px shell,
+ * 48px at 320px — and a 60px back centred in it hung 1.88px over each edge at
+ * 375px and 6.00px at 320px, leaning into the centre column where the trick is
+ * played. At 45px they fit both widths with room to spare. Fenced by
+ * table-side-gutters.browser.test.ts, which until now only checked that the
+ * TRACK was the right size, never that what stands in it fits.
+ *
+ * SCOPED TO COMPACT, via the exact complement of the (min-width: 640px) tier
+ * below. From 640px up the side cards stay full-tier size and the 3-card column
+ * still wins the middle row exactly as the old comment described — which is why
+ * the seat-count-4 min-height formula that used to live in the rule above now
+ * lives in THAT block instead of this tier: the inequality inverted here and
+ * only here. */
+@container hexdev-truco-shell (width < 640px) {
+  .hexdev-truco-table[data-seat-count="4"] [data-position="left"],
+  .hexdev-truco-table[data-seat-count="4"] [data-position="right"] {
+    --truco-card-width: 45px;
+  }
 }
 /* Breakpoint axis (PR3, tasks §7/§3.8): the two viewport @media blocks that
  * used to drive --truco-card-width/gap/padding are replaced by the SAME
@@ -345,6 +417,36 @@ export function buildTableStylesheet(): string {
      * The wide/ultra tiers below never had this defect — their gutter
      * tracks already use 16%, a grid-relative unit. */
     grid-template-columns: minmax(72px, 16cqw) 1fr minmax(72px, 16cqw);
+    /* The 4-seat floor (moved here from the base rule, where it applied at
+     * every tier). From 640px up the side cards are still full-tier size, so
+     * the middle row's essential need is still max(3 stacked side cards +
+     * gaps, trick + banner lane) with the 3-card column winning — medium
+     * 3x128.3+8=393 vs 1.7x128.3+76=294; ultra 3x152.7+8=466 vs 260+84=344 —
+     * exactly as the base rule's old comment described. At compact that is no
+     * longer true (the side backs are 45px there, see the block above), which
+     * is why this now lives inside the tier where it holds instead of applying
+     * to a tier where it does not: at compact 2v2's essential need became
+     * identical to 1v1's, so it uses the base formula, which reserves the same
+     * trick + banner middle row for both.
+     *
+     * The banner term stays deliberately absent from THIS formula, for the
+     * original reason: the 3-card column wins here, so adding the banner would
+     * over-reserve 76-84px.
+     *
+     * HONEST CONSTANT, corrected. This literal used to read 40px, and the floor
+     * it produced was ~20px BELOW the felt's own real content — the written
+     * terms omit the felt's two paddings, two of its three row gaps, and the
+     * side anchor's own relation label and gap. Measured at the compact tier
+     * (where this formula was originally calibrated): 5c + 40 + action-total +
+     * gap = 546.18px against 566.16px of real content. 60px is the honest
+     * number there: 2 x pad(8) + 2 x gap(8) + label(14) + label gap(6) + the
+     * hand's own 2 x 4px card gaps, less the one felt-gap term the formula
+     * already carries. It stays an under-reservation at 640px+ (2 x 16 + 2 x 12
+     * + 20 + 8 = 84 at medium) — unchanged from before this correction, and
+     * left that way on purpose: this is a squeeze floor, not a height, and
+     * raising it at tiers nothing measured would be trading a documented
+     * under-reservation for an undocumented over-reservation. */
+    min-height: calc((var(--truco-card-width) * 336 / 220) * 5 + 60px + var(--hx-band-action-total) + var(--hx-felt-gap));
     /* PR5-T5 (tasks §3.8): 2v2 only, from medium onward — two stacked action
      * strips (calls, then señas — design §7.2), not one. Declared ONCE, here
      * — --hx-band-action itself is redeclared at every wider tier below

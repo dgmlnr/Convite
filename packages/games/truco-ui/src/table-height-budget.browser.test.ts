@@ -186,8 +186,20 @@ const BUDGET: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly
    * delta: 1v1 669.9375 -> 604.28125 (budget 724 -> 653), 2v2 732.75 ->
    * 667.09375 (budget 792 -> 721), both x1.08 rounded up per this file's
    * own convention. 640+ rows are untouched: the panel is a side column
-   * there, outside FU-3's (width < 640px) container query. */
-  375: { "1v1": 653, "2v2": 721 },
+   * there, outside FU-3's (width < 640px) container query.
+   *
+   * 2v2 re-locked, 721 -> 653: the compact side seats' card backs shrank to
+   * 45px (table-styles.ts), the side column stopped driving the middle row,
+   * and 2v2 converged on 1v1's own 604.28125px — so the two seat counts now
+   * share one measurement here and therefore one x1.08 ceiling. 1v1 is
+   * unmoved because that change is scoped to [data-seat-count="4"]. Note what
+   * this row still is NOT: a headroom multiple of the current measurement is
+   * not the ~530-601px phone window this file's docblock keeps quoting, so it
+   * cannot catch that BOTH seat counts are 3.28px over that window right now.
+   * That gap is the next change's, together with the compact scoreboard
+   * panel; this row only stops claiming a 2v2 number that is no longer
+   * measured. */
+  375: { "1v1": 653, "2v2": 653 },
   640: { "1v1": 747, "2v2": 905 },
   700: { "1v1": 747, "2v2": 905 },
   900: { "1v1": 883, "2v2": 944 },
