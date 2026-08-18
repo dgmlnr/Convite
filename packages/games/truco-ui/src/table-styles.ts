@@ -324,19 +324,10 @@ export function buildTableStylesheet(): string {
  * is that change. It is not silent.
  *
  * THE PROBLEM. At the compact tier the whole widget measured 667.09px for 2v2
- * against a 601px phone viewport — the window this table has been designed
- * against since commit 2ece04e, quoted in three comments and asserted nowhere.
- * The scoreboard sat below the fold: a player had to scroll to see their own
- * score.
- *
- * WHAT THIS CHANGE BUYS, AND WHAT IT LEAVES. 2v2 lands on 604.28px — exactly
- * 1v1's own number, which is the shape of the fix rather than a coincidence
- * (see WHY 45px below) — and 1v1 itself is untouched, because everything here
- * is scoped to [data-seat-count="4"]. So this pays the 62.81px only 2v2 was
- * paying; BOTH seat counts are still 3.28px over the 601px window afterwards.
- * The compact scoreboard panel is the remaining 16.94px, and it is a separate
- * change with a separate argument — the follow-up that closes it is also what
- * turns that 601 into an assertion instead of a fourth comment quoting it.
+ * against a 601px phone viewport (the window this table has been designed
+ * against since commit 2ece04e, now asserted as PHONE_VIEWPORT_CEILING in
+ * table-height-budget.browser.test.ts rather than merely described). The
+ * scoreboard sat below the fold: a player had to scroll to see their own score.
  *
  * WHERE THE HEIGHT WAS. Measured box by box, every part of the compact felt is
  * byte-identical between 1v1 and 2v2 — both card anchors, the panel, the bands,
@@ -995,10 +986,53 @@ export function buildTableStylesheet(): string {
  * attributes; strokes scale to ~71%, verified legible against the
  * recaptured baseline). Horizontal captions do not fit either: label 75.8
  * + captions 29.4/36.5 + 6 casitas + gaps = ~379px, over the 351px budget,
- * while a rotated caption spends 13px of width instead. Result: 8+8 padding
- * + two 36.5px rows (rotated Buenas caption is the row's tallest box) + 4px
- * row gap = ~93px, fenced with ~8% headroom by
- * table-height-budget.browser.test.ts's own FU-3 fence.
+ * while a rotated caption spends 13px of width instead. FU-3's result was
+ * 8+8 padding + two 36.5px rows (the rotated Buenas caption, NOT the casita,
+ * was the row's tallest box) + 4px row gap = ~93px.
+ *
+ * WHAT THAT ARITHMETIC COST, and what this block now does instead (the phone
+ * fold, PHONE_VIEWPORT_CEILING in table-height-budget.browser.test.ts). Two
+ * things follow from the caption having been the row's tallest box, and both
+ * were live defects:
+ *
+ * (1) THE CASITA SIZE WAS BUYING NOTHING. FU-3 shrank the casitas to 34px
+ *     specifically to buy height, and bought exactly zero of it: at 34px they
+ *     were already 2.5px shorter than the 36.5px caption beside them, so the
+ *     row height never moved. Any further casita shrink alone would have been
+ *     equally free of effect. The caption had to go first.
+ *
+ * (2) A ROTATED CAPTION CANNOT BE PINNED THE WAY THIS REPO PINS EVERY OTHER
+ *     TEXT BOX ON A FIXED BUDGET. .hexdev-truco-trick-feedback and
+ *     .hexdev-truco-banner-slot both close exactly this defect class by pinning
+ *     line-height, because in both the height at risk is a LINE BOX. Under
+ *     writing-mode: vertical-rl the element's PHYSICAL HEIGHT is its INLINE
+ *     size — the sum of its glyph advance widths — and line-height controls its
+ *     block size, which after the rotation is its physical WIDTH. So the
+ *     sibling fix moves the one dimension that was never the problem. Measured
+ *     over six probe faces at 375px, worst case: as shipped 92.94..210.70;
+ *     captions at 0.5rem 76.00..210.70; captions at 0.5rem WITH every leading
+ *     pinned 76.00..150.31. Seventy-four pixels of font-dependence survive the
+ *     faithful application of the sibling fix.
+ *
+ * So the caption leaves the flow entirely: visually hidden, still announced,
+ * the same clip-path: inset(50%) treatment .hexdev-truco-announcer and
+ * .hexdev-truco-pending-call-turn already use — the row's height then falls to
+ * the casita SVG, which is pure geometry with no font in the path at all, and
+ * the casitas at 28px finally buy the height FU-3 expected of them. Sighted
+ * players lose the two words; the malas-then-buenas reading order is the
+ * conventional tanteador layout and is unchanged, and a screen reader still
+ * gets both labels. The one text box left in the row, the team label, IS a
+ * plain line box, so it gets the sibling treatment properly: line-height pinned
+ * so it costs one number, and white-space: nowrap so it is one LINE — the wrap
+ * axis those two files explicitly leave open, closable here only because this
+ * label's whole vocabulary is two fixed words (the same reasoning
+ * .hexdev-truco-sena-notice already uses for its own six).
+ *
+ * Result: 8+8 padding + two 28px casita rows + 4px row gap = 76.00px exactly,
+ * on every font, at 320px and 375px, at the 12-casita worst case and at 0-0.
+ * Fenced twice: table-height-budget.browser.test.ts's own FU-3 fence for the
+ * number, scoreboard-panel-line-box.browser.test.ts for the property that the
+ * number means anything.
  *
  * Scoped to the compact tier only via the shell's existing @container axis
  * — (width < 640px) is the exact complement of the (min-width: 640px) block
@@ -1012,13 +1046,62 @@ export function buildTableStylesheet(): string {
 @container hexdev-truco-shell (width < 640px) {
   .hexdev-truco-scoreboard-panel { flex-direction: column; align-items: stretch; gap: 4px; }
   .hexdev-truco-scoreboard-group { flex-direction: row; justify-content: center; gap: 6px; }
-  .hexdev-truco-scoreboard { display: flex; align-items: center; gap: 6px; }
+  /* flex: none — the casitas never pay for the team label's width. Without it
+   * the last font-dependence in this panel survived at 320px: a face drawing
+   * "NOSOTROS" 2.2x wider over-constrains this row, flex resolves that by
+   * shrinking every item including the sticks, and a squeezed sticks box (it is
+   * flex-wrap: wrap, deliberately, as a genuine overflow valve) wraps its
+   * casitas onto a second 28px line — 76px of panel becoming 106px, by wrap
+   * count rather than by line box, which is the same axis pinning a leading
+   * cannot reach. Refusing to shrink here moves every pixel of that pressure
+   * onto the label instead, which absorbs it below. Inert at normal font
+   * widths: nothing here overflows, so nothing shrinks, so nothing moves. */
+  .hexdev-truco-scoreboard { display: flex; align-items: center; gap: 6px; flex: none; }
   .hexdev-truco-score-group { flex-direction: row; gap: 3px; }
-  /* Reads bottom-to-top — the classic side-label direction: vertical-rl
-   * alone would read top-to-bottom, the 180deg turn flips it. transform
-   * never moves layout, so the box the flex row sizes stays the same. */
-  .hexdev-truco-score-label { writing-mode: vertical-rl; transform: rotate(180deg); }
-  .hexdev-truco-score-sticks svg { width: 34px; height: 34px; }
+  /* Visually hidden, never display: none or visibility: hidden — both remove
+   * an element from the accessibility tree, and "Malas"/"Buenas" is the only
+   * thing telling a screen-reader user which run of casitas is which. Byte-for
+   * -byte the treatment .hexdev-truco-announcer and
+   * .hexdev-truco-pending-call-turn already carry. The writing-mode/transform
+   * reset is not cosmetic: position: absolute alone would take the caption out
+   * of flow but leave it a rotated box to paint, and it is the ROTATION that
+   * made this element's physical height a font's advance widths in the first
+   * place (see this block's own header). */
+  .hexdev-truco-score-label {
+    writing-mode: horizontal-tb;
+    transform: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* The only text left standing in this row, so it gets the pin the two
+   * sibling boxes carry: 1.2 matches their choice exactly (never
+   * var(--hx-leading), which is the chrome's 1.35 body-copy rhythm), and
+   * nowrap closes the line-COUNT axis they leave open — legitimate here and
+   * nowhere else in this panel, because this label only ever holds one of two
+   * fixed words. Both together are what let the casita geometry below be the
+   * whole of this row's height.
+   *
+   * min-width: 0 + overflow are the other half of the sibling rule's flex:
+   * none above. A nowrap label cannot wrap, so an over-wide one has to be
+   * absorbed somewhere; this is where. The label shrinks and clips (still
+   * whole in the accessibility tree) rather than squeezing the casitas onto a
+   * second row — a truncated word beats a scoreboard that changes height, and
+   * of the two things in this row the score is the one a player is reading. */
+  .hexdev-truco-team-label { line-height: 1.2; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* 34px -> 28px. At 34 this box was 2.5px shorter than the rotated caption
+   * beside it and therefore bought no height at all; with the caption out of
+   * flow it IS the row, so every pixel here is a pixel of widget. The SVG's own
+   * width/height attributes are overridden by this CSS box, strokes scale with
+   * it, and 12 of them still fit one row per team inside the 351px available at
+   * 375px (and inside 296px at 320px) with no wrap. */
+  .hexdev-truco-score-sticks svg { width: 28px; height: 28px; }
 }
 
 /* Stable window height (apply prompt, round 3): the pending-call and

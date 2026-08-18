@@ -244,26 +244,25 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * FU-3's compact-only (width < 640px) container query, re-verified by this
  * suite staying green at those widths with the values below unchanged.
  *
- * THE PHONE FOLD, first half: the 375px row now reads ONE number for both seat
- * counts, and that is the shape of the fix rather than a coincidence. The 2v2
- * side seats' card backs shrink to 45px (table-styles.ts), which stops the side
- * column driving the middle row and hands that job to the centre column — the
- * one box that is identical in both seat counts, so 2v2 converges on 1v1's own
- * height and cannot be pushed below it by shrinking those backs further.
- * Measured, RED-first (this suite failed with the real number in its message
- * before it was locked in here):
- *   375 2v2: 667.09375 -> 604.28125  (-62.8125, the entire cost of the two
- *                                     side stacks of full-size card backs)
- *   375 1v1: 604.28125, unmoved — every rule in that change is scoped to
- *                                 [data-seat-count="4"].
- * Both are still 3.28px over the 601px phone viewport this table has been
- * designed against since 2ece04e; the compact scoreboard panel is the
- * remaining ~17px and lands as its own change, which is also where that 601
- * stops being prose and becomes an assertion. 700/960/1280 are untouched
- * again, and for the same reason as FU-3: this change is inside a compact-only
- * (width < 640px) container query. */
+ * THE PHONE FOLD: the 375px row now reads ONE number for both seat counts, and
+ * that is the shape of the fix rather than a coincidence. Two compact changes
+ * land here (table-styles.ts): the 2v2 side seats' card backs shrink to 45px,
+ * which stops the side column driving the middle row and hands that job to the
+ * centre column — the one box that is identical in both seat counts, so 2v2
+ * converges on 1v1's own height and cannot be pushed below it by shrinking
+ * those backs further; and the compact scoreboard panel drops 92.9375 ->
+ * 76.00px with its rotated captions out of flow. Measured, RED-first (this
+ * suite failed with both real numbers in its message before they were locked
+ * in here):
+ *   375 1v1: 604.28125 -> 587.34375  (-16.9375, the panel alone)
+ *   375 2v2: 667.09375 -> 587.34375  (-79.75, the panel plus the whole 62.8125
+ *                                     the two side stacks used to cost)
+ * Both now sit 13.66px under PHONE_VIEWPORT_CEILING, the 601px phone viewport
+ * table-height-budget.browser.test.ts asserts. 700/960/1280 are untouched
+ * again, and for the same reason as FU-3: both changes are inside compact-only
+ * (width < 640px) container queries. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 604.28125, "2v2": 604.28125 },
+  375: { "1v1": 587.34375, "2v2": 587.34375 },
   700: { "1v1": 690.96875, "2v2": 837.421875 },
   960: { "1v1": 817.375, "2v2": 873.421875 },
   1280: { "1v1": 910.59375, "2v2": 1043.609375 },

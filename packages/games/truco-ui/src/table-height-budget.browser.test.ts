@@ -53,38 +53,47 @@ import { createMatchTableRenderer } from "./table.js";
  * confirms the @container boundary is inclusive" fact this file's own width
  * list exists to prove, still holding after PR5's own changes.)
  *
- * COMPACT 1v1 TOTAL vs. the ~530-601px phone-viewport window (design §1/§8.3
- * accepted risk) — reported honestly, not rounded toward the accepted
- * figure: 375px 1v1's measured 669.9375px IS already the FULL widget total
- * (`el` in this file's own `it` blocks below is the shell element itself —
- * `container.className = "hexdev-truco-table-shell"` in table.ts — so this
- * number already includes the scoreboard panel, not just the felt). That
- * total is ABOVE the disclosed 530-601px window's own 601px ceiling by
- * ~69px, for two compounding, pre-existing (not PR5-introduced) reasons this
- * measurement surfaced: (1) the real `.hexdev-truco-scoreboard-panel`
- * measures ~158.6px at this width/state, not the ~100px design §8.3's own
- * accounting assumed; (2) the felt's own real rendered content has always
- * exceeded its own `min-height` FLOOR by ~24px at compact (a `min-height` is
- * a lower bound, not an exact value — CSS Grid's intrinsic sizing naturally
- * grows past it whenever real content needs more, which it does here even
- * pre-PR5). PR5's OWN attributable cost is exact and isolated: old (PR4)
- * 561.9375px -> new 669.9375px is precisely +108px, matching
- * `--hx-band-banner(60) + --hx-band-action-total(40) + --hx-felt-gap(8) =
- * 108` term-for-term — no unaccounted growth. That +108px is +20px above
- * the design's own accepted "+88px" estimate (design §1), the direct,
- * disclosed consequence of PR5-T3's real measurement finding the compact
- * pill needed a 60px lane, not the design's originally-assumed 40px. This is
- * flagged here and in the PR5 apply report as a risk needing product/
- * orchestrator awareness — not silently normalized to fit the window, and
- * not something this measurement task is scoped to redesign away (shrinking
- * the scoreboard panel or another felt row is out of PR5-T1..T13's own
- * scope).
+ * COMPACT TOTAL vs. THE PHONE — the whole history of this paragraph, kept
+ * because how it went wrong is the point. `el` in this file's own `it` blocks
+ * is the shell element itself (`container.className =
+ * "hexdev-truco-table-shell"` in table.ts), so every 375px number here is the
+ * FULL widget total, scoreboard panel included.
  *
- * FU-3 (debt payment of reason (1) above): the compact scoreboard strip was
- * later compacted to a measured 92.9375px (see the FU-3 fence and BUDGET
- * note below), bringing the 375px 1v1 total down to 604.28125px — within
- * ~3px of the 601px window ceiling; reason (2), the felt's own ~24px of
- * natural growth past its min-height floor, remains open debt. */
+ * PR5 measured 669.9375px (1v1) against a phone window this repo has quoted as
+ * "~530-601px iPhone SE viewport" since commit 2ece04e, and disclosed the ~69px
+ * overrun honestly, in this paragraph, with two named causes: (1) the real
+ * scoreboard panel measured ~158.6px, not the ~100px design §8.3 assumed; (2)
+ * the felt's own content exceeded its `min-height` floor by ~24px. Then FU-3
+ * paid cause (1) down to 92.9375px and brought 1v1 to 604.28125px — "within
+ * ~3px of the 601px window ceiling", which this paragraph then recorded as
+ * essentially arrived.
+ *
+ * IT WAS NOT ARRIVED, AND THE PARAGRAPH IS WHY IT STAYED THAT WAY. Every
+ * number above was measured and honest, and the whole accounting was still
+ * decorative, because nothing anywhere ASSERTED the 601px it kept quoting: the
+ * only enforced compact ceiling was `BUDGET[375]`, a x1.08 multiple of whatever
+ * the widget currently measured, which grows every time the widget does. So
+ * 1v1 sat 3.28px over the window it was designed for and 2v2 sat 66.09px over
+ * it — the scoreboard genuinely below the fold on a phone, a player scrolling
+ * to see their own score — while this file was green and this docblock read
+ * like a debt being paid down. Five debts in this repo have now had the same
+ * shape: a comment claiming more than anything enforced.
+ *
+ * So the window is now `PHONE_VIEWPORT_CEILING` below, asserted on both seat
+ * counts at 375px, and the two compact changes that get under it are argued at
+ * `table-styles.ts` (the 2v2 side seats' 45px card backs, and the scoreboard
+ * panel's captions leaving the flow). Measured after: 1v1 587.34375px, 2v2
+ * 587.34375px — one number, 13.66px under the ceiling.
+ *
+ * WHAT REMAINS OPEN, stated as debt rather than as a plan: cause (2) above,
+ * the felt's ~24.29px of real content past its own compact `min-height` floor.
+ * It costs no height (a floor is a lower bound; the content is what renders),
+ * so it is not what put this widget over the phone — it is a floor that
+ * under-protects its own essential content under squeeze. The measured honest
+ * constants are in `table-styles.ts`'s two `min-height` comments, and the
+ * 4-seat one has been corrected there; the 1v1 one is deliberately left at its
+ * wrong value with the right number written beside it, for the reason that
+ * comment gives. */
 
 const SELF = "budget-self" as PlayerId;
 const OPPONENT = "budget-opponent" as PlayerId;
@@ -167,6 +176,35 @@ async function waitForArt(el: HTMLElement): Promise<void> {
  * baseline render and trusts the sibling fence for the rest. */
 const WIDTHS = [375, 640, 700, 900, 960, 1280] as const;
 
+/**
+ * The phone the whole compact tier was designed for, ASSERTED rather than
+ * described.
+ *
+ * PROVENANCE, traced with `git log -S` rather than restated from memory:
+ * commit 2ece04e ("~530-601px iPhone SE viewport") is where this window first
+ * appears. It survived as prose in three places — `table-styles.ts`'s own
+ * banner-slot note, this file's docblock, and
+ * `table-height-stability.browser.test.ts`'s — and in NONE of them as an
+ * assertion. The only enforced compact ceiling was `BUDGET[375]`, which was
+ * never a device number at all: it was the measured height times this file's
+ * own 1.08 headroom convention, so every time the widget grew, the ceiling
+ * grew with it. That is exactly how a 601px design target ended up shipping a
+ * 667.09px 2v2 widget with the scoreboard below the fold, and how the comment
+ * describing the window outlived the window itself.
+ *
+ * A headroom multiple is the right convention for the 640px+ rows, whose job
+ * is "notice when this grows a lot". It is the wrong one for a phone, whose
+ * job is "fit". So this row alone is an absolute: the widget's own total, at
+ * the tallest state each seat count can reach, must fit a 601px viewport with
+ * no scroll — because a player who has to scroll to see the score is the bug
+ * this constant exists to prevent.
+ *
+ * It applies to BOTH seat counts deliberately. Targeting it surfaced that 1v1
+ * was 3.28px over as well (604.28), not just 2v2 (667.09) — a fact the old
+ * `BUDGET[375]` of 653/721 hid completely.
+ */
+const PHONE_VIEWPORT_CEILING = 601;
+
 /** ~8% headroom above the measured baseline, rounded up to a whole pixel —
  * PROVISIONAL, see the file docblock. RED-first: measured with a loose
  * `toBeLessThanOrEqual(-1)` probe (deliberately unsatisfiable), which failed
@@ -180,26 +218,10 @@ const WIDTHS = [375, 640, 700, 900, 960, 1280] as const;
  * `min-width: 900px` boundary) 669.375/749.421875, 1280px
  * 746.59375/903.609375. */
 const BUDGET: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  /* FU-3 (debt: compact scoreboard strip): re-measured after compacting the
-   * panel at the compact tier (158.59375px -> 92.9375px, see the FU-3 fence
-   * below) — the 375px shell totals dropped by exactly that 65.65625px
-   * delta: 1v1 669.9375 -> 604.28125 (budget 724 -> 653), 2v2 732.75 ->
-   * 667.09375 (budget 792 -> 721), both x1.08 rounded up per this file's
-   * own convention. 640+ rows are untouched: the panel is a side column
-   * there, outside FU-3's (width < 640px) container query.
-   *
-   * 2v2 re-locked, 721 -> 653: the compact side seats' card backs shrank to
-   * 45px (table-styles.ts), the side column stopped driving the middle row,
-   * and 2v2 converged on 1v1's own 604.28125px — so the two seat counts now
-   * share one measurement here and therefore one x1.08 ceiling. 1v1 is
-   * unmoved because that change is scoped to [data-seat-count="4"]. Note what
-   * this row still is NOT: a headroom multiple of the current measurement is
-   * not the ~530-601px phone window this file's docblock keeps quoting, so it
-   * cannot catch that BOTH seat counts are 3.28px over that window right now.
-   * That gap is the next change's, together with the compact scoreboard
-   * panel; this row only stops claiming a 2v2 number that is no longer
-   * measured. */
-  375: { "1v1": 653, "2v2": 653 },
+  /* The 375px row is the ONE row that is not a x1.08 headroom number: it is
+   * PHONE_VIEWPORT_CEILING itself, a real device constraint. See that
+   * constant's own note. */
+  375: { "1v1": PHONE_VIEWPORT_CEILING, "2v2": PHONE_VIEWPORT_CEILING },
   640: { "1v1": 747, "2v2": 905 },
   700: { "1v1": 747, "2v2": 905 },
   900: { "1v1": 883, "2v2": 944 },
@@ -217,8 +239,19 @@ const BUDGET: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly
  * measured 158.59px against the pre-FU-3 CSS with this same assertion, then
  * the compact strip was laid out horizontally (one row per team) and this
  * ceiling locked to the new measured value (92.9375px) x 1.08 rounded up —
- * the file's established ~8% headroom convention. */
-const SCOREBOARD_COMPACT_WORST_CASE_BUDGET = 101;
+ * the file's established ~8% headroom convention.
+ *
+ * PHONE FOLD (this change): 92.9375px -> 76px, re-locked at 76 x 1.08 rounded
+ * up. FU-3 shrank the casitas to 34px expecting to buy height and bought none:
+ * the rotated "Buenas" caption beside them was 2.5px taller, so IT was the
+ * row, and the casita size was free of effect. With the captions out of flow
+ * (visually hidden, still announced — see table-styles.ts's own block, and
+ * scoreboard-panel-line-box.browser.test.ts for why a pinned leading could not
+ * fix a rotated caption) the row is the casita SVG's own geometry, and 28px
+ * casitas finally spend as casita size. 8+8 padding + 2 x 28 + 4 gap = 76.00,
+ * and unlike every previous value of this constant it is now the same 76.00 on
+ * every font this repo can synthesize. */
+const SCOREBOARD_COMPACT_WORST_CASE_BUDGET = 83;
 
 describe("FU-3: the compact scoreboard strip stays a strip, not a block — 375px, worst-case score", () => {
   it("panel height at 28-27 (target 30, 6 casitas per team) stays under the compact budget", async () => {
