@@ -41,8 +41,14 @@ function needsShell(platform) {
  * So the Wayland session is removed from the child's environment rather than
  * merely out-voted: with no socket named and the session declared X11, the
  * only display Chromium can find is the virtual one.
+ *
+ * Exported because `virtual-display.mjs` applies the exact same discipline at
+ * config level — and because the two files recognize each other BY this shape:
+ * the config shim reads "no `WAYLAND_DISPLAY`, session declared x11" as "the
+ * wrapper already redirected this run" and stands down. One definition, so the
+ * signature and its detector cannot drift apart.
  */
-function x11OnlyEnv(env) {
+export function x11OnlyEnv(env) {
   const x11 = { ...env, XDG_SESSION_TYPE: "x11" };
   delete x11.WAYLAND_DISPLAY;
   return x11;
