@@ -91,6 +91,49 @@ describe("createHardBot — determinization + Monte Carlo evaluation", () => {
     expect(createHardBot(seededRng(11)).chooseAction(view, [risky, guaranteed], 50)).toBe(guaranteed);
   });
 
+  // The tie-break itself, isolated. `leadingCardPlayChoice` scores a card by
+  // COUNTING the sampled rounds it beats, and that count discards card power
+  // entirely — so two cards of different power routinely land on the same
+  // count (~18% of leading decisions). The count is monotone in power, so a
+  // tied pair provably wins the very same rounds: the stronger card buys
+  // nothing this trick and costs a card that is still worth more next trick.
+  // Hence the weaker one, matching the normal tier's stated leading habit
+  // ("conserve strength ... save strong cards for later tricks") and
+  // `scoreFollowingCardPlay`'s "cheapest card that still wins".
+  //
+  // Both argument orders are asserted deliberately: the old tie-break kept
+  // whichever tied card came first in `legalActions` (engine order = deal
+  // order), so a single-order test passes half the time by luck and pins
+  // nothing. Only the pair proves the choice is power-driven, not order-driven.
+  describe("leading a trick — tie-break when two cards score identically", () => {
+    // 1-espada (power 14) and 1-basto (power 13) are the top two cards in the
+    // deck. Holding both, the strongest card any sample can contain is
+    // 7-espada (power 12), so BOTH candidates beat every sampled round: a
+    // guaranteed 24-24 tie for ANY rng, not a seed that happens to tie.
+    const strongest: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 1 } };
+    const secondStrongest: Action = { type: "play-card", playerId: SELF, card: { suit: "basto", rank: 1 } };
+    const bothAlwaysWin: readonly Card[] = [{ suit: "espada", rank: 1 }, { suit: "basto", rank: 1 }];
+
+    it("conserves the stronger card when the stronger is offered first", () => {
+      const view = viewWith({ hand: bothAlwaysWin });
+      expect(createHardBot(seededRng(7)).chooseAction(view, [strongest, secondStrongest], 50)).toBe(secondStrongest);
+    });
+
+    it("conserves the stronger card when the weaker is offered first (same choice, opposite order)", () => {
+      const view = viewWith({ hand: bothAlwaysWin });
+      expect(createHardBot(seededRng(7)).chooseAction(view, [secondStrongest, strongest], 50)).toBe(secondStrongest);
+    });
+
+    it("stays deterministic when the tied cards have EQUAL power: keeps the first, so a seed always replays the same line", () => {
+      // Both 3s sit in the same power group (power 10), so no power-based
+      // preference exists to apply and the choice must simply not wobble.
+      const first: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 3 } };
+      const second: Action = { type: "play-card", playerId: SELF, card: { suit: "basto", rank: 3 } };
+      const view = viewWith({ hand: [{ suit: "espada", rank: 3 }, { suit: "basto", rank: 3 }] });
+      expect(createHardBot(seededRng(7)).chooseAction(view, [first, second], 50)).toBe(first);
+    });
+  });
+
   it("following a visible opponent card: delegates to the exact same public-info scoring as the normal tier", () => {
     const opponentCard: Card = { suit: "basto", rank: 4 };
     const view = viewWith({

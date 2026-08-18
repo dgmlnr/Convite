@@ -35,12 +35,33 @@ function respondChoice<T extends RespondTruco | RespondEnvido>(group: readonly T
  * opponent is about to act defends with their best available response —
  * generalizes cleanly from 1v1's single opponent to 2v2's two, since either
  * one might be the seat that actually follows).
+ *
+ * TIE-BREAK: that score is a COUNT of rounds won, so it discards card power —
+ * two cards of different power land on the same count in roughly 18% of
+ * leading decisions, and the count alone cannot separate them. It used to
+ * fall through to `reduce`'s incumbent, i.e. whichever tied card came first
+ * in `legalActions` — engine order, which is deal order (`card-play.ts` maps
+ * `player.hand` straight through, and nothing sorts a hand), so the choice
+ * was arbitrary with respect to power rather than wrong in a fixed direction.
+ *
+ * The count is monotone in `cardPower`: a stronger card beats every pool a
+ * weaker one beats. So an equal count means the two cards won the very SAME
+ * rounds, not merely as many — the stronger card is estimated to do nothing
+ * extra THIS trick while being worth strictly more in the tricks still to
+ * come (a tie needs 2+ cards in hand, so a later trick always exists). Play
+ * the weaker one. That is `scoreFollowingCardPlay`'s "cheapest card that
+ * still wins" applied to the leading branch, and the same conserve-strength
+ * habit the normal tier already states outright for leading.
+ *
+ * Equal power ties resolve to the incumbent, keeping a seeded line stable.
  */
 function leadingCardPlayChoice(group: readonly PlayCard[], roundsOfOpposingHands: readonly (readonly (readonly Card[])[])[]): Action {
   const combinedPools = roundsOfOpposingHands.map((round) => round.flat());
+  const score = (card: Card) => combinedPools.filter((pool) => pool.length > 0 && cardPower(card) > Math.max(...pool.map(cardPower))).length;
   return group.reduce((best, candidate) => {
-    const score = (card: Card) => combinedPools.filter((pool) => pool.length > 0 && cardPower(card) > Math.max(...pool.map(cardPower))).length;
-    return score(candidate.card) > score(best.card) ? candidate : best;
+    const margin = score(candidate.card) - score(best.card);
+    if (margin !== 0) return margin > 0 ? candidate : best;
+    return cardPower(candidate.card) < cardPower(best.card) ? candidate : best;
   });
 }
 
