@@ -1,4 +1,4 @@
-import { Room, type AuthContext, type Client } from "colyseus";
+import { CloseCode, Room, ServerError, type AuthContext, type Client } from "colyseus";
 import type { BotStrategy, BotTier, GameId, GameModule, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenVerifier, TenantRepository } from "@hexdev/platform-core";
 
@@ -380,17 +380,50 @@ export class MatchRoom extends Room {
       // Reconnected within the window: `onReconnect` below is what actually
       // updates this seat's stored client to the new connection.
     } catch (error) {
-      // `allowReconnection` rejects with the LITERAL `Error("disposing")`
-      // (verified in `@colyseus/core`'s own source, same discipline as obs
-      // 2952) when the room itself is being torn down — e.g. server
-      // shutdown with a match still in progress. A window EXPIRING for real
-      // rejects with a bare `false`, never an `Error`. Taking over a seat
-      // while the room is already disposing would start driving a bot
-      // against a room that is about to vanish — never useful, and for a
-      // module whose legal actions never terminate (this file's OWN
-      // test-only fixtures are exactly that shape) it can recurse `advance()`
-      // without bound. Only a genuine window expiry triggers a takeover.
+      // Colyseus rejects a reconnection window on a room that is going away in
+      // TWO different shapes, from two different code paths, and BOTH must be
+      // matched here. Verified by reading the installed `@colyseus/core@0.17.46`
+      // source itself (same discipline as obs 2952) — line numbers below are
+      // from that exact version's `src/Room.ts` and `src/MatchMaker.ts`:
+      //
+      // (a) `allowReconnection()` CALLED on a room that is ALREADY DISPOSING
+      //     returns `Promise.reject(new Error("disposing"))` (Room.ts:1345-1347).
+      //     A bare `Error`: no subclass, no code, nothing but the message to key
+      //     off. This half is therefore an unavoidable STRING CONTRACT with an
+      //     external library — if upstream renames that literal, this check goes
+      //     silently false and case (a) regresses to taking a seat over
+      //     mid-teardown. No compiler will catch that; only the `onLeave` tests
+      //     in `match-room.test.ts`, which drive the REAL `Room`, would.
+      //
+      // (b) a window that was ALREADY OPEN when the room started going away is
+      //     rejected down a different path entirely: `_rejectPendingReconnections()`
+      //     settles it with `new ServerError(CloseCode.NORMAL_CLOSURE, message)`
+      //     (Room.ts:1086-1092). Matched STRUCTURALLY rather than by message,
+      //     because here a structural discriminator exists and is strictly
+      //     sturdier: `CloseCode.NORMAL_CLOSURE` (1000) is used for exactly ONE
+      //     rejection in the whole package — that line — whereas the message is
+      //     a caller-supplied parameter with two upstream values already,
+      //     `"disconnecting"` from `Room#disconnect()` (Room.ts:1069) and
+      //     `"devmode_restart"` from the matchmaker's devMode restart/hot-reload
+      //     (MatchMaker.ts:732 and :779). Matching the code covers both plus any
+      //     future one; matching the strings would have covered one and left
+      //     this same bug open. `instanceof` is safe against pnpm's duplicated
+      //     copies because `Room` and `ServerError` are imported from the SAME
+      //     `colyseus` specifier in this file, so the class we test against is
+      //     by construction the one the base class we extend throws.
+      //
+      // Deliberately NOT a bare `catch`-and-return: a window EXPIRING for real
+      // rejects with a bare `false` (Room.ts:1372) — neither an `Error` nor a
+      // `ServerError` — so a genuine expiry still reaches the takeover below,
+      // and so does any unrelated failure. This guard is exactly two shapes
+      // wide; `onLeave` catches for the disposal race, not to suppress errors.
+      //
+      // Why either case must skip the takeover: driving a bot against a room
+      // that is about to vanish is never useful, and for a module whose legal
+      // actions never terminate (this file's OWN test-only fixtures are exactly
+      // that shape) it can recurse `advance()` without bound.
       if (error instanceof Error && error.message === "disposing") return;
+      if (error instanceof ServerError && error.code === CloseCode.NORMAL_CLOSURE) return;
       this.takeOverSeat(seat);
     }
   }
