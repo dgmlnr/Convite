@@ -137,3 +137,59 @@ describe.each(TIERS)("2v2 side gutters are container-relative, never viewport-re
     expect(Math.abs(rightAnchor.getBoundingClientRect().width - rightTrack), "right anchor width vs its own track").toBeLessThan(0.5);
   });
 });
+
+/**
+ * The other half of the same contract, and the half nothing asserted until
+ * now: a gutter track that is the right SIZE is still wrong if what stands in
+ * it does not fit.
+ *
+ * The suite above pins how wide the track resolves; it says nothing about the
+ * seat furniture standing in it. At the compact tier those two numbers
+ * disagreed: the track is `minmax(34px, 15cqw)` — 56.25px at a 375px shell,
+ * 48px at 320px — while the face-down stack inside it was drawn at the felt's
+ * own `--truco-card-width`, a flat 60px. The stack is centred in its anchor,
+ * so it hung 1.88px over each edge at 375px and 6.00px at 320px, leaning into
+ * the centre column where the trick is played.
+ *
+ * Deliberately expressed as "every card back stays inside its own anchor's
+ * box", never as a card-width literal: the anchor's box IS the resolved track
+ * (the suite above proves that), so this stays true through any later
+ * re-tuning of either the track formula or the card size, and needs no update
+ * when one of them moves. 320px is included because it is the narrowest width
+ * this table is exercised at anywhere in the repo
+ * (`table-zone-overlap.browser.test.ts`), and it is where the overrun was
+ * three times worse.
+ */
+const COMPACT_WIDTHS = [320, 375] as const;
+
+/** Sub-pixel tolerance, the same 0.5px convention this file's own track
+ * assertions above already use. */
+const SUBPIXEL = 0.5;
+
+describe.each(COMPACT_WIDTHS)("2v2 side seats fit inside their own gutter track — %ipx", (width) => {
+  it("every face-down card back on the left/right seats stays within its own anchor's box", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+    const state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    for (const position of ["left", "right"] as const) {
+      const anchor = el.querySelector<HTMLElement>(`[data-position="${position}"]`);
+      if (anchor === null) throw new Error(`test setup: no ${position} seat anchor — is this really a 4-seat table?`);
+      const track = anchor.getBoundingClientRect();
+      const backs = [...anchor.querySelectorAll<HTMLElement>(".hexdev-truco-card")];
+      expect(backs.length, `sanity: the ${position} seat must really be holding card backs`).toBe(3);
+
+      for (const [index, back] of backs.entries()) {
+        const box = back.getBoundingClientRect();
+        const overrun = Math.max(track.left - box.left, box.right - track.right);
+        expect(
+          overrun,
+          `${position} seat, back #${index}: ${box.width}px wide inside a ${track.width}px gutter track — it hangs ${overrun}px past the track edge, into the trick area`,
+        ).toBeLessThanOrEqual(SUBPIXEL);
+      }
+    }
+  });
+});
