@@ -20,7 +20,7 @@ import { renderSenaPicker } from "./senas.js";
 import { TABLE_STRINGS } from "./strings.js";
 import { ensureTableStyles } from "./table-styles.js";
 import { describeTrickOutcome } from "./trick-feedback.js";
-import { formatCountdown } from "./turn-clock.js";
+import { describeTurnClockStart, describeTurnClockWarning, formatCountdown, remainingWholeSeconds, TURN_CLOCK_WARNING_SECONDS } from "./turn-clock.js";
 import { describeTurn } from "./turn.js";
 
 /** "Long enough to register, short enough not to be in the way" (spec) —
@@ -89,7 +89,7 @@ function appendTurnBadge(anchor: HTMLElement, text: string, remainingMs: number 
   clock.className = "hexdev-truco-turn-clock";
   // THE ACCESSIBILITY DECISION, and the reason this element is a separate
   // node rather than more text in the badge. A countdown changes ONCE A
-  // SECOND. This table carries three ARIA live regions (announcer.ts), and a
+  // SECOND. This table carries four ARIA live regions (announcer.ts), and a
   // reader speaks a live region every time its content changes — so a
   // per-second number reaching one would be read out sixty times a turn.
   //
@@ -101,10 +101,11 @@ function appendTurnBadge(anchor: HTMLElement, text: string, remainingMs: number 
   // either, so navigating onto the badge reads "Tu turno" rather than a
   // second that is already stale by the time it is spoken.
   //
-  // What a screen-reader user loses is the seconds themselves. What they keep
-  // is the turn announcement, which is the actionable half. Announcing the
-  // remaining time usefully would need its own throttled, coarse region
-  // ("te queda poco"), which is a separate feature, not a detail of this one.
+  // What a screen-reader user loses is the seconds themselves. What they get
+  // instead is the clock's own throttled, coarse region — the "turn-clock"
+  // announcer in `render` below: the total once when the LOCAL player's turn
+  // starts, one warning near the end, and nothing at all in between or for
+  // anybody else's turn.
   clock.setAttribute("aria-hidden", "true");
   clock.textContent = formatCountdown(remainingMs);
   return clock;
@@ -149,7 +150,7 @@ export function createMatchTableRenderer(
   let mountedSenaNoticeEl: HTMLElement | null = null;
   const senaNoticeMs = options?.senaNoticeMs ?? DEFAULT_SENA_NOTICE_MS;
 
-  // The two live regions (announcer.ts). Unlike EVERY other node this renderer
+  // The live regions (announcer.ts). Unlike EVERY other node this renderer
   // touches, these are built ONCE per mount and then left alone: an
   // announcement is a CHANGE to a region already sitting in the accessibility
   // tree, so a region rebuilt each render — the shape every other node here
@@ -157,7 +158,12 @@ export function createMatchTableRenderer(
   // render because that is when a `Document` is first in hand, and they are
   // exempted from the wipe below rather than re-appended, so they are never
   // even momentarily detached.
-  let announcers: { readonly handOutcome: HTMLElement; readonly sena: HTMLElement; readonly turn: HTMLElement } | null = null;
+  let announcers: {
+    readonly handOutcome: HTMLElement;
+    readonly sena: HTMLElement;
+    readonly turn: HTMLElement;
+    readonly turnClock: HTMLElement;
+  } | null = null;
 
   const now = options?.now ?? Date.now;
   const turnClockTickMs = options?.turnClockTickMs ?? DEFAULT_TURN_CLOCK_TICK_MS;
@@ -168,6 +174,14 @@ export function createMatchTableRenderer(
   let turnClockTimer: ReturnType<typeof setInterval> | undefined;
   let mountedTurnClockEl: HTMLElement | null = null;
   let mountedTurnDeadline: number | null = null;
+  // The coarse screen-reader half of that clock, keyed on the DEADLINE — the
+  // one value that is per-turn, absolute and server-issued, so a re-broadcast
+  // of the same turn can never re-announce and a new turn always does. Two
+  // keys because the feature makes exactly two statements per timed turn of
+  // the local player: which deadline has had its total announced, and which
+  // its one low-time warning.
+  let announcedClockDeadline: number | null = null;
+  let warnedClockDeadline: number | null = null;
 
   return function render(
     container: HTMLElement,
@@ -188,12 +202,13 @@ export function createMatchTableRenderer(
         handOutcome: createAnnouncer(container.ownerDocument, "hand-outcome"),
         sena: createAnnouncer(container.ownerDocument, "partner-sena"),
         turn: createAnnouncer(container.ownerDocument, "turn"),
+        turnClock: createAnnouncer(container.ownerDocument, "turn-clock"),
       };
     }
     if (announcers.handOutcome.parentElement !== container) {
-      container.append(announcers.handOutcome, announcers.sena, announcers.turn);
+      container.append(announcers.handOutcome, announcers.sena, announcers.turn, announcers.turnClock);
     }
-    const { handOutcome: handOutcomeAnnouncer, sena: senaAnnouncer, turn: turnAnnouncer } = announcers;
+    const { handOutcome: handOutcomeAnnouncer, sena: senaAnnouncer, turn: turnAnnouncer, turnClock: turnClockAnnouncer } = announcers;
 
     // A hand ending is a POINT-IN-TIME event, not an ongoing view field — it
     // must survive past the very next broadcast (usually the freshly-dealt
@@ -376,8 +391,45 @@ export function createMatchTableRenderer(
           turnClockTimer = undefined;
           return;
         }
-        clock.textContent = formatCountdown(deadline - now());
+        const remaining = deadline - now();
+        clock.textContent = formatCountdown(remaining);
+        // The ONE low-time warning (turn-clock.ts), fired by the same tick
+        // that redraws the pill. Three guards, each load-bearing: the deadline
+        // must be the one whose start THIS table announced (so a rival's
+        // clock, which never announces, never warns either); it must not have
+        // warned already (the key is what makes a second firing impossible,
+        // however many ticks cross the threshold); and the turn must still be
+        // live — once the deadline has passed, the server's timeout is already
+        // in flight and "Quedan 10 segundos" would be a lie about time the
+        // player no longer has.
+        if (deadline === announcedClockDeadline && warnedClockDeadline !== deadline && remaining <= TURN_CLOCK_WARNING_SECONDS * 1000 && remaining > 0) {
+          warnedClockDeadline = deadline;
+          announce(turnClockAnnouncer, describeTurnClockWarning());
+        }
       }, turnClockTickMs);
+    }
+
+    // The coarse screen-reader half of the countdown — what a reader gets
+    // instead of the aria-hidden pill above (appendTurnBadge argues why the
+    // pill itself must stay silent). Gated on the SAME predicate that just
+    // decided whether the clock landed on the local player's own badge:
+    // only the seat that owes the move is ever told its time, because a
+    // rival's countdown announced every single turn is spam, not access.
+    if (remainingMs === null || !isAnchorActive(view.self.seat, view.self.teamId)) {
+      announcedClockDeadline = null;
+      warnedClockDeadline = null;
+      // Falls silent rather than saying anything: emptying a region is a
+      // REMOVAL, which `aria-relevant`'s default excludes (announcer.ts).
+      announce(turnClockAnnouncer, null);
+    } else if (announcedClockDeadline !== mountedTurnDeadline) {
+      announcedClockDeadline = mountedTurnDeadline;
+      announce(turnClockAnnouncer, describeTurnClockStart(remainingMs));
+      // A turn that STARTS at or under the warning threshold has already had
+      // its low total said in the sentence above — a later "Quedan 10
+      // segundos" would warn about MORE time than the turn ever had.
+      if (remainingWholeSeconds(remainingMs) <= TURN_CLOCK_WARNING_SECONDS) {
+        warnedClockDeadline = mountedTurnDeadline;
+      }
     }
     // PR5 (D-3/blessed refinement 1, tasks §1 item 1/§2.2, §9): the action
     // bar is now a RESERVED GRID ROW below the hand, in flow, at every tier —

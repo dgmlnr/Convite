@@ -696,6 +696,7 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
   const handOutcomeAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="hand-outcome"]');
   const senaAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="partner-sena"]');
   const turnAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn"]');
+  const turnClockAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn-clock"]');
 
   function teamView(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
     return baseView({
@@ -721,6 +722,7 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
     ["hand-outcome", handOutcomeAnnouncerOf],
     ["partner-sena", senaAnnouncerOf],
     ["turn", turnAnnouncerOf],
+    ["turn-clock", turnClockAnnouncerOf],
   ] as const)("%s: the SAME node survives a re-render — a live region rebuilt per render can never announce", (_name, announcerOf) => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
@@ -742,6 +744,7 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
     ["hand-outcome", handOutcomeAnnouncerOf],
     ["partner-sena", senaAnnouncerOf],
     ["turn", turnAnnouncerOf],
+    ["turn-clock", turnClockAnnouncerOf],
   ] as const)("%s: is a polite, atomic live region — never assertive, never a half-read fragment", (_name, announcerOf) => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
