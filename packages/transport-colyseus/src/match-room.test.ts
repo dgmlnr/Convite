@@ -605,6 +605,35 @@ describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal'
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(tiers).toEqual([]); // still human: no takeover fired
   });
+
+  /**
+   * The OTHER shutdown shape — the one `onLeave`'s `Error("disposing")` check
+   * cannot see. `Error("disposing")` is only produced when `allowReconnection`
+   * is CALLED on an already-DISPOSING room; a window that was ALREADY OPEN when
+   * the room started going away is rejected down a different path entirely
+   * (`Room#_rejectPendingReconnections`), with a `ServerError` carrying
+   * `CloseCode.NORMAL_CLOSURE`.
+   *
+   * The rejection here is produced by Colyseus's OWN private method, reached
+   * exactly the way Colyseus's own `MatchMaker` reaches it
+   * (`rooms[roomId]['_rejectPendingReconnections']?.("devmode_restart")`) — not
+   * by hand-building an error object, which would only prove that the guard
+   * matches whatever this test decided to throw. `Room#disconnect()` calls the
+   * same method with `"disconnecting"`; it is not used directly because it also
+   * goes through the matchmaker driver, which no unit-test room has.
+   */
+  it("does not take over or drive the room when an already-open reconnection window is rejected by room shutdown", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    const { room, seat0, seat1 } = await twoJoinedSeats(module, { reconnectionWindowSeconds: 30 });
+    // `onLeave` runs synchronously up to its `await allowReconnection(...)`, so
+    // by the time this returns a promise the window is already registered.
+    const leaving = room.onLeave(seat0.client);
+    (room as unknown as { _rejectPendingReconnections(message: string): void })._rejectPendingReconnections("disconnecting");
+    await leaving;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(tiers).toEqual([]); // no bot was ever built for a room that is going away
+    expect(seat1.sent).toHaveLength(1); // and nothing was driven: still just the initial view
+  });
 });
 
 describe("MatchRoom.advance() — structural serialization against overlap (closes the disclosed debt, apply-progress obs 2927/2925)", () => {
