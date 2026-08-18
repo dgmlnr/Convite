@@ -1,14 +1,18 @@
 /**
  * The per-turn countdown, and the accessibility trap it walks straight into.
  *
- * A countdown is text that changes ONCE A SECOND. This table already carries
- * three ARIA live regions (`announcer.ts`), and a screen reader announces a
- * live region's content every time it changes — so a per-second number that
- * lands in, or under, one of them would be read out every single second for
- * the whole minute, which is not a degraded experience but an unusable one.
- * The fences below are what keep that from ever regressing: the ticking node
- * is `aria-hidden`, it has no `aria-live` ancestor, and ticking it repeatedly
- * leaves every announcer's text byte-identical.
+ * A countdown is text that changes ONCE A SECOND. This table carries four
+ * ARIA live regions (`announcer.ts`), and a screen reader announces a live
+ * region's content every time it changes — so a per-second number that lands
+ * in, or under, one of them would be read out every single second for the
+ * whole minute, which is not a degraded experience but an unusable one. The
+ * fences below are what keep that from ever regressing: the ticking node is
+ * `aria-hidden`, it has no `aria-live` ancestor, and ticking it repeatedly
+ * leaves every narrative announcer's text byte-identical. The fourth region
+ * ("turn-clock") is the sanctioned COARSE voice of this clock — at most two
+ * sentences per timed turn, fenced in its own file
+ * (`turn-clock-announcements.browser.test.ts`) and held here to exactly its
+ * two sanctioned sentences, never a running number.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
@@ -183,7 +187,7 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
     }
   });
 
-  it("leaves every announcer byte-identical while the clock ticks — a screen reader hears the turn once, never the seconds", async () => {
+  it("leaves every narrative announcer byte-identical while the clock ticks — a screen reader hears the turn once, never the seconds", async () => {
     const el = freshContainer();
     let now = T0;
     const render = clockedRenderer(() => now);
@@ -191,18 +195,32 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
 
     const announcers = [...el.querySelectorAll<HTMLElement>("[data-announces]")];
-    expect(announcers).toHaveLength(3); // hand-outcome, partner-sena, turn
-    const before = announcers.map((region) => `${region.dataset.announces}=${region.textContent}`);
+    expect(announcers).toHaveLength(4); // hand-outcome, partner-sena, turn, turn-clock
+    // The turn-clock region is the clock's own sanctioned coarse voice — held
+    // to its two whole sentences below, never to byte-identity: that is the
+    // one region a threshold crossing is ALLOWED to change, exactly once.
+    const narrative = announcers.filter((region) => region.dataset.announces !== "turn-clock");
+    const clockRegion = announcers.find((region) => region.dataset.announces === "turn-clock")!;
+    const before = narrative.map((region) => `${region.dataset.announces}=${region.textContent}`);
     expect(before).toContain("turn=Tu turno");
+    expect(clockRegion.textContent).toBe("Tenés 60 segundos para jugar");
 
-    for (const at of [7_000, 21_000, 44_000, 59_000]) {
+    for (const at of [7_000, 21_000, 44_000]) {
       now = T0 + at;
       await sleep(20);
       // The visible number really is moving — otherwise this whole assertion
       // would pass on a clock that never ticked at all.
       expect(clockOf(el)!.textContent).not.toBe("1:00");
-      expect(announcers.map((region) => `${region.dataset.announces}=${region.textContent}`)).toEqual(before);
+      expect(narrative.map((region) => `${region.dataset.announces}=${region.textContent}`)).toEqual(before);
+      expect(clockRegion.textContent).toBe("Tenés 60 segundos para jugar");
     }
+
+    // The final tick crosses the coarse threshold: the ONE sanctioned change,
+    // a whole sentence — still never the seconds themselves.
+    now = T0 + 59_000;
+    await sleep(20);
+    expect(narrative.map((region) => `${region.dataset.announces}=${region.textContent}`)).toEqual(before);
+    expect(clockRegion.textContent).toBe("Quedan 10 segundos");
   });
 });
 

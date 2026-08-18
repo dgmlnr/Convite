@@ -81,6 +81,16 @@ export const TABLE_STRINGS = {
   speakerOpponentLeft: "Rival izq.",
   speakerOpponentRight: "Rival der.",
   manoTag: "Mano",
+  // The turn clock's coarse screen-reader voice (turn-clock.ts). The visible
+  // pill is aria-hidden — a number changing every second must never reach a
+  // live region — so what a reader hears instead is at most two whole
+  // sentences per timed turn of the LOCAL player: the total when their turn
+  // starts, one warning when little is left. Voseo, like speakerSelf's "Vos"
+  // and senasSpentHint's "hiciste": these are said TO the player. Both
+  // pluralize the way handPoints already does, so "1 segundo" can never come
+  // out as "1 segundos".
+  turnClockStart: (seconds: number): string => `Tenés ${seconds} ${seconds === 1 ? "segundo" : "segundos"} para jugar`,
+  turnClockWarning: (seconds: number): string => `${seconds === 1 ? "Queda" : "Quedan"} ${seconds} ${seconds === 1 ? "segundo" : "segundos"}`,
 } as const;
 
 /** Spanish table vocabulary for the six closed señas signals
