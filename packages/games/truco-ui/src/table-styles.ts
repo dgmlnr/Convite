@@ -1605,6 +1605,25 @@ export function buildTableStylesheet(): string {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  /* The two pins the sibling boxes carry, for the reason they carry them: the
+   * side anchors are flex COLUMNS, so this label's own height stacks above the
+   * card pile and reaches the table's reported total -- a number
+   * table-height-stability.browser.test.ts locks to the hundredth of a pixel.
+   * With no line-height the filled line box was "normal", i.e. whatever this
+   * font's ascent/descent/line-gap ask for, so that total was really the
+   * machine's font talking: measured across probe faces at 700px, 831.42 ..
+   * 875.42. 1.2 matches .hexdev-truco-trick-feedback and
+   * .hexdev-truco-banner-slot exactly, never var(--hx-leading) (the chrome's
+   * 1.35 body-copy rhythm).
+   *
+   * nowrap closes the line-COUNT axis a leading cannot reach, and it changes
+   * no number today -- every face measured wrapped to one line already. It is
+   * a fence, not a fix: legitimate here for the same reason
+   * .hexdev-truco-team-label gives for its own, that the whole vocabulary is
+   * two fixed words (TABLE_STRINGS.partner/opponent) and no third can appear
+   * without a source change that has to come past this comment. */
+  line-height: 1.2;
+  white-space: nowrap;
   padding: 1px 6px;
   border-radius: var(--gx-radius, 999px);
   background: rgba(0, 0, 0, 0.4);
