@@ -146,8 +146,15 @@ const TURNS = [
   { callerLabel: "Nosotros", waitingOnMe: false },
 ] as const;
 
-const PENDING_CASES = [...TRUCO_LEVELS, ...ENVIDO_LEVELS].flatMap((level) =>
-  TURNS.map((turn) => ({ label: `${CALL_LABELS[level]} / ${turn.callerLabel}`, levelLabel: CALL_LABELS[level], ...turn })),
+/** Each case carries its chain's own `kind`. Rendering-inert today —
+ * `renderPendingCallBanner` never reads it — but a fixture that stamped every
+ * envido level `"truco"` would hand a future kind-branching renderer a matrix
+ * that silently measures the wrong branch. */
+const PENDING_CASES = [
+  ...TRUCO_LEVELS.map((level) => ({ kind: "truco" as const, level })),
+  ...ENVIDO_LEVELS.map((level) => ({ kind: "envido" as const, level })),
+].flatMap(({ kind, level }) =>
+  TURNS.map((turn) => ({ kind, label: `${CALL_LABELS[level]} / ${turn.callerLabel}`, levelLabel: CALL_LABELS[level], ...turn })),
 );
 
 /** The widest label the CLOSED señas vocabulary can produce — the same
@@ -210,10 +217,13 @@ function mountLane(width: number, mode: SeatMode, family: string): { pendingCall
 }
 
 /** The lane this tier reserves, read off the felt rather than restated here —
- * so a re-tuned token is measured, never assumed. */
-function laneHeight(): number {
-  const felt = document.querySelector(".hexdev-truco-table");
-  if (felt === null) throw new Error("test setup: no felt mounted");
+ * so a re-tuned token is measured, never assumed. Resolved from the measured
+ * occupant's OWN felt, because up to four mounted containers coexist while a
+ * per-face group is read (the splice comes after the group), and a
+ * document-wide query would always answer with the first of them. */
+function laneHeight(el: HTMLElement): number {
+  const felt = el.closest<HTMLElement>(".hexdev-truco-table");
+  if (felt === null) throw new Error("test setup: the measured occupant is not inside a felt");
   return parseFloat(getComputedStyle(felt).getPropertyValue("--hx-band-banner"));
 }
 
@@ -241,7 +251,7 @@ function read(el: HTMLElement, face: string): Reading {
   nodes.forEach((node, index) => {
     node.style.lineHeight = saved[index]!;
   });
-  return { face, height, natural, lane: laneHeight() };
+  return { face, height, natural, lane: laneHeight(el) };
 }
 
 function describeRow(rows: readonly Reading[]): string {
@@ -319,7 +329,7 @@ describe("the banner lane costs the same height whatever font draws it", () => {
           const rows = SYNTHETIC_FACES.map((face) => {
             const { pendingCall } = mountLane(width, mode, `'${face.name}'`);
             renderPendingCallBanner(pendingCall, {
-              call: { kind: "truco", levelLabel: call.levelLabel, callingTeamId: "banner-lane-caller:team" as TeamId },
+              call: { kind: call.kind, levelLabel: call.levelLabel, callingTeamId: "banner-lane-caller:team" as TeamId },
               callerLabel: call.callerLabel,
               waitingOnMe: call.waitingOnMe,
             });

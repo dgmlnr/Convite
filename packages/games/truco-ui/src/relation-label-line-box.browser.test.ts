@@ -199,6 +199,24 @@ function labelHeights(container: HTMLElement): number[] {
   return [...container.querySelectorAll<HTMLElement>(".hexdev-truco-relation-label")].map((el) => el.getBoundingClientRect().height);
 }
 
+/** The containment half of `white-space: nowrap`'s bargain, asserted per label
+ * against its OWN seat anchor: a line forbidden from wrapping overflows
+ * sideways instead, and the felt's `overflow: hidden` would clip that silently
+ * — no height would move, no fence above would notice. The advance-width
+ * boundary of this claim is stated at the second test below. */
+function expectLabelsFitTheirAnchors(container: HTMLElement, face: string): void {
+  for (const label of container.querySelectorAll<HTMLElement>(".hexdev-truco-relation-label")) {
+    const anchor = label.closest<HTMLElement>(".hexdev-truco-anchor");
+    if (anchor === null) throw new Error("test setup: a relation label is not inside a seat anchor");
+    const labelWidth = label.getBoundingClientRect().width;
+    const anchorWidth = anchor.getBoundingClientRect().width;
+    expect(
+      labelWidth,
+      `${face}: "${label.textContent}" is ${labelWidth}px wide inside a ${anchorWidth}px anchor — nowrap traded a vertical overflow for a horizontal one`,
+    ).toBeLessThanOrEqual(anchorWidth + ONE_LAYOUT_UNIT);
+  }
+}
+
 function read(container: HTMLElement, face: string): Reading {
   const height = container.getBoundingClientRect().height;
   const labels = [...container.querySelectorAll<HTMLElement>(".hexdev-truco-relation-label")];
@@ -314,7 +332,9 @@ describe("the 2v2 relation label costs the same height whatever font draws it", 
     for (const width of WIDTHS) {
       const rows: Reading[] = [];
       for (const face of SYNTHETIC_FACES) {
-        rows.push(read(await mountTable(width, `'${face.name}'`), face.name));
+        const container = await mountTable(width, `'${face.name}'`);
+        expectLabelsFitTheirAnchors(container, face.name);
+        rows.push(read(container, face.name));
       }
       for (const container of containers.splice(0)) container.remove();
       groups.push({ what: `${width}px 2v2`, rows });
@@ -366,11 +386,23 @@ describe("the 2v2 relation label costs the same height whatever font draws it", 
    * whether the TABLE survives that is those elements' fences' business, not
    * this one's. What is asserted here is exactly what this rule claims — one
    * line, one height, at any advance width.
+   *
+   * Both tests also assert the containment that makes nowrap honest (see
+   * `expectLabelsFitTheirAnchors`), each at the widths it already runs: the
+   * vertical-metric matrix everywhere, because its faces share DejaVu's
+   * advance widths (a ~40px label, under every tier's track); this test at
+   * 700px, where the side track is 112px and even the 220% face's ~76px label
+   * fits. `WIDTH_FACES` is deliberately NOT extended to 375px: the side track
+   * is 56.25px there, an extreme advance-width font genuinely CAN overflow it,
+   * and the felt's `overflow: hidden` would clip the label. Whether that track
+   * should grow for such a font is a design decision, out of this fence's
+   * scope — not hygiene it forgot.
    */
   it("one line and one height across advance widths from half to double — the axis a leading cannot reach", async () => {
     const rows: (Reading & { readonly width: number })[] = [];
     for (const face of WIDTH_FACES) {
       const container = await mountTable(700, `'${face.name}'`);
+      expectLabelsFitTheirAnchors(container, face.name);
       const label = container.querySelector<HTMLElement>(".hexdev-truco-relation-label")!;
       rows.push({ ...read(container, face.name), width: label.getBoundingClientRect().width });
     }

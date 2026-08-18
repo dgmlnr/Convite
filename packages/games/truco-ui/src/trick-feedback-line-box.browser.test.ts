@@ -97,15 +97,26 @@ function readLineBox(family: string): LineBoxReading {
   const shell = document.createElement("div");
   shell.className = "hexdev-truco-table-shell";
   shell.style.setProperty("--gx-font-family", family);
-  // The narrowest tier the table supports. Every string above fits on one line
-  // at this width in every font here, so a wrapped second line can never be
-  // mistaken for the growth under test.
+  // The narrowest tier the table supports. Every filled line must still be a
+  // single line box at this width — asserted just below rather than claimed
+  // here, because a wrapped second line would corrupt filled-vs-reserved into
+  // measuring a wrap this file does not own.
   shell.style.width = "375px";
   document.body.appendChild(shell);
   shells.push(shell);
 
   const empty = shell.appendChild(feedbackLine(""));
   const filled = FEEDBACK_TEXTS.map((text) => shell.appendChild(feedbackLine(text)));
+  for (const el of filled) {
+    // Same idiom as the siblings' wrap-shape probes: a Range over the contents
+    // reports one client rect per line box.
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    expect(
+      range.getClientRects().length,
+      `${family}: "${el.textContent}" does not fit on one line at 375px, so filled-vs-reserved would measure the wrap instead of the line box`,
+    ).toBe(1);
+  }
   const natural = FEEDBACK_TEXTS.map((text) => {
     const el = shell.appendChild(feedbackLine(text));
     el.style.minHeight = "0";
