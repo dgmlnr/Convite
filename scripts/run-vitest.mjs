@@ -4,15 +4,20 @@
  *
  * WHY THIS EXISTS AT ALL. The `browser` project in `vitest.config.ts` runs
  * Chromium HEADED on a developer's machine — deliberately, and that choice is
- * argued at the config itself: headed is what a player runs, and it is what
- * `table-height-stability`'s hundredth-of-a-pixel constants were calibrated
- * against. Headless is not a free tidy-up; it moves those numbers and hides a
- * real one. So the window is not the thing to remove — SEEING it is.
+ * argued at the config itself: headed is what a player runs. So the window is
+ * not the thing to remove — SEEING it is.
  *
  * A virtual display gives exactly that: the same headed Chromium, rendering
  * identically, on a screen nobody is looking at. Verified rather than assumed
- * — the height fence reports the same 28/28 and the full suite the same 1013,
- * with and without it.
+ * — the full suite reports the same 114 files / 1053 passed + 2 todo with and
+ * without it.
+ *
+ * This docblock used to add that headless "moves those numbers and hides a
+ * real one", pointing at `table-height-stability`'s hundredth-of-a-pixel
+ * constants. That was true when it was written and is not true any more: every
+ * box those constants depend on now pins its own line box, so headed and
+ * `CI=1` headless agree exactly. The disagreement was never the display — it
+ * was a layout that let the machine's font decide a height, and it is fixed.
  *
  * WHY A WRAPPER RATHER THAN A SECOND SCRIPT. It was a `test:hidden` script
  * first, and that was wrong: an opt-in only helps whoever remembers it, and

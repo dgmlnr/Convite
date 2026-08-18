@@ -260,12 +260,35 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * Both now sit 13.66px under PHONE_VIEWPORT_CEILING, the 601px phone viewport
  * table-height-budget.browser.test.ts asserts. 700/960/1280 are untouched
  * again, and for the same reason as FU-3: both changes are inside compact-only
- * (width < 640px) container queries. */
+ * (width < 640px) container queries.
+ *
+ * THE LAST FONT ON THE CRITICAL PATH: the three 2v2 rows below drop by exactly
+ * 0.09375px each — `.hexdev-truco-relation-label` (the "Compañero"/"Rival"
+ * pill, 2v2 ONLY, which is why no "1v1" row moves and why this outlived three
+ * rounds of the same bug) gaining the `line-height: 1.2` its sibling boxes
+ * already carried. Its filled line box was `normal`, so this table's total was
+ * really reporting whichever face the machine resolved `system-ui` to: headed
+ * Chromium answered Adwaita Sans (label 14px), headless answered Noto Sans
+ * (16px), and the four 2v2 rows here were the last tests in the repo that
+ * disagreed between the two modes. 9.92px x 1.2 + 2px padding = 13.90625px,
+ * now the label's height on every machine.
+ *   700  2v2: 837.421875  -> 837.328125
+ *   960  2v2: 873.421875  -> 873.328125
+ *   1280 2v2: 1043.609375 -> 1043.515625
+ * 375 2v2 (587.34375) does not move: at compact the side column is not the
+ * tallest column, so the label had no reach into this total there — measured,
+ * not reasoned. Re-locking these three is HONESTY, NOT NECESSITY, and worth
+ * saying plainly: `expectExactHeight`'s tolerance is 0.5px and the delta is
+ * 0.09375px, so the CSS fix alone turns these rows green in both modes with
+ * the old numbers still written here. They are updated because a constant that
+ * names a height nothing measures any more is a slow lie, not because anything
+ * was red. The property that makes them portable at all now has its own fence:
+ * relation-label-line-box.browser.test.ts. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
   375: { "1v1": 587.34375, "2v2": 587.34375 },
-  700: { "1v1": 690.96875, "2v2": 837.421875 },
-  960: { "1v1": 817.375, "2v2": 873.421875 },
-  1280: { "1v1": 910.59375, "2v2": 1043.609375 },
+  700: { "1v1": 690.96875, "2v2": 837.328125 },
+  960: { "1v1": 817.375, "2v2": 873.328125 },
+  1280: { "1v1": 910.59375, "2v2": 1043.515625 },
 };
 
 function expectExactHeight(actual: number, expected: number, label: string): void {

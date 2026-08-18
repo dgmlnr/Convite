@@ -44,29 +44,35 @@ export default defineConfig({
             // That is not an oversight, and setting `headless: true` here is
             // a trap worth naming, because it looks like an obvious tidy-up.
             // This project measures REAL LAYOUT — `table-height-stability`
-            // asserts window heights to the hundredth of a pixel — and headed
-            // and headless Chromium do not agree on them. Flipping it turns 14
-            // of these tests red, and they fail for two different reasons that
-            // are easy to conflate: a ~1.6px constant offset in the exact-height
-            // constants (a plain metric difference, recalibratable), and a
-            // 2.6875px growth partway through a played hand that headed does
-            // not show at all — identical at every width, at the render where
-            // the trick-feedback line appears. That second one is the very
-            // thing this fence exists to forbid, so the constants must NOT be
-            // recalibrated until it is understood: doing so would bury a real
-            // question under a new number.
+            // asserts window heights to the hundredth of a pixel — and the two
+            // modes did not always agree on them. The disagreement was never
+            // about the browser: headed Chromium resolves `system-ui` to one
+            // installed face and headless resolves it to another, and every
+            // table box whose height was `line-height: normal` reported that
+            // font's opinion instead of a layout constant. Chased to zero one
+            // element at a time, each with a fence that pins the PROPERTY
+            // rather than a number — `trick-feedback-line-box`,
+            // `banner-lane-line-box`, `scoreboard-panel-line-box`,
+            // `relation-label-line-box`. The last of those closed the final
+            // symptom (the four 2v2 rows of `table-height-stability`, which
+            // headless read 2.000000px taller than headed), so both modes now
+            // measure identically and the whole suite is green either way.
             //
-            // Headed also happens to be the mode a player actually runs, which
-            // is the mode a layout fence should be calibrated against.
+            // Headed stays the default anyway, for a reason that outlives that
+            // history: it is the mode a player actually runs, and it is the
+            // mode a layout fence should be calibrated against. A future
+            // divergence between the two is a real signal, and it should be
+            // read the way these four were — as a box whose height a font is
+            // still deciding — never buried under recalibrated constants.
             //
             // Nobody has to look at that window, though: `pnpm test` goes
             // through `scripts/run-vitest.mjs`, which runs this same headed
             // Chromium against a virtual display where one is available. The
             // window still exists and still renders identically — verified,
-            // 28/28 here and 1013 on the full suite either way — it is simply
-            // not on anyone's screen. `vitest.visual.config.ts` is a separate
-            // project and pins `headless: true` for its own reason; see its
-            // comment.
+            // 114 files / 1053 passed + 2 todo, the same totals under `pnpm
+            // test` and `CI=1 pnpm test` — it is simply not on anyone's
+            // screen. `vitest.visual.config.ts` is a separate project and pins
+            // `headless: true` for its own reason; see its comment.
             provider: playwright(),
             instances: [{ browser: "chromium" }],
           },

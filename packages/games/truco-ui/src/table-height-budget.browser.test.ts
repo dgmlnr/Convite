@@ -53,6 +53,22 @@ import { createMatchTableRenderer } from "./table.js";
  * confirms the @container boundary is inclusive" fact this file's own width
  * list exists to prove, still holding after PR5's own changes.)
  *
+ * SINCE RE-MEASURED, and the numbers above are kept as the history they are
+ * rather than edited: every 2v2 row except 375 is now 0.09375px shorter, from
+ * `.hexdev-truco-relation-label` gaining a `line-height` (see
+ * `relation-label-line-box.browser.test.ts`, which fences the property, and
+ * `table-height-stability.browser.test.ts`, which locks the exact totals).
+ * Measured, at every width this file uses:
+ *   375  2v2: 587.34375    (unchanged — the label has no reach into the
+ *                           compact total, where the side column is not the
+ *                           tallest column)
+ *   640  2v2: 837.421875   -> 837.328125    | 700  2v2: same pair
+ *   900  2v2: 873.421875   -> 873.328125    | 960  2v2: same pair
+ *   1280 2v2: 1043.609375  -> 1043.515625
+ * No `BUDGET` ceiling below moves: they are upper bounds, and a widget that
+ * measures LESS can only gain headroom against them. The 1v1 rows do not move
+ * at all — `table.ts` renders that label in 2v2 only.
+ *
  * COMPACT TOTAL vs. THE PHONE — the whole history of this paragraph, kept
  * because how it went wrong is the point. `el` in this file's own `it` blocks
  * is the shell element itself (`container.className =
