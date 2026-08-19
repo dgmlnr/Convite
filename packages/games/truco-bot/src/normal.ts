@@ -1,7 +1,8 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, PlayerView } from "@hexdev/truco-engine";
-import type { BotStrategy } from "@hexdev/platform-contract";
+import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
 import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
+import { chooseSenaEmission } from "./sena-emission.js";
 
 /** Heuristic thresholds (bot domain knowledge, not the engine's real point
  * values — see `heuristics.ts`). Roughly the midpoint of a 3-card hand's
@@ -11,6 +12,13 @@ const ACCEPT_TRUCO_THRESHOLD = 22;
 const AGGRESSIVE_TRUCO_THRESHOLD = 28;
 const ACCEPT_ENVIDO_THRESHOLD = 23;
 const AGGRESSIVE_ENVIDO_THRESHOLD = 27;
+
+/** How often the tier signals when it holds something worth claiming and a
+ * seña is on offer — moderate, and always HONEST (`bluffRate` 0): the normal
+ * tier plays a solid partner, not a deceptive one; bluffed señas are the
+ * hard tier's edge. Like the thresholds above, a judgement knob — nothing
+ * downstream derives it. */
+const SENA_EMIT_RATE = 0.35;
 
 type RespondTruco = Extract<Action, { type: "respond-truco" }>;
 type RespondEnvido = Extract<Action, { type: "respond-envido" }>;
@@ -55,12 +63,25 @@ function cardPlayChoice(view: PlayerView, group: readonly PlayCard[]): Action {
   });
 }
 
-export function createNormalBot(): BotStrategy<PlayerView, Action> {
+export function createNormalBot(rng: RandomSource): BotStrategy<PlayerView, Action> {
   return {
     chooseAction(view, legalActions) {
       if (legalActions.length === 0) {
         throw new Error("createNormalBot: no legal actions to choose from");
       }
+
+      // Before the ladder: maybe flash the partner a seña (2v2 only — the
+      // engine never offers `send-sena` without a teammate, and the gate
+      // consumes NO rng when none is offered, so every 1v1 decision below is
+      // byte-identical to the pre-emission tier). Deliberately ahead of the
+      // respond branches too: señas stay legal while a truco/envido response
+      // is pending, and flashing BEFORE answering is legitimate truco — the
+      // partner learns the hand before the quiero lands. The answer still
+      // arrives on the very next drive (the loop re-invokes after a
+      // non-blocking action), quota-bounded as always. Termination is argued
+      // once, in `chooseSenaEmission`'s own docstring.
+      const sena = chooseSenaEmission(view, legalActions, rng, { emitRate: SENA_EMIT_RATE, bluffRate: 0 });
+      if (sena !== undefined) return sena;
 
       const respondTruco = legalActions.filter((a): a is RespondTruco => a.type === "respond-truco");
       if (respondTruco.length > 0) return respondTrucoChoice(view, respondTruco);
@@ -80,8 +101,15 @@ export function createNormalBot(): BotStrategy<PlayerView, Action> {
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) return cardPlayChoice(view, cardPlays);
 
-      // Nothing better is legal — take whatever call is left rather than fail.
-      return legalActions[0]!;
+      // Nothing better is legal — take whatever call is left rather than
+      // fail, preferring ANY non-seña whatever order the list arrives in.
+      // The `??` arm is not a leak: when señas are the only legal actions,
+      // returning one is the contract's only legal answer (`chooseAction`
+      // must pick from the list). The gate above deliberately refuses that
+      // state; this arm honors the contract instead. Unreachable through
+      // the transport, which only drives a bot holding a blocking action —
+      // pinned by test.
+      return legalActions.find((a) => a.type !== "send-sena") ?? legalActions[0]!;
     },
   };
 }

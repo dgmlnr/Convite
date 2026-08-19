@@ -18,7 +18,7 @@ const fixtureView: PlayerView = {
 };
 const legalAction: Action = { type: "call-truco", playerId: SELF, level: "truco" };
 const noRng: RandomSource = () => {
-  throw new Error("easy/normal tiers must never consult the rng");
+  throw new Error("no rng draw is allowed on this path");
 };
 
 describe("createBotStrategy — tier dispatcher", () => {
@@ -31,7 +31,7 @@ describe("createBotStrategy — tier dispatcher", () => {
     }
   });
 
-  it("dispatches easy/normal WITHOUT touching the rng (deterministic tiers never need entropy)", () => {
+  it("dispatches easy/normal WITHOUT touching the rng when no seña is on offer (easy never draws; normal draws only at its 2v2 emission gate)", () => {
     expect(() => createBotStrategy("easy", noRng).chooseAction(fixtureView, [legalAction], 50)).not.toThrow();
     expect(() => createBotStrategy("normal", noRng).chooseAction(fixtureView, [legalAction], 50)).not.toThrow();
   });

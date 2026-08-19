@@ -4,12 +4,21 @@ import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
 import { sampleHiddenHands } from "./determinize.js";
 import type { HiddenHands } from "./determinize.js";
 import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
+import { chooseSenaEmission } from "./sena-emission.js";
 
 /** Number of determinizations sampled per decision — a tunable search
  * budget, same spirit as `budgetMs` on `BotStrategy.chooseAction`. Kept
  * small enough that even the seeded tournament (hundreds of hands) runs
  * comfortably inside the suite. */
 const DEFAULT_SAMPLES = 24;
+
+/** The hard tier signals more eagerly than the normal tier — a strong player
+ * works the partner channel — and occasionally LIES on it: senas.ts's own
+ * contract ("a seña is a CLAIM, not a verified statement") makes bluffing a
+ * legal, priced part of the game, and pricing it is this tier's job. Both
+ * are judgement knobs in the same spirit as `DEFAULT_SAMPLES`. */
+const SENA_EMIT_RATE = 0.6;
+const SENA_BLUFF_RATE = 0.15;
 
 type RespondTruco = Extract<Action, { type: "respond-truco" }>;
 type RespondEnvido = Extract<Action, { type: "respond-envido" }>;
@@ -120,6 +129,17 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         throw new Error("createHardBot: no legal actions to choose from");
       }
 
+      // Before ANY sampling: maybe flash the partner a seña. Order matters
+      // for the rng stream — the gate draws first, but only when a
+      // `send-sena` is actually on offer (2v2 with quota left), so a 1v1
+      // decision consumes exactly the draws it always did and stays
+      // byte-identical. In 2v2 the gate's draws shift the sampling stream, a
+      // seed replaying differently-but-equally-valid rounds — the same
+      // expected-and-disclosed movement the partner draws below already
+      // document. Termination is argued in `chooseSenaEmission` itself.
+      const sena = chooseSenaEmission(view, legalActions, rng, { emitRate: SENA_EMIT_RATE, bluffRate: SENA_BLUFF_RATE });
+      if (sena !== undefined) return sena;
+
       // One round = one sampled hand per REAL opponent (1 in 1v1, up to 2 in
       // 2v2) PLUS the partner's, all disjoint from one shared pool
       // (`sampleHiddenHands`, replacing `sampleAllOpponentHands`, which let
@@ -186,7 +206,14 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         return leadingCardPlayChoice(cardPlays, rounds.map((round) => round.opponents));
       }
 
-      return legalActions[0]!;
+      // Same fallback hardening as the normal tier: prefer ANY non-seña,
+      // whatever order the offered list is in. The `??` arm is not a leak —
+      // when señas are the only legal actions, returning one is the
+      // contract's only legal answer (`chooseAction` must pick from the
+      // list). The gate above deliberately refuses that state; this arm
+      // honors the contract instead. Unreachable through the transport,
+      // which only drives a bot holding a blocking action — pinned by test.
+      return legalActions.find((a) => a.type !== "send-sena") ?? legalActions[0]!;
     },
   };
 }
