@@ -67,22 +67,23 @@ describe("resolveDisplayRedirect", () => {
     });
   });
 
-  describe("already sanitized (the wrapper's signature)", () => {
-    it("touches nothing when WAYLAND_DISPLAY is gone and the session says x11", () => {
-      // No compositor socket named and the session declared X11 — this is
-      // exactly what `x11OnlyEnv` produces, so this run is already inside
-      // `run-vitest.mjs`'s redirect and a second one would fight the first.
-      const sanitized = { XDG_SESSION_TYPE: "x11", DISPLAY: ":42", PATH: "/usr/bin" };
+  describe("already redirected (the wrapper's explicit marker)", () => {
+    it("stands down when the wrapper's marker is present", () => {
+      // Only `resolveRunner`'s redirecting branch ever sets this name, so its
+      // presence — unlike any shape the env itself might have — really does
+      // prove `run-vitest.mjs` handled the run.
+      const marked = { HEXDEV_DISPLAY_REDIRECTED: "1", XDG_SESSION_TYPE: "x11", DISPLAY: ":42", PATH: "/usr/bin" };
 
-      const decision = resolveDisplayRedirect({ platform: "linux", env: sanitized, socketExists: socketUp });
+      const decision = resolveDisplayRedirect({ platform: "linux", env: marked, socketExists: socketUp });
 
       expect(decision).toEqual({ action: "none" });
     });
 
     it("treats the wrapper's actual child environment as already handled", () => {
       // Cross-module fence: build the env the way `run-vitest.mjs` really
-      // does, rather than imitating it. If the wrapper's sanitization ever
-      // changes shape, this is the test that says the two files disagree.
+      // does, rather than imitating it. If the wrapper's marker ever changes
+      // name or stops being set, this is the test that says the two files
+      // disagree.
       const { env } = resolveRunner({ platform: "linux", hasXvfb: true, env: waylandEnv, args: ["run"] });
 
       const decision = resolveDisplayRedirect({ platform: "linux", env, socketExists: socketUp });
@@ -90,9 +91,23 @@ describe("resolveDisplayRedirect", () => {
       expect(decision).toEqual({ action: "none" });
     });
 
-    it("does not accept a missing WAYLAND_DISPLAY alone as the signature", () => {
-      // A session that merely lacks the socket but never declared itself X11
-      // was not sanitized by the wrapper — nothing proves the redirect ran.
+    // THE FENCE, and why the marker exists (native review CRITICAL,
+    // review-f97faaef40df53f5): a plain X11 login is byte-identical to the
+    // wrapper's sanitized env. An earlier draft read that shape as "the
+    // wrapper ran" and stood down — skipping the redirect for a direct
+    // `vitest run` on exactly the sessions that still open a real window.
+    it("REDIRECTS a genuine X11 desktop session — its shape proves nothing about the wrapper", () => {
+      const nativeX11 = { XDG_SESSION_TYPE: "x11", DISPLAY: ":0", PATH: "/usr/bin" };
+
+      const decision = resolveDisplayRedirect({ platform: "linux", env: nativeX11, socketExists: socketUp });
+
+      expect(decision.action).toBe("use");
+      expect(decision.env.DISPLAY).toBe(":99");
+    });
+
+    it("redirects a session that merely lacks the compositor socket", () => {
+      // Not Wayland, not declared x11, no marker: nothing proves any
+      // redirect ran, so one must.
       const decision = resolveDisplayRedirect({
         platform: "linux",
         env: { XDG_SESSION_TYPE: "wayland", DISPLAY: ":0", PATH: "/usr/bin" },
@@ -102,11 +117,10 @@ describe("resolveDisplayRedirect", () => {
       expect(decision.action).toBe("use");
     });
 
-    it("does not accept XDG_SESSION_TYPE=x11 alone while a compositor socket is still named", () => {
-      // The case this whole file exists for: `DISPLAY` (or the session type)
-      // says X11, but `WAYLAND_DISPLAY` still points at a live compositor and
-      // Chromium prefers Wayland when offered one. Only BOTH halves together
-      // mean the wrapper already ran.
+    it("redirects a declared-x11 session that still names a compositor socket", () => {
+      // The Wayland trap: `XDG_SESSION_TYPE` says x11 but `WAYLAND_DISPLAY`
+      // still points at a live compositor, and Chromium prefers Wayland when
+      // offered one. No marker, so the wrapper did not run — redirect.
       const decision = resolveDisplayRedirect({
         platform: "linux",
         env: { WAYLAND_DISPLAY: "wayland-1", XDG_SESSION_TYPE: "x11", DISPLAY: ":0", PATH: "/usr/bin" },

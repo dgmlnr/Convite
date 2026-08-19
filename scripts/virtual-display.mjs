@@ -20,7 +20,7 @@
  * screen already up.
  */
 
-import { x11OnlyEnv } from "./vitest-runner.mjs";
+import { DISPLAY_REDIRECT_MARKER, x11OnlyEnv } from "./vitest-runner.mjs";
 
 /** One fixed display, so every invocation shares one persistent server
  * instead of leaking a fresh `Xvfb` per run. Chosen high to stay clear of
@@ -57,12 +57,11 @@ function isCI(env) {
  * `none` — nothing to do: not Linux (the only place headed Chromium
  * surprises anyone, and the only place `Xvfb` exists); or CI (Vitest runs the
  * browser project headless there, no window to hide); or the environment
- * already carries the wrapper's sanitized signature — no `WAYLAND_DISPLAY`
- * AND `XDG_SESSION_TYPE === "x11"` — meaning `run-vitest.mjs` has redirected
- * this run and a second redirect would only fight the first. Both halves of
- * the signature are required: a missing socket alone proves nothing, and a
- * declared-x11 session with `WAYLAND_DISPLAY` still named is exactly the
- * Wayland trap (Chromium prefers the compositor socket over any `DISPLAY`).
+ * carries `DISPLAY_REDIRECT_MARKER` — the explicit flag only
+ * `run-vitest.mjs`'s redirecting branch ever sets. The marker, never the
+ * sanitized env's own shape: that shape is byte-identical to a plain X11
+ * desktop login, whose direct runs must REDIRECT — headed Chromium on X11
+ * opens a window just as surely as on Wayland.
  *
  * `use` — the persistent display's socket exists: point the run at it.
  *
@@ -82,7 +81,7 @@ function isCI(env) {
 export function resolveDisplayRedirect({ platform, env, socketExists }) {
   if (platform !== "linux") return { action: "none" };
   if (isCI(env)) return { action: "none" };
-  if (env.WAYLAND_DISPLAY === undefined && env.XDG_SESSION_TYPE === "x11") return { action: "none" };
+  if (env[DISPLAY_REDIRECT_MARKER] !== undefined) return { action: "none" };
 
   const sanitized = { ...x11OnlyEnv(env), DISPLAY: PERSISTENT_DISPLAY };
   return {
