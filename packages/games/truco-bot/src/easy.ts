@@ -10,12 +10,18 @@ import type { BotStrategy } from "@hexdev/platform-contract";
  *  - reveal-envido next (the only legal choice once envido is accepted),
  *  - a card play next, using the WORST possible habit (see `weakestCardPlay`),
  *  - a proactive truco/envido call is NEVER volunteered, only ever taken
- *    when it is the sole legal action left.
+ *    when it is the sole legal action left,
+ *  - a seña is ranked DEAD LAST, below even those calls: the beginner who
+ *    doesn't signal is this tier's identity (the emitting tiers are normal
+ *    and hard). An explicit rank, not the shared catch-all, because inside
+ *    a shared group the winner is whichever action the offered list happens
+ *    to put first — and "easy never signals" must not hang on list order.
  */
 function priority(action: Action): number {
   if (action.type === "respond-truco" || action.type === "respond-envido") return 0;
   if (action.type === "reveal-envido") return 1;
   if (action.type === "play-card") return 2;
+  if (action.type === "send-sena") return 4;
   return 3; // call-truco / call-envido
 }
 

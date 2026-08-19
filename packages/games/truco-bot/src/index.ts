@@ -15,13 +15,13 @@ export type { Sleep } from "./latency.js";
 /**
  * The one place that maps a `BotTier` onto a real, instant (no artificial
  * delay — see `latency.ts`) strategy. `rng` is required for every tier's
- * signature even though only `hard` consults it (design: real determinism
- * needs real entropy, injected — never `Math.random`), so a caller can
- * construct all three tiers identically without a tier-specific branch of
- * its own.
+ * signature even though `easy` never consults it — and `normal` only does at
+ * its seña-emission gate (design: real determinism needs real entropy,
+ * injected — never `Math.random`) — so a caller can construct all three
+ * tiers identically without a tier-specific branch of its own.
  */
 export function createBotStrategy(tier: BotTier, rng: RandomSource): BotStrategy<PlayerView, Action> {
   if (tier === "easy") return createEasyBot();
-  if (tier === "normal") return createNormalBot();
+  if (tier === "normal") return createNormalBot(rng);
   return createHardBot(rng);
 }

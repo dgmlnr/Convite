@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Action, Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
+import type { RandomSource } from "@hexdev/platform-contract";
 import { createNormalBot } from "./normal.js";
+
+/** A draw that never crosses the seña-emission gate — these tests exercise
+ * the LADDER (none of them offers a `send-sena`, so the gate exits before
+ * drawing anyway; see sena-emission.test.ts for the gate's own coverage). */
+const gateShutRng: RandomSource = () => 0.99;
 
 const SELF = "player-a" as PlayerId;
 const OPPONENT = "player-b" as PlayerId;
@@ -37,7 +43,7 @@ function viewWith(overrides: {
 
 describe("createNormalBot — weighted heuristics with light lookahead", () => {
   it("throws when given no legal actions", () => {
-    expect(() => createNormalBot().chooseAction(viewWith({ hand: [] }), [], 50)).toThrow();
+    expect(() => createNormalBot(gateShutRng).chooseAction(viewWith({ hand: [] }), [], 50)).toThrow();
   });
 
   it("following a visible opponent card: plays the cheapest card that still wins", () => {
@@ -47,14 +53,14 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     });
     const cheapWin: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 3 } }; // power 11, beats basto-4 (power 1)
     const expensiveWin: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 1 } }; // power 14, also beats it but overkill
-    expect(createNormalBot().chooseAction(view, [expensiveWin, cheapWin], 50)).toBe(cheapWin);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [expensiveWin, cheapWin], 50)).toBe(cheapWin);
   });
 
   it("leading with no visible opponent card: plays the WEAKEST card, saving strength for later", () => {
     const view = viewWith({ hand: [] });
     const weak: Action = { type: "play-card", playerId: SELF, card: { suit: "basto", rank: 4 } };
     const strong: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 1 } };
-    expect(createNormalBot().chooseAction(view, [strong, weak], 50)).toBe(weak);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [strong, weak], 50)).toBe(weak);
   });
 
   it("2v2: a TEAMMATE already played a WEAK card this trick, no opponent yet — treated as LEADING (conserves the weakest card), NOT as 'must beat the teammate's card' (the fixed bug: the old code read currentTrickPlays[0] as the opponent even when it was the teammate)", () => {
@@ -71,7 +77,7 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     // (nothing opposing has played yet), the weakest card wins instead.
     const weak: Action = { type: "play-card", playerId: SELF, card: { suit: "oro", rank: 4 } };
     const strong: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 7 } };
-    expect(createNormalBot().chooseAction(view, [strong, weak], 50)).toBe(weak);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [strong, weak], 50)).toBe(weak);
   });
 
   it("2v2: a TEAMMATE played, THEN an opponent played — follows the OPPONENT's card, ignoring the teammate's", () => {
@@ -86,7 +92,7 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     });
     const cheapWin: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 3 } }; // beats basto-4, not espada-1
     const expensiveWin: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 7 } };
-    expect(createNormalBot().chooseAction(view, [expensiveWin, cheapWin], 50)).toBe(cheapWin);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [expensiveWin, cheapWin], 50)).toBe(cheapWin);
   });
 
   // The (a1) team-coordination gap, closed: `resolveTrick` awards a trick to
@@ -128,11 +134,11 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     const dump: Action = { type: "play-card", playerId: SELF, card: { suit: "copa", rank: 4 } };
 
     it("dumps the cheapest card when the beat-it-cheaply candidate is offered first", () => {
-      expect(createNormalBot().chooseAction(securedTrickView(), [winner, dump], 50)).toBe(dump);
+      expect(createNormalBot(gateShutRng).chooseAction(securedTrickView(), [winner, dump], 50)).toBe(dump);
     });
 
     it("dumps the cheapest card when the dump is offered first (same choice, opposite order)", () => {
-      expect(createNormalBot().chooseAction(securedTrickView(), [dump, winner], 50)).toBe(dump);
+      expect(createNormalBot(gateShutRng).chooseAction(securedTrickView(), [dump, winner], 50)).toBe(dump);
     });
 
     it("control: the partner's play LOSES to the opposition — beats it cheaply exactly as before", () => {
@@ -149,7 +155,7 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
           { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, card: { suit: "oro", rank: 5 } },
         ],
       });
-      expect(createNormalBot().chooseAction(view, [dump, winner], 50)).toBe(winner);
+      expect(createNormalBot(gateShutRng).chooseAction(view, [dump, winner], 50)).toBe(winner);
     });
   });
 
@@ -158,7 +164,7 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     const view = viewWith({ hand: weakHand });
     const quiero: Action = { type: "respond-truco", playerId: SELF, response: "quiero" };
     const noQuiero: Action = { type: "respond-truco", playerId: SELF, response: "no-quiero" };
-    expect(createNormalBot().chooseAction(view, [quiero, noQuiero], 50)).toBe(noQuiero);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [quiero, noQuiero], 50)).toBe(noQuiero);
   });
 
   it("accepts a truco call with a clearly strong hand (triangulation: opposite of the weak case)", () => {
@@ -166,7 +172,7 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     const view = viewWith({ hand: strongHand });
     const quiero: Action = { type: "respond-truco", playerId: SELF, response: "quiero" };
     const noQuiero: Action = { type: "respond-truco", playerId: SELF, response: "no-quiero" };
-    expect(createNormalBot().chooseAction(view, [quiero, noQuiero], 50)).toBe(quiero);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [quiero, noQuiero], 50)).toBe(quiero);
   });
 
   it("volunteers a truco call only with a strong hand, preferring it over just playing a card", () => {
@@ -174,7 +180,7 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     const view = viewWith({ hand: strongHand });
     const callTruco: Action = { type: "call-truco", playerId: SELF, level: "truco" };
     const playCard: Action = { type: "play-card", playerId: SELF, card: strongHand[0]! };
-    expect(createNormalBot().chooseAction(view, [callTruco, playCard], 50)).toBe(callTruco);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [callTruco, playCard], 50)).toBe(callTruco);
   });
 
   it("does NOT volunteer a truco call with a weak hand, playing a card instead", () => {
@@ -182,6 +188,6 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     const view = viewWith({ hand: weakHand });
     const callTruco: Action = { type: "call-truco", playerId: SELF, level: "truco" };
     const playCard: Action = { type: "play-card", playerId: SELF, card: weakHand[0]! };
-    expect(createNormalBot().chooseAction(view, [callTruco, playCard], 50)).toBe(playCard);
+    expect(createNormalBot(gateShutRng).chooseAction(view, [callTruco, playCard], 50)).toBe(playCard);
   });
 });
