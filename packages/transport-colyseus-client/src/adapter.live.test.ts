@@ -128,19 +128,20 @@ describe("transport-colyseus-client — real production code over a real WebSock
     const client0 = createTransportClient(`ws://localhost:${port}`, { headers: { origin: ALLOWED_ORIGIN } });
     const client1 = createTransportClient(`ws://localhost:${port}`, { headers: { origin: ALLOWED_ORIGIN } });
     const queue0 = await joinMatchmakingQueue(client0, { gameId: GAME_ID, playerId: P0, modality: { roundLength: 15 }, token: token0 });
-    const paired0: Array<{ opponentPlayerId: PlayerId; reservation: unknown }> = [];
+    const paired0: Array<{ players: readonly PlayerId[]; reservation: unknown }> = [];
     queue0.onPaired((pairing) => paired0.push(pairing));
     const queue1 = await joinMatchmakingQueue(client1, { gameId: GAME_ID, playerId: P1, modality: { roundLength: 15 }, token: token1 });
-    const paired1: Array<{ opponentPlayerId: PlayerId; reservation: unknown }> = [];
+    const paired1: Array<{ players: readonly PlayerId[]; reservation: unknown }> = [];
     queue1.onPaired((pairing) => paired1.push(pairing));
 
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     // The watch-only connection saw the queue fill via live broadcasts, and
-    // never appears in either pairing (it was never enqueued).
+    // never appears in either pairing (it was never enqueued — the roster is
+    // exactly the two queued members, PR-2a's full-group shape).
     expect(seenCounts.length).toBeGreaterThan(0);
-    expect(paired0[0]?.opponentPlayerId).toBe(P1);
-    expect(paired1[0]?.opponentPlayerId).toBe(P0);
+    expect(paired0[0]?.players).toEqual([P0, P1]);
+    expect(paired1[0]?.players).toEqual([P0, P1]);
 
     const match0 = await joinMatchFromReservation<FixtureViewMessage>(client0, paired0[0]!.reservation);
     const views0: FixtureState[] = [];
