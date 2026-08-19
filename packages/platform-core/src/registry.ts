@@ -75,6 +75,20 @@ export interface GameModuleRegistry {
 // boundary somewhere, and this is that one deliberate, documented spot.
 export function createGameModuleRegistry(modules: readonly GameModuleRegistration[]): GameModuleRegistry {
   const entries = modules.map((registration) => ("module" in registration ? registration : { module: registration }));
+  for (const { module } of entries) {
+    // Fail loud at composition time, naming the module: `metadata.seatCount`
+    // is consumed downstream by BOTH transports (`MatchRoom.onCreate` sizes
+    // its seats from it; `PresenceRoom` forms matchmaking groups of it, and
+    // `MatchmakingPool.tryPairSeats` rejects any seatCount that is not an
+    // integer >= 2), so an invalid value here would otherwise only surface
+    // at runtime — as an unhandled rejection out of a lobby join, on every
+    // single join attempt for that game.
+    if (!Number.isInteger(module.metadata.seatCount) || module.metadata.seatCount < 2) {
+      throw new Error(
+        `createGameModuleRegistry: module "${module.id}" declares metadata.seatCount ${String(module.metadata.seatCount)} — must be an integer >= 2, a group that size can never form a match`,
+      );
+    }
+  }
   const byId = new Map(entries.map((entry) => [entry.module.id, entry]));
   return {
     get: (gameId) => byId.get(gameId)?.module,

@@ -149,7 +149,7 @@ describe("PresenceRoom — game isolation, re-verified with RedisPresence/RedisD
 
     expect(roomA1.roomId).toBe(roomA0.roomId);
     expect(pairedA0).toHaveLength(1);
-    expect(pairedA0[0]).toMatchObject({ opponentPlayerId: "a1" });
+    expect(pairedA0[0]).toMatchObject({ players: ["a0", "a1"] });
     expect(pairedB0).toHaveLength(0);
   });
 

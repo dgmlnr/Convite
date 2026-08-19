@@ -56,12 +56,18 @@ export interface JoinMatchmakingQueueOptions extends WatchPresenceOptions {
   readonly modality: ModalityConfig;
 }
 
-/** One formed pairing (spec: "Human-vs-Human Matchmaking"). `reservation` is
- * deliberately `unknown` here too — only `match-connection.ts`'s
- * `joinMatchFromReservation` knows what to do with it (`ports.ts`'s division
- * of labor: this package routes it, `@colyseus/sdk` interprets it). */
+/** One formed match group (spec: "Human-vs-Human Matchmaking"; PR-2a
+ * generalized this from a 2-player pairing to the game's full `seatCount`).
+ * `players` is the ENTIRE roster in formation order — every member of the
+ * group INCLUDING this client itself — because the server broadcasts one
+ * shared fact to all members rather than a per-recipient "opponent" view
+ * (an "opponent" stops being well-defined once teammates exist, e.g. 2v2).
+ * `reservation` is deliberately `unknown` here too — only
+ * `match-connection.ts`'s `joinMatchFromReservation` knows what to do with
+ * it (`ports.ts`'s division of labor: this package routes it,
+ * `@colyseus/sdk` interprets it). */
 export interface PairedMatch {
-  readonly opponentPlayerId: PlayerId;
+  readonly players: readonly PlayerId[];
   readonly modality: ModalityConfig;
   readonly reservation: unknown;
 }
@@ -73,7 +79,7 @@ export interface MatchmakingQueueConnection {
 }
 
 interface PairedMessage {
-  readonly opponentPlayerId: string;
+  readonly players: readonly string[];
   readonly modality: ModalityConfig;
   readonly matchReservation: unknown;
 }
@@ -98,7 +104,7 @@ export async function joinMatchmakingQueue(client: ClientLike, options: JoinMatc
   return {
     onPaired(callback) {
       return room.onMessage<PairedMessage>("paired", (message) =>
-        callback({ opponentPlayerId: message.opponentPlayerId as PlayerId, modality: message.modality, reservation: message.matchReservation }),
+        callback({ players: message.players as readonly PlayerId[], modality: message.modality, reservation: message.matchReservation }),
       );
     },
     onPairingFailed(callback) {

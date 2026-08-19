@@ -55,9 +55,9 @@ describe("joinMatchmakingQueue — joins WITH a modality (real queue commitment)
     connection.onPaired((pairing) => seen.push(pairing));
 
     const reservation = { roomId: "match-1", sessionId: "sess-1" };
-    client.room.emit("paired", { opponentPlayerId: "p1" as PlayerId, modality: { pointsToWin: 15 }, matchReservation: reservation });
+    client.room.emit("paired", { players: ["p0" as PlayerId, "p1" as PlayerId], modality: { pointsToWin: 15 }, matchReservation: reservation });
 
-    expect(seen).toEqual([{ opponentPlayerId: "p1", modality: { pointsToWin: 15 }, reservation }]);
+    expect(seen).toEqual([{ players: ["p0", "p1"], modality: { pointsToWin: 15 }, reservation }]);
   });
 
   it("maps a 'pairing-failed' broadcast to just its message", async () => {

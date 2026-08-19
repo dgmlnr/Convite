@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ColyseusTestServer } from "@colyseus/testing";
+import { Room } from "colyseus";
 import type { GameId, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
   createGameModuleRegistry,
@@ -100,8 +101,11 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
 
     // `matchReservation` (the new hand-off, this unit) is asserted in its own
     // dedicated describe block below — this one still proves pairing itself.
-    expect(paired0[0]).toMatchObject({ opponentPlayerId: "p1", modality: { roundLength: 15 } });
-    expect(paired1[0]).toMatchObject({ opponentPlayerId: "p0", modality: { roundLength: 15 } });
+    // (PR-2a payload: the full group roster in formation order, recipient
+    // included — the SAME shared fact for every member, never a
+    // per-recipient "opponent" view; see `handOffToMatch`'s docstring.)
+    expect(paired0[0]).toMatchObject({ players: ["p0", "p1"], modality: { roundLength: 15 } });
+    expect(paired1[0]).toMatchObject({ players: ["p0", "p1"], modality: { roundLength: 15 } });
     const lastCounts = counts0[counts0.length - 1] as Array<{ modality: { roundLength: number }; waitingCount: number }>;
     expect(lastCounts.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(0);
   });
@@ -238,16 +242,16 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
 
     const presenceRoom = await testServer.createRoom("presence", { gameId: HANDOFF_GAME_ID });
     const client0 = await testServer.connectTo(presenceRoom, { gameId: HANDOFF_GAME_ID, modality: { roundLength: 15 }, playerId: P0, token: token0 });
-    const paired0: Array<{ opponentPlayerId: string; matchReservation: unknown }> = [];
+    const paired0: Array<{ players: readonly string[]; matchReservation: unknown }> = [];
     client0.onMessage("paired", (message) => paired0.push(message));
     const client1 = await testServer.connectTo(presenceRoom, { gameId: HANDOFF_GAME_ID, modality: { roundLength: 15 }, playerId: P1, token: token1 });
-    const paired1: Array<{ opponentPlayerId: string; matchReservation: unknown }> = [];
+    const paired1: Array<{ players: readonly string[]; matchReservation: unknown }> = [];
     client1.onMessage("paired", (message) => paired1.push(message));
 
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    expect(paired0[0]?.opponentPlayerId).toBe(P1);
-    expect(paired1[0]?.opponentPlayerId).toBe(P0);
+    expect(paired0[0]?.players).toEqual([P0, P1]);
+    expect(paired1[0]?.players).toEqual([P0, P1]);
 
     const matchRoom0 = await testServer.sdk.consumeSeatReservation<HandoffState>(paired0[0]!.matchReservation as never);
     const views0: HandoffState[] = [];
@@ -396,7 +400,7 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
 
     expect(roomA1.roomId).toBe(roomA0.roomId); // same game, same room, real joinOrCreate reuse
     expect(pairedA0).toHaveLength(1);
-    expect(pairedA0[0]).toMatchObject({ opponentPlayerId: "a1" });
+    expect(pairedA0[0]).toMatchObject({ players: ["a0", "a1"] });
     // B0 is STILL alone: it was never a candidate for A's pairing.
     expect(pairedB0).toHaveLength(0);
   });
@@ -431,5 +435,318 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
     await expect(
       testServer.connectTo(roomA, { gameId: "fixture-isolation-b", modality: { roundLength: 15 }, playerId: "attacker" }),
     ).rejects.toBeDefined();
+  });
+});
+
+/**
+ * PR-2a (roadmap F2, "4-human matchmaking"): the lobby forms groups of the
+ * game's OWN `metadata.seatCount` — read from the registry, the same field
+ * `MatchRoom.onCreate` sizes its seats from — and hands the WHOLE group off
+ * in two strict phases (reserve ALL N seats; only then tell ANYONE). A
+ * 4-seat fixture rather than the real `truco-argentino-2v2` module, for this
+ * file's own standing reason (see `fixtureModule` at the top): the lobby
+ * must be proven generic, and this package has no dependency on any real
+ * game module to borrow one from anyway.
+ */
+interface GroupState {
+  readonly players: readonly PlayerId[];
+  readonly moves: number;
+}
+type GroupAction = { readonly type: "move"; readonly playerId: PlayerId };
+const GROUP_GAME_ID = "fixture-group" as GameId;
+
+const groupModule: GameModule<GroupState, GroupAction, GroupState, unknown> = {
+  id: GROUP_GAME_ID,
+  metadata: { seatCount: 4, displayNameKey: "fixture.group", assetBase: "/fixture" },
+  configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
+  createMatch: (_config, seats: readonly SeatAssignment[]) => {
+    const sorted = [...seats].sort((a, b) => a.seat - b.seat);
+    return { players: sorted.map((assignment) => assignment.playerId), moves: 0 };
+  },
+  applyAction: (state) => ({ ok: true, state: { ...state, moves: state.moves + 1 } }),
+  getLegalActions: (state, playerId) => (state.players[0] === playerId ? [{ type: "move", playerId }] : []),
+  getViewFor: (state) => state,
+  getOutcome: () => null,
+  serialize: (state) => state as never,
+  deserialize: (json) => json as unknown as GroupState,
+  createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+};
+
+interface PairedGroupMessage {
+  readonly players: readonly string[];
+  readonly matchReservation: unknown;
+}
+
+describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module metadata, all-or-nothing two-phase reservation)", () => {
+  const TENANT_ID = "tenant-group" as TenantId;
+  const ALLOWED_ORIGIN = "https://group.example";
+  const PLAYERS: readonly PlayerId[] = ["group-p0" as PlayerId, "group-p1" as PlayerId, "group-p2" as PlayerId, "group-p3" as PlayerId];
+
+  let testServer: ColyseusTestServer;
+  let issuer: SessionTokenIssuerHandle;
+  // Own disjoint band — 3000/3100/3200 are this file's other describe
+  // blocks, 3300–3800 belong to sibling live files; see
+  // `adapter.live.test.ts`'s own doc comment for the full band map.
+  let nextPort = 3900;
+
+  beforeEach(async () => {
+    const registry = createGameModuleRegistry([groupModule]);
+    const pool = createMatchmakingPool();
+    const httpServer = createServer();
+    issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("group-live-secret"));
+    const repository = createStaticTenantRepository([
+      { id: TENANT_ID, embedKey: "pk_group", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GROUP_GAME_ID] },
+    ]);
+    const auth = {
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
+      repository,
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [ALLOWED_ORIGIN],
+    };
+    const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
+    gameServer.define("presence", PresenceRoom, { registry, pool } as never);
+    await gameServer.listen(nextPort++);
+    testServer = new ColyseusTestServer(gameServer);
+    testServer.sdk.http.options.headers = { origin: ALLOWED_ORIGIN };
+  });
+
+  afterEach(async () => {
+    await testServer.shutdown();
+  });
+
+  it("hands a full 4-human group off into ONE MatchRoom: every member gets the same 'paired' roster and all four seats get their humans", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
+    const paired: PairedGroupMessage[][] = [[], [], [], []];
+    for (const [index, playerId] of PLAYERS.entries()) {
+      const token = await issuer.mint({ tenantId: TENANT_ID, playerId, entitlements: [GROUP_GAME_ID] }, 60);
+      const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId, token });
+      client.onMessage("paired", (message: PairedGroupMessage) => paired[index]!.push(message));
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Every member received exactly one 'paired', carrying the SAME full
+    // roster (formation order, recipient included) — one shared fact, not a
+    // per-recipient "opponent" view, which stops meaning anything at 4
+    // players where two of the others are teammates.
+    for (const messages of paired) {
+      expect(messages).toHaveLength(1);
+      expect(messages[0]!.players).toEqual([...PLAYERS]);
+    }
+
+    // All four reservations point into the SAME real MatchRoom...
+    const views: GroupState[] = [];
+    const matchRooms = [];
+    for (const messages of paired) {
+      const matchRoom = await testServer.sdk.consumeSeatReservation<GroupState>(messages[0]!.matchReservation as never);
+      matchRoom.onMessage("view", (message: { view: GroupState }) => views.push(message.view));
+      matchRooms.push(matchRoom);
+    }
+    expect(new Set(matchRooms.map((matchRoom) => matchRoom.roomId)).size).toBe(1);
+
+    // ...and the match genuinely starts: `MatchRoom` only calls
+    // `createMatch` once ALL `metadata.seatCount` seats are filled, so a
+    // 4-player view is proof every seat got its human.
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && !views.some((view) => view.players.length === 4)) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const started = views.find((view) => view.players.length === 4);
+    expect(started).toBeDefined();
+    expect([...started!.players].sort()).toEqual([...PLAYERS].sort());
+  });
+
+  it("reserving ALL four seats locks the MatchRoom before any member is told: an outsider with a VALID token cannot joinById into the group's room", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
+    const paired: PairedGroupMessage[][] = [[], [], [], []];
+    for (const [index, playerId] of PLAYERS.entries()) {
+      const token = await issuer.mint({ tenantId: TENANT_ID, playerId, entitlements: [GROUP_GAME_ID] }, 60);
+      const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId, token });
+      client.onMessage("paired", (message: PairedGroupMessage) => paired[index]!.push(message));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const reservation = paired[0]![0]!.matchReservation as { roomId: string };
+
+    // The rogue-join test above proved a MISSING token fails at onAuth.
+    // This outsider is the stronger case: its token is perfectly VALID
+    // (same tenant, entitled to this game) — it must be refused by the room
+    // being FULLY RESERVED (colyseus locks a room whose reserved seats reach
+    // `maxClients`; `hasReachedMaxClients()` counts reservations), never by
+    // identity, because no seat-theft window may exist between the group's
+    // reservations and their consumption.
+    const outsiderToken = await issuer.mint({ tenantId: TENANT_ID, playerId: "group-outsider" as PlayerId, entitlements: [GROUP_GAME_ID] }, 60);
+    await expect(testServer.sdk.joinById(reservation.roomId, { token: outsiderToken })).rejects.toBeDefined();
+
+    // Positive control: every seat the outsider could not steal is still
+    // consumable by its intended member. (All four, deliberately — a room
+    // with connected clients only disposes once `_reservedSeats` empties,
+    // so leaving reservations unconsumed here would stall `shutdown()` in
+    // `afterEach` until their expiry timers fire, past the hook timeout.)
+    for (const messages of paired) {
+      const matchRoom = await testServer.sdk.consumeSeatReservation(messages[0]!.matchReservation as never);
+      expect(matchRoom.roomId).toBe(reservation.roomId);
+    }
+  });
+
+  it("fails the WHOLE group when one member vanished between the pool pop and the hand-off: everyone still present gets 'pairing-failed', nobody gets 'paired'", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
+    const paired: unknown[][] = [[], [], [], []];
+    const failed: Array<Array<{ message: string }>> = [[], [], [], []];
+    const clients = [];
+    for (const [index, playerId] of PLAYERS.slice(0, 3).entries()) {
+      const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId });
+      client.onMessage("paired", (message) => paired[index]!.push(message));
+      client.onMessage("pairing-failed", (message: { message: string }) => failed[index]!.push(message));
+      clients.push(client);
+    }
+
+    // Simulate the race this guard exists for (an onLeave/sweep landing
+    // between the pool's atomic pop and the hand-off reading `waiting`):
+    // the second member is still in the POOL but no longer tracked by the
+    // room — driven through the server-side room handle, the same
+    // internals-driving discipline the rogue-join test above uses.
+    (presenceRoom as unknown as { waiting: Map<string, unknown> }).waiting.delete(clients[1]!.sessionId);
+
+    const client3 = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId: PLAYERS[3] });
+    client3.onMessage("paired", (message) => paired[3]!.push(message));
+    client3.onMessage("pairing-failed", (message: { message: string }) => failed[3]!.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // All-or-nothing: a 4-seat room reserved for only 3 humans would hang
+    // forever waiting for a member who can never arrive, so NOBODY is
+    // seated (the 2-seat predecessor silently skipped the vanished seat and
+    // still paired the survivor — exactly that hang)...
+    expect(paired.flat()).toHaveLength(0);
+    // ...and every member the room can still reach is told the hand-off
+    // failed (the vanished member's tracking entry is exactly what's gone).
+    for (const index of [0, 2, 3]) expect(failed[index]).toHaveLength(1);
+    expect(failed[1]).toHaveLength(0);
+  });
+
+  /**
+   * GREEN-FROM-BIRTH PIN (disclosed as such): the mid-loop rollback branch
+   * below shipped in this same unit, so this test pins it rather than
+   * having driven it RED first. It is self-evidencing about reaching the
+   * intended branch, though: the intrusion counter proves the refusal fired
+   * on the THIRD match-room reservation — mid-loop, two already granted,
+   * the fourth never attempted — not before the loop and not after it.
+   *
+   * THE INTRUSION, honestly: `matchMaker.reserveSeatFor` resolves through
+   * `Room.prototype._reserveSeat` (verified in the installed
+   * `@colyseus/core@0.17.46` source — `remoteRoomCall` invokes the method
+   * directly on the local room instance), and a `false` return is
+   * colyseus's OWN "already full" refusal shape, which `reserveSeatFor`
+   * turns into a thrown `SeatReservationError`. Patching that one method —
+   * scoped to "match" rooms only (every presence join reserves a seat on
+   * the PRESENCE room through the same prototype) and restored in
+   * `finally` — is the narrowest seam that fails one SPECIFIC mid-loop
+   * reservation while everything else stays real; the `matchMaker` module
+   * namespace is frozen (ESM) and cannot be spied upon.
+   */
+  it("rolls the WHOLE group back when a mid-loop reservation fails (two granted, third refused): nobody gets 'paired', everyone gets 'pairing-failed'", async () => {
+    const roomPrototype = Room.prototype as unknown as { _reserveSeat: (...args: unknown[]) => Promise<boolean> };
+    const originalReserveSeat = roomPrototype._reserveSeat;
+    let matchReserveAttempts = 0;
+    let abandonedRoomId: string | undefined;
+    roomPrototype._reserveSeat = async function (this: { roomName: string; roomId: string }, ...args: unknown[]): Promise<boolean> {
+      if (this.roomName === "match") {
+        matchReserveAttempts += 1;
+        if (matchReserveAttempts === 3) {
+          abandonedRoomId = this.roomId;
+          return false;
+        }
+      }
+      return originalReserveSeat.apply(this, args);
+    };
+    try {
+      const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
+      const paired: unknown[][] = [[], [], [], []];
+      const failed: Array<Array<{ message: string }>> = [[], [], [], []];
+      for (const [index, playerId] of PLAYERS.entries()) {
+        const token = await issuer.mint({ tenantId: TENANT_ID, playerId, entitlements: [GROUP_GAME_ID] }, 60);
+        const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId, token });
+        client.onMessage("paired", (message) => paired[index]!.push(message));
+        client.onMessage("pairing-failed", (message: { message: string }) => failed[index]!.push(message));
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // The refusal genuinely fired MID-loop: reservations 1 and 2 were
+      // granted, the 3rd refused, and phase A never attempted a 4th (the
+      // hand-off is already committed to failing).
+      expect(matchReserveAttempts).toBe(3);
+      // All-or-nothing: the two already-granted seats are never delivered...
+      expect(paired.flat()).toHaveLength(0);
+      // ...and every member is told — all four are still connected here,
+      // unlike the vanished-member test above where one tracking entry is
+      // gone by design.
+      for (const messages of failed) expect(messages).toHaveLength(1);
+
+      // The abandoned room is genuinely gone, not merely rolled back in
+      // spirit: a fresh, perfectly VALID token cannot join it by id. No
+      // poll needed — `disconnect()` removes the room's listing
+      // synchronously as its first act (`matchMaker.driver.remove`,
+      // Room.ts:1061 in the installed @colyseus/core@0.17.46), and it ran
+      // one statement after the pairing-failed sends this test already
+      // waited 150ms past.
+      const lateToken = await issuer.mint({ tenantId: TENANT_ID, playerId: "group-late" as PlayerId, entitlements: [GROUP_GAME_ID] }, 60);
+      expect(abandonedRoomId).toBeDefined();
+      await expect(testServer.sdk.joinById(abandonedRoomId!, { token: lateToken })).rejects.toBeDefined();
+    } finally {
+      roomPrototype._reserveSeat = originalReserveSeat;
+    }
+  });
+
+  /**
+   * Phase B containment (this amendment's RED-first fix): one member whose
+   * connection died during phase A's awaits — so its `send` THROWS in
+   * phase B — must never starve the OTHER members of their `paired` nor
+   * escape `onJoin` as an unhandled rejection. THE INTRUSION, honestly:
+   * the doomed member's server-side `Client.send` is patched to throw
+   * (same disclosed discipline as the `_reserveSeat` patch above); its
+   * position in formation order (second) matters, because the defect shape
+   * is "members AFTER the thrower are starved". Broadcasts use
+   * `enqueueRaw`, not `send`, so the lobby's own "counts" traffic is
+   * untouched by the patch.
+   */
+  it("keeps delivering 'paired' to every reachable member when one member's send throws after phase A — and tells nobody the pairing failed, because it did not", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
+    const paired: PairedGroupMessage[][] = [[], [], [], []];
+    const failed: unknown[][] = [[], [], [], []];
+    const clients: Array<{ readonly sessionId: string }> = [];
+    for (const [index, playerId] of PLAYERS.slice(0, 3).entries()) {
+      const token = await issuer.mint({ tenantId: TENANT_ID, playerId, entitlements: [GROUP_GAME_ID] }, 60);
+      const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId, token });
+      client.onMessage("paired", (message: PairedGroupMessage) => paired[index]!.push(message));
+      client.onMessage("pairing-failed", (message) => failed[index]!.push(message));
+      clients.push(client);
+    }
+    const serverSideClients = presenceRoom.clients as ReadonlyArray<{ readonly sessionId: string; send: (...args: unknown[]) => void }>;
+    const serverSideSecond = serverSideClients.find((seated) => seated.sessionId === clients[1]!.sessionId)!;
+    serverSideSecond.send = () => {
+      throw new Error("simulated connection dropped between reservation and delivery");
+    };
+
+    const token3 = await issuer.mint({ tenantId: TENANT_ID, playerId: PLAYERS[3]!, entitlements: [GROUP_GAME_ID] }, 60);
+    const client3 = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId: PLAYERS[3], token: token3 });
+    client3.onMessage("paired", (message: PairedGroupMessage) => paired[3]!.push(message));
+    client3.onMessage("pairing-failed", (message) => failed[3]!.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Every reachable member got its seat — including the two AFTER the
+    // thrower in delivery order, the exact members an uncontained phase B
+    // exception starves.
+    for (const index of [0, 2, 3]) {
+      expect(paired[index]).toHaveLength(1);
+      expect(paired[index]![0]!.players).toEqual([...PLAYERS]);
+    }
+    expect(paired[1]).toHaveLength(0);
+    // And no 'pairing-failed' lie to anyone: every seat IS reserved, the
+    // delivered reservations are real, and the unreachable member's one
+    // simply expires under colyseus's own 15s reservation TTL.
+    expect(failed.flat()).toHaveLength(0);
   });
 });

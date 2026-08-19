@@ -62,7 +62,7 @@ interface WaitingClient {
   readonly token: string | undefined;
 }
 
-/** One seat of a formed pairing, paired with the `WaitingClient` (if still
+/** One seat of a formed group, paired with the `WaitingClient` (if still
  * tracked) that is about to be handed off into the match room. */
 interface PairedSeat {
   readonly playerId: string;
@@ -141,7 +141,7 @@ export class PresenceRoom extends Room {
     await pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
     this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId, token: options.token });
     await this.broadcastCounts();
-    await this.tryPair(options.modality);
+    await this.tryFormGroup(options.modality);
   }
 
   override async onLeave(client: Client): Promise<void> {
@@ -155,26 +155,25 @@ export class PresenceRoom extends Room {
   }
 
   /**
-   * On a formed pairing: remove both from the queue (unchanged, exactly
-   * once — `MatchmakingPool.tryPairSeats` pops atomically), THEN hand off into
-   * a real `MatchRoom` via Colyseus's own seat-reservation mechanism
-   * (`matchMaker.createRoom` + `matchMaker.reserveSeatFor`), never a second,
-   * lighter identity path: each reservation carries only the player's own
-   * token, UNVALIDATED here, so `MatchRoom.onAuth` alone still decides
-   * whether the eventual live join is accepted. Reserving BOTH seats before
-   * either client even receives the `paired` message also closes the seat-
-   * theft window a naive "tell them the roomId, let them self-join" hand-off
-   * would leave open: `MatchRoom.hasReachedMaxClients()` counts reserved
-   * seats too, so a third client can never join in between.
+   * On a formed group: remove all of its members from the queue (unchanged,
+   * exactly once — `MatchmakingPool.tryPairSeats` pops atomically), THEN
+   * hand off into a real `MatchRoom` via Colyseus's own seat-reservation
+   * mechanism. The group size is the game's OWN `metadata.seatCount` — the
+   * exact field `MatchRoom.onCreate` sizes its seats from, read from the
+   * same registry — so a 2-seat and a 4-seat game need zero lobby changes
+   * and can never disagree with the room they are handed into. Reading it
+   * dynamically is safe with no guard here: `createGameModuleRegistry`
+   * rejects any module whose seatCount is not an integer >= 2 at
+   * composition time, so `tryPairSeats`'s own validation (same predicate)
+   * can never reject a registry-resolved value — a misregistered game fails
+   * the boot, never a player's join.
    */
-  private async tryPair(modality: ModalityConfig): Promise<void> {
+  private async tryFormGroup(modality: ModalityConfig): Promise<void> {
     const pool = this.pool;
     const gameId = this.gameId;
-    if (pool === undefined || gameId === undefined) return;
-    // seatCount is hardcoded to 2 for now: PR-2 reads the real per-game
-    // seatCount from the registry's module metadata; until then this room
-    // still forms exactly the 2-seat groups it always did.
-    const group: SeatGroup | null = await pool.tryPairSeats(gameId, modality, 2, this.poolKey);
+    const module = gameId !== undefined ? this.registry?.get(gameId) : undefined;
+    if (pool === undefined || gameId === undefined || module === undefined) return;
+    const group: SeatGroup | null = await pool.tryPairSeats(gameId, modality, module.metadata.seatCount, this.poolKey);
     if (group === null) return;
     const seats: readonly PairedSeat[] = group.players.map((player) => {
       const entry = this.waiting.get(player.connectionId);
@@ -185,7 +184,61 @@ export class PresenceRoom extends Room {
     await this.handOffToMatch(gameId, modality, seats);
   }
 
+  /**
+   * Two strict phases, so "reserving EVERY seat before any client even
+   * receives the `paired` message" is literal truth for N seats — never a
+   * second, lighter identity path: each reservation carries only the
+   * player's own token, UNVALIDATED here (never `authData`), so
+   * `MatchRoom.onAuth` alone still decides whether the eventual live join
+   * is accepted.
+   *
+   * PHASE A reserves ALL N seats before ANY member learns the room exists.
+   * That closes the seat-theft window a naive "tell them the roomId, let
+   * them self-join" hand-off would leave open: colyseus counts reserved
+   * seats in `hasReachedMaxClients()` and LOCKS the room the moment they
+   * reach `maxClients`, so an outsider — even one holding a valid token —
+   * can never join in between.
+   *
+   * PHASE B, only entered once every reservation exists, sends `paired` to
+   * all N. All-or-nothing on purpose IN PHASE A: one vanished member (left
+   * between the pool pop and here) or one failed reservation fails the
+   * WHOLE group with `pairing-failed` to every member still reachable —
+   * seating the survivors instead would strand them in a room whose
+   * remaining seat can never be filled by its intended human (its
+   * predecessor silently skipped a vanished 2-seat member and still paired
+   * the survivor: exactly that hang). The `paired` roster is one shared
+   * fact — the full group in formation order, recipient included — never a
+   * per-recipient "opponent" view, which stops meaning anything once
+   * teammates exist (2v2).
+   *
+   * Phase B failures are deliberately NOT all-or-nothing: each send is
+   * contained per member, so a connection that died during phase A's
+   * awaits can neither escape `onJoin` as an unhandled rejection nor
+   * starve the members AFTER it in delivery order of seats they genuinely
+   * hold. Before reservations exist the group can still be aborted
+   * cleanly; after, the others' seats are real, and revoking them because
+   * a third party's socket hiccuped would be strictly worse. Nobody is
+   * told `pairing-failed` either — the hand-off SUCCEEDED for everyone
+   * reachable, and the unreachable member's reservation is colyseus's own
+   * problem, with a verified answer: a never-consumed reservation expires
+   * after `seatReservationTimeout` (default 15s — Room.ts:41 in the
+   * installed `@colyseus/core@0.17.46`), its expiry timer deletes the seat
+   * and decrements the client count (Room.ts:1498-1502), and that
+   * decrement UNLOCKS a maxClients-locked room (Room.ts:1792-1806) — the
+   * match is never left unstartable-forever by colyseus itself. The
+   * residual — a room waiting on a human who will never arrive — is the
+   * degradation path PR-2b's timeout owns, named here rather than
+   * silently absorbed.
+   */
   private async handOffToMatch(gameId: GameId, modality: ModalityConfig, seats: readonly PairedSeat[]): Promise<void> {
+    const members: Array<{ readonly playerId: string; readonly entry: WaitingClient }> = [];
+    for (const seat of seats) {
+      if (seat.entry === undefined) {
+        this.notifyHandoffFailure(seats, new Error("a paired member left before the hand-off could reserve their seat"));
+        return;
+      }
+      members.push({ playerId: seat.playerId, entry: seat.entry });
+    }
     let room: Awaited<ReturnType<typeof matchMaker.createRoom>>;
     try {
       room = await matchMaker.createRoom(this.matchRoomName, { gameId, config: modality });
@@ -193,18 +246,34 @@ export class PresenceRoom extends Room {
       this.notifyHandoffFailure(seats, error);
       return;
     }
-    await Promise.all(
-      seats.map(async ({ entry }, index) => {
-        if (entry === undefined) return;
-        const opponent = seats[index === 0 ? 1 : 0]!;
-        try {
-          const matchReservation = await matchMaker.reserveSeatFor(room, { token: entry.token });
-          entry.client.send("paired", { opponentPlayerId: opponent.playerId, modality, matchReservation });
-        } catch (error) {
-          this.notifyHandoffFailure([{ playerId: opponent.playerId, entry }], error);
-        }
-      }),
-    );
+    // Phase A. Sequential on purpose: N is tiny (a game's seatCount) and a
+    // `Promise.all` would leave later reservations in flight after an
+    // earlier rejection, when this hand-off is already committed to failing.
+    const reservations: unknown[] = [];
+    try {
+      for (const member of members) {
+        reservations.push(await matchMaker.reserveSeatFor(room, { token: member.entry.token }));
+      }
+    } catch (error) {
+      this.notifyHandoffFailure(seats, error);
+      // Best-effort only: the abandoned room disposes itself anyway once its
+      // unconsumed reservations expire — this merely shortens that wait, so
+      // a failure here is deliberately ignored.
+      await matchMaker.remoteRoomCall(room.roomId, "disconnect").catch(() => undefined);
+      return;
+    }
+    // Phase B: every seat is reserved (and the room therefore locked).
+    // Per-member containment — see the docstring's phase B paragraph.
+    const players: readonly string[] = members.map((member) => member.playerId);
+    members.forEach((member, index) => {
+      try {
+        member.entry.client.send("paired", { players, modality, matchReservation: reservations[index] });
+      } catch {
+        // This member's connection died between its reservation and this
+        // delivery. Its seat expires under colyseus's own reservation TTL;
+        // the other members' deliveries must not be disturbed.
+      }
+    });
   }
 
   private notifyHandoffFailure(seats: readonly PairedSeat[], error: unknown): void {

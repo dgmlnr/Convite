@@ -77,4 +77,37 @@ describe("createGameModuleRegistry", () => {
       expect(registry.isNonBlockingAction("fixture-a", { playerId: "p" as PlayerId, type: "play" })).toBe(false);
     });
   });
+
+  /**
+   * `metadata.seatCount` is consumed downstream by BOTH transports —
+   * `MatchRoom.onCreate` sizes its seats from it, and `PresenceRoom` forms
+   * matchmaking groups of it (`MatchmakingPool.tryPairSeats` rejects any
+   * seatCount that is not an integer >= 2) — so an invalid value would
+   * otherwise only surface at runtime, as an unhandled rejection out of
+   * `onJoin` on EVERY join attempt for that game. Fail loud at composition
+   * time instead, naming the offending module (the same boot-guard
+   * discipline as `PresenceRoom.onCreate`'s unknown-module throw).
+   */
+  describe("rejects a module whose metadata.seatCount could never form a match — at registration, not at first join", () => {
+    function moduleWithSeatCount(seatCount: number): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
+      const module = fixtureModule("fixture-bad-seats");
+      return { ...module, metadata: { ...module.metadata, seatCount } };
+    }
+
+    it("throws at registry creation for seatCount 1, 0, and a non-integer, naming the module id", () => {
+      for (const seatCount of [1, 0, 2.5]) {
+        expect(() => createGameModuleRegistry([moduleWithSeatCount(seatCount)])).toThrowError(/fixture-bad-seats/);
+      }
+    });
+
+    it("validates the wrapped registration form ({ module, ... }) identically to a bare module", () => {
+      expect(() => createGameModuleRegistry([{ module: moduleWithSeatCount(1) }])).toThrowError(/fixture-bad-seats/);
+    });
+
+    it("accepts the minimum group size (2) and a team game (4) unchanged", () => {
+      const two = fixtureModule("fixture-two");
+      const four = { ...fixtureModule("fixture-four"), metadata: { seatCount: 4, displayNameKey: "fixture.name", assetBase: "/fixture" } };
+      expect(() => createGameModuleRegistry([two, four])).not.toThrow();
+    });
+  });
 });
