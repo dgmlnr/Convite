@@ -23,8 +23,17 @@
  * first, and that was wrong: an opt-in only helps whoever remembers it, and
  * the runs that actually surprise you are the ones you did not type — a tool,
  * a hook, an agent, a fresh clone. Hiding the window has to be what happens by
- * DEFAULT or it does not really happen. Hence one entry point, and no second
- * way to run the suite that behaves differently.
+ * DEFAULT or it does not really happen. Hence one entry point — and then the
+ * lesson repeated itself one level down: a direct `vitest run` bypasses ANY
+ * wrapper, however default it feels, so the deeper default now lives in
+ * `vitest.config.ts` itself, which redirects every invocation to a persistent
+ * `Xvfb :99` (decisions in `scripts/virtual-display.mjs`). This wrapper stays
+ * as belt-and-braces on top of it: `xvfb-run` guarantees a virtual display
+ * even where the `:99` spawn fails, and the child env carries an explicit
+ * marker (`DISPLAY_REDIRECT_MARKER`, `vitest-runner.mjs`) that tells the
+ * config shim the run is already handled rather than redirecting it a second
+ * time — explicit, because the sanitized env's own shape is byte-identical
+ * to a plain X11 desktop login and proves nothing about who produced it.
  *
  * WHICH MEANS IT MUST NEVER BE THE REASON A RUN FAILS. Every `pnpm test` in
  * the repo now goes through here, so any way this file can break is a way the

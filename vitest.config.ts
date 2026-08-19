@@ -1,5 +1,80 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+
 import { defineConfig } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
+
+import { resolveDisplayRedirect, socketPathFor } from "./scripts/virtual-display.mjs";
+
+/**
+ * Config-level display redirect — the one that covers EVERYONE.
+ *
+ * `scripts/run-vitest.mjs` hides the browser project's headed Chromium, but
+ * only for invocations that go through it; a direct `vitest run --project
+ * browser` — typed by a tool, a hook, an agent, a fresh clone — bypasses the
+ * wrapper and opens a window on the developer's screen. This file executes on
+ * every invocation no matter how Vitest was started, so the redirect lives
+ * here and the wrapper is belt-and-braces on top.
+ *
+ * The Wayland lesson, learned the hard way and worth repeating: `DISPLAY`
+ * alone is NOT enough. Chromium prefers the compositor when
+ * `WAYLAND_DISPLAY` names one, however `DISPLAY` is set — so the redirect
+ * must also unname the socket and declare the session X11, which is exactly
+ * what the resolver's sanitized env does.
+ *
+ * All decisions live in `scripts/virtual-display.mjs` (tested); what remains
+ * here is only what must touch the machine: one detached, persistent
+ * `Xvfb :99` spawned on demand and left running, a bounded wait for its
+ * socket, and the `process.env` mutation. If the spawn fails or the socket
+ * never appears, one loud warning and the run proceeds untouched — a visible
+ * window is the fallback, never a broken run.
+ */
+const redirect = resolveDisplayRedirect({
+  platform: process.platform,
+  env: process.env,
+  socketExists: (display) => existsSync(socketPathFor(display)),
+});
+if (redirect.action !== "none" && (redirect.action === "use" || spawnPersistentXvfb(redirect.display))) {
+  for (const key of Object.keys(process.env)) {
+    if (!(key in redirect.env)) delete process.env[key];
+  }
+  Object.assign(process.env, redirect.env);
+}
+
+function spawnPersistentXvfb(display: string): boolean {
+  const socket = socketPathFor(display);
+  try {
+    const xvfb = spawn("Xvfb", [display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    // A missing `Xvfb` binary surfaces as an async `error` event; without a
+    // listener that becomes an uncaught exception — the one thing this shim
+    // must never cause. Failure is detected below instead, as a missing
+    // socket (immediately, via the undefined pid, so nobody waits 2s for it).
+    xvfb.on("error", () => {});
+    xvfb.unref();
+    if (xvfb.pid !== undefined) {
+      // Config evaluation is synchronous anyway, so wait synchronously:
+      // bounded at 2s, in 50ms steps. `Atomics.wait` is the dependency-free
+      // sleep that burns no CPU doing it.
+      const lock = new Int32Array(new SharedArrayBuffer(4));
+      const deadline = Date.now() + 2_000;
+      while (!existsSync(socket) && Date.now() < deadline) {
+        Atomics.wait(lock, 0, 0, 50);
+      }
+      if (existsSync(socket)) return true;
+    }
+  } catch {
+    // Fall through to the warning — same contract as the wrapper: this file
+    // must never be the reason a run fails.
+  }
+  console.warn(
+    `vitest.config: could not start Xvfb on ${display} (spawn failed or its socket never appeared) — ` +
+      "running with the real display instead. The suite is unaffected; the browser window will just be visible.",
+  );
+  return false;
+}
 
 export default defineConfig({
   test: {
@@ -65,13 +140,14 @@ export default defineConfig({
             // read the way these four were — as a box whose height a font is
             // still deciding — never buried under recalibrated constants.
             //
-            // Nobody has to look at that window, though: `pnpm test` goes
-            // through `scripts/run-vitest.mjs`, which runs this same headed
-            // Chromium against a virtual display where one is available. The
-            // window still exists and still renders identically — verified,
-            // 114 files / 1053 passed + 2 todo, the same totals under `pnpm
-            // test` and `CI=1 pnpm test` — it is simply not on anyone's
-            // screen. `vitest.visual.config.ts` is a separate project and pins
+            // Nobody has to look at that window, though: the shim at the top
+            // of this file redirects EVERY invocation — wrapper or not — to a
+            // persistent virtual display, and `scripts/run-vitest.mjs` adds
+            // its own `xvfb-run` redirect on top for the runs that go through
+            // it. The window still exists and still renders identically —
+            // verified, the same totals under `pnpm test` and `CI=1 pnpm
+            // test` — it is simply not on anyone's screen.
+            // `vitest.visual.config.ts` is a separate project and pins
             // `headless: true` for its own reason; see its comment.
             provider: playwright(),
             instances: [{ browser: "chromium" }],

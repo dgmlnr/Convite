@@ -41,12 +41,24 @@ function needsShell(platform) {
  * So the Wayland session is removed from the child's environment rather than
  * merely out-voted: with no socket named and the session declared X11, the
  * only display Chromium can find is the virtual one.
+ *
+ * Exported because `virtual-display.mjs` applies the exact same discipline at
+ * config level. This shape is NOT how the two files recognize each other — a
+ * plain X11 desktop login is byte-identical to it, which is why the wrapper
+ * announces itself with `DISPLAY_REDIRECT_MARKER` below instead.
  */
-function x11OnlyEnv(env) {
+export function x11OnlyEnv(env) {
   const x11 = { ...env, XDG_SESSION_TYPE: "x11" };
   delete x11.WAYLAND_DISPLAY;
   return x11;
 }
+
+/** How the wrapper tells the config shim "already handled". An explicit
+ * marker, not an inference: the sanitized env's shape is indistinguishable
+ * from a genuine X11 login, and reading that shape as proof the wrapper ran
+ * would leave a direct vitest run on a real X11 session pointed at the real
+ * screen. Only `resolveRunner`'s redirecting branch ever sets it. */
+export const DISPLAY_REDIRECT_MARKER = "HEXDEV_DISPLAY_REDIRECTED";
 
 /**
  * Answers one question: what should be spawned, and with what.
@@ -68,7 +80,8 @@ export function resolveRunner({ platform, hasXvfb, env, args }) {
   if (platform === "linux" && hasXvfb) {
     // `-a` picks a free display number instead of a fixed one, so two runs at
     // once (a watch in one terminal, a one-off in another) cannot collide.
-    return { command: "xvfb-run", args: ["-a", "vitest", ...args], env: x11OnlyEnv(env), shell: false };
+    // The marker rides along so the config shim stands down (see its doc).
+    return { command: "xvfb-run", args: ["-a", "vitest", ...args], env: { ...x11OnlyEnv(env), [DISPLAY_REDIRECT_MARKER]: "1" }, shell: false };
   }
   return { command: "vitest", args: [...args], env: { ...env }, shell: needsShell(platform) };
 }
