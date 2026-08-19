@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
+import type { Card, HandPlay, PlayerId, PlayerView, SenaView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { sampleAllOpponentHands, sampleHiddenHands, sampleOpponentHand } from "./determinize.js";
@@ -153,6 +153,7 @@ function twoOpponentView(overrides: {
   selfHand: readonly Card[];
   cardsRemaining: [number, number];
   partnerCardsRemaining?: number;
+  partnerLastSena?: SenaView | null;
   resolvedTrickPlays?: readonly (readonly HandPlay[])[];
 }): PlayerView {
   const base = baseView({
@@ -162,7 +163,7 @@ function twoOpponentView(overrides: {
   });
   return {
     ...base,
-    teammates: [{ playerId: PARTNER, seat: 2, cardsRemaining: overrides.partnerCardsRemaining ?? 3, lastSena: null }],
+    teammates: [{ playerId: PARTNER, seat: 2, cardsRemaining: overrides.partnerCardsRemaining ?? 3, lastSena: overrides.partnerLastSena ?? null }],
     opponents: [
       { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining[0] },
       { playerId: OPPONENT_2, teamId: OPPONENT_2_TEAM, seat: 3, cardsRemaining: overrides.cardsRemaining[1] },
@@ -310,5 +311,180 @@ describe("sampleHiddenHands — partner AND opponents dealt disjointly from one 
     const a = sampleHiddenHands(view, seededRng(7));
     const b = sampleHiddenHands(view, seededRng(999));
     expect(a.partner).not.toEqual(b.partner);
+  });
+});
+
+/** Same helpers as sena-emission.test.ts's house pattern: a scripted prefix
+ * pins the exact draws a branch decision needs, and anything after falls
+ * through to the tail — which is `forbiddenRng` wherever a test's whole point
+ * is "this path consumes EXACTLY these draws and not one more". */
+function scriptedRng(values: readonly number[], tail: RandomSource = seededRng(1)): RandomSource {
+  let index = 0;
+  return () => (index < values.length ? values[index++]! : tail());
+}
+
+const forbiddenRng: RandomSource = () => {
+  throw new Error("this path must not consume the rng");
+};
+
+const ESPADA_5: Card = { suit: "espada", rank: 5 };
+const ESPADA_7: Card = { suit: "espada", rank: 7 };
+
+/** The slice-4 bias: `teammates[0].lastSena` — a claim the partner chose to
+ * flash, legitimately visible to this seat (señas are team-internal; the
+ * engine's redaction fence keeps them from opponents) — tilts the PARTNER's
+ * sampled hand toward the claimed card(s). A claim, never a certainty: the
+ * hard tier bluffs, so the bias is a weighted coin (SENA_TRUST), not a rule. */
+describe("sampleHiddenHands — the partner's lastSena biases the partner draw (slice 4)", () => {
+  const MATA_CLAIM: SenaView = { signal: "asDeEspada", seq: 1 };
+
+  it("exact-card claim, trust draw crosses: the partner sample CONTAINS the claimed card, forced first, then deals the rest as usual", () => {
+    // Zero-card opponents consume no draws, so the scripted values map 1:1
+    // onto the partner deal: 0.1 crosses SENA_TRUST (the claim is believed),
+    // espada-1 is forced with NO further selection draw (an exact signal
+    // names one card — there is nothing to select), and the remaining card
+    // is dealt exactly as today with draw 0 → the pool head, espada-2.
+    const view = twoOpponentView({ selfHand: [], cardsRemaining: [0, 0], partnerCardsRemaining: 2, partnerLastSena: MATA_CLAIM });
+    const { partner, opponents } = sampleHiddenHands(view, scriptedRng([0.1, 0], forbiddenRng));
+    expect(partner).toEqual([ESPADA_1, ESPADA_2]);
+    expect(opponents).toEqual([[], []]);
+  });
+
+  it("exact-card claim with opponents holding cards: the forced card joins AFTER the opponent draws, and full pool disjointness holds", () => {
+    // Draw order is still the slice-2 contract: opponents first (0 → espada-1,
+    // 0 → espada-2), partner last. The trust draw sits at the HEAD of the
+    // partner deal — after every opponent draw — so opponent samples consume
+    // the exact stream positions they always did. 0.1 crosses, espada-7 (the
+    // claimed siete de espada) is forced, and the last card deals with 0 →
+    // espada-3, the head of what remains. No card appears twice anywhere.
+    const view = twoOpponentView({
+      selfHand: [],
+      cardsRemaining: [1, 1],
+      partnerCardsRemaining: 2,
+      partnerLastSena: { signal: "sieteDeEspada", seq: 1 },
+    });
+    const { partner, opponents } = sampleHiddenHands(view, scriptedRng([0, 0, 0.1, 0], forbiddenRng));
+    expect(opponents).toEqual([[ESPADA_1], [ESPADA_2]]);
+    expect(partner).toEqual([ESPADA_7, ESPADA_3]);
+    const ids = [...partner!, ...opponents.flat()].map((c) => `${c.rank}-${c.suit}`);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("trust draw does NOT cross: the partner deal is UNBIASED — byte-identical to the no-seña draw under the same remaining stream", () => {
+    // The bluff branch. The seña run spends exactly ONE draw on trust (the
+    // scripted 0.99, above any sane SENA_TRUST) and then deals from the
+    // seeded tail; the control run has no seña and deals from the same
+    // seeded stream directly. Equal partner hands prove the bluff branch IS
+    // today's sampler, shifted by exactly the one trust draw and nothing else.
+    const claimed = twoOpponentView({ selfHand: [], cardsRemaining: [0, 0], partnerCardsRemaining: 2, partnerLastSena: MATA_CLAIM });
+    const control = twoOpponentView({ selfHand: [], cardsRemaining: [0, 0], partnerCardsRemaining: 2 });
+    const biased = sampleHiddenHands(claimed, scriptedRng([0.99], seededRng(7)));
+    const unbiased = sampleHiddenHands(control, seededRng(7));
+    expect(biased.partner).toEqual(unbiased.partner);
+    expect(biased.opponents).toEqual([[], []]);
+  });
+
+  it("rank-level claim (tres): one uniformly-indexed rank-3 card from the pool's survivors is forced", () => {
+    // A rank signal claims a RANK, not a card, so believing it costs one
+    // extra selection draw: candidates are the pool's four 3s in deck order
+    // (espada, basto, oro, copa), and 0.99 indexes the last — copa-3.
+    const view = twoOpponentView({ selfHand: [], cardsRemaining: [0, 0], partnerCardsRemaining: 1, partnerLastSena: { signal: "tres", seq: 1 } });
+    const { partner } = sampleHiddenHands(view, scriptedRng([0.1, 0.99], forbiddenRng));
+    expect(partner).toEqual([{ suit: "copa", rank: 3 }]);
+  });
+
+  it("rank-level claim: only SURVIVORS are candidates — a tres in the bot's own hand is not one the partner could hold", () => {
+    // The bot holds espada-3, so the claim's survivors are basto/oro/copa-3;
+    // selection draw 0 picks the first of THOSE (basto-3), never espada-3.
+    const view = twoOpponentView({
+      selfHand: [ESPADA_3],
+      cardsRemaining: [0, 0],
+      partnerCardsRemaining: 1,
+      partnerLastSena: { signal: "tres", seq: 1 },
+    });
+    const { partner } = sampleHiddenHands(view, scriptedRng([0.1, 0], forbiddenRng));
+    expect(partner).toEqual([{ suit: "basto", rank: 3 }]);
+  });
+
+  it("dead claim (the claimed card is in the bot's OWN hand): unbiased sampling, and NO trust draw is consumed — proven by draw count", () => {
+    // The claim is provably false — the bot is holding the very card. The
+    // scripted prefix is EXACTLY the legitimate draw budget (two opponent
+    // draws + two unbiased partner draws); the forbidden tail turns any
+    // extra trust draw into a loud throw. Pool head after espada-1 leaves
+    // with the bot's hand: espada-2 onward.
+    const view = twoOpponentView({
+      selfHand: [ESPADA_1],
+      cardsRemaining: [1, 1],
+      partnerCardsRemaining: 2,
+      partnerLastSena: MATA_CLAIM,
+    });
+    const { partner, opponents } = sampleHiddenHands(view, scriptedRng([0, 0, 0, 0], forbiddenRng));
+    expect(opponents).toEqual([[ESPADA_2], [ESPADA_3]]);
+    expect(partner).toEqual([ESPADA_4, ESPADA_5]);
+  });
+
+  it("dead claim (the claimed card was already PLAYED): byte-identical to the no-seña sample under the same seed — the claim is spent, not information", () => {
+    const played = [[play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_1), play(SELF, SELF_TEAM, 0, ESPADA_2)]] as const;
+    const claimed = twoOpponentView({
+      selfHand: [],
+      cardsRemaining: [2, 2],
+      partnerCardsRemaining: 3,
+      partnerLastSena: MATA_CLAIM,
+      resolvedTrickPlays: played,
+    });
+    const control = twoOpponentView({ selfHand: [], cardsRemaining: [2, 2], partnerCardsRemaining: 3, resolvedTrickPlays: played });
+    expect(sampleHiddenHands(claimed, seededRng(7))).toEqual(sampleHiddenHands(control, seededRng(7)));
+  });
+
+  it("a spent partner (0 cards) with a standing claim: samples to [] and consumes NO partner draws at all", () => {
+    // Nothing can be forced into a hand that no longer exists; the claim is
+    // dead by size. The scripted prefix covers exactly the two opponent
+    // draws — the forbidden tail proves the partner branch draws nothing.
+    const view = twoOpponentView({ selfHand: [], cardsRemaining: [1, 1], partnerCardsRemaining: 0, partnerLastSena: MATA_CLAIM });
+    const { partner, opponents } = sampleHiddenHands(view, scriptedRng([0, 0], forbiddenRng));
+    expect(partner).toEqual([]);
+    expect(opponents).toEqual([[ESPADA_1], [ESPADA_2]]);
+  });
+
+  it("rank-level claim reduced to ONE survivor: the sole candidate is forced with NO selection draw — same shortcut as an exact signal (native review WARNING, review-69c6bbb80520fae0)", () => {
+    // The bot holds three of the four 3s, so the claim's only survivor is
+    // copa-3 and there is nothing to select among: the single-candidate
+    // shortcut must skip the selection draw exactly as an exact-card signal
+    // does. Scripted prefix = the one trust draw only; the forbidden tail
+    // turns any selection draw into a loud throw — the draw-count pin every
+    // other branch of this sampler already carries.
+    const view = twoOpponentView({
+      selfHand: [ESPADA_3, { suit: "basto", rank: 3 }, { suit: "oro", rank: 3 }],
+      cardsRemaining: [0, 0],
+      partnerCardsRemaining: 1,
+      partnerLastSena: { signal: "tres", seq: 1 },
+    });
+    const { partner } = sampleHiddenHands(view, scriptedRng([0.1], forbiddenRng));
+    expect(partner).toEqual([{ suit: "copa", rank: 3 }]);
+  });
+
+  it("no seña: byte-identical to today's sampler under the same seed — the pre-slice bytes, hardcoded as a regression pin", () => {
+    // This exact HiddenHands was generated from the PRE-slice build (main,
+    // 804eb2f) for this exact view and seed. A lastSena of null must keep
+    // producing it byte for byte: zero extra draws, zero reordering. Green
+    // from birth, deliberately — it pins absence of change, not new behavior.
+    const view = twoOpponentView({ selfHand: [ESPADA_1], cardsRemaining: [3, 2], partnerCardsRemaining: 3 });
+    expect(sampleHiddenHands(view, seededRng(7))).toEqual({
+      partner: [{ suit: "basto", rank: 7 }, { suit: "basto", rank: 12 }, { suit: "basto", rank: 1 }],
+      opponents: [
+        [{ suit: "espada", rank: 2 }, { suit: "espada", rank: 5 }, { suit: "copa", rank: 12 }],
+        [{ suit: "oro", rank: 11 }, { suit: "oro", rank: 2 }],
+      ],
+    });
+  });
+
+  it("1v1: no teammate means no seña to read — the opponent deal consumes EXACTLY its own draws and the trust draw cannot exist", () => {
+    // In 1v1 there is no teammate, hence no lastSena to read: the scripted
+    // prefix is exactly the opponent's three draws, and the forbidden tail
+    // proves nothing else in the sampler touches the rng.
+    const view = baseView({ selfHand: [], cardsRemaining: 3 });
+    const { partner, opponents } = sampleHiddenHands(view, scriptedRng([0, 0, 0], forbiddenRng));
+    expect(partner).toBeNull();
+    expect(opponents).toEqual([[ESPADA_1, ESPADA_2, ESPADA_3]]);
   });
 });
