@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
-import { sampleAllOpponentHands, sampleOpponentHand } from "./determinize.js";
+import { sampleAllOpponentHands, sampleHiddenHands, sampleOpponentHand } from "./determinize.js";
 
 const SELF = "player-a" as PlayerId;
 const OPPONENT = "player-b" as PlayerId;
@@ -141,37 +141,41 @@ describe("sampleOpponentHand", () => {
   });
 });
 
-/** A 2v2 view fixture — TWO real opponents, unlike `baseView`'s single one.
- * `sampleOpponentHand` above only ever reads `view.opponents[0]`, exactly
+const OPPONENT_2 = "player-d" as PlayerId;
+const OPPONENT_2_TEAM = "player-b:team" as TeamId; // same team as OPPONENT — teammates across the table
+const PARTNER = "player-c" as PlayerId;
+
+/** A 2v2 view fixture — TWO real opponents plus a teammate, unlike
+ * `baseView`'s single opponent. Module-scoped because BOTH multi-hand
+ * samplers below (`sampleAllOpponentHands` and `sampleHiddenHands`) are
+ * exercised against the same table shape. */
+function twoOpponentView(overrides: {
+  selfHand: readonly Card[];
+  cardsRemaining: [number, number];
+  partnerCardsRemaining?: number;
+  resolvedTrickPlays?: readonly (readonly HandPlay[])[];
+}): PlayerView {
+  const base = baseView({
+    selfHand: overrides.selfHand,
+    cardsRemaining: overrides.cardsRemaining[0],
+    resolvedTrickPlays: overrides.resolvedTrickPlays,
+  });
+  return {
+    ...base,
+    teammates: [{ playerId: PARTNER, seat: 2, cardsRemaining: overrides.partnerCardsRemaining ?? 3, lastSena: null }],
+    opponents: [
+      { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining[0] },
+      { playerId: OPPONENT_2, teamId: OPPONENT_2_TEAM, seat: 3, cardsRemaining: overrides.cardsRemaining[1] },
+    ],
+  };
+}
+
+/** `sampleOpponentHand` above only ever reads `view.opponents[0]`, exactly
  * the "assumes exactly one opponent" gap the apply prompt names — this
  * block covers the 2v2-safe replacement instead of widening that function's
  * own contract (which every existing 1v1 caller/test relies on staying
  * single-opponent-shaped). */
 describe("sampleAllOpponentHands — one sampled hand PER real opponent (1v1: same as sampleOpponentHand; 2v2: both opponents, drawn from a shared pool so no card is double-counted)", () => {
-  const OPPONENT_2 = "player-d" as PlayerId;
-  const OPPONENT_2_TEAM = "player-b:team" as TeamId; // same team as OPPONENT — teammates across the table
-  const PARTNER = "player-c" as PlayerId;
-
-  function twoOpponentView(overrides: {
-    selfHand: readonly Card[];
-    cardsRemaining: [number, number];
-    partnerCardsRemaining?: number;
-    resolvedTrickPlays?: readonly (readonly HandPlay[])[];
-  }): PlayerView {
-    const base = baseView({
-      selfHand: overrides.selfHand,
-      cardsRemaining: overrides.cardsRemaining[0],
-      resolvedTrickPlays: overrides.resolvedTrickPlays,
-    });
-    return {
-      ...base,
-      teammates: [{ playerId: PARTNER, seat: 2, cardsRemaining: overrides.partnerCardsRemaining ?? 3, lastSena: null }],
-      opponents: [
-        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: overrides.cardsRemaining[0] },
-        { playerId: OPPONENT_2, teamId: OPPONENT_2_TEAM, seat: 3, cardsRemaining: overrides.cardsRemaining[1] },
-      ],
-    };
-  }
 
   it("1v1 (a single opponent): returns exactly one sampled hand, of the opponent's own cardsRemaining size", () => {
     const view = baseView({ selfHand: [{ suit: "espada", rank: 1 }], cardsRemaining: 3 });
@@ -232,5 +236,79 @@ describe("sampleAllOpponentHands — one sampled hand PER real opponent (1v1: sa
       ]],
     });
     expect(sampleAllOpponentHands(view, alwaysFirst)[0]).toHaveLength(35);
+  });
+});
+
+/** The slice-2 sampler: ONE shared-pool draw per determinization round that
+ * deals the PARTNER's hidden hand alongside every opponent's, all disjoint —
+ * closing the disclosed "an opponent can be dealt a card the partner actually
+ * holds" simplification `sampleAllOpponentHands` carries. */
+describe("sampleHiddenHands — partner AND opponents dealt disjointly from one shared unseen pool", () => {
+  it("2v2: sizes every hand from its own view field — partner by teammates[0].cardsRemaining, each opponent by its own cardsRemaining, and a 0-card partner samples to [] (present but empty), not null", () => {
+    const view = twoOpponentView({ selfHand: [{ suit: "espada", rank: 1 }], cardsRemaining: [3, 2], partnerCardsRemaining: 2 });
+    const { partner, opponents } = sampleHiddenHands(view, seededRng(1));
+    expect(partner).toHaveLength(2);
+    expect(opponents).toHaveLength(2);
+    expect(opponents[0]).toHaveLength(3);
+    expect(opponents[1]).toHaveLength(2);
+
+    const spent = twoOpponentView({ selfHand: [{ suit: "espada", rank: 1 }], cardsRemaining: [3, 2], partnerCardsRemaining: 0 });
+    expect(sampleHiddenHands(spent, seededRng(1)).partner).toEqual([]);
+  });
+
+  it("2v2: partner and opponent hands are mutually DISJOINT and never contain a seen card — the exact double-counting sampleAllOpponentHands discloses", () => {
+    // A full resolved trick plus the bot's own remaining card = 5 seen cards.
+    // Across several seeds (deterministic, not probabilistic: each seed is a
+    // fixed draw), the 9 sampled cards must be 9 DIFFERENT cards, none seen.
+    const seen = [ESPADA_1, ESPADA_2, ESPADA_3, ESPADA_4, { suit: "copa", rank: 12 } as Card];
+    const view = twoOpponentView({
+      selfHand: [{ suit: "copa", rank: 12 }],
+      cardsRemaining: [3, 3],
+      partnerCardsRemaining: 3,
+      resolvedTrickPlays: [[
+        play(SELF, SELF_TEAM, 0, ESPADA_1),
+        play(OPPONENT, OPPONENT_TEAM, 1, ESPADA_2),
+        play(PARTNER, SELF_TEAM, 2, ESPADA_3),
+        play(OPPONENT_2, OPPONENT_2_TEAM, 3, ESPADA_4),
+      ]],
+    });
+    for (const seed of [1, 42, 999]) {
+      const { partner, opponents } = sampleHiddenHands(view, seededRng(seed));
+      const sampled = [...partner!, ...opponents.flat()];
+      const ids = sampled.map((c) => `${c.rank}-${c.suit}`);
+      expect(new Set(ids).size).toBe(9);
+      for (const card of seen) {
+        expect(sampled.some((c) => c.suit === card.suit && c.rank === card.rank)).toBe(false);
+      }
+    }
+  });
+
+  it("2v2: opponents draw FIRST (in view order), the partner LAST — pinned with alwaysFirst", () => {
+    // The draw ORDER is a contract, not an accident: with no partner draws in
+    // front of them, the opponent draws consume the exact same rng stream as
+    // `sampleAllOpponentHands` — which is what keeps 1v1 byte-identical (the
+    // next test) and 2v2 opponent samples aligned with the old sampler's.
+    // Dealing the partner last is distributionally free: dealing disjoint
+    // hands from a uniform pool is exchangeable, so WHEN the partner's cards
+    // leave the pool never changes what they could be.
+    const view = twoOpponentView({ selfHand: [], cardsRemaining: [1, 1], partnerCardsRemaining: 2 });
+    const { partner, opponents } = sampleHiddenHands(view, alwaysFirst);
+    expect(opponents).toEqual([[ESPADA_1], [ESPADA_2]]);
+    expect(partner).toEqual([ESPADA_3, ESPADA_4]);
+  });
+
+  it("1v1: partner is null and the opponent draws are IDENTICAL to sampleAllOpponentHands under the same seed — the rng-stream identity every 1v1 hard-tier decision relies on", () => {
+    const view = baseView({ selfHand: [{ suit: "espada", rank: 1 }], cardsRemaining: 3 });
+    const { partner, opponents } = sampleHiddenHands(view, seededRng(7));
+    expect(partner).toBeNull();
+    expect(opponents).toEqual(sampleAllOpponentHands(view, seededRng(7)));
+  });
+
+  it("is reproducible: the same seed replays the same draw; different seeds diverge (the rng is actually consulted for the partner too)", () => {
+    const view = twoOpponentView({ selfHand: [{ suit: "espada", rank: 1 }], cardsRemaining: [3, 3] });
+    expect(sampleHiddenHands(view, seededRng(7))).toEqual(sampleHiddenHands(view, seededRng(7)));
+    const a = sampleHiddenHands(view, seededRng(7));
+    const b = sampleHiddenHands(view, seededRng(999));
+    expect(a.partner).not.toEqual(b.partner);
   });
 });

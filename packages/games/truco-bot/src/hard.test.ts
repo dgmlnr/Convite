@@ -273,4 +273,117 @@ describe("createHardBot — 2v2 team card play: the partner's card is part of th
   // non-empty trick always carries an opposing play, and the follow branch
   // above owns it. A test for it would be a synthetic view no real match can
   // produce, pinning behavior nobody can ever observe.
+
+  // What IS pinned for 2v2 leading (native review WARNING,
+  // review-f1c06a90d7ba1f9b): the partner draws in `sampleHiddenHands`
+  // advance the shared rng stream between rounds, so a fixed seed replays
+  // different — equally valid — rounds than the pre-partner sampler, and a
+  // NEAR-TIE leading choice may land differently. The dominant choice must
+  // not: espada-1 wins every sampled round (it is the top card and in the
+  // bot's own hand, so no pool can hold it — 24/24 for ANY rng), and basto-4
+  // can win none (a round needs 1 > max(pool), and every card's power is at
+  // least 1). Score 24 vs 0, both argument orders — whatever the partner
+  // draws do to the stream.
+  describe("leading a fresh 2v2 trick — the dominant card survives the partner draws' rng-stream offset, for any rng", () => {
+    const strong: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 1 } };
+    const weak: Action = { type: "play-card", playerId: SELF, card: { suit: "basto", rank: 4 } };
+    const bothCards: readonly Card[] = [{ suit: "espada", rank: 1 }, { suit: "basto", rank: 4 }];
+
+    it("plays the dominant card when it is offered first", () => {
+      const view = viewWith2v2({ hand: bothCards });
+      expect(createHardBot(seededRng(7)).chooseAction(view, [strong, weak], 50)).toBe(strong);
+    });
+
+    it("plays the dominant card when the weak one is offered first (same choice, opposite order)", () => {
+      const view = viewWith2v2({ hand: bothCards });
+      expect(createHardBot(seededRng(7)).chooseAction(view, [weak, strong], 50)).toBe(strong);
+    });
+  });
+});
+
+describe("createHardBot — 2v2 team calls: the PARTNER's sampled hand counts toward the team's side (the closed own-hand-only gap)", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  /** A 2v2 call-decision view: one teammate, two opponents, per-test hand
+   * sizes and call state. Same minimal-fixture spirit as `viewWith` above,
+   * widened to the fields the team-side metrics actually read. */
+  function viewWithTeamCall(overrides: {
+    hand: readonly Card[];
+    teammateCardsRemaining?: number;
+    opponentsCardsRemaining?: [number, number];
+    trucoPending?: boolean;
+    envidoPending?: boolean;
+  }): PlayerView {
+    const [opp1Cards, opp2Cards] = overrides.opponentsCardsRemaining ?? [3, 3];
+    return {
+      self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: overrides.teammateCardsRemaining ?? 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: opp1Cards },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: opp2Cards },
+      ],
+      teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],
+      hand: {
+        manoSeat: 0,
+        truco: overrides.trucoPending === true ? { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } : { status: "none" },
+        envido: overrides.envidoPending === true ? { status: "pending", calls: ["envido"], callingTeamId: OPPONENT_TEAM } : { status: "none" },
+        turnSeat: 0,
+        currentTrickPlays: [],
+        resolvedTrickPlays: [],
+        callEvents: [],
+        trickOutcomes: [],
+        outcome: { decided: false },
+      },
+      config: { pointsToWin: 15 },
+      dealerSeat: 1,
+    };
+  }
+
+  const quieroTruco: Action = { type: "respond-truco", playerId: SELF, response: "quiero" };
+  const noQuieroTruco: Action = { type: "respond-truco", playerId: SELF, response: "no-quiero" };
+  const quieroEnvido: Action = { type: "respond-envido", playerId: SELF, response: "quiero" };
+  const noQuieroEnvido: Action = { type: "respond-envido", playerId: SELF, response: "no-quiero" };
+
+  // (G4) — truco strength is a TEAM quantity. Same synthetic-but-pointed
+  // construction as the 0-card-opponent test above, taken to its fixed point
+  // so the flip is deterministic for ANY rng, not one seed's luck: the bot's
+  // own hand is empty and both opponents are out of cards, so every quantity
+  // EXCEPT the partner's sample is pinned at exactly 0 (`handPower([])`).
+  // Own-hand-only scoring — the pre-slice model — loses every round here
+  // (0 > 0 never holds): it answered no-quiero. The team side counts the
+  // partner's sampled hand, and every card in the deck has power >= 1
+  // (card-power.ts's weakest group), so a 3-card partner sample makes the
+  // team side >= 3 in EVERY round: quiero, whatever the rng draws.
+  it("accepts a truco call on the PARTNER's sampled strength alone — own and opposing sides both pinned at zero, deterministic for any rng", () => {
+    const view = viewWithTeamCall({ hand: [], opponentsCardsRemaining: [0, 0], trucoPending: true });
+    expect(createHardBot(seededRng(3)).chooseAction(view, [quieroTruco, noQuieroTruco], 50)).toBe(quieroTruco);
+  });
+
+  it("control (1v1): the same empty hand with no teammate still declines — every partner branch is gated on view.teammates being non-empty", () => {
+    const view = viewWith({ hand: [], cardsRemaining: 0 });
+    expect(createHardBot(seededRng(3)).chooseAction(view, [quieroTruco, noQuieroTruco], 50)).toBe(noQuieroTruco);
+  });
+
+  // (G3) — envido is a TEAM contest in the engine itself (all four declare,
+  // the best declaration wins — `resolveEnvidoDeclarations`), so the team
+  // side is max(own, partner) by RULE, not by proxy. A 26-point hand sits
+  // near the middle of the best-of-two-opponents distribution, which is what
+  // makes it a boundary: own-hand-only scoring wins just 7 of 24 sampled
+  // rounds here (no-quiero — measured against the pre-slice build), while
+  // counting the partner's sampled points lifts the team side to 14 of 24
+  // (quiero). Seed-dependent by nature, like the leading-trick test above,
+  // and disclosed the same way: deterministic for the fixed seeded rng used
+  // here, not for every rng.
+  it("flips respond-envido to quiero once the partner's sampled points count for the team (26-point boundary hand, fixed seed)", () => {
+    const boundaryHand: readonly Card[] = [{ suit: "copa", rank: 2 }, { suit: "copa", rank: 4 }, { suit: "oro", rank: 10 }];
+    const view = viewWithTeamCall({ hand: boundaryHand, envidoPending: true });
+    expect(createHardBot(seededRng(5)).chooseAction(view, [quieroEnvido, noQuieroEnvido], 50)).toBe(quieroEnvido);
+  });
+
+  it("control (1v1): the same 26-point hand against a single opponent answers quiero exactly as it did before the slice (15 of 24 rounds — no partner sample involved)", () => {
+    const boundaryHand: readonly Card[] = [{ suit: "copa", rank: 2 }, { suit: "copa", rank: 4 }, { suit: "oro", rank: 10 }];
+    const view = viewWith({ hand: boundaryHand });
+    expect(createHardBot(seededRng(5)).chooseAction(view, [quieroEnvido, noQuieroEnvido], 50)).toBe(quieroEnvido);
+  });
 });
