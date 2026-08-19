@@ -52,6 +52,13 @@ export interface ServerConfig {
    * same address it used for the matchmake HTTP call.
    */
   readonly publicAddress: string | undefined;
+  /**
+   * PR-2b: how long the oldest waiter in a >2-seat matchmaking queue may
+   * wait before the lobby degrades the queue to bot-fill — forwarded to
+   * `PresenceRoomCreateOptions.botFillAfterSeconds` (see that knob's own
+   * docstring; a 2-seat queue never degrades). Seconds, default 30.
+   */
+  readonly queueBotFillSeconds: number;
 }
 
 const DEFAULT_PORT = 2567;
@@ -67,6 +74,12 @@ const DEFAULT_RATE_WINDOW_MS = 60_000;
 const DEFAULT_EMBED_IP_LIMIT = 20;
 const DEFAULT_EMBED_KEY_LIMIT = 60;
 const DEFAULT_JOIN_IP_LIMIT = 10;
+// 30s mirrors MatchRoom's reconnection window (obs 2919's decided duration
+// for "how long is a player asked to wait"): long enough that a real fourth
+// human arriving moments later still forms a full table, short enough that
+// three friends queueing together are never held hostage by a stranger who
+// never comes.
+const DEFAULT_QUEUE_BOT_FILL_SECONDS = 30;
 
 function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: string, defaultLimit: number): RateLimitConfig {
   return {
@@ -138,6 +151,19 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   const tenants: readonly TenantRecord[] =
     env.HEXDEV_TENANTS_JSON !== undefined ? (JSON.parse(env.HEXDEV_TENANTS_JSON) as readonly TenantRecord[]) : [DEV_TENANT];
   const port = env.PORT !== undefined ? Number(env.PORT) : DEFAULT_PORT;
+  const queueBotFillSeconds = env.HEXDEV_QUEUE_BOT_FILL_SECONDS !== undefined ? Number(env.HEXDEV_QUEUE_BOT_FILL_SECONDS) : DEFAULT_QUEUE_BOT_FILL_SECONDS;
+  // Fail-loud, same convention as the signing-key guard above: a NaN slips
+  // straight through PresenceRoom's `??` default (nullish coalescing only
+  // substitutes null/undefined), and its "younger than the threshold" skip
+  // (`now - enqueuedAt < botFillAfterMs`) is ALWAYS false against NaN — so
+  // every waiter counts as past the threshold and every >2-seat queue
+  // silently bot-fills on its FIRST sweep tick. A non-positive value
+  // degrades the same way, just without the NaN disguise.
+  if (!Number.isFinite(queueBotFillSeconds) || queueBotFillSeconds <= 0) {
+    throw new Error(
+      `HEXDEV_QUEUE_BOT_FILL_SECONDS must be a finite number greater than 0, got "${String(env.HEXDEV_QUEUE_BOT_FILL_SECONDS)}" — refusing to start with a degradation threshold that would silently bot-fill every multi-seat queue immediately.`,
+    );
+  }
   return {
     port,
     sessionSigningKey: sessionSigningKey ?? DEV_SESSION_SIGNING_KEY,
@@ -149,5 +175,6 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
     allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${port}`],
     redisUrl: env.HEXDEV_REDIS_URL,
     publicAddress: env.HEXDEV_PUBLIC_ADDRESS,
+    queueBotFillSeconds,
   };
 }

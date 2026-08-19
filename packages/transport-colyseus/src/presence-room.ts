@@ -1,7 +1,7 @@
 import { Room, matchMaker, type Client } from "colyseus";
-import type { GameId } from "@hexdev/platform-contract";
+import type { BotTier, GameId } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, MatchmakingPool, ModalityConfig, PresenceSweeper, SeatGroup } from "@hexdev/platform-core";
-import { createPresenceSweeper, deriveModalities } from "@hexdev/platform-core";
+import { createPresenceSweeper, deriveModalities, modalityKey } from "@hexdev/platform-core";
 
 export interface PresenceRoomCreateOptions {
   readonly gameId: GameId;
@@ -18,6 +18,16 @@ export interface PresenceRoomCreateOptions {
    * A config value only: `PresenceRoom` never imports `MatchRoom`, keeping
    * the lobby ignorant of any specific game-room implementation. */
   readonly matchRoomName?: string;
+  /** PR-2b: how long the OLDEST waiter in a modality whose game needs MORE
+   * than 2 seats may wait before the queue degrades — the humans present are
+   * handed off and the remaining seats bot-filled (default 30). A duration
+   * in seconds, deliberately the same shape as `MatchRoom`'s own
+   * `reconnectionWindowSeconds`: tests make this fast by passing a tiny
+   * value (`0.05`) exactly the way the reconnection tests already pass
+   * `0.01`, never by faking a clock. A 2-seat queue NEVER degrades — its
+   * lone waiter already has the client-side bot CTA (zero-counter UX rule),
+   * so 1v1 behavior stays byte-for-byte. */
+  readonly botFillAfterSeconds?: number;
 }
 
 interface PresenceJoinOptions {
@@ -60,7 +70,25 @@ interface WaitingClient {
   readonly modality: ModalityConfig;
   readonly playerId: string;
   readonly token: string | undefined;
+  /** When this client entered the queue — `Date.now()`, the same wall clock
+   * `createPresenceSweeper` already defaults to in this transport layer
+   * (never a clock inside any game engine). Read only by the degradation
+   * sweep's age check. */
+  readonly enqueuedAt: number;
 }
+
+const DEFAULT_BOT_FILL_AFTER_SECONDS = 30;
+
+/** The tier a degradation-fill bot plays at: "normal" — deliberately the
+ * SAME value (and the same obs-2919 rationale: easy would hand the match
+ * over, hard would punish a wait that was never the player's fault) as
+ * `match-room.ts`'s `DEFAULT_TAKEOVER_TIER`, but DUPLICATED rather than
+ * imported: `PresenceRoom` never imports `MatchRoom` (see
+ * `PresenceRoomCreateOptions.matchRoomName`'s own docstring — the lobby
+ * stays ignorant of any specific game-room implementation), and exporting
+ * the constant from match-room.ts just to share one string would create
+ * exactly the coupling that boundary exists to prevent. */
+const DEGRADED_FILL_TIER: BotTier = "normal";
 
 /** One seat of a formed group, paired with the `WaitingClient` (if still
  * tracked) that is about to be handed off into the match room. */
@@ -98,6 +126,8 @@ export class PresenceRoom extends Room {
   private poolKey: string | undefined;
   private sweeper: PresenceSweeper | undefined;
   private matchRoomName = "match";
+  private botFillAfterMs = DEFAULT_BOT_FILL_AFTER_SECONDS * 1000;
+  private sweepInterval: ReturnType<typeof setInterval> | undefined;
   private readonly waiting = new Map<string, WaitingClient>();
 
   override onCreate(options: PresenceRoomCreateOptions): void {
@@ -110,9 +140,37 @@ export class PresenceRoom extends Room {
     this.poolKey = options.poolKey;
     this.matchRoomName = options.matchRoomName ?? "match";
     this.sweeper = options.sweeper ?? createPresenceSweeper();
+    this.botFillAfterMs = (options.botFillAfterSeconds ?? DEFAULT_BOT_FILL_AFTER_SECONDS) * 1000;
     // Counters do not need 20Hz sync (design §8).
     this.setPatchRate(1000);
-    this.clock.setInterval(() => this.sweepZombies(), options.sweepTickMs ?? 1000);
+    // One tick, two sweeps: the zombie backstop and PR-2b's degradation
+    // check share one cadence — no second interval to reason about. A RAW
+    // Node interval (the same raw-timer idiom `MatchRoom.armTurnTimer`
+    // already uses), NOT `this.clock.setInterval`, and the switch is a bug
+    // fix, not a style choice: the room's own clock is constructed with
+    // autoStart=false and only ever ticked from `broadcastPatch()` (verified
+    // in the installed `@colyseus/core@0.17.46` source — Room.ts:177
+    // `new Clock()`, Room.ts:928 the tick), so with this room's 1000ms patch
+    // rate any sub-second `sweepTickMs` was silently quantized to ~1s —
+    // exactly what a test passing a tiny `botFillAfterSeconds` cannot absorb.
+    // `unref` so a pending tick never holds a test process open; cleared in
+    // `onDispose` because colyseus's teardown only clears ITS clock's timers.
+    // Both sweeps contained: a transient pool failure (a Redis blip, most
+    // concretely) must skip THIS tick and let the next one retry — never
+    // escape a timer callback as an unhandled rejection, which Node treats
+    // as fatal to the whole process (the exact crash class MatchRoom's
+    // `runAdvanceOnce` docstring documents). `sweepZombies` was equally
+    // uncontained before PR-2b added this second sweep; one shared fix.
+    this.sweepInterval = setInterval(() => {
+      void this.sweepZombies().catch(() => undefined);
+      void this.degradeLongWaits().catch(() => undefined);
+    }, options.sweepTickMs ?? 1000);
+    this.sweepInterval.unref?.();
+  }
+
+  override onDispose(): void {
+    if (this.sweepInterval !== undefined) clearInterval(this.sweepInterval);
+    this.sweepInterval = undefined;
   }
 
   override async onJoin(client: Client, options: PresenceJoinOptions): Promise<void> {
@@ -139,7 +197,7 @@ export class PresenceRoom extends Room {
       return;
     }
     await pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
-    this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId, token: options.token });
+    this.waiting.set(client.sessionId, { client, modality: options.modality, playerId: options.playerId, token: options.token, enqueuedAt: Date.now() });
     await this.broadcastCounts();
     await this.tryFormGroup(options.modality);
   }
@@ -164,9 +222,10 @@ export class PresenceRoom extends Room {
    * and can never disagree with the room they are handed into. Reading it
    * dynamically is safe with no guard here: `createGameModuleRegistry`
    * rejects any module whose seatCount is not an integer >= 2 at
-   * composition time, so `tryPairSeats`'s own validation (same predicate)
-   * can never reject a registry-resolved value — a misregistered game fails
-   * the boot, never a player's join.
+   * composition time, so `tryPairSeats`'s own validation (a strictly wider
+   * predicate since PR-2b: it admits >= 1, for the degradation sweep's
+   * arity-k claims below) can never reject a registry-resolved value — a
+   * misregistered game fails the boot, never a player's join.
    */
   private async tryFormGroup(modality: ModalityConfig): Promise<void> {
     const pool = this.pool;
@@ -182,6 +241,67 @@ export class PresenceRoom extends Room {
     });
     await this.broadcastCounts();
     await this.handOffToMatch(gameId, modality, seats);
+  }
+
+  /**
+   * PR-2b: the degradation path `handOffToMatch`'s docstring names rather
+   * than silently absorbs. When the OLDEST waiter of a modality has aged
+   * past `botFillAfterSeconds` AND the game needs MORE than 2 seats, the k
+   * humans present are handed off with the remaining seats bot-filled —
+   * through the SAME two-phase hand-off, into the SAME `MatchRoom`, via its
+   * EXISTING `botTier`/`humanSeatsNeeded` options. Never a second system,
+   * and never for a 2-seat game: that guard is strict (`> 2`) so 1v1
+   * behavior stays byte-for-byte (its lone waiter already has the
+   * client-side bot CTA; a 2-seat queue is never bot-filled server-side).
+   *
+   * k is THIS room's tracked waiting count for the modality, and a count
+   * that already reached seatCount is SKIPPED, not capped: it means an
+   * in-flight `onJoin`'s `tryFormGroup` is about to pop the full group, and
+   * popping seatCount-1 of them here would strand the last joiner alone in
+   * the queue while seating their would-be partners with a bot — strictly
+   * worse than letting the normal path take all N (any residue is simply
+   * re-examined next tick). The pool pop is the port's own atomic arity-k
+   * claim (`assertValidSeatCount` admits >= 1 exactly for this caller), so
+   * a concurrent pop can never double-claim a waiter; a popped connection
+   * this room does not track fails the WHOLE group inside `handOffToMatch`,
+   * the same containment `tryFormGroup` already relies on.
+   *
+   * Ages come from `WaitingClient.enqueuedAt` (`Date.now()`, the transport
+   * layer's own idiom — see that field's docstring); the engine never sees
+   * a clock. Grouping is by `modalityKey`, the same canonical key the pool
+   * itself queues by — no modality field is ever read by name.
+   */
+  private async degradeLongWaits(): Promise<void> {
+    const pool = this.pool;
+    const gameId = this.gameId;
+    const module = gameId !== undefined ? this.registry?.get(gameId) : undefined;
+    if (pool === undefined || gameId === undefined || module === undefined) return;
+    const seatCount = module.metadata.seatCount;
+    if (seatCount <= 2) return;
+    const byModality = new Map<string, { readonly modality: ModalityConfig; readonly entries: WaitingClient[] }>();
+    for (const entry of this.waiting.values()) {
+      const key = modalityKey(entry.modality);
+      const bucket = byModality.get(key) ?? { modality: entry.modality, entries: [] };
+      bucket.entries.push(entry);
+      byModality.set(key, bucket);
+    }
+    const now = Date.now();
+    for (const { modality, entries } of byModality.values()) {
+      // `waiting` is insertion-ordered (a Map), so the first tracked entry
+      // of a modality IS its oldest waiter.
+      if (now - entries[0]!.enqueuedAt < this.botFillAfterMs) continue;
+      const k = entries.length;
+      if (k >= seatCount) continue; // the normal tryFormGroup path's group — see docstring
+      const group: SeatGroup | null = await pool.tryPairSeats(gameId, modality, k, this.poolKey);
+      if (group === null) continue;
+      const seats: readonly PairedSeat[] = group.players.map((player) => {
+        const entry = this.waiting.get(player.connectionId);
+        this.waiting.delete(player.connectionId);
+        return { playerId: player.playerId, entry };
+      });
+      await this.broadcastCounts();
+      await this.handOffToMatch(gameId, modality, seats, { botTier: DEGRADED_FILL_TIER, humanSeatsNeeded: k });
+    }
   }
 
   /**
@@ -227,10 +347,24 @@ export class PresenceRoom extends Room {
    * decrement UNLOCKS a maxClients-locked room (Room.ts:1792-1806) — the
    * match is never left unstartable-forever by colyseus itself. The
    * residual — a room waiting on a human who will never arrive — is the
-   * degradation path PR-2b's timeout owns, named here rather than
-   * silently absorbed.
+   * degradation path PR-2b's timeout owns (`degradeLongWaits` above), named
+   * here rather than silently absorbed.
+   *
+   * `botFill` (PR-2b) keeps degradation on THIS one hand-off path: when
+   * present it rides into `createRoom`'s options, where `MatchRoom.onCreate`
+   * already knows how to pre-seat bots (`botTier`/`humanSeatsNeeded` — the
+   * exact mechanism single-player mode uses, not a parallel one). Everything
+   * else — both phases, per-member containment, the shared `paired` roster
+   * (the k humans in formation order; bots mint their identities inside
+   * `MatchRoom` and are never part of the lobby's shared fact) — is
+   * byte-identical for a full-human and a degraded group.
    */
-  private async handOffToMatch(gameId: GameId, modality: ModalityConfig, seats: readonly PairedSeat[]): Promise<void> {
+  private async handOffToMatch(
+    gameId: GameId,
+    modality: ModalityConfig,
+    seats: readonly PairedSeat[],
+    botFill?: { readonly botTier: BotTier; readonly humanSeatsNeeded: number },
+  ): Promise<void> {
     const members: Array<{ readonly playerId: string; readonly entry: WaitingClient }> = [];
     for (const seat of seats) {
       if (seat.entry === undefined) {
@@ -241,7 +375,7 @@ export class PresenceRoom extends Room {
     }
     let room: Awaited<ReturnType<typeof matchMaker.createRoom>>;
     try {
-      room = await matchMaker.createRoom(this.matchRoomName, { gameId, config: modality });
+      room = await matchMaker.createRoom(this.matchRoomName, { gameId, config: modality, ...botFill });
     } catch (error) {
       this.notifyHandoffFailure(seats, error);
       return;

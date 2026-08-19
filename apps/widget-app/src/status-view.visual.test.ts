@@ -51,7 +51,7 @@ describe("visual: the widget's status/fallback screens (spec: WCR-3 — status/e
   it("chrome status card, wide (WCR-3, PR7-T1, 1024px): the centered card, at the same tier the lobby grid also widens padding at", async () => {
     const container = await mountedContainer(1024);
 
-    renderStatusMessage(container, STRINGS.searchingOpponent);
+    renderStatusMessage(container, STRINGS.searchingPlayers);
 
     await expect.element(container).toMatchScreenshot("chrome-status-wide");
   });

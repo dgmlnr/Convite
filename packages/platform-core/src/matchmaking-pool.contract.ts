@@ -105,11 +105,24 @@ export function describeMatchmakingPoolContract(name: string, create: () => Matc
       expect(next).toEqual({ players: [player(4), player(5)] });
     });
 
-    it("rejects a seatCount below 2 or a non-integer, and touches nothing (a 0/1-seat pop is always a caller bug)", async () => {
+    it("arity 1 atomically claims exactly the head waiter, FIFO, remainder untouched (PR-2b: the degradation path's rescue of a lone long waiter)", async () => {
+      const pool = create();
+      for (const n of [1, 2, 3]) await pool.join("truco-argentino", { pointsToWin: 15 }, player(n));
+      const group = await pool.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 1);
+      expect(group).toEqual({ players: [player(1)] });
+      expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(2);
+      // The remainder kept its FIFO position: the next pop starts at player 2.
+      const next = await pool.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 2);
+      expect(next).toEqual({ players: [player(2), player(3)] });
+      // And an arity-1 claim of an EMPTY queue is null, never a throw.
+      expect(await pool.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 1)).toBeNull();
+    });
+
+    it("rejects a seatCount below 1 or a non-integer, and touches nothing (a 0-or-negative pop is always a caller bug)", async () => {
       const pool = create();
       await pool.join("truco-argentino", { pointsToWin: 15 }, player(1));
       await pool.join("truco-argentino", { pointsToWin: 15 }, player(2));
-      for (const seatCount of [0, 1, -1, 2.5, Number.NaN]) {
+      for (const seatCount of [0, -1, 2.5, Number.NaN]) {
         await expect(pool.tryPairSeats("truco-argentino", { pointsToWin: 15 }, seatCount)).rejects.toThrow(/seatCount/);
       }
       expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(2);

@@ -214,7 +214,7 @@ function main(): void {
         onPlayVsPerson: (gameId, modality) => {
           departureGate.markDeparted();
           const attempt = (): void => {
-            renderStatusMessage(app!, STRINGS.searchingOpponent);
+            renderStatusMessage(app!, STRINGS.searchingPlayers);
             void withFreshToken(renewToken, (token) => joinMatchmakingQueue(client, { gameId, modality, playerId, token }))
               .then((queue) => {
                 queue.onPaired((pairing) => {
@@ -237,7 +237,7 @@ function main(): void {
         onPlayVsBot: (gameId, modality, tier) => {
           departureGate.markDeparted();
           const attempt = (): void => {
-            renderStatusMessage(app!, STRINGS.searchingOpponent);
+            renderStatusMessage(app!, STRINGS.searchingPlayers);
             void withFreshToken(renewToken, (token) => startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }))
               .then((connection) => {
                 persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });

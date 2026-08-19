@@ -40,7 +40,10 @@ export const STRINGS = {
   botEasy: "Fácil",
   botNormal: "Normal",
   botHard: "Difícil",
-  searchingOpponent: "Buscando rival…",
+  // "jugadores", not "rival" (PR-2b): this status shows while queued for ANY
+  // modality, and a 4-seat queue waits for a partner AND two rivals — a
+  // singular "Buscando rival…" was accurate only for 1v1.
+  searchingPlayers: "Buscando jugadores…",
   pairingFailed: (message: string): string => `No se pudo emparejar: ${message}`,
   // Plain, warm, jargon-free (bug fix, obs 2968: a rejected join used to
   // leave the UI doing nothing at all — the player pressed a button and
