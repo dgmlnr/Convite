@@ -40,13 +40,15 @@ function botButtonsRow(gameId: GameId, modality: ModalityConfig, callbacks: Game
   return row;
 }
 
-/** `MatchmakingPool.tryPair` only ever pairs exactly TWO waiting players
- * (obs 2927/2925: "the matchmaking pool for four" is a NAMED, undone gap,
- * not silently glossed over) — a queue join for any game whose module needs
- * more than 2 seats would enqueue a player who can never be paired, a
- * silent, permanent hang, not a fast bot-fallback path. `canQueueForPerson`
- * is the single, honest gate that keeps a 4-seat (2v2) modality from ever
- * showing an affordance the platform cannot fulfil. */
+/** `PresenceRoom` still only ever forms exactly TWO-seat groups — the port
+ * (`MatchmakingPool.tryPairSeats`) can already pop N seats atomically, but
+ * the room hardcodes 2 until it reads the real seatCount from registry
+ * metadata (obs 2927/2925: "the matchmaking pool for four" is a NAMED,
+ * undone gap, not silently glossed over) — a queue join for any game whose
+ * module needs more than 2 seats would enqueue a player who can never be
+ * paired, a silent, permanent hang, not a fast bot-fallback path.
+ * `canQueueForPerson` is the single, honest gate that keeps a 4-seat (2v2)
+ * modality from ever showing an affordance the platform cannot fulfil. */
 function canQueueForPerson(seatCount: number): boolean {
   return seatCount === 2;
 }

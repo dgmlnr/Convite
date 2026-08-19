@@ -42,21 +42,33 @@ export interface WaitingPlayer {
   readonly playerId: string;
 }
 
-export interface Pairing {
-  readonly a: WaitingPlayer;
-  readonly b: WaitingPlayer;
+/** An atomically-popped group of exactly `seatCount` waiting players, in
+ * FIFO join order. Seat ASSIGNMENT (teams, turn order) is the caller's
+ * concern — the pool only guarantees whoever got in first comes out first. */
+export interface SeatGroup {
+  readonly players: readonly WaitingPlayer[];
+}
+
+/** Popping 0 or 1 "seats" is never a meaningful matchmaking operation —
+ * always a caller bug (e.g. a game module declaring a nonsense seatCount) —
+ * so every adapter throws loudly instead of returning a degenerate group.
+ * Shared by both adapters so the port's contract suite pins ONE behavior. */
+export function assertValidSeatCount(seatCount: number): void {
+  if (!Number.isInteger(seatCount) || seatCount < 2) {
+    throw new Error(`MatchmakingPool: seatCount must be an integer >= 2, got ${String(seatCount)}`);
+  }
 }
 
 /**
  * PORT SHAPE, widened for horizontal scaling (design §8 flagged this exact
  * spot: "this is exactly what breaks first under horizontal scale"): every
- * method is `async`. The in-memory adapter below still performs `tryPair`'s
- * queue splice fully synchronously INSIDE the async function body — no
- * `await` between reading the queue and mutating it — so its atomicity
- * guarantee is unchanged, only the calling convention is. A Redis-backed
- * adapter's `tryPair` cannot be synchronous: pairing across processes needs
- * a real network round trip to a Lua script for cross-process atomicity (see
- * `redis-matchmaking-pool.ts`).
+ * method is `async`. The in-memory adapter below still performs
+ * `tryPairSeats`'s queue splice fully synchronously INSIDE the async
+ * function body — no `await` between reading the queue and mutating it — so
+ * its atomicity guarantee is unchanged, only the calling convention is. A
+ * Redis-backed adapter's `tryPairSeats` cannot be synchronous: grouping
+ * across processes needs a real network round trip to a Lua script for
+ * cross-process atomicity (see `redis-matchmaking-pool.ts`).
  */
 export interface MatchmakingPool {
   join(gameId: GameId, modality: ModalityConfig, player: WaitingPlayer, poolKey?: string): Promise<void>;
@@ -64,12 +76,15 @@ export interface MatchmakingPool {
   /** DERIVED from the waiting collection's length on every call — never a
    * separately incremented/decremented counter, so it cannot drift. */
   count(gameId: GameId, modality: ModalityConfig, poolKey?: string): Promise<number>;
-  /** No `await` between reading the queue and splicing it in the in-memory
-   * adapter (design §8) — atomic by construction for that adapter. The
-   * Redis adapter achieves the same cross-process atomicity via a Lua
-   * script (`EVAL`), which Redis itself runs to completion without
-   * interleaving another client's command. */
-  tryPair(gameId: GameId, modality: ModalityConfig, poolKey?: string): Promise<Pairing | null>;
+  /** Atomic N-seat pop: EITHER exactly `seatCount` players leave the queue
+   * together, FIFO, OR nobody does — never a partial group. No `await`
+   * between reading the queue and splicing it in the in-memory adapter
+   * (design §8) — atomic by construction for that adapter. The Redis
+   * adapter achieves the same cross-process atomicity via a Lua script
+   * (`EVAL`), which Redis itself runs to completion without interleaving
+   * another client's command. Rejects any `seatCount` that is not an
+   * integer >= 2 (`assertValidSeatCount`). */
+  tryPairSeats(gameId: GameId, modality: ModalityConfig, seatCount: number, poolKey?: string): Promise<SeatGroup | null>;
   /** Removes every waiting entry across every queue whose connection the
    * caller reports as no longer alive — the zombie-socket backstop for an
    * `onLeave` a transport never delivered. */
@@ -101,11 +116,11 @@ export function createMatchmakingPool(): MatchmakingPool {
       if (index !== -1) queue.splice(index, 1);
     },
     count: async (gameId, modality, poolKey = GLOBAL_POOL_KEY) => queueFor(gameId, modality, poolKey).length,
-    async tryPair(gameId, modality, poolKey = GLOBAL_POOL_KEY) {
+    async tryPairSeats(gameId, modality, seatCount, poolKey = GLOBAL_POOL_KEY) {
+      assertValidSeatCount(seatCount);
       const queue = queueFor(gameId, modality, poolKey);
-      if (queue.length < 2) return null;
-      const [a, b] = queue.splice(0, 2);
-      return { a: a!, b: b! };
+      if (queue.length < seatCount) return null;
+      return { players: queue.splice(0, seatCount) };
     },
     async sweep(isAlive) {
       for (const queue of queues.values()) {
