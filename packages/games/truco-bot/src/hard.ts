@@ -1,7 +1,8 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, Card, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
-import { sampleAllOpponentHands } from "./determinize.js";
+import { sampleHiddenHands } from "./determinize.js";
+import type { HiddenHands } from "./determinize.js";
 import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 
 /** Number of determinizations sampled per decision — a tunable search
@@ -14,13 +15,49 @@ type RespondTruco = Extract<Action, { type: "respond-truco" }>;
 type RespondEnvido = Extract<Action, { type: "respond-envido" }>;
 type PlayCard = Extract<Action, { type: "play-card" }>;
 
-/** Fraction of sampled opponent hands `metric(myHand) > metric(sample)` holds
- * for — the core Monte Carlo determinization primitive every "uncertain"
- * decision below is built from. */
-function winRate(myHand: readonly Card[], samples: readonly (readonly Card[])[], metric: (hand: readonly Card[]) => number): number {
-  const myValue = metric(myHand);
-  const wins = samples.filter((sample) => myValue > metric(sample)).length;
-  return wins / samples.length;
+/**
+ * Fraction of sampled rounds the bot's TEAM outscores the opposing team on
+ * `metric` — the core Monte Carlo primitive every call/response decision
+ * below is built from (successor of the old own-hand-vs-worst-opponent
+ * `winRate`; the two are provably the same thing in 1v1, see below).
+ *
+ * BOTH sides of the comparison are now the same team model: a side's value is
+ * the metric of its strongest member's hand. For the OPPOSING side that is
+ * what this decision always did — pick, per round, whichever sampled opponent
+ * hand scores highest, pessimistic: assume the stronger of however many real
+ * opponents exist is the relevant one. For the BOT'S side it is the round's
+ * sampled partner hand joined in via `Math.max`, and the honesty argument
+ * differs per metric:
+ *
+ * - envido: max-per-team is the ENGINE'S OWN RULE, not a proxy — all four
+ *   declare and the best declaration wins (`resolveEnvidoDeclarations`), so
+ *   `max(own, partner)` is exactly the quantity the showdown compares.
+ * - truco (`handPower`, a SUM proxy for one hand's trick strength): the team
+ *   analogue chosen is the STRONGER MEMBER'S handPower, not the union's top
+ *   three and not the sum of both hands. `resolveTrick` scores each trick as
+ *   the team's best play, so the stronger hand alone can contest every trick
+ *   (three cards, three tricks) — its strength is a floor the team realizes
+ *   with NO coordination assumed, which matters for a partner hand that is
+ *   itself only a guess. Summing both hands would double-count (per trick
+ *   only the better of the team's two cards can matter), and a top-3-of-the-
+ *   union model would assume perfect play-order coordination with a hand the
+ *   bot cannot see. Max-of-members is the minimal model that is symmetric
+ *   with how the opposing side has always been scored here.
+ *
+ * In 1v1 (`round.partner === null`, exactly one opponent hand per round) both
+ * maxes are the identity and this collapses to the exact comparison the old
+ * `winRate`/`worstCaseOpposingHands` pair computed — the DISCLOSED
+ * SIMPLIFICATION those carried ("does not model the bot's OWN teammate's hand
+ * at all") is closed here, and closed only where a teammate exists to model.
+ */
+function teamWinRate(ownHand: readonly Card[], rounds: readonly HiddenHands[], metric: (hand: readonly Card[]) => number): number {
+  const ownValue = metric(ownHand);
+  const wins = rounds.filter((round) => {
+    const sideValue = round.partner === null ? ownValue : Math.max(ownValue, metric(round.partner));
+    const opposingValue = round.opponents.length === 0 ? metric([]) : Math.max(...round.opponents.map(metric));
+    return sideValue > opposingValue;
+  }).length;
+  return wins / rounds.length;
 }
 
 function respondChoice<T extends RespondTruco | RespondEnvido>(group: readonly T[], favored: boolean): Action {
@@ -76,22 +113,6 @@ function leadingCardPlayChoice(group: readonly PlayCard[], roundsOfOpposingHands
   });
 }
 
-/**
- * Picks, per determinization round, whichever sampled opposing hand scores
- * HIGHEST on `metric` — pessimistic: for a call/response decision, assume
- * the stronger of however many real opponents exist is the relevant one.
- * In 1v1 (`roundsOfOpposingHands[n]` always has exactly one hand) this is
- * the identity — the exact same single hand `winRate` already compared
- * against before this was generalized. DISCLOSED SIMPLIFICATION: does not
- * model the bot's OWN teammate's hand at all (2v2 envido/truco strength is
- * genuinely team-combined per the real engine's own Math.max-per-team rule
- * — this heuristic still reasons only about the bot's own single hand, the
- * same limitation the pre-existing 1v1 heuristic already had).
- */
-function worstCaseOpposingHands(roundsOfOpposingHands: readonly (readonly (readonly Card[])[])[], metric: (hand: readonly Card[]) => number): readonly (readonly Card[])[] {
-  return roundsOfOpposingHands.map((round) => (round.length === 0 ? [] : round.reduce((best, hand) => (metric(hand) > metric(best) ? hand : best))));
-}
-
 export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): BotStrategy<PlayerView, Action> {
   return {
     chooseAction(view, legalActions) {
@@ -100,28 +121,29 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
       }
 
       // One round = one sampled hand per REAL opponent (1 in 1v1, up to 2 in
-      // 2v2 — `sampleAllOpponentHands`, replacing the old `sampleOpponentHand`
-      // call that silently ignored a second opponent entirely).
-      const rounds = Array.from({ length: samples }, () => sampleAllOpponentHands(view, rng));
+      // 2v2) PLUS the partner's, all disjoint from one shared pool
+      // (`sampleHiddenHands`, replacing `sampleAllOpponentHands`, which let
+      // an opponent sample hold a card the partner actually held).
+      const rounds = Array.from({ length: samples }, () => sampleHiddenHands(view, rng));
 
       const respondTruco = legalActions.filter((a): a is RespondTruco => a.type === "respond-truco");
       if (respondTruco.length > 0) {
-        return respondChoice(respondTruco, winRate(view.self.hand, worstCaseOpposingHands(rounds, handPower), handPower) > 0.5);
+        return respondChoice(respondTruco, teamWinRate(view.self.hand, rounds, handPower) > 0.5);
       }
 
       const respondEnvido = legalActions.filter((a): a is RespondEnvido => a.type === "respond-envido");
       if (respondEnvido.length > 0) {
-        return respondChoice(respondEnvido, winRate(view.self.hand, worstCaseOpposingHands(rounds, envidoPoints), envidoPoints) > 0.5);
+        return respondChoice(respondEnvido, teamWinRate(view.self.hand, rounds, envidoPoints) > 0.5);
       }
 
       const reveal = legalActions.find((a) => a.type === "reveal-envido");
       if (reveal !== undefined) return reveal;
 
       const wantsToCallTruco = legalActions.find((a) => a.type === "call-truco");
-      if (wantsToCallTruco !== undefined && winRate(view.self.hand, worstCaseOpposingHands(rounds, handPower), handPower) > 0.5) return wantsToCallTruco;
+      if (wantsToCallTruco !== undefined && teamWinRate(view.self.hand, rounds, handPower) > 0.5) return wantsToCallTruco;
 
       const wantsToCallEnvido = legalActions.find((a) => a.type === "call-envido");
-      if (wantsToCallEnvido !== undefined && winRate(view.self.hand, worstCaseOpposingHands(rounds, envidoPoints), envidoPoints) > 0.5) return wantsToCallEnvido;
+      if (wantsToCallEnvido !== undefined && teamWinRate(view.self.hand, rounds, envidoPoints) > 0.5) return wantsToCallEnvido;
 
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) {
@@ -150,7 +172,18 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         // strict seat+1 rotation), so a non-empty trick always has an
         // opposing play — see `leadingCardPlayChoice`'s docstring for why no
         // partner-aware variant of the leading score exists.
-        return leadingCardPlayChoice(cardPlays, rounds);
+        //
+        // Only the OPPONENT hands feed the leading score — its semantics are
+        // untouched by this slice (the partner's sample is a call-decision
+        // input, not a card-to-beat), and `sampleHiddenHands` deals opponents
+        // FIRST, so within a round their draws are exactly what the old
+        // sampler dealt. What does move in 2v2: the partner draws advance the
+        // shared rng stream between rounds, so a given seed replays a
+        // different — equally valid — set of rounds than pre-slice, and a
+        // near-tie leading choice can land differently. Expected and
+        // disclosed, not a semantic change. In 1v1 no partner is dealt and
+        // the stream, rounds and decisions are byte-identical.
+        return leadingCardPlayChoice(cardPlays, rounds.map((round) => round.opponents));
       }
 
       return legalActions[0]!;
