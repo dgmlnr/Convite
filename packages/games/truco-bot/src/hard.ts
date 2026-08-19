@@ -143,7 +143,10 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
       // One round = one sampled hand per REAL opponent (1 in 1v1, up to 2 in
       // 2v2) PLUS the partner's, all disjoint from one shared pool
       // (`sampleHiddenHands`, replacing `sampleAllOpponentHands`, which let
-      // an opponent sample hold a card the partner actually held).
+      // an opponent sample hold a card the partner actually held). Since
+      // slice 4 the partner deal also LISTENS: a standing partner seña
+      // biases their sampled hand toward the claimed card (`dealPartnerHand`
+      // — trust model, dead-claim rule and stream placement argued there).
       const rounds = Array.from({ length: samples }, () => sampleHiddenHands(view, rng));
 
       const respondTruco = legalActions.filter((a): a is RespondTruco => a.type === "respond-truco");
@@ -197,12 +200,14 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         // untouched by this slice (the partner's sample is a call-decision
         // input, not a card-to-beat), and `sampleHiddenHands` deals opponents
         // FIRST, so within a round their draws are exactly what the old
-        // sampler dealt. What does move in 2v2: the partner draws advance the
-        // shared rng stream between rounds, so a given seed replays a
-        // different — equally valid — set of rounds than pre-slice, and a
-        // near-tie leading choice can land differently. Expected and
-        // disclosed, not a semantic change. In 1v1 no partner is dealt and
-        // the stream, rounds and decisions are byte-identical.
+        // sampler dealt. What does move in 2v2: the partner draws — and,
+        // when the partner has a standing seña, the trust/selection draws of
+        // the slice-4 bias (`dealPartnerHand`) — advance the shared rng
+        // stream between rounds, so a given seed replays a different —
+        // equally valid — set of rounds than pre-slice, and a near-tie
+        // leading choice can land differently. Expected and disclosed, not a
+        // semantic change. In 1v1 no partner is dealt and the stream, rounds
+        // and decisions are byte-identical.
         return leadingCardPlayChoice(cardPlays, rounds.map((round) => round.opponents));
       }
 

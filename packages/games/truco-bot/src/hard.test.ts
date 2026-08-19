@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Action, Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
-import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
+import type { Action, Card, HandPlay, PlayerId, PlayerView, SenaView, TeamId } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND, buildDeck } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 import { createHardBot } from "./hard.js";
 
@@ -385,5 +385,76 @@ describe("createHardBot — 2v2 team calls: the PARTNER's sampled hand counts to
     const boundaryHand: readonly Card[] = [{ suit: "copa", rank: 2 }, { suit: "copa", rank: 4 }, { suit: "oro", rank: 10 }];
     const view = viewWith({ hand: boundaryHand });
     expect(createHardBot(seededRng(5)).chooseAction(view, [quieroEnvido, noQuieroEnvido], 50)).toBe(quieroEnvido);
+  });
+});
+
+describe("createHardBot — 2v2 seña reading (slice 4): the partner's claimed mata flips a boundary respond-truco", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+  const MATA_CLAIM: SenaView = { signal: "asDeEspada", seq: 1 };
+
+  /** The pool this view leaves unseen: espada-1 (power 14, the claimed mata)
+   * plus all four 4s (power 1) and all four 5s (power 2) — nine cards. Every
+   * other card sits face up in a synthetic resolved-trick log (`seenCards`
+   * only flattens; nothing validates trick shape), which pins the whole
+   * determinization to a pool where the mata is the ONLY card that matters. */
+  const POOL_IDS = new Set(
+    ["1-espada", "4-espada", "4-basto", "4-oro", "4-copa", "5-espada", "5-basto", "5-oro", "5-copa"],
+  );
+  const seenPlays: readonly HandPlay[] = buildDeck()
+    .filter((card) => !POOL_IDS.has(`${card.rank}-${card.suit}`))
+    .map((card) => ({ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, card }));
+
+  /** Own hand EMPTY (own side pinned at handPower 0), one-card opponents and
+   * a one-card partner drawn from the nine-card pool above. Per sampled
+   * round the team side is exactly the partner's single card and the
+   * opposing side the stronger of two singles — so a round is won only when
+   * the partner's card outranks both, and in this pool that effectively
+   * means "the partner holds the mata" (a 5 over two 4s is the one other
+   * way). The seña is the only lever this fixture leaves. */
+  function boundaryView(partnerLastSena: SenaView | null): PlayerView {
+    return {
+      self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: [], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 1, lastSena: partnerLastSena }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 1 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 1 },
+      ],
+      teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],
+      hand: {
+        manoSeat: 0,
+        truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM },
+        envido: { status: "none" },
+        turnSeat: 0,
+        currentTrickPlays: [],
+        resolvedTrickPlays: [seenPlays],
+        callEvents: [],
+        trickOutcomes: [],
+        outcome: { decided: false },
+      },
+      config: { pointsToWin: 15 },
+      dealerSeat: 1,
+    };
+  }
+
+  const quiero: Action = { type: "respond-truco", playerId: SELF, response: "quiero" };
+  const noQuiero: Action = { type: "respond-truco", playerId: SELF, response: "no-quiero" };
+
+  // The flip, both halves under the SAME seed. Without the seña the partner
+  // draws uniformly: the mata reaches them in roughly 1 round in 9, and the
+  // team side loses the rest — no-quiero by a wide margin. With the claim
+  // believed (SENA_TRUST of the rounds where the mata survived the opponent
+  // draws — it is stolen into an opponent sample in about 2 rounds in 9,
+  // where the claim is dead in that round's pool and the draw is unbiased),
+  // the partner holds it in most rounds and the team side wins them:
+  // quiero. Seed-dependent by nature — the trust coin is an rng draw — and
+  // disclosed exactly like the 26-point envido boundary above: deterministic
+  // for the fixed seeded rng used here, not for every rng.
+  it("flips respond-truco to quiero when the partner's seña claims the as de espada (the team side's sampled strength rises)", () => {
+    expect(createHardBot(seededRng(3)).chooseAction(boundaryView(MATA_CLAIM), [quiero, noQuiero], 50)).toBe(quiero);
+  });
+
+  it("control: the same view with lastSena null keeps the old answer — no-quiero", () => {
+    expect(createHardBot(seededRng(3)).chooseAction(boundaryView(null), [quiero, noQuiero], 50)).toBe(noQuiero);
   });
 });

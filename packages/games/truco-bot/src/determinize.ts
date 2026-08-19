@@ -1,5 +1,5 @@
 import { buildDeck, cardId } from "@hexdev/truco-engine";
-import type { Card, PlayerView } from "@hexdev/truco-engine";
+import type { Card, PlayerView, SenaSignal, TeammateView } from "@hexdev/truco-engine";
 import type { RandomSource } from "@hexdev/platform-contract";
 
 /**
@@ -122,6 +122,110 @@ export interface HiddenHands {
 }
 
 /**
+ * How often the partner's standing seña is BELIEVED when their hand is
+ * sampled — the weight of the slice-4 bias, deliberately a coin and not a
+ * rule, because a seña is a CLAIM (senas.ts's own contract) and the hard
+ * tier lies on it 15% of the time (`SENA_BLUFF_RATE`, hard.ts).
+ *
+ * WHY 0.85 AND NOT SOMETHING CLEVERER. The number is the complement of the
+ * one bluff rate this codebase actually ships, which makes it the honest
+ * base-rate estimate of "a claim I just saw is true" against a hard-tier
+ * partner — and a mild UNDERestimate everywhere else: the normal tier's
+ * bluff rate is 0, and even a hard-tier bluff draws its signal uniformly
+ * from the vocabulary, so it occasionally tells the truth by accident. The
+ * bot cannot see its partner's tier (nothing in `PlayerView` carries it,
+ * correctly), so one conservative constant beats a per-tier table it has no
+ * data to index into. Not 1.0, because trusting a claim absolutely turns
+ * every partner bluff into a poisoned sample; not tuned finer than two
+ * digits, because the decision thresholds downstream (`> 0.5` win rates
+ * over 24 rounds) cannot resolve differences that small anyway.
+ */
+const SENA_TRUST = 0.85;
+
+/**
+ * The seña vocabulary inverted: does `card` back the claim `signal` makes?
+ * This is `signalForCard` (sena-emission.ts) read in the other direction,
+ * with the same semantics as the engine's own vocabulary (senas.ts): the two
+ * matas and the two strong sevens name EXACT cards, "tres"/"dos" name a
+ * RANK — four cards each, any suit. Exhaustive over `SenaSignal`, so a
+ * vocabulary change is a compile error here, not a silently ignored claim.
+ */
+function matchesClaim(signal: SenaSignal, card: Card): boolean {
+  switch (signal) {
+    case "asDeEspada":
+      return card.rank === 1 && card.suit === "espada";
+    case "asDeBasto":
+      return card.rank === 1 && card.suit === "basto";
+    case "sieteDeEspada":
+      return card.rank === 7 && card.suit === "espada";
+    case "sieteDeOro":
+      return card.rank === 7 && card.suit === "oro";
+    case "tres":
+      return card.rank === 3;
+    case "dos":
+      return card.rank === 2;
+  }
+}
+
+/**
+ * Deals the PARTNER's sampled hand, biased toward their standing seña —
+ * the slice-4 read side of the seña channel. `teammates[0].lastSena` is
+ * legitimately visible to this seat (señas are team-internal by the engine's
+ * own redaction fence — `OpponentView` has no field that could even carry
+ * one), so reading it is table legality, not peeking.
+ *
+ * THE TRUST MODEL. A seña is a claim, not truth: the hard tier bluffs on the
+ * channel, so with probability `SENA_TRUST` the claim is believed — ONE card
+ * consistent with it is forced into the sample — and with probability
+ * 1−SENA_TRUST the deal falls through to today's unbiased draw (the bluff
+ * branch, byte-identical to the no-seña deal modulo the one trust draw
+ * already spent). Exact-card signals force the one named card; rank-level
+ * signals force one uniformly-indexed card among the rank's SURVIVORS in the
+ * pool (one extra selection draw, clamped at the last entry for an rng edge
+ * of exactly 1 — same clamp, same reason as sena-emission.ts's bluff pick).
+ *
+ * DEAD CLAIMS COST NOTHING. When no pool card backs the claim, the claim is
+ * dead — provably false (the card is in the bot's own hand), already spent
+ * (played face up), or, per round, already dealt to an opponent sample this
+ * very round — and the deal is simply unbiased, with NO trust draw consumed.
+ * A partner with zero cards left is the same case by size. This ordering
+ * (candidates first, coin second) is what lets the dead-claim path keep the
+ * exact draw count of the no-seña path.
+ *
+ * WHERE THE TRUST DRAW SITS IN THE STREAM, argued once: at the HEAD of the
+ * partner deal, which the slice-2 contract already places LAST — after every
+ * opponent draw. So opponent samples consume the exact stream positions they
+ * always did (their alignment argument is untouched), a 1v1 decision has no
+ * teammate and therefore no seña and consumes zero extra draws
+ * (byte-identical by construction), and a 2v2 partner with no standing seña
+ * draws exactly the slice-2 stream. Only a LIVE claim moves the stream — one
+ * trust draw, plus one selection draw on a believed rank claim, minus one
+ * deal draw when a card is forced — and that movement is the same
+ * expected-and-disclosed 2v2 shift the emission gate's own draws already
+ * introduced in slice 3: a seed replays differently-but-equally-valid
+ * rounds, never a different contract.
+ */
+function dealPartnerHand(teammate: TeammateView, pool: Card[], rng: RandomSource): Card[] {
+  const claim = teammate.lastSena;
+  if (claim === null || teammate.cardsRemaining === 0) return dealFrom(pool, teammate.cardsRemaining, rng);
+
+  const candidates: number[] = [];
+  for (let index = 0; index < pool.length; index += 1) {
+    if (matchesClaim(claim.signal, pool[index]!)) candidates.push(index);
+  }
+  if (candidates.length === 0) return dealFrom(pool, teammate.cardsRemaining, rng);
+
+  if (rng() >= SENA_TRUST) return dealFrom(pool, teammate.cardsRemaining, rng);
+
+  const pick =
+    candidates.length === 1
+      ? candidates[0]!
+      : candidates[Math.min(Math.floor(rng() * candidates.length), candidates.length - 1)]!;
+  const claimed = pool.splice(pick, 1)[0]!;
+  return [claimed, ...dealFrom(pool, teammate.cardsRemaining - 1, rng)];
+}
+
+/**
  * The full-table determinization: ONE draw per round that deals, from ONE
  * shared unseen pool, a hand for the bot's PARTNER (sized by
  * `TeammateView.cardsRemaining` — at most one teammate exists, this engine's
@@ -143,13 +247,19 @@ export interface HiddenHands {
  * `partner: null` means "no teammate exists" (1v1); a teammate with zero
  * cards left samples to `[]` — present and empty, the same distinction
  * `view.teammates` itself draws.
+ *
+ * SLICE 4: the partner deal is seña-aware — `dealPartnerHand` biases it
+ * toward the teammate's standing `lastSena` claim (its own docstring argues
+ * the trust model, the dead-claim rule, and the rng-stream placement). With
+ * no teammate or no standing seña it IS `dealFrom`, draw for draw, so every
+ * pre-slice caller and every 1v1 line replays byte-identically.
  */
 export function sampleHiddenHands(view: PlayerView, rng: RandomSource): HiddenHands {
   const pool = unseenPool(view);
   const opponents = view.opponents.map((opponent) => dealFrom(pool, opponent.cardsRemaining, rng));
   const teammate = view.teammates[0];
   return {
-    partner: teammate === undefined ? null : dealFrom(pool, teammate.cardsRemaining, rng),
+    partner: teammate === undefined ? null : dealPartnerHand(teammate, pool, rng),
     opponents,
   };
 }
