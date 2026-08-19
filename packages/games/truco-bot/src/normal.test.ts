@@ -12,11 +12,12 @@ function viewWith(overrides: {
   hand: readonly Card[];
   currentTrickPlays?: readonly HandPlay[];
   teammates?: PlayerView["teammates"];
+  opponents?: PlayerView["opponents"];
 }): PlayerView {
   return {
     self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
     teammates: overrides.teammates ?? [],
-    opponents: [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 }],
+    opponents: overrides.opponents ?? [{ playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 }],
     teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],
     hand: {
       manoSeat: 0,
@@ -86,6 +87,70 @@ describe("createNormalBot — weighted heuristics with light lookahead", () => {
     const cheapWin: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 3 } }; // beats basto-4, not espada-1
     const expensiveWin: Action = { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 7 } };
     expect(createNormalBot().chooseAction(view, [expensiveWin, cheapWin], 50)).toBe(cheapWin);
+  });
+
+  // The (a1) team-coordination gap, closed: `resolveTrick` awards a trick to
+  // the TEAM's best play, so once the partner's card already beats every
+  // opposing card AND this bot closes the trick (everyone else has played),
+  // there is nothing left to beat — "beat the opposition cheaply" would only
+  // outdo the bot's OWN partner, burning a winner for zero tricks. The right
+  // move is the same conserve-strength dump the leading branch already makes.
+  // Both argument orders are asserted (the tie-break PR's lesson: a
+  // single-order test can pass by the reduce's incumbent rather than by the
+  // choice being right).
+  describe("2v2: partner's play already SECURED the trick and the bot closes it — dumps the cheapest card instead of beating the opposition", () => {
+    const TEAMMATE = "player-c" as PlayerId;
+    const OPPONENT_2 = "player-d" as PlayerId;
+
+    /** One teammate, two opponents, all three already played this trick —
+     * the bot acts last. Partner's espada-1 (power 14) beats the strongest
+     * opposing play, espada-3 (power 10): the trick is already the team's. */
+    function securedTrickView(): PlayerView {
+      return viewWith({
+        hand: [],
+        teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 2, lastSena: null }],
+        opponents: [
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 2 },
+          { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 2 },
+        ],
+        currentTrickPlays: [
+          { playerId: TEAMMATE, teamId: SELF_TEAM, seat: 2, card: { suit: "espada", rank: 1 } },
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, card: { suit: "espada", rank: 3 } },
+          { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, card: { suit: "oro", rank: 5 } },
+        ],
+      });
+    }
+
+    // basto-1 (power 13) is the cheapest card that beats espada-3 — exactly
+    // what the old scoring would burn here. copa-4 (power 1) wins nothing
+    // and costs nothing: the correct dump for an already-won trick.
+    const winner: Action = { type: "play-card", playerId: SELF, card: { suit: "basto", rank: 1 } };
+    const dump: Action = { type: "play-card", playerId: SELF, card: { suit: "copa", rank: 4 } };
+
+    it("dumps the cheapest card when the beat-it-cheaply candidate is offered first", () => {
+      expect(createNormalBot().chooseAction(securedTrickView(), [winner, dump], 50)).toBe(dump);
+    });
+
+    it("dumps the cheapest card when the dump is offered first (same choice, opposite order)", () => {
+      expect(createNormalBot().chooseAction(securedTrickView(), [dump, winner], 50)).toBe(dump);
+    });
+
+    it("control: the partner's play LOSES to the opposition — beats it cheaply exactly as before", () => {
+      const view = viewWith({
+        hand: [],
+        teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 2, lastSena: null }],
+        opponents: [
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 2 },
+          { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 2 },
+        ],
+        currentTrickPlays: [
+          { playerId: TEAMMATE, teamId: SELF_TEAM, seat: 2, card: { suit: "copa", rank: 5 } }, // power 2 — loses to espada-3
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, card: { suit: "espada", rank: 3 } },
+          { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, card: { suit: "oro", rank: 5 } },
+        ],
+      });
+      expect(createNormalBot().chooseAction(view, [dump, winner], 50)).toBe(winner);
+    });
   });
 
   it("declines a truco call with a clearly weak hand", () => {

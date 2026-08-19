@@ -2,7 +2,7 @@ import { cardPower } from "@hexdev/truco-engine";
 import type { Action, Card, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
 import { sampleAllOpponentHands } from "./determinize.js";
-import { envidoPoints, handPower, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
+import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 
 /** Number of determinizations sampled per decision — a tunable search
  * budget, same spirit as `budgetMs` on `BotStrategy.chooseAction`. Kept
@@ -54,6 +54,17 @@ function respondChoice<T extends RespondTruco | RespondEnvido>(group: readonly T
  * habit the normal tier already states outright for leading.
  *
  * Equal power ties resolve to the incumbent, keeping a seeded line stable.
+ *
+ * Deliberately NO partner-aware variant of this branch, and the reason is
+ * worth pinning so nobody "closes the gap" again (native review WARNING,
+ * review-1c7acbeec743da97): the state it would serve — the partner has
+ * played this trick and no opponent has yet — is unreachable in this
+ * engine. Teams are seat parity (`createTeamMatch`: seats 0/2 vs 1/3) and a
+ * trick rotates strictly seat+1 (`card-play.ts`), so the seat playing
+ * immediately before this bot is ALWAYS an opponent: whenever the bot is
+ * not leading, an opposing play is already on the table and the follow
+ * branch above handles it. This branch therefore only ever runs with an
+ * empty trick, where the solo scoring is exactly right.
  */
 function leadingCardPlayChoice(group: readonly PlayCard[], roundsOfOpposingHands: readonly (readonly (readonly Card[])[])[]): Action {
   const combinedPools = roundsOfOpposingHands.map((round) => round.flat());
@@ -120,10 +131,25 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         // docstring for the fixed bug and its 1v1-identical-behavior proof.
         const opponentCard = strongestOpposingPlay(view.self.teamId, view.hand?.currentTrickPlays ?? []);
         if (opponentCard !== undefined) {
+          // The a1 team-coordination gap, closed (same gate as the normal
+          // tier, same reason): the bot closes a trick its partner already
+          // won — `resolveTrick` scores the TEAM's best play, so beating
+          // `opponentCard` cheaply would only outdo the PARTNER. Dump the
+          // cheapest card instead; equal power keeps the incumbent, the
+          // same seeded-line stability rule as `leadingCardPlayChoice`.
+          // `false` in every 1v1 state by construction — see the predicate.
+          if (isTrickSecuredByTeam(view)) {
+            return cardPlays.reduce((best, candidate) => (cardPower(candidate.card) < cardPower(best.card) ? candidate : best));
+          }
           return cardPlays.reduce((best, candidate) =>
             scoreFollowingCardPlay(candidate.card, opponentCard) > scoreFollowingCardPlay(best.card, opponentCard) ? candidate : best,
           );
         }
+        // No opposing card means an EMPTY trick, in 2v2 as much as in 1v1:
+        // the seat before this bot is always an opponent (seat-parity teams,
+        // strict seat+1 rotation), so a non-empty trick always has an
+        // opposing play — see `leadingCardPlayChoice`'s docstring for why no
+        // partner-aware variant of the leading score exists.
         return leadingCardPlayChoice(cardPlays, rounds);
       }
 

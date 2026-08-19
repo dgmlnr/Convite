@@ -1,5 +1,5 @@
 import { calculateEnvidoPoints, cardPower } from "@hexdev/truco-engine";
-import type { Card, HandPlay, TeamId } from "@hexdev/truco-engine";
+import type { Card, HandPlay, PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 
 /**
  * Sum of the real engine's card power across a hand — the bot's own proxy
@@ -52,4 +52,44 @@ export function strongestOpposingPlay(selfTeamId: TeamId, currentTrickPlays: rea
   const opposing = currentTrickPlays.filter((play) => play.teamId !== selfTeamId);
   if (opposing.length === 0) return undefined;
   return opposing.reduce((best, play) => (cardPower(play.card) > cardPower(best.card) ? play : best)).card;
+}
+
+/**
+ * The PARTNER's best card already on the table this trick — the mirror image
+ * of `strongestOpposingPlay`, on the bot's OWN side of the team line. Same
+ * public information (`HandView.currentTrickPlays`), filtered to plays from
+ * the bot's own team EXCLUDING the bot itself (a bot still choosing a card
+ * has not played this trick, but the exclusion keeps the helper honest
+ * instead of leaning on that invariant). `undefined` means "no partner play
+ * to lean on" — ALWAYS the case in 1v1, where a team has exactly one player,
+ * so every consumer branch gated on this result is unreachable there by
+ * construction (the same 1v1-identical-behavior discipline
+ * `strongestOpposingPlay` documents above).
+ */
+export function strongestPartnerPlay(selfPlayerId: PlayerId, selfTeamId: TeamId, currentTrickPlays: readonly HandPlay[]): Card | undefined {
+  const partner = currentTrickPlays.filter((play) => play.teamId === selfTeamId && play.playerId !== selfPlayerId);
+  if (partner.length === 0) return undefined;
+  return partner.reduce((best, play) => (cardPower(play.card) > cardPower(best.card) ? play : best)).card;
+}
+
+/**
+ * "The trick is already secured by my team": this bot acts LAST this trick —
+ * every other seat's play is on the table (`currentTrickPlays` holds exactly
+ * one play per teammate and opponent) — AND the partner's best play STRICTLY
+ * beats the strongest opposing one. Strict, because an equal-power meeting
+ * is a parda, not a win (`resolveTrick`: a team wins only when its best play
+ * OUT-powers the other team's best). When this holds, the engine awards the
+ * trick to this team no matter which card the bot adds, so "beat the
+ * opposition" stops being a goal at all — the only card left to outdo is the
+ * partner's own. Public information only, and in 1v1 it is `false` by
+ * construction: no teammate exists to have played.
+ */
+export function isTrickSecuredByTeam(view: PlayerView): boolean {
+  const plays = view.hand?.currentTrickPlays ?? [];
+  if (plays.length !== view.teammates.length + view.opponents.length) return false;
+  const partnerCard = strongestPartnerPlay(view.self.playerId, view.self.teamId, plays);
+  if (partnerCard === undefined) return false;
+  const opposingCard = strongestOpposingPlay(view.self.teamId, plays);
+  if (opposingCard === undefined) return false;
+  return cardPower(partnerCard) > cardPower(opposingCard);
 }

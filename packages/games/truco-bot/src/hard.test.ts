@@ -187,3 +187,90 @@ describe("createHardBot — 2v2: considers BOTH opponents, not just opponents[0]
     expect(createHardBot(seededRng(3)).chooseAction(view, [quiero, noQuiero], 50)).toBe(noQuiero);
   });
 });
+
+describe("createHardBot — 2v2 team card play: the partner's card is part of the trick, not scenery", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+
+  /** A full 2v2 view: one teammate, two opponents, per-test trick plays.
+   * Same minimal-fixture spirit as `viewWith` above, widened to the fields
+   * the team-aware branches actually read. */
+  function viewWith2v2(overrides: {
+    hand: readonly Card[];
+    currentTrickPlays?: readonly HandPlay[];
+    opponentsCardsRemaining?: number;
+  }): PlayerView {
+    const cardsRemaining = overrides.opponentsCardsRemaining ?? 3;
+    return {
+      self: { playerId: SELF, teamId: SELF_TEAM, seat: 0, hand: overrides.hand, lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining },
+      ],
+      teams: [{ id: SELF_TEAM, score: 0 }, { id: OPPONENT_TEAM, score: 0 }],
+      hand: {
+        manoSeat: 0,
+        truco: { status: "none" },
+        envido: { status: "none" },
+        turnSeat: 0,
+        currentTrickPlays: overrides.currentTrickPlays ?? [],
+        resolvedTrickPlays: [],
+        callEvents: [],
+        trickOutcomes: [],
+        outcome: { decided: false },
+      },
+      config: { pointsToWin: 15 },
+      dealerSeat: 1,
+    };
+  }
+
+  // (a1) — the bot closes a trick its partner already won. Same fixture and
+  // both-orders discipline as the normal tier's own test: partner's espada-1
+  // beats the strongest opposing espada-3, so `scoreFollowingCardPlay`'s
+  // "cheapest card that still wins" (basto-1) would only outdo the PARTNER.
+  describe("closing a trick the partner already secured — dumps the cheapest card instead of beating the opposition", () => {
+    function securedTrickView(): PlayerView {
+      return viewWith2v2({
+        hand: [{ suit: "basto", rank: 1 }, { suit: "copa", rank: 4 }],
+        opponentsCardsRemaining: 2,
+        currentTrickPlays: [
+          { playerId: TEAMMATE, teamId: SELF_TEAM, seat: 2, card: { suit: "espada", rank: 1 } },
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, card: { suit: "espada", rank: 3 } },
+          { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, card: { suit: "oro", rank: 5 } },
+        ],
+      });
+    }
+    const winner: Action = { type: "play-card", playerId: SELF, card: { suit: "basto", rank: 1 } };
+    const dump: Action = { type: "play-card", playerId: SELF, card: { suit: "copa", rank: 4 } };
+
+    it("dumps the cheapest card when the beat-it-cheaply candidate is offered first", () => {
+      expect(createHardBot(seededRng(5)).chooseAction(securedTrickView(), [winner, dump], 50)).toBe(dump);
+    });
+
+    it("dumps the cheapest card when the dump is offered first (same choice, opposite order)", () => {
+      expect(createHardBot(seededRng(5)).chooseAction(securedTrickView(), [dump, winner], 50)).toBe(dump);
+    });
+
+    it("control: the partner's play LOSES to the opposition — beats it cheaply exactly as before", () => {
+      const view = viewWith2v2({
+        hand: [{ suit: "basto", rank: 1 }, { suit: "copa", rank: 4 }],
+        opponentsCardsRemaining: 2,
+        currentTrickPlays: [
+          { playerId: TEAMMATE, teamId: SELF_TEAM, seat: 2, card: { suit: "copa", rank: 5 } }, // power 2 — loses to espada-3
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, card: { suit: "espada", rank: 3 } },
+          { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, card: { suit: "oro", rank: 5 } },
+        ],
+      });
+      expect(createHardBot(seededRng(5)).chooseAction(view, [dump, winner], 50)).toBe(winner);
+    });
+  });
+
+  // There is deliberately NO "partner led, bot acts second, no opposing play
+  // yet" case here, because that state cannot exist (native review WARNING,
+  // review-1c7acbeec743da97): teams are seat parity and a trick rotates
+  // strictly seat+1, so the seat before this bot is always an opponent — a
+  // non-empty trick always carries an opposing play, and the follow branch
+  // above owns it. A test for it would be a synthetic view no real match can
+  // produce, pinning behavior nobody can ever observe.
+});
