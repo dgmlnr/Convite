@@ -83,18 +83,18 @@ describe("createMatchmakingPool — derived counters (never incremented/decremen
     expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(1); // no poolKey passed: same default queue
   });
 
-  it("tryPair returns null when fewer than two players are waiting", async () => {
+  it("tryPairSeats returns null when fewer than seatCount players are waiting", async () => {
     const pool = createMatchmakingPool();
     await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
-    expect(await pool.tryPair("truco-argentino", { pointsToWin: 15 })).toBeNull();
+    expect(await pool.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 2)).toBeNull();
   });
 
-  it("tryPair pairs the two waiting players and removes both from the count (spec: matched players leave the waiting count)", async () => {
+  it("tryPairSeats pops the waiting players and removes them from the count (spec: matched players leave the waiting count)", async () => {
     const pool = createMatchmakingPool();
     await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
     await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c2", playerId: "p2" });
-    const pairing = await pool.tryPair("truco-argentino", { pointsToWin: 15 });
-    expect(pairing).toEqual({ a: { connectionId: "c1", playerId: "p1" }, b: { connectionId: "c2", playerId: "p2" } });
+    const group = await pool.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 2);
+    expect(group).toEqual({ players: [{ connectionId: "c1", playerId: "p1" }, { connectionId: "c2", playerId: "p2" }] });
     expect(await pool.count("truco-argentino", { pointsToWin: 15 })).toBe(0);
   });
 

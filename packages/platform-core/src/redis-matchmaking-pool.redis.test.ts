@@ -45,17 +45,19 @@ describe("RedisMatchmakingPool — cross-instance pairing (the property this ada
     await instanceA.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "on-instance-a", playerId: "player-a" });
     // Instance A alone cannot pair — only one player has joined so far,
     // proving this is not a trivial "any pool call always pairs" stub.
-    expect(await instanceA.tryPair("truco-argentino", { pointsToWin: 15 })).toBeNull();
+    expect(await instanceA.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 2)).toBeNull();
 
     await instanceB.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "on-instance-b", playerId: "player-b" });
     // Instance B's own view already reflects instance A's earlier join —
     // proving the count is genuinely shared, not instance-local.
     expect(await instanceB.count("truco-argentino", { pointsToWin: 15 })).toBe(2);
 
-    const pairing = await instanceB.tryPair("truco-argentino", { pointsToWin: 15 });
-    expect(pairing).toEqual({
-      a: { connectionId: "on-instance-a", playerId: "player-a" },
-      b: { connectionId: "on-instance-b", playerId: "player-b" },
+    const group = await instanceB.tryPairSeats("truco-argentino", { pointsToWin: 15 }, 2);
+    expect(group).toEqual({
+      players: [
+        { connectionId: "on-instance-a", playerId: "player-a" },
+        { connectionId: "on-instance-b", playerId: "player-b" },
+      ],
     });
     // Both instances now see the queue as empty — the pairing was a single
     // shared mutation, not two independent, silently-diverged views of it.

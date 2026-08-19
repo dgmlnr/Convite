@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import type { GameId } from "@hexdev/platform-contract";
-import { GLOBAL_POOL_KEY, modalityKey, type MatchmakingPool, type ModalityConfig, type Pairing, type WaitingPlayer } from "./presence.js";
+import { GLOBAL_POOL_KEY, assertValidSeatCount, modalityKey, type MatchmakingPool, type ModalityConfig, type SeatGroup, type WaitingPlayer } from "./presence.js";
 
 /**
  * Redis-backed `MatchmakingPool` (see `presence.ts`'s own docstring: this is
@@ -16,7 +16,7 @@ import { GLOBAL_POOL_KEY, modalityKey, type MatchmakingPool, type ModalityConfig
  * owns the matching `PresenceRoom`, BOTH clients usually end up inside the
  * SAME room instance regardless of which process they first connected to —
  * at which point even the IN-MEMORY pool would already pair them correctly,
- * because both `join`/`tryPair` calls execute inside that one owning
+ * because both `join`/`tryPairSeats` calls execute inside that one owning
  * process. This adapter is NOT redundant, though: Colyseus's own room
  * creation has no distributed lock — two processes racing to `joinOrCreate`
  * before the driver's cache reflects a just-created room CAN briefly create
@@ -24,12 +24,12 @@ import { GLOBAL_POOL_KEY, modalityKey, type MatchmakingPool, type ModalityConfig
  * queue, silently splitting players in exactly the shape this whole unit
  * exists to close (see the apply report's own finding for the full
  * argument). A Redis-backed pool closes that residual race by construction:
- * `tryPair` reads from ONE shared queue no matter how many room instances
- * call it.
+ * `tryPairSeats` reads from ONE shared queue no matter how many room
+ * instances call it.
  *
  * Storage: one Redis LIST (FIFO order, matching the in-memory adapter's own
- * `queue.splice(0, 2)` pairing order) plus one Redis HASH (`connectionId ->
- * WaitingPlayer JSON`, for O(1) membership/dedup and payload lookup) per
+ * `queue.splice(0, seatCount)` pop order) plus one Redis HASH (`connectionId
+ * -> WaitingPlayer JSON`, for O(1) membership/dedup and payload lookup) per
  * queue. Every mutating operation is a single Lua script (`EVAL`), so it
  * runs to completion on the Redis server without interleaving another
  * client's command — the same atomicity guarantee the in-memory adapter's
@@ -68,21 +68,25 @@ end
 return 1
 `;
 
-// Atomic FIFO pop of exactly two waiting players — the cross-process
-// equivalent of the in-memory adapter's `queue.splice(0, 2)`. Returns an
-// empty array (never partial: LLEN is checked FIRST, inside the same
-// script) when fewer than two are waiting.
-const TRY_PAIR_SCRIPT = `
+// Atomic FIFO pop of exactly seatCount (ARGV[1]) waiting players — the
+// cross-process equivalent of the in-memory adapter's
+// `queue.splice(0, seatCount)`. Returns an empty array (never partial:
+// LLEN is checked FIRST, inside the same script) when fewer than seatCount
+// are waiting. Still ONE EVAL, so the whole loop runs to completion on the
+// Redis server without interleaving another client's command.
+const TRY_PAIR_SEATS_SCRIPT = `
 local listKey, dataKey = KEYS[1], KEYS[2]
-if tonumber(redis.call("LLEN", listKey)) < 2 then
+local seatCount = tonumber(ARGV[1])
+if tonumber(redis.call("LLEN", listKey)) < seatCount then
   return {}
 end
-local a = redis.call("LPOP", listKey)
-local b = redis.call("LPOP", listKey)
-local aData = redis.call("HGET", dataKey, a)
-local bData = redis.call("HGET", dataKey, b)
-redis.call("HDEL", dataKey, a, b)
-return {aData, bData}
+local payloads = {}
+for index = 1, seatCount do
+  local connectionId = redis.call("LPOP", listKey)
+  payloads[index] = redis.call("HGET", dataKey, connectionId)
+  redis.call("HDEL", dataKey, connectionId)
+end
+return payloads
 `;
 
 export function createRedisMatchmakingPool(options: RedisMatchmakingPoolOptions): MatchmakingPool {
@@ -104,13 +108,13 @@ export function createRedisMatchmakingPool(options: RedisMatchmakingPoolOptions)
       const base = queueBaseKey(gameId, modality, poolKey);
       return redis.llen(listKey(base));
     },
-    async tryPair(gameId, modality, poolKey = GLOBAL_POOL_KEY) {
+    async tryPairSeats(gameId, modality, seatCount, poolKey = GLOBAL_POOL_KEY) {
+      assertValidSeatCount(seatCount);
       const base = queueBaseKey(gameId, modality, poolKey);
-      const result = (await redis.eval(TRY_PAIR_SCRIPT, 2, listKey(base), dataKey(base))) as [string, string] | [];
+      const result = (await redis.eval(TRY_PAIR_SEATS_SCRIPT, 2, listKey(base), dataKey(base), seatCount)) as string[];
       if (result.length === 0) return null;
-      const [aJson, bJson] = result;
-      const pairing: Pairing = { a: JSON.parse(aJson) as WaitingPlayer, b: JSON.parse(bJson) as WaitingPlayer };
-      return pairing;
+      const group: SeatGroup = { players: result.map((payload) => JSON.parse(payload) as WaitingPlayer) };
+      return group;
     },
     // Iterates every queue this pool has EVER seen (the `indexKey` set —
     // stale/emptied queue base keys are never removed from it, a known,

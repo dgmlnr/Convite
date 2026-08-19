@@ -1,6 +1,6 @@
 import { Room, matchMaker, type Client } from "colyseus";
 import type { GameId } from "@hexdev/platform-contract";
-import type { GameModuleRegistry, MatchmakingPool, ModalityConfig, Pairing, PresenceSweeper } from "@hexdev/platform-core";
+import type { GameModuleRegistry, MatchmakingPool, ModalityConfig, PresenceSweeper, SeatGroup } from "@hexdev/platform-core";
 import { createPresenceSweeper, deriveModalities } from "@hexdev/platform-core";
 
 export interface PresenceRoomCreateOptions {
@@ -156,7 +156,7 @@ export class PresenceRoom extends Room {
 
   /**
    * On a formed pairing: remove both from the queue (unchanged, exactly
-   * once — `MatchmakingPool.tryPair` splices atomically), THEN hand off into
+   * once — `MatchmakingPool.tryPairSeats` pops atomically), THEN hand off into
    * a real `MatchRoom` via Colyseus's own seat-reservation mechanism
    * (`matchMaker.createRoom` + `matchMaker.reserveSeatFor`), never a second,
    * lighter identity path: each reservation carries only the player's own
@@ -171,9 +171,12 @@ export class PresenceRoom extends Room {
     const pool = this.pool;
     const gameId = this.gameId;
     if (pool === undefined || gameId === undefined) return;
-    const pairing: Pairing | null = await pool.tryPair(gameId, modality, this.poolKey);
-    if (pairing === null) return;
-    const seats: readonly PairedSeat[] = [pairing.a, pairing.b].map((player) => {
+    // seatCount is hardcoded to 2 for now: PR-2 reads the real per-game
+    // seatCount from the registry's module metadata; until then this room
+    // still forms exactly the 2-seat groups it always did.
+    const group: SeatGroup | null = await pool.tryPairSeats(gameId, modality, 2, this.poolKey);
+    if (group === null) return;
+    const seats: readonly PairedSeat[] = group.players.map((player) => {
       const entry = this.waiting.get(player.connectionId);
       this.waiting.delete(player.connectionId);
       return { playerId: player.playerId, entry };
