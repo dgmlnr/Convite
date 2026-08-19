@@ -1,7 +1,7 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy } from "@hexdev/platform-contract";
-import { envidoPoints, handPower, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
+import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 
 /** Heuristic thresholds (bot domain knowledge, not the engine's real point
  * values — see `heuristics.ts`). Roughly the midpoint of a 3-card hand's
@@ -34,12 +34,23 @@ function respondEnvidoChoice(view: PlayerView, group: readonly RespondEnvido[]):
  * `scoreFollowingCardPlay`. Otherwise (leading the trick, OR only a
  * teammate has played so far) no hidden information is needed either — the
  * static, non-guessing habit is to conserve strength: play the weakest
- * card now, save strong cards for later tricks. */
+ * card now, save strong cards for later tricks.
+ *
+ * One team-aware exception to "follow the opposing card": when this bot
+ * CLOSES the trick and the partner's play already beats every opposing card
+ * (`isTrickSecuredByTeam` — public info, still nothing sampled or guessed),
+ * `resolveTrick` scores the TEAM's best play, so the trick is won whatever
+ * this bot adds. "Beat it cheaply" would only outdo the bot's OWN partner,
+ * burning a winner for zero tricks — so the opposing card is deliberately
+ * ignored and the conserve-strength dump above applies instead. In 1v1 the
+ * predicate is `false` by construction (no teammate can have played), so
+ * that path is byte-identical to the old behavior there. */
 function cardPlayChoice(view: PlayerView, group: readonly PlayCard[]): Action {
   const opponentCard = strongestOpposingPlay(view.self.teamId, view.hand?.currentTrickPlays ?? []);
+  const cardToBeat = opponentCard !== undefined && !isTrickSecuredByTeam(view) ? opponentCard : undefined;
   return group.reduce((best, candidate) => {
-    const bestScore = opponentCard === undefined ? -cardPower(best.card) : scoreFollowingCardPlay(best.card, opponentCard);
-    const candidateScore = opponentCard === undefined ? -cardPower(candidate.card) : scoreFollowingCardPlay(candidate.card, opponentCard);
+    const bestScore = cardToBeat === undefined ? -cardPower(best.card) : scoreFollowingCardPlay(best.card, cardToBeat);
+    const candidateScore = cardToBeat === undefined ? -cardPower(candidate.card) : scoreFollowingCardPlay(candidate.card, cardToBeat);
     return candidateScore > bestScore ? candidate : best;
   });
 }
