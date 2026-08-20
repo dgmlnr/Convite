@@ -288,7 +288,16 @@ const gameServer = createMatchServer({
 // defense-in-depth check (`presence-room.ts`, this same unit) covers the
 // join paths this server-registration mechanism does not (a specific roomId
 // targeted directly, bypassing selection entirely).
-gameServer.define("presence", PresenceRoom, { registry, pool: presencePool, poolKey: GLOBAL_POOL_KEY } as PresenceRoomCreateOptions).filterBy(["gameId"]);
+// `botFillAfterSeconds` (PR-2b): the degradation timeout for >2-seat queues,
+// env-tunable via HEXDEV_QUEUE_BOT_FILL_SECONDS (config.ts, default 30).
+gameServer
+  .define("presence", PresenceRoom, {
+    registry,
+    pool: presencePool,
+    poolKey: GLOBAL_POOL_KEY,
+    botFillAfterSeconds: config.queueBotFillSeconds,
+  } as PresenceRoomCreateOptions)
+  .filterBy(["gameId"]);
 
 // gameServer.listen, DELIBERATELY not httpServer.listen — THE SECOND REAL
 // BUG this unit found running a genuine browser join, not assumed. Colyseus's

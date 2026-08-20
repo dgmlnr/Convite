@@ -109,8 +109,8 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
   });
 });
 
-describe("renderGameSelection — a 4-seat modality (2v2) never offers a queue with no way to pair four (obs 2927/2925's own named matchmaking gap)", () => {
-  it("never renders a vs-person button for a 4-seat game, even when the (unused) presence entry reports waiting players", () => {
+describe("renderGameSelection — a 4-seat modality (2v2) queues like any other: the platform now fulfils it via PR-2b's bot-fill degradation", () => {
+  it("renders a vs-person button for a 4-seat game with waiting players — the seat-count gate died with the matchmaking gap it guarded", () => {
     const el = freshContainer();
     const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
       [TRUCO_2V2_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 3, promoteBotFallback: false }]],
@@ -118,11 +118,11 @@ describe("renderGameSelection — a 4-seat modality (2v2) never offers a queue w
 
     renderGameSelection(el, [TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
-    expect(el.querySelector('button[data-action="vs-person"]')).toBeNull();
+    expect(el.querySelector('button[data-action="vs-person"]')).not.toBeNull();
     expect(el.querySelectorAll('button[data-action="vs-bot"]').length).toBeGreaterThan(0);
   });
 
-  it("still renders a 2-seat game's vs-person button unchanged when both a 2-seat and a 4-seat game are in the catalog", () => {
+  it("renders vs-person buttons for BOTH a 2-seat and a 4-seat game in the same catalog — no per-seat-count asymmetry left", () => {
     const el = freshContainer();
     const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
@@ -131,7 +131,7 @@ describe("renderGameSelection — a 4-seat modality (2v2) never offers a queue w
 
     renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
-    expect(el.querySelectorAll('button[data-action="vs-person"]')).toHaveLength(1);
+    expect(el.querySelectorAll('button[data-action="vs-person"]')).toHaveLength(2);
   });
 });
 

@@ -49,13 +49,18 @@ export interface SeatGroup {
   readonly players: readonly WaitingPlayer[];
 }
 
-/** Popping 0 or 1 "seats" is never a meaningful matchmaking operation —
- * always a caller bug (e.g. a game module declaring a nonsense seatCount) —
- * so every adapter throws loudly instead of returning a degenerate group.
+/** Popping 0 "seats" (or a negative/non-integer count) is never a meaningful
+ * matchmaking operation — always a caller bug (e.g. a game module declaring a
+ * nonsense seatCount) — so every adapter throws loudly instead of returning a
+ * degenerate group. Arity 1, however, stopped being a bug in PR-2b: it is the
+ * degradation path's atomic claim of the head waiter (a lone human who waited
+ * past `botFillAfterSeconds` in a >2-seat queue gets rescued into a bot-filled
+ * match), a legitimate caller this guard must admit. This docstring used to
+ * say 0-or-1 is "always a caller bug" — that claim died with that caller.
  * Shared by both adapters so the port's contract suite pins ONE behavior. */
 export function assertValidSeatCount(seatCount: number): void {
-  if (!Number.isInteger(seatCount) || seatCount < 2) {
-    throw new Error(`MatchmakingPool: seatCount must be an integer >= 2, got ${String(seatCount)}`);
+  if (!Number.isInteger(seatCount) || seatCount < 1) {
+    throw new Error(`MatchmakingPool: seatCount must be an integer >= 1, got ${String(seatCount)}`);
   }
 }
 
@@ -83,7 +88,8 @@ export interface MatchmakingPool {
    * adapter achieves the same cross-process atomicity via a Lua script
    * (`EVAL`), which Redis itself runs to completion without interleaving
    * another client's command. Rejects any `seatCount` that is not an
-   * integer >= 2 (`assertValidSeatCount`). */
+   * integer >= 1 (`assertValidSeatCount` — arity 1 is the degradation
+   * path's atomic head-waiter claim, see that guard's own docstring). */
   tryPairSeats(gameId: GameId, modality: ModalityConfig, seatCount: number, poolKey?: string): Promise<SeatGroup | null>;
   /** Removes every waiting entry across every queue whose connection the
    * caller reports as no longer alive — the zombie-socket backstop for an

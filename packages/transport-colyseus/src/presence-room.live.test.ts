@@ -750,3 +750,164 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
     expect(failed.flat()).toHaveLength(0);
   });
 });
+
+/**
+ * PR-2b (roadmap F2): the residual `handOffToMatch`'s own docstring names —
+ * "a room waiting on a human who will never arrive is the degradation path
+ * PR-2b's timeout owns". Humans who waited past `botFillAfterSeconds` in a
+ * modality whose game needs MORE than 2 seats are handed off with their
+ * remaining seats bot-filled, through the SAME two-phase hand-off, via
+ * `MatchRoom`'s EXISTING `botTier` + `humanSeatsNeeded` options — never a
+ * second system. A 2-seat sibling module rides along to pin the strict
+ * `seatCount > 2` guard: 1v1 must stay byte-for-byte (its lone waiter
+ * already has the client-side bot CTA; a 2-seat queue is never bot-filled).
+ */
+const DUO_GAME_ID = "fixture-duo" as GameId;
+
+const duoModule: GameModule<GroupState, GroupAction, GroupState, unknown> = {
+  ...groupModule,
+  id: DUO_GAME_ID,
+  metadata: { seatCount: 2, displayNameKey: "fixture.duo", assetBase: "/fixture" },
+};
+
+describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queues (PR-2b: the residual handOffToMatch names)", () => {
+  const TENANT_ID = "tenant-degrade" as TenantId;
+  const ALLOWED_ORIGIN = "https://degrade.example";
+  const HUMANS: readonly PlayerId[] = ["degrade-p0" as PlayerId, "degrade-p1" as PlayerId, "degrade-p2" as PlayerId];
+
+  let testServer: ColyseusTestServer;
+  let issuer: SessionTokenIssuerHandle;
+  // Own disjoint band — 3000/3100/3200/3900 are this file's other describe
+  // blocks, 3300–3800 belong to sibling live files (full band map in
+  // `adapter.live.test.ts`); 4000 is the next free hundred.
+  let nextPort = 4000;
+
+  beforeEach(async () => {
+    const registry = createGameModuleRegistry([groupModule, duoModule]);
+    const pool = createMatchmakingPool();
+    const httpServer = createServer();
+    issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("degrade-live-secret"));
+    const repository = createStaticTenantRepository([
+      { id: TENANT_ID, embedKey: "pk_degrade", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GROUP_GAME_ID, DUO_GAME_ID] },
+    ]);
+    const auth = {
+      verifier: await createSessionTokenVerifier(issuer.publicKey),
+      repository,
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [ALLOWED_ORIGIN],
+    };
+    const gameServer = createMatchServer({ httpServer, registry, auth, rng: () => 0.5 });
+    gameServer.define("presence", PresenceRoom, { registry, pool } as never);
+    await gameServer.listen(nextPort++);
+    testServer = new ColyseusTestServer(gameServer);
+    testServer.sdk.http.options.headers = { origin: ALLOWED_ORIGIN };
+  });
+
+  afterEach(async () => {
+    await testServer.shutdown();
+  });
+
+  /** Drives the degraded match like the existing 4-human test: consume every
+   * delivered reservation, then wait for a view proving the match STARTED —
+   * `MatchRoom` only calls `createMatch` once ALL `seatCount` seats are
+   * filled, so a 4-player view is proof the bots took their seats too. */
+  async function consumeAndAwaitStart(reservations: readonly unknown[]): Promise<GroupState> {
+    const views: GroupState[] = [];
+    for (const reservation of reservations) {
+      const matchRoom = await testServer.sdk.consumeSeatReservation<GroupState>(reservation as never);
+      matchRoom.onMessage("view", (message: { view: GroupState }) => views.push(message.view));
+    }
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && !views.some((view) => view.players.length === 4)) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const started = views.find((view) => view.players.length === 4);
+    expect(started).toBeDefined();
+    return started!;
+  }
+
+  it("degrades 3 humans waiting past botFillAfterSeconds in a 4-seat modality: all 3 get 'paired' (roster = the 3 humans) and the match starts as 3 humans + 1 bot", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 0.05, sweepTickMs: 25 });
+    const paired: PairedGroupMessage[][] = [[], [], []];
+    for (const [index, playerId] of HUMANS.entries()) {
+      const token = await issuer.mint({ tenantId: TENANT_ID, playerId, entitlements: [GROUP_GAME_ID] }, 60);
+      const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId, token });
+      client.onMessage("paired", (message: PairedGroupMessage) => paired[index]!.push(message));
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // The 'paired' roster is the k humans in formation order — the bots get
+    // their identities inside MatchRoom; they are never part of the lobby's
+    // shared fact.
+    for (const messages of paired) {
+      expect(messages).toHaveLength(1);
+      expect(messages[0]!.players).toEqual([...HUMANS]);
+    }
+
+    const started = await consumeAndAwaitStart(paired.map((messages) => messages[0]!.matchReservation));
+    // Exactly the 3 humans hold seats, plus ONE identity that is none of
+    // them: the bot MatchRoom minted for the last seat.
+    const humanSet = new Set<string>(HUMANS);
+    expect(started.players.filter((playerId) => humanSet.has(playerId))).toHaveLength(3);
+    expect(started.players.filter((playerId) => !humanSet.has(playerId))).toHaveLength(1);
+  });
+
+  it("rescues a LONE waiter past the timeout in a 4-seat modality: paired alone, match starts as 1 human + 3 bots (the arity-1 pool claim)", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 0.05, sweepTickMs: 25 });
+    const token = await issuer.mint({ tenantId: TENANT_ID, playerId: HUMANS[0]!, entitlements: [GROUP_GAME_ID] }, 60);
+    const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId: HUMANS[0], token });
+    const paired: PairedGroupMessage[] = [];
+    client.onMessage("paired", (message: PairedGroupMessage) => paired.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(paired).toHaveLength(1);
+    expect(paired[0]!.players).toEqual([HUMANS[0]]);
+
+    const started = await consumeAndAwaitStart([paired[0]!.matchReservation]);
+    expect(started.players).toContain(HUMANS[0]);
+    expect(started.players.filter((playerId) => playerId !== HUMANS[0])).toHaveLength(3);
+  });
+
+  /** GREEN-FROM-BIRTH PIN (disclosed as such): 1v1 has never degraded — this
+   * pins the strict `seatCount > 2` guard so it can never START degrading. A
+   * generous wait, many ticks past the tiny threshold, and the lone 2-seat
+   * waiter is still waiting, still counted, never bot-filled (the client-side
+   * bot CTA is that queue's rescue, not a server-side pop). */
+  it("never degrades a 2-seat queue: a lone 1v1 waiter far past the timeout is not paired and stays counted as waiting", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: DUO_GAME_ID, botFillAfterSeconds: 0.05, sweepTickMs: 25 });
+    const client = await testServer.connectTo(presenceRoom, { gameId: DUO_GAME_ID, modality: { roundLength: 15 }, playerId: "duo-lone" });
+    const counts: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
+    client.onMessage("counts", (message) => counts.push(message));
+    const paired: unknown[] = [];
+    client.onMessage("paired", (message) => paired.push(message));
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(paired).toHaveLength(0);
+    const lastCounts = counts[counts.length - 1]!;
+    expect(lastCounts.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
+  });
+
+  /** GREEN-FROM-BIRTH PIN (disclosed as such): the other edge of the knob —
+   * waiters YOUNGER than `botFillAfterSeconds` are never popped, however many
+   * sweep ticks have run. */
+  it("never degrades prematurely: 4-seat waiters younger than the threshold stay queued through many ticks", async () => {
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 5, sweepTickMs: 25 });
+    const paired: unknown[][] = [[], []];
+    const counts: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
+    for (const [index, playerId] of HUMANS.slice(0, 2).entries()) {
+      const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId });
+      client.onMessage("paired", (message) => paired[index]!.push(message));
+      client.onMessage("counts", (message) => counts.push(message));
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(paired.flat()).toHaveLength(0);
+    const lastCounts = counts[counts.length - 1]!;
+    expect(lastCounts.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(2);
+  });
+});

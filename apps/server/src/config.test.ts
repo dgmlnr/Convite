@@ -68,6 +68,11 @@ describe("loadServerConfig", () => {
     expect(loadServerConfig(DEV_OPT_IN).publicAddress).toBeUndefined();
     expect(loadServerConfig({ ...DEV_OPT_IN, HEXDEV_PUBLIC_ADDRESS: "127.0.0.1:2568" }).publicAddress).toBe("127.0.0.1:2568");
   });
+
+  it("defaults queueBotFillSeconds to 30, and reads HEXDEV_QUEUE_BOT_FILL_SECONDS when set (PR-2b: how long a >2-seat queue waits before bot-fill degradation)", () => {
+    expect(loadServerConfig(DEV_OPT_IN).queueBotFillSeconds).toBe(30);
+    expect(loadServerConfig({ ...DEV_OPT_IN, HEXDEV_QUEUE_BOT_FILL_SECONDS: "5" }).queueBotFillSeconds).toBe(5);
+  });
 });
 
 describe("loadServerConfig — fail-loud by default (hardening: public surface, obs 2945)", () => {
@@ -92,6 +97,12 @@ describe("loadServerConfig — fail-loud by default (hardening: public surface, 
 
   it("still refuses to start in production even with the dev opt-in flag set", () => {
     expect(() => loadServerConfig({ NODE_ENV: "production", ...DEV_OPT_IN })).toThrow(/production/);
+  });
+
+  it("refuses a non-numeric, zero, or negative HEXDEV_QUEUE_BOT_FILL_SECONDS — a NaN/non-positive threshold would silently bot-fill every >2-seat queue on its first sweep tick", () => {
+    for (const value of ["abc", "-5", "0"]) {
+      expect(() => loadServerConfig({ ...DEV_OPT_IN, HEXDEV_QUEUE_BOT_FILL_SECONDS: value })).toThrow(/HEXDEV_QUEUE_BOT_FILL_SECONDS/);
+    }
   });
 });
 
