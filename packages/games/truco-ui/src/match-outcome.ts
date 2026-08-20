@@ -53,9 +53,7 @@ export function renderMatchOverOverlay(container: HTMLElement, props: MatchOverP
 
   const score = document.createElement("p");
   score.className = "hexdev-truco-match-over-score";
-  score.textContent = `${TABLE_STRINGS.finalScore}: ${props.teams
-    .map((team) => `${team.id === props.selfTeamId ? TABLE_STRINGS.us : TABLE_STRINGS.them} ${team.score}`)
-    .join(" — ")}`;
+  score.textContent = finalScoreLine(props);
   container.appendChild(score);
 
   const button = document.createElement("button");
@@ -64,4 +62,31 @@ export function renderMatchOverOverlay(container: HTMLElement, props: MatchOverP
   button.textContent = TABLE_STRINGS.playAgain;
   button.addEventListener("click", props.onPlayAgain);
   container.appendChild(button);
+}
+
+/** The final-score line, extracted so the visible overlay and the spoken
+ * sentence below draw the SAME text — the two can never diverge. */
+function finalScoreLine(props: MatchOverProps): string {
+  return `${TABLE_STRINGS.finalScore}: ${props.teams
+    .map((team) => `${team.id === props.selfTeamId ? TABLE_STRINGS.us : TABLE_STRINGS.them} ${team.score}`)
+    .join(" — ")}`;
+}
+
+/**
+ * The same ending as ONE spoken sentence, for the live region `table.ts`
+ * keeps mounted (see `announcer.ts`). The overlay itself is a node rebuilt
+ * per render — silent by construction, exactly the shape `announcer.ts`'s own
+ * docstring warns about — so the biggest moment on this table was the one
+ * moment a screen reader never heard. Result and score comma-joined, same
+ * discipline as `describeHandOutcome`: an atomic region reads it as one
+ * statement, and the headline's own punctuation is not spoken anyway.
+ * Deliberately NOT routed through the hand-outcome announcer: the final hand
+ * and the match end land in nearby broadcasts, and two rapid writes to one
+ * polite region let the second clobber the first before it is read.
+ */
+export function describeMatchOutcome(props: MatchOverProps): string {
+  const won = props.outcome.winnerIds.includes(props.selfPlayerId);
+  const isDraw = props.outcome.winnerIds.length === 0;
+  const headline = isDraw ? TABLE_STRINGS.matchOverNeutral : won ? TABLE_STRINGS.matchWon : TABLE_STRINGS.matchLost;
+  return `${headline}, ${finalScoreLine(props)}`;
 }

@@ -6,10 +6,10 @@ import { deriveHandOutcomeEvent, describeHandOutcome, renderHandOutcomeBanner } 
 import type { HandOutcomeEvent } from "./hand-outcome.js";
 import { renderHand } from "./hand.js";
 import type { MatchOutcomeInfo } from "./match-outcome.js";
-import { renderMatchOverOverlay } from "./match-outcome.js";
+import { describeMatchOutcome, renderMatchOverOverlay } from "./match-outcome.js";
 import { renderOpponentHand } from "./opponent-hand.js";
 import { renderPlayedCards } from "./played-cards.js";
-import { derivePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
+import { derivePendingCall, describePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
 import { renderScoreboardPanel } from "./scoreboard-panel.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
@@ -89,7 +89,7 @@ function appendTurnBadge(anchor: HTMLElement, text: string, remainingMs: number 
   clock.className = "hexdev-truco-turn-clock";
   // THE ACCESSIBILITY DECISION, and the reason this element is a separate
   // node rather than more text in the badge. A countdown changes ONCE A
-  // SECOND. This table carries four ARIA live regions (announcer.ts), and a
+  // SECOND. This table carries seven ARIA live regions (announcer.ts), and a
   // reader speaks a live region every time its content changes — so a
   // per-second number reaching one would be read out sixty times a turn.
   //
@@ -163,6 +163,9 @@ export function createMatchTableRenderer(
     readonly sena: HTMLElement;
     readonly turn: HTMLElement;
     readonly turnClock: HTMLElement;
+    readonly pendingCall: HTMLElement;
+    readonly trick: HTMLElement;
+    readonly matchOver: HTMLElement;
   } | null = null;
 
   const now = options?.now ?? Date.now;
@@ -203,12 +206,26 @@ export function createMatchTableRenderer(
         sena: createAnnouncer(container.ownerDocument, "partner-sena"),
         turn: createAnnouncer(container.ownerDocument, "turn"),
         turnClock: createAnnouncer(container.ownerDocument, "turn-clock"),
+        pendingCall: createAnnouncer(container.ownerDocument, "pending-call"),
+        trick: createAnnouncer(container.ownerDocument, "trick"),
+        matchOver: createAnnouncer(container.ownerDocument, "match-over"),
       };
     }
     if (announcers.handOutcome.parentElement !== container) {
-      container.append(announcers.handOutcome, announcers.sena, announcers.turn, announcers.turnClock);
+      // Appended from the OBJECT, never a hand-written list — same reason the
+      // wipe below tests membership that way: an announcer added to the type
+      // but forgotten here would be a region that never even mounts.
+      container.append(...Object.values(announcers));
     }
-    const { handOutcome: handOutcomeAnnouncer, sena: senaAnnouncer, turn: turnAnnouncer, turnClock: turnClockAnnouncer } = announcers;
+    const {
+      handOutcome: handOutcomeAnnouncer,
+      sena: senaAnnouncer,
+      turn: turnAnnouncer,
+      turnClock: turnClockAnnouncer,
+      pendingCall: pendingCallAnnouncer,
+      trick: trickAnnouncer,
+      matchOver: matchOverAnnouncer,
+    } = announcers;
 
     // A hand ending is a POINT-IN-TIME event, not an ongoing view field — it
     // must survive past the very next broadcast (usually the freshly-dealt
@@ -513,16 +530,24 @@ export function createMatchTableRenderer(
     bannerSlot.className = "hexdev-truco-banner-slot";
 
     const banner = bannerSlot.appendChild(document.createElement("div"));
-    renderPendingCallBanner(
-      banner,
+    const pendingCallProps =
       pendingCall === null
         ? null
         : {
             call: pendingCall,
             callerLabel: pendingCall.callingTeamId === view.self.teamId ? TABLE_STRINGS.us : TABLE_STRINGS.them,
             waitingOnMe: isMyTurnToAnswer(legalActions),
-          },
-    );
+          };
+    renderPendingCallBanner(banner, pendingCallProps);
+    // The FIFTH announcer, closing the one silent gap the turn announcer's
+    // own yield created: while a call is open the turn line deliberately says
+    // nothing because "the banner is the thing to read" — and the banner,
+    // rebuilt every render, reads as nothing. Spoken from the SAME props the
+    // banner draws, so the two can never describe different things; the
+    // dedup story lives on `describePendingCall` itself. On resolution this
+    // empties (a silent removal) in the same render the turn announcer
+    // resumes — one region falls quiet, exactly one speaks.
+    announce(pendingCallAnnouncer, pendingCallProps === null ? null : describePendingCall(pendingCallProps));
 
     const handOutcomeBanner = bannerSlot.appendChild(document.createElement("div"));
     mountedHandOutcomeEl = handOutcomeBanner;
@@ -562,6 +587,17 @@ export function createMatchTableRenderer(
     feedback.className = "hexdev-truco-trick-feedback";
     feedback.textContent = trickFeedback;
     center.appendChild(feedback);
+    // The visible line above is rebuilt every render and therefore announces
+    // nothing; this region is its voice. It mirrors `trickFeedback` EXACTLY —
+    // set when a trick resolves, emptied when the next trick's first card
+    // lands — so what a reader hears is always what the line shows, and the
+    // states dedup for free: a standing outcome re-rendered is the same
+    // sentence (skipped by `announce`'s guard), and two same-team tricks in a
+    // row always pass through the emptied between-tricks state, so the second
+    // is a change again and speaks. Its OWN region, not the hand-outcome one:
+    // the third trick and the hand's end land in the SAME broadcast, and two
+    // rapid writes to one polite region let the second clobber the first.
+    announce(trickAnnouncer, trickFeedback === "" ? null : trickFeedback);
 
     // Whose turn it is, once, in the middle of the table. NOT alongside the
     // per-anchor badge: the badge already names the state AND points at the
@@ -664,8 +700,7 @@ export function createMatchTableRenderer(
     // never a blank replace. `outcome` is the one authoritative signal a
     // match has ended; absent/null here just means the overlay stays empty.
     const matchOver = document.createElement("div");
-    renderMatchOverOverlay(
-      matchOver,
+    const matchOverProps =
       matchEnd?.outcome == null
         ? null
         : {
@@ -674,8 +709,13 @@ export function createMatchTableRenderer(
             teams: view.teams,
             selfTeamId: view.self.teamId,
             onPlayAgain: matchEnd.onPlayAgain ?? ((): void => undefined),
-          },
-    );
+          };
+    renderMatchOverOverlay(matchOver, matchOverProps);
+    // The biggest moment on the table, finally said out loud — the overlay is
+    // a rebuilt node and renders silently. Spoken from the SAME props the
+    // overlay draws; `announce`'s guard keeps every later broadcast of the
+    // same ended match silent.
+    announce(matchOverAnnouncer, matchOverProps === null ? null : describeMatchOutcome(matchOverProps));
     container.appendChild(matchOver);
   };
 }

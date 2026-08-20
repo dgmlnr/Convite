@@ -697,6 +697,9 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
   const senaAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="partner-sena"]');
   const turnAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn"]');
   const turnClockAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn-clock"]');
+  const pendingCallAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="pending-call"]');
+  const trickAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="trick"]');
+  const matchOverAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="match-over"]');
 
   function teamView(lastSena: SenaView | null, overrides: Partial<PlayerView> = {}): PlayerView {
     return baseView({
@@ -723,6 +726,9 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
     ["partner-sena", senaAnnouncerOf],
     ["turn", turnAnnouncerOf],
     ["turn-clock", turnClockAnnouncerOf],
+    ["pending-call", pendingCallAnnouncerOf],
+    ["trick", trickAnnouncerOf],
+    ["match-over", matchOverAnnouncerOf],
   ] as const)("%s: the SAME node survives a re-render — a live region rebuilt per render can never announce", (_name, announcerOf) => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
@@ -745,6 +751,9 @@ describe("createMatchTableRenderer — the announcers are real live regions, not
     ["partner-sena", senaAnnouncerOf],
     ["turn", turnAnnouncerOf],
     ["turn-clock", turnClockAnnouncerOf],
+    ["pending-call", pendingCallAnnouncerOf],
+    ["trick", trickAnnouncerOf],
+    ["match-over", matchOverAnnouncerOf],
   ] as const)("%s: is a polite, atomic live region — never assertive, never a half-read fragment", (_name, announcerOf) => {
     const el = freshContainer();
     const render = createMatchTableRenderer();

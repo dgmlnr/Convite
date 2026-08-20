@@ -195,7 +195,10 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
 
     const announcers = [...el.querySelectorAll<HTMLElement>("[data-announces]")];
-    expect(announcers).toHaveLength(4); // hand-outcome, partner-sena, turn, turn-clock
+    // hand-outcome, partner-sena, turn, turn-clock, pending-call, trick,
+    // match-over — the count keeps this fence complete: a renamed or added
+    // region that dodged the filter below would tick-spam unpinned.
+    expect(announcers).toHaveLength(7);
     // The turn-clock region is the clock's own sanctioned coarse voice — held
     // to its two whole sentences below, never to byte-identity: that is the
     // one region a threshold crossing is ALLOWED to change, exactly once.

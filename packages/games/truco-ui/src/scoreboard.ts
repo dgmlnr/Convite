@@ -194,6 +194,18 @@ export function renderScoreboard(container: HTMLElement, options: ScoreboardOpti
   container.replaceChildren();
   container.className = "hexdev-truco-scoreboard";
 
+  // The score as TEXT (WCAG 1.1.1): the casitas are a picture of a number,
+  // and a picture-only score reads as nothing at all. Clip-rect hidden (the
+  // shared class, table-styles.ts), so it costs the panel's fixed height
+  // budget zero pixels and no visual baseline a single byte; first child, so
+  // a reader meets the number before the "Malas"/"Buenas" run labels.
+  // `data-score-total` carries the raw number for tests and debugging humans.
+  const total = document.createElement("span");
+  total.className = "hexdev-truco-visually-hidden";
+  total.dataset.scoreTotal = String(options.score);
+  total.textContent = TABLE_STRINGS.scoreTotal(options.score);
+  container.appendChild(total);
+
   for (const [key, count, label] of [
     ["malas", malas, TABLE_STRINGS.malas],
     ["buenas", buenas, TABLE_STRINGS.buenas],
@@ -209,6 +221,10 @@ export function renderScoreboard(container: HTMLElement, options: ScoreboardOpti
 
     const sticks = document.createElement("div");
     sticks.className = "hexdev-truco-score-sticks";
+    // Decorative: the number these sticks draw is already said, in digits, by
+    // the hidden total above — left exposed, a reader would wade through raw
+    // SVG geometry that says nothing (the exact 1.1.1 failure being fixed).
+    sticks.setAttribute("aria-hidden", "true");
     sticks.innerHTML = renderMatchstickRun(count, size);
     group.appendChild(sticks);
 
