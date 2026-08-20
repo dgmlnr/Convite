@@ -91,6 +91,15 @@ export const TABLE_STRINGS = {
   // out as "1 segundos".
   turnClockStart: (seconds: number): string => `Tenés ${seconds} ${seconds === 1 ? "segundo" : "segundos"} para jugar`,
   turnClockWarning: (seconds: number): string => `${seconds === 1 ? "Queda" : "Quedan"} ${seconds} ${seconds === 1 ? "segundo" : "segundos"}`,
+  // Text alternatives (WCAG 1.1.1) for the two purely-pictorial numbers on
+  // this table: the matchstick tally and an opponent's fan of card backs.
+  // Digits, not number words — a reader speaks "12" fine, and digits stay
+  // honest at any score without a numbers-to-words table to maintain. Both
+  // pluralize the way handPoints already does; "tantos" is the same word the
+  // hand-outcome banner already uses for points, so the score reads in the
+  // vocabulary the rest of the table already established.
+  scoreTotal: (points: number): string => `${points} ${points === 1 ? "tanto" : "tantos"}`,
+  cardsInHand: (count: number): string => `${count} ${count === 1 ? "carta" : "cartas"}`,
 } as const;
 
 /** Spanish table vocabulary for the six closed señas signals

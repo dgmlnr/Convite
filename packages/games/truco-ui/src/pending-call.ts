@@ -105,3 +105,26 @@ export function renderPendingCallBanner(container: HTMLElement, props: PendingCa
   turn.textContent = props.waitingOnMe ? TABLE_STRINGS.yourTurnToAnswer : TABLE_STRINGS.waitingOnOpponent;
   container.appendChild(turn);
 }
+
+/**
+ * The same banner as ONE spoken sentence, for the live region `table.ts`
+ * keeps mounted (see `announcer.ts`). The turn announcer deliberately falls
+ * silent while a call is open — its own comment says the banner is the thing
+ * to read then — but the banner is a node rebuilt on every render, which
+ * announces nothing; this sentence is what actually reads it. Comma-joined
+ * from the exact strings the banner renders (same discipline as
+ * `describeHandOutcome`/`describeSenaNotice`: one wording function per
+ * feature, drawing from the same props as the visible node so the two can
+ * never describe different things).
+ *
+ * No dedup key beyond the sentence itself, on purpose: `announce`'s equality
+ * guard already keeps a re-broadcast of the same standing call silent, an
+ * escalation REPLACES the pending call (the derivation's own contract) so its
+ * changed level re-announces, and two successive identical calls can only
+ * exist with a resolution — an emptied region — between them, so the second
+ * one is a change again and speaks.
+ */
+export function describePendingCall(props: PendingCallBannerProps): string {
+  const turn = props.waitingOnMe ? TABLE_STRINGS.yourTurnToAnswer : TABLE_STRINGS.waitingOnOpponent;
+  return `${props.call.levelLabel}, ${TABLE_STRINGS.calledBy} ${props.callerLabel}, ${turn}`;
+}

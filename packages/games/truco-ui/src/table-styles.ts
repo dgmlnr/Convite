@@ -1516,6 +1516,31 @@ export function buildTableStylesheet(): string {
   border: 0;
   min-height: 0;
 }
+/* The house clip-rect treatment as a SHARED, always-on utility class — for
+ * text that exists only to be read out (the numeric score total beside the
+ * matchstick tally, an opponent's card count beside their decorative backs;
+ * scoreboard.ts and opponent-hand.ts). Same declarations as
+ * .hexdev-truco-announcer above and the two scoped copies elsewhere in this
+ * file (.hexdev-truco-score-label and .hexdev-truco-pending-call-turn, both
+ * compact-only) — never display: none or visibility: hidden, which would
+ * remove the node from the accessibility tree and defeat its whole purpose.
+ * position: absolute is what makes this text FREE: out of flow, it can never
+ * move a height fence (table-height-stability.browser.test.ts) and clipped to
+ * nothing it can never show up in a visual baseline. Those two scoped copies
+ * stay separate rules deliberately: each is half of a compact/medium+ toggle
+ * with its own restore block, a lifecycle this unconditional class does not
+ * have. */
+.hexdev-truco-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 .hexdev-truco-sena-notice-source { font-size: var(--hx-text-meta); font-weight: 600; opacity: 0.85; }
 .hexdev-truco-sena-notice-signal { font-size: var(--hx-text-title); text-transform: uppercase; letter-spacing: 0.02em; color: var(--gx-color-accent, var(--hx-gold)); }
