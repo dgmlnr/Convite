@@ -82,6 +82,33 @@ export function buildTableStylesheet(): string {
   --hx-gold: #e8c877;
   --hx-gold-edge: #b8923f;
   --hx-ink: #1a1a1a;
+  /* --hx-felt-text (Tanda 3): the text colour for every rule that draws on a
+   * background OUTSIDE the tenant vocabulary -- the cloth, the recessed
+   * action lane the outlined call buttons and the senas toggle sit
+   * transparent on, and the relation label's own fixed black scrim.
+   *
+   * PRIVATE, fixed, and never a --gx-* token, for exactly the argument the
+   * focus ring one section down already makes for --hx-gold (Tanda 2:
+   * "--hx-gold, FIXED, not a --gx-* tenant token -- the same decoupling
+   * argument the felt itself makes"), and that rule's own comment named this
+   * as the coupling Tanda 3 unwinds. Design section 10 puts the game table
+   * deliberately outside the tenant vocabulary; its TEXT was still inside it,
+   * and a colour is only readable against the thing it is actually painted
+   * on. A tenant setting --gx-color-on-surface is describing its OWN surface,
+   * which the cloth is not.
+   *
+   * A pairwise contrast guard structurally cannot catch this, which is why
+   * the fix is a token and not a rule: measured with widget-protocol's own
+   * contrastRatio, a self-consistent light-brand theme (white surface,
+   * near-black #1a1a1a on-surface) passes every pair the tenant vocabulary
+   * can form and still rendered felt text at 1.47:1 against the cloth and
+   * lane text at 1.28:1. This value renders 10.55:1 and 12.17:1 on those same
+   * two backgrounds.
+   *
+   * ZERO PAINT CHANGE: #f2f2f2 is the exact value all four rules already
+   * carried as their own var() fallback, so an untenanted widget -- every
+   * widget today -- renders byte-identically. Only the leak is gone. */
+  --hx-felt-text: #f2f2f2;
   /* New, unused felt-palette tokens (tasks §3.7 boundary note): PR2 changes
    * --truco-table-cloth's own value above to #123f2f and consumes all four
    * of these together in one vignette gradient. Declaring them here, now,
@@ -293,7 +320,10 @@ export function buildTableStylesheet(): string {
   /* --hx-rim (VDS-4, paint-only): an inner highlight/shadow pair reading as
    * "a real recessed play surface", never a layout-affecting border. */
   box-shadow: var(--hx-rim);
-  color: var(--gx-color-on-surface, #f2f2f2);
+  /* --hx-felt-text, not --gx-color-on-surface: this colour is inherited by
+   * every felt descendant that sets none of its own, and what it is read
+   * against is the cloth gradient right above -- not a tenant surface. */
+  color: var(--hx-felt-text);
   overflow: hidden;
 }
 .hexdev-truco-table * { box-sizing: border-box; }
@@ -1406,8 +1436,11 @@ export function buildTableStylesheet(): string {
 }
 .hexdev-truco-calls-group--opening .hexdev-truco-call {
   background: transparent;
+  /* --hx-felt-text: transparent here reveals the action bar's own recessed
+   * lane (--truco-cloth-lane over the cloth), a fixed surface no tenant token
+   * reaches -- so the label on it must be fixed too. */
   border: 2px solid var(--gx-color-primary, #2f6f4f);
-  color: var(--gx-color-on-surface, #f2f2f2);
+  color: var(--hx-felt-text);
 }
 
 /* Change: a hand ending gets a clear, transient acknowledgement — who won it
@@ -1705,8 +1738,11 @@ export function buildTableStylesheet(): string {
   white-space: nowrap;
   padding: 1px 6px;
   border-radius: var(--gx-radius, 999px);
+  /* --hx-felt-text: this label paints its OWN fixed scrim right below, so the
+   * pairing is entirely ours and the tenant's text colour has no business in
+   * it (measured 1.28:1 with a near-black tenant value, 12.17:1 with this). */
   background: rgba(0, 0, 0, 0.4);
-  color: var(--gx-color-on-surface, #f2f2f2);
+  color: var(--hx-felt-text);
 }
 
 /* Señas: discoverable without being noisy (spec). The toggle stays SECONDARY
@@ -1747,7 +1783,9 @@ export function buildTableStylesheet(): string {
   border: 2px solid var(--gx-color-primary, #2f6f4f);
   border-radius: var(--gx-radius, 999px);
   background: transparent;
-  color: var(--gx-color-on-surface, #f2f2f2);
+  /* --hx-felt-text, same lane and same argument as the opening-group call
+   * button this toggle deliberately matches. */
+  color: var(--hx-felt-text);
   font-family: inherit;
   font-size: var(--hx-text-body);
   font-weight: 600;

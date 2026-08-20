@@ -71,14 +71,19 @@ function main(): void {
 
   // SECONDARY path: the host page's own `data-theme-*` override, forwarded
   // by the loader in `host-hello`. Applied SECOND, on top of the tenant
-  // theme already set above — `applyThemeToRoot` only touches a CSS custom
-  // property for a token PRESENT in its own argument (see its own
-  // docstring), so this is a per-token override, not a wholesale replace: a
-  // token the host page never mentions keeps the tenant's server value (see
-  // `theme.browser.test.ts`'s own precedence-rule test for the exact proof
-  // and its justification — the host page is the SAME tenant's own site,
-  // not a third party, so letting it win per-token is more precise tenant
-  // intent, not a trust violation).
+  // theme already set above — `applyThemeToRoot` merges its argument over
+  // the tokens already on the element (see its own docstring), so this is a
+  // per-token override, not a wholesale replace: a token the host page never
+  // mentions keeps the tenant's server value (see `theme.browser.test.ts`'s
+  // own precedence-rule test for the exact proof and its justification — the
+  // host page is the SAME tenant's own site, not a third party, so letting it
+  // win per-token is more precise tenant intent, not a trust violation).
+  //
+  // Deliberately still TWO calls rather than one merged one: the tenant theme
+  // above must not wait for this callback, which may never fire. The merge
+  // that makes contrast checkable across both sources happens inside
+  // `applyThemeToRoot`, against the element itself, precisely so that this
+  // ordering property survives — its docstring carries the full argument.
   const handshake = connectToHost(window.parent, window, hostOrigin, (hostHello) => {
     applyThemeToRoot(document.documentElement, hostHello.payload.theme);
     void boot();
