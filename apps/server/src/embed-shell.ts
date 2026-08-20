@@ -41,7 +41,7 @@ export function renderEmbedShell(bootstrap: EmbedBootstrap | undefined): string 
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>hexdev-gamify</title>
+<title>Juegos — HexDev</title>
 <style>
 /* BUG (found running a real two-origin session, verified with
  * getComputedStyle): with no stylesheet at all, html and body both compute

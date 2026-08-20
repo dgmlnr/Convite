@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { ensureTableStyles, TABLE_STYLE_ID } from "@hexdev/truco-ui";
 import { CHROME_STYLE_ID, ensureChromeStyles } from "./chrome-styles.js";
 
 let container: HTMLElement;
 
 afterEach(() => {
   document.getElementById(CHROME_STYLE_ID)?.remove();
+  document.getElementById(TABLE_STYLE_ID)?.remove();
   container?.remove();
 });
 
@@ -86,5 +88,39 @@ describe("chrome-styles.ts container-query cascade (PR6-T1/T2, cascade-order pro
     const { games } = mountedChrome(800);
 
     expect(getComputedStyle(games).display).toBe("grid");
+  });
+});
+
+/**
+ * The focus-ring specificity contract between chrome and felt — the same
+ * cascade-order-proof ethos as the @container suite above: in the real
+ * widget the truco shell NESTS inside the chrome-classed root, so BOTH
+ * focus-ring rules select a felt button, and the felt's tenant-proof gold
+ * guarantee only holds if it wins by SPECIFICITY, never by whichever
+ * stylesheet happened to be injected later.
+ */
+describe("chrome/felt focus-ring precedence (the felt's gold guarantee must not depend on stylesheet insertion order)", () => {
+  it("keeps the felt's gold ring winning inside a chrome-classed ancestor even when the chrome stylesheet is injected LAST", () => {
+    // Adversarial order, deliberately: table styles FIRST, chrome SECOND —
+    // a same-specificity chrome rule would then win the tie by source order,
+    // painting a tenant-dependent currentColor ring on the felt.
+    ensureTableStyles(document);
+    ensureChromeStyles(document);
+    container = document.createElement("div");
+    container.className = "hexdev-gamify-chrome";
+    const shell = document.createElement("div");
+    shell.className = "hexdev-truco-table-shell";
+    const button = document.createElement("button");
+    shell.appendChild(button);
+    container.appendChild(shell);
+    document.body.appendChild(container);
+
+    button.focus();
+
+    const style = getComputedStyle(button);
+    expect(style.outlineWidth).toBe("2px");
+    expect(style.outlineStyle).toBe("solid");
+    // --hx-gold — the felt's own ring, not chrome's currentColor.
+    expect(style.outlineColor).toBe("rgb(232, 200, 119)");
   });
 });

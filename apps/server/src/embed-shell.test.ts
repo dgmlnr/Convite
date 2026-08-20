@@ -26,6 +26,19 @@ describe("renderEmbedShell (spec: widget-embed — the iframe needs real content
   });
 });
 
+describe("renderEmbedShell — a descriptive document title (WCAG 2.4.2/4.1.2: 'hexdev-gamify' names the package, not the page)", () => {
+  it("titles the inner document in descriptive Spanish", () => {
+    const html = renderEmbedShell(BOOTSTRAP);
+    expect(html).toContain("<title>Juegos — HexDev</title>");
+    expect(html).not.toContain("<title>hexdev-gamify</title>");
+  });
+
+  it("keeps the descriptive title on the mint-failure error page too", () => {
+    const html = renderEmbedShell(undefined);
+    expect(html).toContain("<title>Juegos — HexDev</title>");
+  });
+});
+
 describe("renderEmbedShell — opaque background (bug: html/body computed to rgba(0,0,0,0) with no stylesheet at all, so an expanded widget let the host page's own content show through, overlapping and unreadable)", () => {
   it("gives html and body an explicit, non-transparent background-color", () => {
     const html = renderEmbedShell(BOOTSTRAP);

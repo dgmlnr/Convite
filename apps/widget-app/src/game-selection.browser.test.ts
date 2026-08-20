@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
 import { CHROME_STYLE_ID } from "./chrome-styles.js";
+import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { renderGameSelection } from "./game-selection.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
@@ -166,6 +167,117 @@ describe("renderGameSelection — chrome styling (design §10: this screen takes
     renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-modality")?.getAttribute("data-prominent")).toBe("bot");
+  });
+});
+
+describe("renderGameSelection — keyboard focus survives a live presence re-render (WCAG 2.1.1/2.4.3: every counts broadcast used to wipe the DOM and dump focus on <body>)", () => {
+  const CALLBACKS = { onPlayVsPerson: noop, onPlayVsBot: noop };
+
+  function presenceWith(waitingCount: number | undefined): ReadonlyMap<GameId, readonly LobbyDisplayEntry[]> {
+    return new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount, promoteBotFallback: waitingCount === undefined }]],
+    ]);
+  }
+
+  it("keeps focus on the vs-person button when a counts broadcast re-renders identical content", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')!.focus();
+
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.dataset.action).toBe("vs-person");
+    expect(el.contains(focused)).toBe(true);
+  });
+
+  it("restores focus to the equivalent bot-tier button when the re-render changes the waiting count", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    el.querySelector<HTMLButtonElement>('button[data-action="vs-bot"][data-tier="hard"]')!.focus();
+
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(5), CALLBACKS);
+
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.dataset.action).toBe("vs-bot");
+    expect(focused.dataset.tier).toBe("hard");
+  });
+
+  it("moves focus to the container itself — never <body> — when the focused control's whole modality is gone", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')!.focus();
+
+    const otherModality = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true }]],
+    ]);
+    renderGameSelection(el, [TRUCO_ENTRY], otherModality, CALLBACKS);
+
+    expect(document.activeElement).toBe(el);
+    expect(el.getAttribute("tabindex")).toBe("-1");
+  });
+
+  // The region rung (rung 3 of focus-continuity.ts's ladder), driven through
+  // the helper DIRECTLY: renderGameSelection's own DOM cannot reach it —
+  // every modality always renders its vs-person button AND all three bot
+  // tiers together, so a leaf's exact/group selectors always find a live
+  // match whenever the modality itself survived. The rung still guards the
+  // lobby against any future shape where a whole action disappears from a
+  // surviving group, and an untested rung is exactly the kind of dead-until-
+  // needed code that rots — hence this pin at the helper's own seam.
+  it("region rung: lands on a surviving control with a DIFFERENT action in the same scope when exact and group both fail", () => {
+    const el = freshContainer();
+    const modality = document.createElement("div");
+    modality.dataset.modality = "pointsToWin=15";
+    const person = document.createElement("button");
+    person.dataset.action = "vs-person";
+    const bot = document.createElement("button");
+    bot.dataset.action = "vs-bot";
+    bot.dataset.tier = "easy";
+    modality.append(person, bot);
+    el.appendChild(modality);
+    person.focus();
+
+    const snapshot = captureFocus(el);
+    person.remove(); // the whole vs-person affordance is gone; the modality and its bot button survive
+    restoreFocus(el, snapshot);
+
+    expect(document.activeElement).toBe(bot);
+  });
+
+  // PIN, green from birth: the lobby never grabbed focus from outside itself,
+  // and the restore mechanism must keep it that way — restoring is only legal
+  // when focus was INSIDE the container at wipe time.
+  it("never steals focus that was outside the widget when a re-render happens", () => {
+    const el = freshContainer();
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    outside.focus();
+
+    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(5), CALLBACKS);
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+});
+
+describe("chrome owns its focus indicator (2.4.7: a host CSS reset must not leave keyboard users with no ring at all)", () => {
+  it("paints a 2px solid outline in the button's own text colour under :focus-visible", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
+    ]);
+    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const button = el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')!;
+    button.focus();
+
+    const style = getComputedStyle(button);
+    expect(style.outlineWidth).toBe("2px");
+    expect(style.outlineStyle).toBe("solid");
+    // currentColor: the ring inherits the label's own contrast guarantee.
+    expect(style.outlineColor).toBe(style.color);
   });
 });
 

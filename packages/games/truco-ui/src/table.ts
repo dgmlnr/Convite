@@ -2,6 +2,7 @@ import type { Action, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { announce, createAnnouncer } from "./announcer.js";
 import { renderCallLog, scrollCallLogToNewest } from "./call-log.js";
 import { renderCalls } from "./calls.js";
+import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { deriveHandOutcomeEvent, describeHandOutcome, renderHandOutcomeBanner } from "./hand-outcome.js";
 import type { HandOutcomeEvent } from "./hand-outcome.js";
 import { renderHand } from "./hand.js";
@@ -196,6 +197,14 @@ export function createMatchTableRenderer(
   ): void {
     ensureMatchstickDefs(container.ownerDocument);
     ensureTableStyles(container.ownerDocument);
+
+    // WCAG 2.1.1/2.4.3 (focus-continuity.ts): every server broadcast rebuilds
+    // every interactive node below, and the wipe used to dump keyboard focus
+    // on <body> mid-hand — focus a call button, the opponent plays a card,
+    // and your place at the table is gone. Captured HERE, before anything is
+    // removed; restored as this render's very last act, once the equivalent
+    // node exists again.
+    const focusSnapshot = captureFocus(container);
 
     // Built on the first render, and re-built only if this renderer is ever
     // remounted into a different container/document (in which case the old
@@ -717,5 +726,6 @@ export function createMatchTableRenderer(
     // same ended match silent.
     announce(matchOverAnnouncer, matchOverProps === null ? null : describeMatchOutcome(matchOverProps));
     container.appendChild(matchOver);
+    restoreFocus(container, focusSnapshot);
   };
 }

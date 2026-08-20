@@ -30,6 +30,14 @@ function buildGroup(actions: readonly Action[], kind: "response" | "opening", di
     button.type = "button";
     button.className = "hexdev-truco-call";
     button.dataset.action = action.type;
+    // Focus-continuity identity (focus-continuity.ts): data-action alone is
+    // ambiguous inside a group — quiero and no-quiero are BOTH respond-truco,
+    // and an envido chain offers several call-envido levels at once.
+    // Restoring focus onto the wrong sibling would arm a different action
+    // than the one the player was standing on, so each button carries the
+    // full discriminant the action itself has.
+    if (action.type === "respond-truco" || action.type === "respond-envido") button.dataset.response = action.response;
+    if (action.type === "call-truco" || action.type === "call-envido") button.dataset.level = action.level;
     button.textContent = label;
     button.addEventListener("click", () => dispatch(action));
     group.appendChild(button);

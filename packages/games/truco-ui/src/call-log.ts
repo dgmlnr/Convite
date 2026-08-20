@@ -162,6 +162,17 @@ export function renderCallLog(host: HTMLElement, input: CallLogInput): void {
 
   const list = host.appendChild(document.createElement("ol"));
   list.className = "hexdev-truco-call-log-list";
+  // WCAG 2.1.1: this list is the panel's ONE real scroller (table-styles.ts's
+  // own overflow-y: auto rule), and a scroll region only a pointer can reach
+  // is history a keyboard user can never read back. tabindex="0" puts it on
+  // the tab order so arrow keys scroll it; role="log" says WHAT it is, and
+  // the aria-label reuses the panel's own visible Spanish title so the two
+  // can never say different things. The role's implicit live semantics never
+  // double-announce: this node is rebuilt per render, and a live region only
+  // announces from a node that PERSISTS (announcer.ts's own rule).
+  list.tabIndex = 0;
+  list.setAttribute("role", "log");
+  list.setAttribute("aria-label", TABLE_STRINGS.callLogTitle);
   for (const event of input.events) {
     list.appendChild(buildEntry(event, input));
   }

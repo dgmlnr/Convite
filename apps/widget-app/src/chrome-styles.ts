@@ -242,6 +242,31 @@ export function buildChromeStylesheet(): string {
   filter: brightness(1.08);
 }
 
+/* An OWNED focus indicator (WCAG 2.4.7) — the chrome half of the rule
+ * table-styles.ts declares for the felt. Until this rule, 2.4.7 on the lobby
+ * rested entirely on the UA default ring, which one host-page outline reset
+ * would erase.
+ *
+ * currentColor, deliberately, where the felt uses its fixed gold: chrome
+ * surfaces are tenant-branded, so NO fixed colour can be proven against an
+ * arbitrary tenant surface — but every focusable control here already needs
+ * its TEXT readable on that same surface (4.5:1, the contrast suite), so the
+ * ring inherits a guarantee the theme cannot ship without: it can only fail
+ * where the button label already failed first.
+ *
+ * :where() is DELIBERATE SPECIFICITY ORDERING, not tidiness: it drops this
+ * subject to (0,1,0) so the felt's own (0,2,0) gold rule (table-styles.ts)
+ * deterministically wins on every control inside the truco shell — which
+ * nests inside this chrome-classed root in the real widget. Without it the
+ * two rules tie and the winner depends on stylesheet insertion order,
+ * which would silently trade the felt's tenant-proof gold for a
+ * tenant-dependent currentColor. Pinned by the precedence test in
+ * chrome-styles.browser.test.ts. */
+.hexdev-gamify-chrome :where(:focus-visible) {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 /* WCR-3 (error/retry, PR6-T4) + FU-2 (unsupported/back-to-lobby): ONE rule,
  * TWO emergency exits. Retry on the error card and back-to-lobby on the
  * unregistered-game card (unsupported-game-view.ts) are each the single

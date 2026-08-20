@@ -1542,6 +1542,42 @@ export function buildTableStylesheet(): string {
   border: 0;
 }
 
+/* An OWNED focus indicator (WCAG 2.4.7). Until this rule, every focus ring on
+ * the felt was the UA default — one host-page CSS reset (outline: none on
+ * everything, a depressingly common one) and a keyboard player could no
+ * longer see where they were standing.
+ *
+ * --hx-gold, FIXED, not a --gx-* tenant token — the same decoupling argument
+ * the felt itself makes: this ring draws on the widget's own identity
+ * surfaces (cloth, the recessed action lane, the dark panels), whose colours
+ * a tenant cannot touch, and --hx-gold is a PRIVATE token that never entered
+ * widget-protocol's theme vocabulary, so no tenant value can ever drag it
+ * below 3:1 against those surfaces (measured 7.3:1 against the cloth). A
+ * tenant accent here would hand a tenant the power to blind its own keyboard
+ * users with one dark hex value.
+ *
+ * outline, never border or box-shadow: outline paints OUTSIDE the box and
+ * occupies no layout space, so the height fences
+ * (table-height-stability/table-height-budget) cannot move — a hard
+ * invariant of this table. The existing per-control brightness rules above
+ * remain as a secondary signal; this ring is the primary one. Known limit,
+ * same coupling Tanda 3 unwinds for felt text: the call-log list sits on a
+ * panel whose background is a --gx-* surface token (dark by default), so a
+ * tenant choosing a very light panel surface weakens THAT one ring's edge
+ * contrast against the panel while it stays strong against the cloth around
+ * it.
+ *
+ * Specificity contract with chrome-styles.ts: the shell nests inside the
+ * chrome-classed root in the real widget, so BOTH focus-ring rules select a
+ * felt control. This rule stays at (0,2,0) while the chrome rule wraps its
+ * subject in :where() to sit at (0,1,0) — gold wins here by SPECIFICITY,
+ * never by stylesheet insertion order (pinned by the precedence test in
+ * chrome-styles.browser.test.ts). */
+.hexdev-truco-table-shell :focus-visible {
+  outline: 2px solid var(--hx-gold);
+  outline-offset: 2px;
+}
+
 .hexdev-truco-sena-notice-source { font-size: var(--hx-text-meta); font-weight: 600; opacity: 0.85; }
 .hexdev-truco-sena-notice-signal { font-size: var(--hx-text-title); text-transform: uppercase; letter-spacing: 0.02em; color: var(--gx-color-accent, var(--hx-gold)); }
 

@@ -1,6 +1,7 @@
 import type { BotTier, GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry, ModalityConfig } from "@hexdev/platform-core";
 import { ensureChromeStyles } from "./chrome-styles.js";
+import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
@@ -49,6 +50,14 @@ function botButtonsRow(gameId: GameId, modality: ModalityConfig, callbacks: Game
 function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions: CatalogEntry["configOptions"], callbacks: GameSelectionCallbacks): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "hexdev-modality";
+  // Focus-continuity identity (focus-continuity.ts): the modality CONFIG is
+  // what names this wrapper, because it is the one thing about it that is
+  // stable across presence broadcasts — waitingCount/data-prominent are state
+  // and change under the player's feet. Serialized without JSON quotes so the
+  // value can sit inside a CSS attribute selector unescaped.
+  wrapper.dataset.modality = Object.entries(entry.modality)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
 
   const heading = document.createElement("p");
   heading.textContent = describeModality(entry.modality, configOptions);
@@ -89,6 +98,9 @@ function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions:
 function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] | undefined, callbacks: GameSelectionCallbacks): HTMLElement {
   const card = document.createElement("section");
   card.className = "hexdev-game-card";
+  // Focus-continuity ancestor context: two games can offer the SAME modality
+  // config, so the modality wrapper's own identity is only unique per game.
+  card.dataset.game = entry.id;
 
   const title = document.createElement("h2");
   title.textContent = translateGameName(entry.displayNameKey);
@@ -121,6 +133,15 @@ export function renderGameSelection(
   callbacks: GameSelectionCallbacks,
 ): void {
   ensureChromeStyles(container.ownerDocument);
+  // WCAG 2.1.1/2.4.3 (focus-continuity.ts): every live presence broadcast
+  // re-runs this whole function, and the wipe below used to dump keyboard
+  // focus on <body> every few seconds. Capture-then-restore was chosen over
+  // skip-identical-rebuild deliberately: one mechanism covers BOTH the
+  // same-data broadcast (the common case) and a genuinely changed one, while
+  // memoizing "would this render identically?" adds a second cache of the
+  // presence state that can drift from what is actually on screen — and still
+  // needs this restore path the moment the data really changes.
+  const focusSnapshot = captureFocus(container);
   container.replaceChildren();
   container.className = "hexdev-gamify-chrome";
   // WCR-1: gates chrome-styles.ts's container-type declaration and the
@@ -149,6 +170,7 @@ export function renderGameSelection(
     empty.className = "hexdev-chrome-empty";
     empty.textContent = STRINGS.emptyCatalog;
     content.appendChild(empty);
+    restoreFocus(container, focusSnapshot);
     return;
   }
 
@@ -158,4 +180,5 @@ export function renderGameSelection(
   for (const entry of catalog) {
     games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks));
   }
+  restoreFocus(container, focusSnapshot);
 }
