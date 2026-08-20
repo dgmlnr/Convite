@@ -77,6 +77,11 @@ export function buildChromeStylesheet(): string {
    * and stays. Declared anyway for cross-stylesheet token parity, the mirror
    * image of --hx-leading's own felt-side declaration. */
   --hx-felt-text: #f2f2f2;
+  /* Felt-side only too, and for the same reason: the outlined controls this
+   * paints sit on the recessed action lane, a surface that exists nowhere in
+   * the chrome. Every chrome button's border reads --gx-color-primary against
+   * a real tenant surface, where that token is correct. Mirrored for parity. */
+  --hx-felt-outline: #65b08a;
 }
 .hexdev-gamify-chrome * { box-sizing: border-box; }
 
@@ -189,6 +194,25 @@ export function buildChromeStylesheet(): string {
   color: var(--gx-color-on-primary, #ffffff);
 }
 
+/* The chrome's live region (status-view.ts, WCAG 4.1.3). Clip-rect hidden,
+ * the same declarations as table-styles.ts's own .hexdev-truco-announcer --
+ * never display: none or visibility: hidden, which would remove the node from
+ * the accessibility tree and defeat its whole purpose. position: absolute is
+ * what makes it FREE: out of flow it cannot move the centered card, and
+ * clipped to nothing it cannot show up in a visual baseline. */
+.hexdev-chrome-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .hexdev-game-card {
   display: flex;
   flex-direction: column;
@@ -223,6 +247,13 @@ export function buildChromeStylesheet(): string {
   box-shadow: var(--hx-relief);
 }
 .hexdev-modality p { margin: 0; }
+/* B14 (WCAG 1.3.1): the modality's title line became a real <h3>. Styled by
+ * CLASS, never by tag, and reset back to exactly what the <p> it replaced
+ * computed to -- a heading's UA defaults (bold, 1.17em, block margins) are the
+ * whole reason a structural fix like this repaints if left alone. Every
+ * property a heading would otherwise contribute is named here, and the
+ * --hx-leading list below adds the last one. */
+.hexdev-modality-title { margin: 0; font-size: inherit; font-weight: inherit; }
 .hexdev-modality-count {
   font-weight: 700;
   color: var(--gx-color-primary, #2f6f4f);
@@ -344,10 +375,16 @@ export function buildChromeStylesheet(): string {
  * Deliberately NEVER the .hexdev-chrome-status container itself:
  * line-height inherits, and the unsupported card's own h1 would silently
  * pick it up -- headings, buttons, badges, and label-style text keep their
- * UA/own leading. */
+ * UA/own leading.
+ *
+ * .hexdev-modality-title is the ONE heading on this list, and it is not an
+ * exception to that rule: B14 promoted it from a <p> for STRUCTURE only, and
+ * it must keep computing exactly what the paragraph did. Listed by its class,
+ * so nothing else inherits the decision. */
 p.hexdev-chrome-status,
 .hexdev-chrome-status p,
 .hexdev-modality p,
+.hexdev-modality-title,
 .hexdev-chrome-empty,
 .hexdev-chrome-loading {
   line-height: var(--hx-leading);

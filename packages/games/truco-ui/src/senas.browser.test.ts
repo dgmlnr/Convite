@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action, PlayerId } from "@hexdev/truco-engine";
-import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
+import { MAX_SENAS_PER_HAND, SENA_SIGNALS } from "@hexdev/truco-engine";
 import { renderSenaPicker } from "./senas.js";
+import { TABLE_STYLE_ID, ensureTableStyles } from "./table-styles.js";
 
 const PLAYER = "player-a" as PlayerId;
 
@@ -481,5 +482,35 @@ describe("renderSenaPicker — dismissal, and a listener that cannot outlive its
     } finally {
       tracker.restore();
     }
+  });
+});
+
+/**
+ * WCAG 2.5.5 target size (AAA, B15). The six señas were 32px tall against the
+ * 44px every other control on this table already offers — the smallest tap
+ * targets in the product, on the one surface a player uses under time pressure.
+ *
+ * Cheap here and nowhere else: this popover is OUT OF FLOW (absolutely
+ * positioned against the felt, FU-1), so growing it costs the fixed action
+ * band nothing and shifts no in-flow box. The band-height contract and the
+ * "all six painted inside every ancestor clip" fence in
+ * table-zone-overlap.browser.test.ts are what prove that claim across all four
+ * tiers; this test owns only the number.
+ */
+describe("señas signal buttons meet the 44px target size (WCAG 2.5.5)", () => {
+  const SIX_LEGAL: readonly Action[] = SENA_SIGNALS.map((signal) => ({ type: "send-sena", playerId: PLAYER, signal }));
+
+  it("gives every signal the same 44px floor the rest of the table's controls have", () => {
+    ensureTableStyles(document);
+    const el = freshContainer();
+    renderSenaPicker(el, SIX_LEGAL, () => {}, { remaining: MAX_SENAS_PER_HAND }, surface);
+    el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.click();
+
+    const signals = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-sena")];
+    expect(signals).toHaveLength(6);
+    for (const signal of signals) {
+      expect(signal.getBoundingClientRect().height, `seña "${signal.textContent}"`).toBeGreaterThanOrEqual(44);
+    }
+    document.getElementById(TABLE_STYLE_ID)?.remove();
   });
 });

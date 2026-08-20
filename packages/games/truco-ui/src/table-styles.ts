@@ -109,6 +109,36 @@ export function buildTableStylesheet(): string {
    * carried as their own var() fallback, so an untenanted widget -- every
    * widget today -- renders byte-identically. Only the leak is gone. */
   --hx-felt-text: #f2f2f2;
+  /* --hx-felt-outline (Tanda 4, WCAG 1.4.11): the BORDER colour for the two
+   * outlined controls on the felt -- the opening-call buttons and the senas
+   * toggle. Both are transparent, so this 2px edge is the entire boundary of
+   * the control; there is no fill to see.
+   *
+   * It used to read var(--gx-color-primary, #2f6f4f) and measured 2.28:1
+   * against the recessed lane and 1.97:1 against bare cloth, under the 3:1
+   * non-text floor. Their LABELS always passed (12.17:1, --hx-felt-text right
+   * above), so the word stayed readable while the thing that says "this is a
+   * button, and it ends here" did not.
+   *
+   * PRIVATE and fixed, exactly like --hx-felt-text and --hx-gold above (never
+   * writing a token name directly followed by a colon inside this block is
+   * deliberate -- design-token-parity.test.ts scans it with a regex that
+   * cannot tell prose from a declaration, which is why every comment here
+   * parenthesises or trails its token names). A tenant's
+   * --gx-color-primary describes the tenant's OWN surface, and the lane is not
+   * one -- the same cross-zone leak Tanda 3 closed for felt TEXT, one property
+   * over, and equally invisible to widget-protocol's pairwise guard.
+   *
+   * THE BAR IS THE GRADIENT'S BRIGHTEST STOP, not the base cloth tone. The
+   * lane is a translucent black over whichever part of the radial gradient the
+   * fixed-height action band happens to cover, and a short felt pulls that
+   * band toward the bright centre -- so the honest floor is 3:1 against
+   * rgba(0,0,0,.18) over --truco-cloth-lit, the lightest background this
+   * border can ever sit on. #65b08a measures 3.29:1 there, 5.28:1 over the
+   * base tone and 5.96:1 over the deep stop, which clears every tier by
+   * construction with no per-breakpoint geometry to re-check. Pinned in
+   * felt-outline-contrast.browser.test.ts. */
+  --hx-felt-outline: #65b08a;
   /* New, unused felt-palette tokens (tasks §3.7 boundary note): PR2 changes
    * --truco-table-cloth's own value above to #123f2f and consumes all four
    * of these together in one vignette gradient. Declaring them here, now,
@@ -1436,10 +1466,12 @@ export function buildTableStylesheet(): string {
 }
 .hexdev-truco-calls-group--opening .hexdev-truco-call {
   background: transparent;
-  /* --hx-felt-text: transparent here reveals the action bar's own recessed
-   * lane (--truco-cloth-lane over the cloth), a fixed surface no tenant token
-   * reaches -- so the label on it must be fixed too. */
-  border: 2px solid var(--gx-color-primary, #2f6f4f);
+  /* --hx-felt-text / --hx-felt-outline: transparent here reveals the action
+   * bar's own recessed lane (--truco-cloth-lane over the cloth), a fixed
+   * surface no tenant token reaches -- so the label AND the border on it must
+   * be fixed too. The border additionally has to clear 1.4.11's 3:1: with no
+   * fill, it is the whole boundary of this control. */
+  border: 2px solid var(--hx-felt-outline);
   color: var(--hx-felt-text);
 }
 
@@ -1780,11 +1812,11 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-senas-toggle {
   min-height: 40px;
   padding: 6px 16px;
-  border: 2px solid var(--gx-color-primary, #2f6f4f);
+  border: 2px solid var(--hx-felt-outline);
   border-radius: var(--gx-radius, 999px);
   background: transparent;
-  /* --hx-felt-text, same lane and same argument as the opening-group call
-   * button this toggle deliberately matches. */
+  /* --hx-felt-text / --hx-felt-outline, same lane and same argument as the
+   * opening-group call button this toggle deliberately matches. */
   color: var(--hx-felt-text);
   font-family: inherit;
   font-size: var(--hx-text-body);
@@ -1946,7 +1978,13 @@ export function buildTableStylesheet(): string {
   box-shadow: var(--hx-elev-4), inset 0 0 0 1px var(--hx-gold-edge);
 }
 .hexdev-truco-sena {
-  min-height: 32px;
+  /* WCAG 2.5.5 (B15): 44px, the floor every other control on this table
+   * already meets -- these six were the last 32px targets in the product, on
+   * the surface a player uses fastest. Free of the band's own height contract
+   * BECAUSE the popover is out of flow (see .hexdev-truco-senas-row above):
+   * the strip grows upward over the felt and shifts no in-flow box, which
+   * table-zone-overlap.browser.test.ts re-proves at all four tiers. */
+  min-height: 44px;
   padding: 4px 10px;
   border: none;
   border-radius: var(--gx-radius, 999px);

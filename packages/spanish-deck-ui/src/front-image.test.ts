@@ -44,15 +44,35 @@ describe("front-image: getCardArt composes a ready-to-render <img> descriptor", 
   });
 });
 
-describe("front-image: cardLabel — accessible label, domain suit terms kept per the language contract", () => {
+/**
+ * WCAG 3.1.2 (B8): this label ships as an `<img alt>` inside a `lang="es"`
+ * document, so a Spanish screen reader pronounces every word of it with
+ * Spanish phonemes. "Ace of oro" came out as neither language; the card has a
+ * real Spanish name and this is it.
+ *
+ * The vocabulary is not invented here — `truco-ui`'s own `SENA_LABELS` already
+ * says "As de espada" and "7 de oro" to the same players, so these two must
+ * agree word for word or the product names one card two ways.
+ */
+describe("front-image: cardLabel — the card's real Spanish name (WCAG 3.1.2)", () => {
   it("labels court cards with the Spanish domain term (sota/caballo/rey), not a number", () => {
-    expect(cardLabel({ suit: "oro", rank: 10 })).toBe("Sota of oro");
-    expect(cardLabel({ suit: "oro", rank: 11 })).toBe("Caballo of oro");
-    expect(cardLabel({ suit: "oro", rank: 12 })).toBe("Rey of oro");
+    expect(cardLabel({ suit: "oro", rank: 10 })).toBe("Sota de oro");
+    expect(cardLabel({ suit: "basto", rank: 11 })).toBe("Caballo de basto");
+    expect(cardLabel({ suit: "copa", rank: 12 })).toBe("Rey de copa");
   });
 
-  it("labels numeral cards with an English rank word plus the Spanish suit term", () => {
-    expect(cardLabel({ suit: "espada", rank: 1 })).toBe("Ace of espada");
-    expect(cardLabel({ suit: "copa", rank: 7 })).toBe("Seven of copa");
+  it("names the ace 'As', never a digit and never the English word", () => {
+    expect(cardLabel({ suit: "espada", rank: 1 })).toBe("As de espada");
+  });
+
+  it("leaves plain numerals as digits, the way SENA_LABELS already writes '7 de oro'", () => {
+    expect(cardLabel({ suit: "espada", rank: 4 })).toBe("4 de espada");
+    expect(cardLabel({ suit: "copa", rank: 7 })).toBe("7 de copa");
+  });
+
+  it("carries no English connective on ANY of the 40 cards — the mixed-language shape is gone as a class, not per case", () => {
+    for (const card of ALL_CARDS) {
+      expect(cardLabel(card), `label for ${card.rank}-${card.suit}`).toMatch(/^(As|[2-7]|Sota|Caballo|Rey) de (oro|copa|espada|basto)$/u);
+    }
   });
 });

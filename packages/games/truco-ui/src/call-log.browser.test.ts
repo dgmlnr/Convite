@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { CallEvent, EnvidoState, PlayerId, TeamId } from "@hexdev/truco-engine";
 import { renderCallLog, scrollCallLogToNewest } from "./call-log.js";
+import { TABLE_STYLE_ID, ensureTableStyles } from "./table-styles.js";
 import type { TableAnchor } from "./seat-position.js";
 
 let host: HTMLElement;
@@ -254,5 +255,65 @@ describe("the call-log scroller is keyboard-operable (WCAG 2.1.1: a scroll regio
     expect(list.getAttribute("tabindex")).toBe("0");
     expect(list.getAttribute("role")).toBe("log");
     expect(list.getAttribute("aria-label")).toBe("Cantos");
+  });
+});
+
+/**
+ * WCAG 1.3.1 (B14). "Cantos" and "Tantos" are the titles of the two things
+ * this panel contains — they label the content below them, which is what a
+ * heading IS. As `<p>` elements they were styled to look like headings
+ * (uppercase, bold, tracked) and exposed as ordinary prose, so the one
+ * navigation aid that reaches a panel buried in a game table did not exist.
+ *
+ * The levels are H2 then H3, and both parts matter: H2 because nothing else on
+ * the felt is persistently a heading (the match-over overlay's own H2 is
+ * transient and mutually exclusive with play), H3 because the tantos row is a
+ * section INSIDE this panel, not a sibling of it.
+ *
+ * ZERO PAINT CHANGE by construction: the shared
+ * .hexdev-truco-call-log-title/-tantos-title rule already declares margin,
+ * font-size and font-weight explicitly, so a heading's UA defaults have
+ * nothing left to contribute — asserted below rather than assumed.
+ */
+describe("the call-log panel has a real heading outline (WCAG 1.3.1)", () => {
+  const REVEALED: EnvidoState = {
+    status: "revealed",
+    calls: ["envido"],
+    winningTeamId: TEAM_B,
+    awardedValue: 31,
+    declarations: [
+      { declaration: "points", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, points: 31 },
+      { declaration: "sonBuenas", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0 },
+    ],
+  };
+  const EVENTS: readonly CallEvent[] = [{ kind: "envido-reveal", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1 }];
+
+  function renderRevealed(): HTMLElement {
+    const el = freshHost();
+    renderCallLog(el, { events: EVENTS, envido: REVEALED, manoSeat: 1, selfSeat: 0, positions: POSITIONS_1V1 });
+    return el;
+  }
+
+  it("titles the panel with an H2 and its tantos section with a nested H3", () => {
+    const el = renderRevealed();
+
+    const panelTitle = el.querySelector<HTMLElement>(".hexdev-truco-call-log-title")!;
+    const tantosTitle = el.querySelector<HTMLElement>(".hexdev-truco-call-log-tantos-title")!;
+    expect([panelTitle.tagName, panelTitle.textContent]).toEqual(["H2", "Cantos"]);
+    expect([tantosTitle.tagName, tantosTitle.textContent]).toEqual(["H3", "Tantos"]);
+  });
+
+  it("paints both titles exactly as before — the shared rule owns every property a heading's UA default would otherwise supply", () => {
+    ensureTableStyles(document);
+    const el = renderRevealed();
+
+    for (const title of el.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-title, .hexdev-truco-call-log-tantos-title")) {
+      const style = getComputedStyle(title);
+      expect([style.marginTop, style.marginBottom], `${title.tagName} margins`).toEqual(["0px", "0px"]);
+      expect(style.fontWeight, `${title.tagName} weight`).toBe("700");
+      // --hx-text-label is 0.7rem against a 16px root.
+      expect(style.fontSize, `${title.tagName} size`).toBe("11.2px");
+    }
+    document.getElementById(TABLE_STYLE_ID)?.remove();
   });
 });

@@ -69,6 +69,11 @@ const EXPECTED_HX_TOKEN_NAMES = [
   // Mirrored into chrome-styles.ts for parity even though no chrome rule
   // reads it, exactly as --hx-leading is mirrored the other way.
   "--hx-felt-text",
+  // Tanda 4: the BORDER colour of the felt's outlined controls, private for
+  // the same cross-zone reason --hx-felt-text is, and additionally bound to
+  // WCAG 1.4.11's 3:1 floor (felt-outline-contrast.browser.test.ts). Mirrored
+  // into chrome-styles.ts unread, exactly like --hx-felt-text.
+  "--hx-felt-outline",
 ] as const;
 
 function extractDeclarationBlock(css: string, selectorPattern: RegExp): string {

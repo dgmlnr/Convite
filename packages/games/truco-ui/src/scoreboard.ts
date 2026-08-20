@@ -214,10 +214,26 @@ export function renderScoreboard(container: HTMLElement, options: ScoreboardOpti
     group.className = "hexdev-truco-score-group";
     group.dataset.scoreGroup = key;
 
+    // The caption is only HALF a sentence to a reader: the value it labels is
+    // drawn by the aria-hidden sticks below, so "Malas" arrived followed by
+    // nothing. Hidden from the accessibility tree and re-said whole by the
+    // line beneath it — appending a count beside an exposed caption would have
+    // read "Malas Malas: 4". Same trade the sticks themselves already make.
     const caption = document.createElement("span");
     caption.className = "hexdev-truco-score-label";
     caption.textContent = label;
+    caption.setAttribute("aria-hidden", "true");
     group.appendChild(caption);
+
+    // Clip-rect hidden, like the total above: out of flow, so it costs the
+    // panel's fixed height budget zero pixels and no visual baseline a byte.
+    // AFTER the total and before nothing — a reader meets the number first,
+    // then how it splits.
+    const spoken = document.createElement("span");
+    spoken.className = "hexdev-truco-visually-hidden";
+    spoken.dataset.scoreRun = key;
+    spoken.textContent = TABLE_STRINGS.scoreRun(label, count);
+    group.appendChild(spoken);
 
     const sticks = document.createElement("div");
     sticks.className = "hexdev-truco-score-sticks";
