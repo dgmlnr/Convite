@@ -282,7 +282,7 @@ describe("chrome owns its focus indicator (2.4.7: a host CSS reset must not leav
 });
 
 describe("chrome body copy consumes --hx-leading (FU-5: computed line-height contract)", () => {
-  it("gives the modality description paragraph a computed line-height of 1.35x its computed font-size", () => {
+  it("gives the modality description a computed line-height of 1.35x its computed font-size", () => {
     const el = freshContainer();
     const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
@@ -290,10 +290,103 @@ describe("chrome body copy consumes --hx-leading (FU-5: computed line-height con
 
     renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
-    const description = el.querySelector<HTMLParagraphElement>(".hexdev-modality p");
+    const description = el.querySelector<HTMLElement>(".hexdev-modality-title");
     expect(description).not.toBeNull();
     const style = getComputedStyle(description!);
     const lineHeight = Number.parseFloat(style.lineHeight);
     expect(lineHeight).toBeCloseTo(Number.parseFloat(style.fontSize) * 1.35, 0);
+  });
+
+  it("keeps the bot-CTA paragraph on the same leading — the rule covers the modality's prose, not just its heading", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
+    ]);
+
+    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const style = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality p:not(.hexdev-modality-count)")!);
+    expect(Number.parseFloat(style.lineHeight)).toBeCloseTo(Number.parseFloat(style.fontSize) * 1.35, 0);
+  });
+});
+
+/**
+ * WCAG 1.3.1 / 2.4.6 (B14). Two defects in one box.
+ *
+ * STRUCTURE: the line naming a modality ("Puntos para ganar: 15") is the
+ * heading of everything under it, and it was a `<p>` — so the lobby's outline
+ * ended at the game name and a reader jumping by heading could not reach, or
+ * even count, the modalities inside a game.
+ *
+ * NAMES: every modality repeats the same three bot tiers, so a lobby with two
+ * modalities offers "Fácil" three times over with nothing programmatic saying
+ * which board each belongs to. The buttons cannot be renamed — "Fácil" is the
+ * right visible label — so the disambiguation has to come from a named GROUP
+ * around them, which is what `role="group"` plus an `aria-label` is for.
+ *
+ * PAINT MUST NOT MOVE. `.hexdev-modality p` and the --hx-leading rule both
+ * target the `p` TAG, so promoting the heading is exactly the kind of change
+ * that silently repaints — hence the computed-style assertions below rather
+ * than a bare tag-name check.
+ */
+describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
+  const TWO_MODALITIES: readonly LobbyDisplayEntry[] = [
+    { modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false },
+    { modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true },
+  ];
+
+  function renderTwoModalities(): HTMLElement {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    return el;
+  }
+
+  it("makes the modality line a real heading, one level below the game name that owns it", () => {
+    const el = renderTwoModalities();
+
+    const gameHeading = el.querySelector<HTMLElement>(".hexdev-game-card h2");
+    const modalityHeadings = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-title")];
+    expect(gameHeading?.textContent).toBe("Truco Argentino");
+    expect(modalityHeadings.map((heading) => heading.tagName)).toEqual(["H3", "H3"]);
+    expect(modalityHeadings.map((heading) => heading.textContent)).toEqual(["Puntos para ganar: 15", "Puntos para ganar: 30"]);
+  });
+
+  it("paints that heading exactly like the paragraph it replaced — same size, weight and margin", () => {
+    const el = renderTwoModalities();
+
+    const heading = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality-title")!);
+    const paragraph = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality p:not(.hexdev-modality-count)")!);
+    expect(heading.fontSize).toBe(paragraph.fontSize);
+    expect(heading.fontWeight).toBe(paragraph.fontWeight);
+    expect([heading.marginTop, heading.marginBottom]).toEqual(["0px", "0px"]);
+  });
+
+  it("names each modality as a group, so three repeated tier labels are three distinguishable controls", () => {
+    const el = renderTwoModalities();
+
+    const groups = [...el.querySelectorAll<HTMLElement>(".hexdev-modality")];
+    expect(groups.map((group) => group.getAttribute("role"))).toEqual(["group", "group"]);
+    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
+      "Truco Argentino, Puntos para ganar: 15",
+      "Truco Argentino, Puntos para ganar: 30",
+    ]);
+  });
+
+  it("gives every repeated tier button a distinct group name — the whole point, asserted end to end", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, TWO_MODALITIES],
+      [TRUCO_2V2_ID, TWO_MODALITIES],
+    ]);
+
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    // Twelve buttons, four distinct names among them, and every one of the
+    // four boards is separately reachable by name — including across games,
+    // which a per-game-card grouping alone would not have given.
+    const easyButtons = [...el.querySelectorAll<HTMLElement>('button[data-tier="easy"]')];
+    expect(easyButtons).toHaveLength(4);
+    const groupNames = easyButtons.map((button) => button.closest(".hexdev-modality")?.getAttribute("aria-label"));
+    expect(new Set(groupNames).size, `repeated "Fácil" buttons under ${JSON.stringify(groupNames)}`).toBe(4);
   });
 });

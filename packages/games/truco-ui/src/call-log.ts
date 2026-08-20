@@ -94,7 +94,9 @@ function buildTantosRow(envido: Extract<EnvidoState, { status: "revealed" }>, in
   const row = document.createElement("div");
   row.className = "hexdev-truco-call-log-tantos";
 
-  const title = row.appendChild(document.createElement("p"));
+  // H3, not H2 (WCAG 1.3.1): the tantos row is a section INSIDE this panel,
+  // under the panel's own title below — never a sibling of it.
+  const title = row.appendChild(document.createElement("h3"));
   title.className = "hexdev-truco-call-log-tantos-title";
   title.textContent = TABLE_STRINGS.tantosTitle;
 
@@ -150,7 +152,14 @@ export function renderCallLog(host: HTMLElement, input: CallLogInput): void {
   host.className = "hexdev-truco-call-log";
   if (input.events.length === 0) return;
 
-  const title = host.appendChild(document.createElement("p"));
+  // A real heading (WCAG 1.3.1), not a paragraph styled to look like one: this
+  // line labels everything in the panel, which is what a heading is for, and
+  // it is the only way a reader navigating by heading can find this panel at
+  // all. H2 because nothing else on the felt is persistently a heading — the
+  // match-over overlay's own H2 is transient and exclusive with play. Paint is
+  // unchanged: table-styles.ts's shared title rule already declares margin,
+  // font-size and font-weight, leaving a heading's UA defaults nothing to say.
+  const title = host.appendChild(document.createElement("h2"));
   title.className = "hexdev-truco-call-log-title";
   title.textContent = TABLE_STRINGS.callLogTitle;
 

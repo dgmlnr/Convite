@@ -35,6 +35,11 @@ export const STRINGS = {
   emptyCatalog: "Este sitio todavía no tiene juegos habilitados.",
   loadError: "No se pudo cargar el juego.",
   waitingCount: (count: number): string => `${count} ${count === 1 ? "jugador esperando" : "jugadores esperando"}`,
+  // WCAG 2.4.6 (game-selection.ts): the accessible name of one modality's
+  // whole block of controls. Comma-joined rather than dash-joined so a screen
+  // reader pauses instead of reading punctuation, and game-first because that
+  // is the order a player already reads the card in.
+  modalityGroup: (gameName: string, description: string): string => `${gameName}, ${description}`,
   playVsPerson: "Jugar contra otra persona",
   playVsBot: "Jugar contra la máquina",
   botEasy: "Fácil",

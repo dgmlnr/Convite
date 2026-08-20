@@ -47,9 +47,29 @@ function botButtonsRow(gameId: GameId, modality: ModalityConfig, callbacks: Game
 // bot-filled seats, so a 4-seat queue join is fulfilled, never a silent hang.
 // Every modality gets the same queue affordance regardless of seat count.
 
-function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions: CatalogEntry["configOptions"], callbacks: GameSelectionCallbacks): HTMLElement {
+function renderModality(
+  gameId: GameId,
+  gameName: string,
+  entry: LobbyDisplayEntry,
+  configOptions: CatalogEntry["configOptions"],
+  callbacks: GameSelectionCallbacks,
+): HTMLElement {
+  const description = describeModality(entry.modality, configOptions);
+
   const wrapper = document.createElement("div");
   wrapper.className = "hexdev-modality";
+  // WCAG 2.4.6 (B14): every modality offers the SAME three tier buttons, so a
+  // lobby with two modalities per game repeats "Fácil" once per board with
+  // nothing programmatic telling them apart. The buttons themselves cannot
+  // carry the difference — "Fácil" is the correct visible label, and a
+  // per-button aria-label that disagreed with it would break 2.5.3 to fix
+  // 2.4.6 — so the disambiguation lives on a named GROUP around them.
+  //
+  // The GAME name is part of that name, not just the config: two games can
+  // offer the identical modality, and the game card's own <h2> is not a
+  // landmark, so nothing else would carry that context into the group's name.
+  wrapper.setAttribute("role", "group");
+  wrapper.setAttribute("aria-label", STRINGS.modalityGroup(gameName, description));
   // Focus-continuity identity (focus-continuity.ts): the modality CONFIG is
   // what names this wrapper, because it is the one thing about it that is
   // stable across presence broadcasts — waitingCount/data-prominent are state
@@ -59,8 +79,15 @@ function renderModality(gameId: GameId, entry: LobbyDisplayEntry, configOptions:
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
 
-  const heading = document.createElement("p");
-  heading.textContent = describeModality(entry.modality, configOptions);
+  // WCAG 1.3.1: this line titles everything below it, so it is a heading —
+  // H3, one level under the game card's own H2. It carries a CLASS because
+  // both rules that styled it (.hexdev-modality p, and the --hx-leading body-
+  // copy list) select the `p` TAG, and a promoted heading would silently drop
+  // out of both; chrome-styles.ts styles the class instead, so paint is
+  // byte-identical (fenced in game-selection.browser.test.ts).
+  const heading = document.createElement("h3");
+  heading.className = "hexdev-modality-title";
+  heading.textContent = description;
   wrapper.appendChild(heading);
 
   const botLabel = document.createElement("p");
@@ -102,8 +129,9 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
   // config, so the modality wrapper's own identity is only unique per game.
   card.dataset.game = entry.id;
 
+  const gameName = translateGameName(entry.displayNameKey);
   const title = document.createElement("h2");
-  title.textContent = translateGameName(entry.displayNameKey);
+  title.textContent = gameName;
   card.appendChild(title);
 
   if (presence === undefined || presence.length === 0) {
@@ -115,7 +143,7 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
   }
 
   for (const modalityEntry of presence) {
-    card.appendChild(renderModality(entry.id, modalityEntry, entry.configOptions, callbacks));
+    card.appendChild(renderModality(entry.id, gameName, modalityEntry, entry.configOptions, callbacks));
   }
   return card;
 }

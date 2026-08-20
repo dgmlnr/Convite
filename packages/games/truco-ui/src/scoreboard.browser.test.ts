@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureMatchstickDefs, renderCasita, renderGhostCasita, renderScoreboard } from "./scoreboard.js";
+import { TABLE_STYLE_ID, ensureTableStyles } from "./table-styles.js";
 
 let container: HTMLElement;
 
@@ -137,5 +138,76 @@ describe("renderScoreboard — split into malas y buenas", () => {
     const buenas = el.querySelector<HTMLElement>('[data-score-group="buenas"]')!;
     expect(malas.querySelectorAll("svg")).toHaveLength(3); // 15 malas points = 3 casitas of 5
     expect(buenas.querySelectorAll("svg")).toHaveLength(1); // 5 buenas points = 1 casita
+  });
+});
+
+/**
+ * WCAG 1.1.1, the second half (Tanda 1's named debt #3). The hidden total
+ * already says "4 tantos", but the two run captions below it were bare words:
+ * a reader heard "Nosotros, 4 tantos, Malas, Buenas" — two labels trailing off
+ * with nothing labelled, because the only thing that ever carried each run's
+ * value is an aria-hidden pile of SVG matchsticks.
+ *
+ * The VISIBLE caption is what goes aria-hidden, and the spoken line carries
+ * the whole "Malas: 4" instead. Appending a count beside an exposed caption
+ * would have read "Malas Malas: 4"; hiding the incomplete half and speaking
+ * the complete one is the same trade this file already makes for the sticks.
+ *
+ * Order is load-bearing and asserted: the total stays FIRST, so a reader still
+ * meets the number before the breakdown of it.
+ */
+describe("each score run says its own count out loud (WCAG 1.1.1)", () => {
+  it("gives malas and buenas a complete spoken line, not a bare caption", () => {
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 4, target: 15 });
+
+    expect(el.querySelector<HTMLElement>('[data-score-run="malas"]')?.textContent).toBe("Malas: 4");
+    expect(el.querySelector<HTMLElement>('[data-score-run="buenas"]')?.textContent).toBe("Buenas: 0");
+  });
+
+  it("hides the visible caption from the reader, so the run is named exactly once", () => {
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 4, target: 15 });
+
+    for (const caption of el.querySelectorAll<HTMLElement>(".hexdev-truco-score-label")) {
+      expect(caption.getAttribute("aria-hidden"), `caption "${caption.textContent}"`).toBe("true");
+    }
+  });
+
+  /** Text in document order with every aria-hidden subtree pruned — what a
+   * reader actually traverses, which `textContent` cannot model (it would
+   * include the muted caption and the matchsticks' own SVG whitespace). */
+  function spokenText(root: HTMLElement): string {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) =>
+        node.nodeType === Node.ELEMENT_NODE && (node as Element).getAttribute("aria-hidden") === "true" ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    });
+    let text = "";
+    while (walker.nextNode() !== null) {
+      if (walker.currentNode.nodeType === Node.TEXT_NODE) text += walker.currentNode.textContent ?? "";
+    }
+    return text.trim();
+  }
+
+  it("reads total first, then each run — the breakdown never arrives before the number it breaks down", () => {
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 18, target: 30 });
+
+    expect(spokenText(el)).toBe("18 tantosMalas: 15Buenas: 3");
+  });
+
+  it("costs the panel no layout: every spoken line is out of flow, like the total beside it", () => {
+    ensureTableStyles(document);
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 4, target: 15 });
+
+    for (const spoken of el.querySelectorAll<HTMLElement>("[data-score-run]")) {
+      expect(getComputedStyle(spoken).position, `run "${spoken.textContent}"`).toBe("absolute");
+    }
+    document.getElementById(TABLE_STYLE_ID)?.remove();
   });
 });

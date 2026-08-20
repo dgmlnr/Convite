@@ -99,7 +99,18 @@ export const TABLE_STRINGS = {
   // hand-outcome banner already uses for points, so the score reads in the
   // vocabulary the rest of the table already established.
   scoreTotal: (points: number): string => `${points} ${points === 1 ? "tanto" : "tantos"}`,
+  // WCAG 4.1.2 (hand.ts): a card the engine will not accept right now, said
+  // rather than implied. The NAME comes from spanish-deck-ui's own cardLabel
+  // ("As de espada"), so this string owns only the condition — the deck names
+  // its own cards and this package never re-spells them.
+  lockedCard: (cardName: string): string => `${cardName}, no jugable`,
   cardsInHand: (count: number): string => `${count} ${count === 1 ? "carta" : "cartas"}`,
+  // One score RUN, spoken whole (scoreboard.ts). The visible caption is only
+  // half a sentence — the value it labels lives in an aria-hidden pile of
+  // matchsticks — so the reader gets this instead of the caption. Bare digits,
+  // no unit: `scoreTotal` right above has already said "tantos" once, and
+  // repeating it on each half turns one number into three.
+  scoreRun: (label: string, points: number): string => `${label}: ${points}`,
 } as const;
 
 /** Spanish table vocabulary for the six closed señas signals

@@ -51,17 +51,29 @@ import { CARD_HEIGHT, CARD_WIDTH } from "./geometry.js";
 // preserves). Caught by the visual-regression suite's own asset-loading
 // wait, not by any prior test.
 
+// WCAG 3.1.2 (B8). This map used to mix languages — English rank words joined
+// to Spanish suit names by an English "of" ("Ace of oro"). It ships as an
+// `<img alt>` inside a `lang="es"` document, so a Spanish screen reader
+// pronounces "Ace"/"of" with Spanish phonemes and produces a word that is no
+// language at all. The court ranks were already right and stayed; the numerals
+// and the connective are what changed.
+//
+// DIGITS for the plain numerals, "As" for the ace: this is the vocabulary
+// `truco-ui`'s own SENA_LABELS already speaks to the same players ("As de
+// espada", "7 de oro"), and the two must agree word for word or the product
+// names one card two ways. Digits also stay honest without a
+// numbers-to-words table, exactly the argument TABLE_STRINGS.scoreTotal makes.
 const RANK_LABELS: Record<Rank, string> = {
-  1: "Ace",
-  2: "Two",
-  3: "Three",
-  4: "Four",
-  5: "Five",
-  6: "Six",
-  7: "Seven",
-  // Court ranks keep their Spanish domain terms (project convention: sota,
-  // caballo, rey are the actual names of these cards, not "Jack/Knight/King"
-  // — there is no clean 1:1 English equivalent for a Spanish baraja).
+  1: "As",
+  2: "2",
+  3: "3",
+  4: "4",
+  5: "5",
+  6: "6",
+  7: "7",
+  // Court ranks are the actual names of these cards, not "Jack/Knight/King" —
+  // there is no clean 1:1 English equivalent for a Spanish baraja, which is
+  // why these three were already Spanish before the rest caught up.
   10: "Sota",
   11: "Caballo",
   12: "Rey",
@@ -77,9 +89,13 @@ const SUIT_LABELS: Record<Suit, string> = {
   basto: "basto",
 };
 
-/** Human-readable, accessible label for a card, e.g. "Ace of oro", "Rey of espada". */
+/** The card's real Spanish name, e.g. "As de oro", "Rey de espada", "4 de
+ * basto" — one language end to end (WCAG 3.1.2), because this string is read
+ * aloud inside a `lang="es"` document. Game-agnostic despite matching truco's
+ * own señas vocabulary: "As de oro" is what the card is called at any table
+ * that uses a baraja española, not a truco term. */
 export function cardLabel(card: Card): string {
-  return `${RANK_LABELS[card.rank]} of ${SUIT_LABELS[card.suit]}`;
+  return `${RANK_LABELS[card.rank]} de ${SUIT_LABELS[card.suit]}`;
 }
 
 /**
