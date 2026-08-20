@@ -16,8 +16,16 @@ export {
 export { parseTargetOrigin, type TargetOrigin } from "./target-origin.js";
 
 export {
+  AA_NORMAL_TEXT_CONTRAST,
+  ACCENT_INK,
+  contrastRatio,
+  describeThemeContrastViolation,
   sanitizeThemeOverride,
   THEME_TOKEN_NAMES,
+  validateThemeContrast,
+  type ThemeContrastPair,
+  type ThemeContrastResult,
+  type ThemeContrastViolation,
   type ThemeOverride,
   type ThemeTokenName,
 } from "./theme-tokens.js";

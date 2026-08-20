@@ -70,6 +70,13 @@ export function buildChromeStylesheet(): string {
   --hx-gold: #e8c877;
   --hx-gold-edge: #b8923f;
   --hx-ink: #1a1a1a;
+  /* Consumed on the FELT side only (table-styles.ts's four cross-zone rules
+   * read it; see that declaration for the whole argument and its measured
+   * ratios). No chrome rule reads it -- every chrome surface a tenant can see
+   * IS a tenant surface, so --gx-color-on-surface is the correct token there
+   * and stays. Declared anyway for cross-stylesheet token parity, the mirror
+   * image of --hx-leading's own felt-side declaration. */
+  --hx-felt-text: #f2f2f2;
 }
 .hexdev-gamify-chrome * { box-sizing: border-box; }
 

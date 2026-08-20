@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 import type { PlayerId } from "@hexdev/platform-contract";
 import {
   createJtiReplayGuard,
@@ -93,6 +94,84 @@ describe("createStaticTenantRepository — theme sanitization (design §10 prima
     const malformed = { ...record, theme: "not-an-object" } as unknown as TenantRecord;
     const repo = createStaticTenantRepository([malformed]);
     expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
+  });
+});
+
+describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, the second question a colour has to answer)", () => {
+  // Shape validation asks "can this string escape the declaration it is
+  // assigned into". Contrast asks "can a human read the result". Both are
+  // properties of a value that arrived through `HEXDEV_TENANTS_JSON`, and
+  // this repository construction is the one choke point every `TenantRecord`
+  // passes through, so both are checked in the same place for the same
+  // reason. `validateThemeContrast` is REUSED from `@hexdev/widget-protocol`,
+  // never reimplemented — same instruction the sanitizer above already obeys.
+  let warnings: string[] = [];
+  let warn: MockInstance<typeof console.warn>;
+
+  beforeEach(() => {
+    warnings = [];
+    warn = vi.spyOn(console, "warn").mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it("drops the audit's dark tenant accent while keeping every pair that passes — a partial drop, so a tenant loses only the colour that was actually unreadable", () => {
+    const hostile = {
+      ...record,
+      theme: { "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a", "--gx-color-accent": "#123456" },
+    };
+
+    const repo = createStaticTenantRepository([hostile]);
+
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a" });
+  });
+
+  it("says so out loud at construction, naming the tenant, the pair and the measured ratio", () => {
+    // BOOT-LOUD, NOT BOOT-FATAL, and the difference is argued rather than
+    // assumed: this file's own `sanitizeTenantTheme` already established that
+    // "malformed deploy config must not crash the whole repository over one
+    // tenant's bad value", and a colour is the weakest possible reason to
+    // refuse to serve every OTHER tenant in the same JSON. But the sanitizer's
+    // drop-silently posture leaves an operator with a brand that quietly did
+    // not apply and no way to find out why, so the drop is announced with
+    // everything needed to fix it in one line.
+    createStaticTenantRepository([{ ...record, theme: { "--gx-color-accent": "#123456" } }]);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("tenant-a");
+    expect(warnings[0]).toContain("accent/ink");
+    expect(warnings[0]).toContain("1.37:1");
+    expect(warnings[0]).toContain("--gx-color-accent");
+  });
+
+  it("never throws over a colour — including a shape-valid but MALFORMED one, and one tenant's bad brand must not stop the repository or any OTHER tenant in the same deploy config from being built", () => {
+    // `hsl(.,50%,50%)` passes COLOR_PATTERN (the `.` is inside its numeric
+    // class) and parses to a NaN hue. Without a finite guard that crashed the
+    // whole repository construction — every tenant in one HEXDEV_TENANTS_JSON
+    // taken down by one typo. This fixture is what makes the promise in this
+    // test's own name something it actually exercises.
+    const hostile = {
+      ...record,
+      id: "tenant-hostile" as TenantId,
+      embedKey: "pk_live_hostile",
+      theme: { "--gx-color-accent": "#123456", "--gx-color-surface": "hsl(.,50%,50%)", "--gx-color-on-surface": "#f2f2f2" },
+    };
+    const healthy = { ...record, theme: { "--gx-color-accent": "#e8c877" } };
+
+    const repo = createStaticTenantRepository([hostile, healthy]);
+
+    expect(repo.findByEmbedKey("pk_live_hostile")?.theme).toEqual({});
+    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-accent": "#e8c877" });
+  });
+
+  it("stays silent for a tenant whose theme passes — a warning that fires for healthy config is a warning nobody reads", () => {
+    createStaticTenantRepository([{ ...record, theme: { "--gx-color-surface": "#1c1c1c", "--gx-color-on-surface": "#f2f2f2" } }]);
+
+    expect(warnings).toEqual([]);
   });
 });
 

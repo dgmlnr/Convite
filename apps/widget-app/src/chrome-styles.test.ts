@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACCENT_INK } from "@hexdev/widget-protocol";
 import { CHROME_STYLE_ID, buildChromeStylesheet } from "./chrome-styles.js";
 
 describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lobby/selection screen is CHROME, so it takes the tenant's brand)", () => {
@@ -110,5 +111,30 @@ describe("VDS-2/WCR-3 (PR6-T6): the newly styled chrome surfaces stay on the ten
     const bareReads = css.match(/var\(--gx-[a-z-]+\)/g) ?? [];
 
     expect(bareReads, `bare (no-fallback) --gx- reads found: ${JSON.stringify(bareReads)}`).toEqual([]);
+  });
+});
+
+describe("ACCENT_INK drift fence (Tanda 3): widget-protocol validates accent against a literal it does not own", () => {
+  // `validateThemeContrast` rejects a tenant accent by measuring it against
+  // `ACCENT_INK`, a constant in an L0 package that cannot see a stylesheet.
+  // If this stylesheet's own `--hx-ink` drifted away from that value, the
+  // guard would keep passing while measuring a pairing that no longer
+  // renders — the worst failure mode a guard has, because it stays green.
+  //
+  // This is one of TWO links: `design-token-parity.test.ts` pins
+  // table-styles.ts's identical `--hx-ink` to this one, so the felt's copy is
+  // covered transitively. truco-ui deliberately has no dependency on
+  // @hexdev/widget-protocol (see theme-tokens.test.ts's VDS-1 guard), which
+  // is why the chain runs through here rather than straight from there.
+  it("declares --hx-ink as exactly the ink widget-protocol validates tenant accents against", () => {
+    const css = buildChromeStylesheet();
+
+    expect(css).toMatch(new RegExp(`--hx-ink:\\s*${ACCENT_INK};`));
+  });
+
+  it("paints that same ink on the prominent lobby CTA, the accent-backed surface the audit measured at 1.37:1", () => {
+    const css = buildChromeStylesheet();
+
+    expect(css).toMatch(new RegExp(`background: var\\(--gx-color-accent[^}]*color: ${ACCENT_INK};`));
   });
 });

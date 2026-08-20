@@ -64,6 +64,11 @@ const EXPECTED_HX_TOKEN_NAMES = [
   "--hx-gold",
   "--hx-gold-edge",
   "--hx-ink",
+  // Tanda 3: the felt's own text colour, private for the same reason
+  // --hx-gold is (see table-styles.ts's declaration for the full argument).
+  // Mirrored into chrome-styles.ts for parity even though no chrome rule
+  // reads it, exactly as --hx-leading is mirrored the other way.
+  "--hx-felt-text",
 ] as const;
 
 function extractDeclarationBlock(css: string, selectorPattern: RegExp): string {
