@@ -36,6 +36,15 @@ describe("mountIframe", () => {
     unmount(handle);
   });
 
+  it("names the iframe for assistive tech with a Spanish title (WCAG 4.1.2: a nameless iframe is announced as nothing at all)", () => {
+    const el = mountAnchor();
+
+    const handle = mountIframe(document, el, "https://play.hexdev.example/embed?k=pk_live_t_abc");
+
+    expect(handle.iframe.title).toBe("Juegos");
+    unmount(handle);
+  });
+
   it("injects no other script or style element into the host document", () => {
     const el = mountAnchor();
     const scriptCountBefore = document.querySelectorAll("script").length;

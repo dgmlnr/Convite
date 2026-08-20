@@ -242,3 +242,17 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
     expect(list.scrollTop).toBe(0); // a detached node never lays out
   });
 });
+
+describe("the call-log scroller is keyboard-operable (WCAG 2.1.1: a scroll region a keyboard can never reach is content a keyboard user can never read)", () => {
+  it("makes the one real scroller tab-focusable and names it as a log", () => {
+    const el = freshHost();
+    const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, level: "truco" }];
+
+    renderCallLog(el, { events, envido: ENVIDO_NONE, manoSeat: 0, selfSeat: 0, positions: POSITIONS_1V1 });
+
+    const list = el.querySelector<HTMLElement>(".hexdev-truco-call-log-list")!;
+    expect(list.getAttribute("tabindex")).toBe("0");
+    expect(list.getAttribute("role")).toBe("log");
+    expect(list.getAttribute("aria-label")).toBe("Cantos");
+  });
+});

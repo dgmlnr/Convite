@@ -31,6 +31,13 @@ export function mountIframe(doc: Document, anchor: Element, src: string): MountH
 
   const iframe = doc.createElement("iframe");
   iframe.setAttribute("sandbox", SANDBOX_TOKENS);
+  // WCAG 4.1.2: a title-less iframe is announced by screen readers as
+  // nothing at all, or as its raw URL. "Juegos" is the honest name at mount
+  // time — the loader knows only the embed src here (no tenant name, no
+  // catalog yet; those live server-side behind /embed), and every user-facing
+  // string in this product is Spanish. The inner document's own <title>
+  // (embed-shell.ts) carries the fuller name once it loads.
+  iframe.title = "Juegos";
   iframe.src = src;
   iframe.style.display = "block";
   iframe.style.width = "100%";

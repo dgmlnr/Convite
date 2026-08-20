@@ -142,7 +142,9 @@ describe("renderSenaPicker — at the per-hand cap the control stays put and say
     renderSenaPicker(el, [], () => {}, { remaining: 0 }, surface);
 
     const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
-    expect(toggle.textContent).toBe("Sin señas");
+    // The VISIBLE label alone: the visually-hidden reason span (WCAG 2.1.1,
+    // its own suite below) also joins textContent but never the painted band.
+    expect(toggle.firstChild?.textContent).toBe("Sin señas");
     // The reason, for anyone who cannot infer it from the label alone — it
     // costs the fixed-height action band nothing, unlike a second line of copy.
     expect(toggle.title).toBe(`Ya hiciste las ${MAX_SENAS_PER_HAND} señas de la mano`);
@@ -194,6 +196,42 @@ describe("renderSenaPicker — at the per-hand cap the control stays put and say
       expect(el.className).toBe("hexdev-truco-senas");
       el.remove();
     }
+  });
+});
+
+describe("renderSenaPicker — the toggle names the region it owns (WCAG 4.1.2: aria-expanded without aria-controls is a state with no referent)", () => {
+  it("links the toggle to its popover row via aria-controls, collapsed and open alike", () => {
+    const el = freshContainer();
+    const legal: readonly Action[] = [{ type: "send-sena", playerId: PLAYER, signal: "asDeEspada" }];
+
+    renderSenaPicker(el, legal, () => {}, { remaining: MAX_SENAS_PER_HAND }, surface);
+
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
+    const row = el.querySelector<HTMLElement>(".hexdev-truco-senas-row")!;
+    const controls = toggle.getAttribute("aria-controls");
+    expect(controls).not.toBeNull();
+    expect(row.id).toBe(controls);
+
+    toggle.click();
+    expect(toggle.getAttribute("aria-controls")).toBe(row.id);
+  });
+});
+
+describe("renderSenaPicker — the spent reason is real text, not only a title tooltip (WCAG 2.1.1: title is unreachable by keyboard and unreliable for screen readers)", () => {
+  it("carries the spent reason as visually-hidden text inside the disabled toggle itself", () => {
+    const el = freshContainer();
+
+    renderSenaPicker(el, [], () => {}, { remaining: 0 }, surface);
+
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
+    const reason = toggle.querySelector<HTMLElement>(".hexdev-truco-visually-hidden");
+    expect(reason).not.toBeNull();
+    expect(reason!.textContent).toBe(`. Ya hiciste las ${MAX_SENAS_PER_HAND} señas de la mano`);
+    // The FLATTENED accessible name, exactly as an AT assembles it: label and
+    // reason must read as two sentences, never run together into
+    // "Sin señasYa hiciste..." — the separator lives inside the hidden span
+    // so the painted label stays untouched.
+    expect(toggle.textContent).toBe(`Sin señas. Ya hiciste las ${MAX_SENAS_PER_HAND} señas de la mano`);
   });
 });
 

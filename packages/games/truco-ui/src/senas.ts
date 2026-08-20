@@ -4,6 +4,12 @@ import { SENA_LABELS, TABLE_STRINGS } from "./strings.js";
 
 type SendSena = Extract<Action, { type: "send-sena" }>;
 
+/** Document-unique id source for the popover row (aria-controls below).
+ * Module-level so two pickers in one document can never mint the same id;
+ * monotonically growing across renders is harmless — each render re-links its
+ * own fresh toggle/row pair. */
+let senasRowSequence = 0;
+
 /** The sender's own per-hand seña quota, straight off
  * `PlayerView["self"].senasRemaining` — the only view field that carries it
  * (truco-engine's `view.ts` explains why no one else may receive it). */
@@ -82,10 +88,23 @@ export function renderSenaPicker(
     // No row, no listener, no `aria-expanded`: this button owns no revealable
     // region any more, and claiming one it cannot open would be a worse lie
     // to a screen reader than the vanishing button was to a sighted player.
-    // `disabled` alone carries the state; the title carries the reason.
+    // `disabled` alone carries the state.
     toggle.textContent = TABLE_STRINGS.senasSpent;
     toggle.title = TABLE_STRINGS.senasSpentHint(MAX_SENAS_PER_HAND);
     toggle.disabled = true;
+    // The REASON, as real text (WCAG 2.1.1): `title` only surfaces on pointer
+    // hover — a keyboard user cannot hover, and screen readers expose title
+    // inconsistently, doubly so on a disabled control. The visually-hidden
+    // span joins the button's accessible name instead, so "Sin señas" always
+    // arrives WITH its why. The title stays for the pointer users it already
+    // serves. The leading ". " is load-bearing: an AT flattens the label text
+    // node and this span into ONE name, and without a separator they run
+    // together ("Sin señasYa hiciste..."). It lives inside the hidden span so
+    // the painted label stays byte-identical.
+    const reason = document.createElement("span");
+    reason.className = "hexdev-truco-visually-hidden";
+    reason.textContent = `. ${TABLE_STRINGS.senasSpentHint(MAX_SENAS_PER_HAND)}`;
+    toggle.append(reason);
     container.append(toggle);
     return;
   }
@@ -100,6 +119,14 @@ export function renderSenaPicker(
 
   const row = document.createElement("div");
   row.className = "hexdev-truco-senas-row";
+  // WCAG 4.1.2: aria-expanded promises a revealable region, and aria-controls
+  // is what NAMES it — without the link, assistive tech knows something
+  // opened but not what or where. A fresh id per render (the sequence below)
+  // rather than a fixed one: ids must be document-unique, and this module
+  // cannot know how many pickers a document holds; toggle and row are built
+  // together in the same render, so the pair can never dangle.
+  row.id = `hexdev-truco-senas-row-${++senasRowSequence}`;
+  toggle.setAttribute("aria-controls", row.id);
 
   let open = false;
   const renderRow = (): void => {

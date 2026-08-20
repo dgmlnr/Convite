@@ -427,7 +427,9 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
     const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]');
     expect(toggle, "the control must not vanish when the cap bites").not.toBeNull();
     expect(toggle!.disabled).toBe(true);
-    expect(toggle!.textContent).toBe("Sin señas");
+    // The VISIBLE label alone: the visually-hidden reason span (WCAG 2.1.1,
+    // senas.ts) also joins textContent but never the painted band.
+    expect(toggle!.firstChild?.textContent).toBe("Sin señas");
   });
 
   /**
@@ -1071,5 +1073,129 @@ describe("createMatchTableRenderer — action bar overflow: 1v1's two-simultaneo
       actionBar.scrollTop = actionBar.scrollHeight;
       expect(actionBar.scrollTop).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("createMatchTableRenderer — keyboard focus survives every server broadcast (WCAG 2.1.1/2.4.3: the render wipe used to dump focus on <body>)", () => {
+  const PENDING_VIEW = (): PlayerView =>
+    baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
+  const RESPOND_LEGAL: readonly Action[] = [
+    { type: "respond-truco", playerId: SELF, response: "quiero" },
+    { type: "respond-truco", playerId: SELF, response: "no-quiero" },
+  ];
+
+  it("keeps focus on the exact respond button — No quiero, never its Quiero sibling — across a same-view re-render", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, PENDING_VIEW(), RESPOND_LEGAL, () => {});
+    const noQuiero = [...el.querySelectorAll<HTMLButtonElement>(".hexdev-truco-call")].find((b) => b.textContent === "No quiero")!;
+    noQuiero.focus();
+
+    render(el, PENDING_VIEW(), RESPOND_LEGAL, () => {});
+
+    const focused = document.activeElement as HTMLElement;
+    expect(el.contains(focused)).toBe(true);
+    expect(focused.textContent).toBe("No quiero");
+  });
+
+  it("falls back to the nearest surviving hand card when the focused card was played and is gone", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const twoCards = baseView({
+      self: { ...baseView().self, hand: [{ suit: "espada", rank: 1 }, { suit: "espada", rank: 2 }] },
+    });
+    const playBoth: readonly Action[] = [
+      { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 1 } },
+      { type: "play-card", playerId: SELF, card: { suit: "espada", rank: 2 } },
+    ];
+    render(el, twoCards, playBoth, () => {});
+    el.querySelector<HTMLButtonElement>('button[data-card="2-espada"]')!.focus();
+
+    const oneCard = baseView({ self: { ...baseView().self, hand: [{ suit: "espada", rank: 1 }] } });
+    render(el, oneCard, [{ type: "play-card", playerId: SELF, card: { suit: "espada", rank: 1 } }], () => {});
+
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.dataset.card).toBe("1-espada");
+  });
+
+  it("falls back to the shell container — never <body> — when the focused action is no longer legal and nothing equivalent survives", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    render(el, PENDING_VIEW(), RESPOND_LEGAL, () => {});
+    [...el.querySelectorAll<HTMLButtonElement>(".hexdev-truco-call")].find((b) => b.textContent === "Quiero")!.focus();
+
+    // The call was answered: no pending call, opponent's turn, nothing legal.
+    render(el, baseView({ hand: { ...baseView().hand!, turnSeat: 1 } }), [], () => {});
+
+    expect(document.activeElement).toBe(el);
+    expect(el.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("falls back to a surviving control with a DIFFERENT action (the region rung) when the equivalent control comes back unfocusable", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    // 2v2 so the señas node renders at all (view.teammates.length > 0).
+    const view2v2 = (senasRemaining: number): PlayerView =>
+      baseView({
+        self: { ...baseView().self, senasRemaining },
+        teammates: [{ playerId: "player-c" as PlayerId, seat: 2, cardsRemaining: 3, lastSena: null }],
+        opponents: [
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+          { playerId: "player-d" as PlayerId, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+        ],
+      });
+    const trucoCall: Action = { type: "call-truco", playerId: SELF, level: "truco" };
+    render(el, view2v2(3), [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }, trucoCall], () => {});
+    el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.focus();
+
+    // The quota is spent: the toggle SURVIVES with its exact identity but
+    // comes back disabled, so rung 1 finds it and is refused (focus() on a
+    // disabled button does not take); rung 2's group selector is the same
+    // string for an action-primary leaf and is deduped — only the region
+    // rung (any [data-action] control in the same scope) is left, and it
+    // lands on the surviving call button rather than <body>.
+    render(el, view2v2(0), [trucoCall], () => {});
+
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.dataset.action).toBe("call-truco");
+  });
+
+  it("restores focus to the rebuilt call-log list when it was the focused scroller", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const withEvents = (): PlayerView =>
+      baseView({
+        hand: {
+          ...baseView().hand!,
+          callEvents: [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }] as readonly CallEvent[],
+        },
+      });
+    render(el, withEvents(), [], () => {});
+    el.querySelector<HTMLElement>(".hexdev-truco-call-log-list")!.focus();
+
+    render(el, withEvents(), [], () => {});
+
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.className).toBe("hexdev-truco-call-log-list");
+    expect(el.contains(focused)).toBe(true);
+  });
+});
+
+describe("the felt owns its focus indicator (2.4.7: a host CSS reset must not leave keyboard users with no ring at all)", () => {
+  it("paints a 2px solid gold outline on a focused call button", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const trucoCall: Action = { type: "call-truco", playerId: SELF, level: "truco" };
+    render(el, baseView(), [trucoCall], () => {});
+
+    const button = el.querySelector<HTMLButtonElement>(".hexdev-truco-call")!;
+    button.focus();
+
+    const style = getComputedStyle(button);
+    expect(style.outlineWidth).toBe("2px");
+    expect(style.outlineStyle).toBe("solid");
+    // --hx-gold (#e8c877): a PRIVATE token, never part of the tenant theme
+    // vocabulary, so no tenant value can drag this ring below 3:1 on the felt.
+    expect(style.outlineColor).toBe("rgb(232, 200, 119)");
   });
 });
