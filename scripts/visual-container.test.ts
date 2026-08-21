@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PINNED_PLAYWRIGHT_VERSION, hostSpawnNeedsShell, imageRefFor, posixUserFor, resolveContainerRun, writesBaseline } from "./visual-container.mjs";
+import { PINNED_PLAYWRIGHT_VERSION, hostSpawnNeedsShell, imageRefFor, isEntryPoint, posixUserFor, resolveContainerRun, writesBaseline } from "./visual-container.mjs";
 
 /**
  * Both functions here are pure precisely so this file can exist — the
@@ -175,6 +175,47 @@ describe("writesBaseline", () => {
  * `vitest.ps1` shim on Windows, and Node's spawn without a shell goes to
  * `CreateProcess`, which can execute neither.
  */
+/**
+ * The regression this pins shipped, and it is the nastier kind of bug: the
+ * runner guarded its entry point with ``import.meta.url === `file://${argv[1]}` ``,
+ * which is only ACCIDENTALLY right. On POSIX `argv[1]` is `/repo/scripts/x.mjs`
+ * and the concatenation happens to match. On Windows `argv[1]` is a native
+ * backslash path (`C:\repo\scripts\x.mjs`) while `import.meta.url` is
+ * `file:///C:/repo/scripts/x.mjs`, so the comparison is ALWAYS false — the
+ * runner body never executes and `pnpm test:visual` exits 0 having tested
+ * nothing. A silently green test command is worse than the crash it replaced.
+ *
+ * The Windows case cannot be asserted from here and is deliberately not
+ * faked: `pathToFileURL` is platform-DEPENDENT, so on a Linux runner a
+ * `C:\...` string is just a relative filename with odd characters in it.
+ * Windows correctness comes from Node's own implementation, which is exactly
+ * why the fix delegates to it instead of building the URL by hand.
+ */
+describe("isEntryPoint", () => {
+  it("recognises the script it was invoked as", () => {
+    expect(isEntryPoint("file:///repo/scripts/visual-container.mjs", "/repo/scripts/visual-container.mjs")).toBe(true);
+  });
+
+  /**
+   * The discriminating case, and the one that DOES run on any platform: the
+   * naive concatenation yields a literal space here, while the real answer
+   * percent-encodes it. The shipped bug fails this test.
+   */
+  it("survives a path with characters a URL percent-encodes", () => {
+    expect(isEntryPoint("file:///repo/my%20scripts/visual-container.mjs", "/repo/my scripts/visual-container.mjs")).toBe(true);
+    expect(`file:///repo/my scripts/visual-container.mjs`).not.toBe("file:///repo/my%20scripts/visual-container.mjs");
+  });
+
+  it("says no when the module is merely imported by another entry point", () => {
+    expect(isEntryPoint("file:///repo/scripts/visual-container.mjs", "/repo/scripts/run-vitest.mjs")).toBe(false);
+  });
+
+  /** No argv[1] at all — e.g. `node --eval`. Not an entry point. */
+  it("says no when there is no invoked script", () => {
+    expect(isEntryPoint("file:///repo/scripts/visual-container.mjs", undefined)).toBe(false);
+  });
+});
+
 describe("hostSpawnNeedsShell", () => {
   it("asks for a shell on windows, where the CLI is a .cmd shim", () => {
     expect(hostSpawnNeedsShell("win32")).toBe(true);

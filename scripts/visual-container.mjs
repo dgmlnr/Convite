@@ -44,6 +44,31 @@
  * tolerance.
  */
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+/**
+ * Whether this module is being RUN rather than imported.
+ *
+ * The obvious spelling, ``import.meta.url === `file://${process.argv[1]}` ``,
+ * is what this file shipped with, and it is only ACCIDENTALLY right. On
+ * POSIX `argv[1]` is `/repo/scripts/x.mjs` and the concatenation happens to
+ * match. On Windows `argv[1]` is a native backslash path
+ * (`C:\repo\scripts\x.mjs`) while `import.meta.url` is
+ * `file:///C:/repo/scripts/x.mjs`, so the comparison is ALWAYS false: the
+ * runner body never executes and `pnpm test:visual` exits 0 having tested
+ * nothing. A silently green test command is worse than a crash, which is why
+ * this is a named, tested function rather than an inline expression.
+ *
+ * `pathToFileURL` is Node's own answer to exactly this question, and it also
+ * percent-encodes characters a hand-built URL would leave raw — a repository
+ * checked out under a path containing a space hit the same bug on Linux.
+ */
+export function isEntryPoint(importMetaUrl, invokedScriptPath) {
+  if (invokedScriptPath === undefined) {
+    return false;
+  }
+  return importMetaUrl === pathToFileURL(invokedScriptPath).href;
+}
 
 /**
  * The playwright version this repo depends on, mirrored from `package.json`.
@@ -162,7 +187,7 @@ export function posixUserFor(processLike) {
 }
 
 /* c8 ignore start — the spawn, deliberately thin; the decisions above are what is tested. */
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isEntryPoint(import.meta.url, process.argv[1])) {
   const { uid, gid } = posixUserFor(process);
   const { command, args } = resolveContainerRun({
     repoRoot: process.cwd(),
