@@ -39,6 +39,25 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.1.2)(@vitest/browser-playwright@4.1.10)(vite@8.2.0(@types/node@26.1.2))
 
+  apps/mint-server:
+    dependencies:
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../packages/platform-contract
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../../packages/platform-core
+      '@hexdev/truco-module':
+        specifier: workspace:*
+        version: link:../../packages/games/truco-module
+      '@hexdev/widget-frontdoor':
+        specifier: workspace:*
+        version: link:../../packages/widget-frontdoor
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
   apps/server:
     dependencies:
       '@hexdev/platform-contract':

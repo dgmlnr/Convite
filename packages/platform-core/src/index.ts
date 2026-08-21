@@ -3,6 +3,7 @@ export { createGameModuleRegistry } from "./registry.js";
 export type { RateLimiter, RateLimiterOptions } from "./rate-limiter.js";
 export { createRateLimiter } from "./rate-limiter.js";
 export type { RedisRateLimiterOptions } from "./redis-rate-limiter.js";
+export { connectRedis } from "./redis-client.js";
 export { createRedisRateLimiter } from "./redis-rate-limiter.js";
 export type { RedisJtiReplayGuardOptions } from "./redis-jti-replay-guard.js";
 export { createRedisJtiReplayGuard } from "./redis-jti-replay-guard.js";

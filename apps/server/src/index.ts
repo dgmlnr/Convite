@@ -13,6 +13,7 @@ import {
   createSessionTokenIssuer,
   createSessionTokenVerifier,
   createStaticTenantRepository,
+  connectRedis,
 } from "@hexdev/platform-core";
 import type { JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
@@ -21,7 +22,7 @@ import { requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v
 import { loadServerConfig } from "./config.js";
 import { handleEmbedRequest, handleSessionRenewRequest, refererOrigin, renderEmbedShell, serveCardFrontAsset, serveLoaderAsset, serveWidgetAppAsset } from "@hexdev/widget-frontdoor";
 import type { EmbedBootstrap } from "@hexdev/widget-frontdoor";
-import { connectRedis } from "./redis-client.js";
+
 
 // The composition root: wires existing pieces (registry, auth primitives,
 // the generic MatchRoom, the deal factory) together. No game rules live
