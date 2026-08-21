@@ -111,6 +111,29 @@ memoria, en un solo proceso. Con ella mal configurada, el servidor **no arranca*
 silencio a memoria reintroduciría justo la rotura invisible que esa variable existe para
 cerrar.
 
+## Dos roles, un origen
+
+La plataforma se despliega como **dos procesos distintos**, y la separación es de
+seguridad, no de escala.
+
+| Rol | Proceso | Qué tiene | Qué sirve |
+| --- | --- | --- | --- |
+| Acuñador | `apps/mint-server` | la **semilla** Ed25519 (`HEXDEV_SESSION_SIGNING_KEY`) | `/embed`, `/session/renew`, `/loader.js`, `/assets/*` |
+| Partida | `apps/server` | sólo la **clave pública** (`HEXDEV_SESSION_PUBLIC_KEY`) | colyseus: matchmaking y las salas |
+
+Antes de esta separación toda réplica firmaba y verificaba, así que comprometer
+**una sola instancia** alcanzaba para acuñar tokens de toda la flota. Ahora el rol de
+partida es incapaz de acuñar por construcción: recibe una clave importada como
+verify-only y no extraíble, y el objeto que obtiene no tiene `mint`.
+
+**Los dos roles van detrás de un mismo origen público, ruteados por path.** No es una
+preferencia: el widget arma la URL de `/session/renew` de forma **relativa**, y ese
+origen se valida contra los orígenes de widget de este despliegue. Si el rol acuñador
+vive en otro hostname, esa validación no puede pasar nunca.
+
+La suite e2e corre exactamente con esa forma (ver `e2e/support/front-proxy.ts`), así que
+la topología está probada y no solamente descrita.
+
 ## Comandos
 
 | Comando | Qué hace |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSessionTokenIssuer } from "@hexdev/platform-core";
+import { createSessionTokenVerifier } from "@hexdev/platform-core";
 import { loadServerConfig } from "./config.js";
 
 /** Every non-secret-focused test below needs the explicit dev opt-in — the
@@ -8,9 +8,9 @@ import { loadServerConfig } from "./config.js";
 const DEV_OPT_IN = { HEXDEV_ALLOW_DEV_DEFAULTS: "true" };
 
 describe("loadServerConfig", () => {
-  it("uses HEXDEV_SESSION_SIGNING_KEY from the environment when present, even in production", () => {
-    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_SIGNING_KEY: "a-real-signing-key" });
-    expect(config.sessionSigningKey).toBe("a-real-signing-key");
+  it("uses HEXDEV_SESSION_PUBLIC_KEY from the environment when present, even in production", () => {
+    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "a-real-public-key" });
+    expect(config.sessionPublicKey).toBe("a-real-public-key");
   });
 
   it("defaults the port, falling back when PORT is unset", () => {
@@ -33,10 +33,8 @@ describe("loadServerConfig", () => {
     expect(config.tenants).toEqual(tenants);
   });
 
-  it("defaults the rate-limit settings for /embed (IP and key) and room join", () => {
+  it("defaults the rate-limit setting for room join — the only surface this role still exposes", () => {
     const config = loadServerConfig(DEV_OPT_IN);
-    expect(config.embedIpRateLimit.limit).toBeGreaterThan(0);
-    expect(config.embedKeyRateLimit.limit).toBeGreaterThan(0);
     expect(config.joinIpRateLimit.limit).toBeGreaterThan(0);
   });
 
@@ -51,8 +49,8 @@ describe("loadServerConfig", () => {
   });
 
   it("reads rate-limit settings from the environment when set", () => {
-    const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_EMBED_IP_RATE_LIMIT: "5", HEXDEV_EMBED_IP_RATE_WINDOW_MS: "1000" });
-    expect(config.embedIpRateLimit).toEqual({ limit: 5, windowMs: 1000 });
+    const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_JOIN_IP_RATE_LIMIT: "5", HEXDEV_JOIN_IP_RATE_WINDOW_MS: "1000" });
+    expect(config.joinIpRateLimit).toEqual({ limit: 5, windowMs: 1000 });
   });
 
   it("defaults redisUrl to undefined — no Redis, no new required config for a single-instance deploy", () => {
@@ -77,9 +75,9 @@ describe("loadServerConfig", () => {
 
 describe("loadServerConfig — fail-loud by default (hardening: public surface, obs 2945)", () => {
   it("refuses to start with no session secret and no explicit dev opt-in, regardless of NODE_ENV", () => {
-    expect(() => loadServerConfig({})).toThrow(/HEXDEV_SESSION_SIGNING_KEY/);
-    expect(() => loadServerConfig({ NODE_ENV: "staging" })).toThrow(/HEXDEV_SESSION_SIGNING_KEY/);
-    expect(() => loadServerConfig({ NODE_ENV: "prod" })).toThrow(/HEXDEV_SESSION_SIGNING_KEY/);
+    expect(() => loadServerConfig({})).toThrow(/HEXDEV_SESSION_PUBLIC_KEY/);
+    expect(() => loadServerConfig({ NODE_ENV: "staging" })).toThrow(/HEXDEV_SESSION_PUBLIC_KEY/);
+    expect(() => loadServerConfig({ NODE_ENV: "prod" })).toThrow(/HEXDEV_SESSION_PUBLIC_KEY/);
   });
 
   it("only falls back to the dev signing key when HEXDEV_ALLOW_DEV_DEFAULTS is explicitly set", () => {
@@ -91,8 +89,8 @@ describe("loadServerConfig — fail-loud by default (hardening: public surface, 
     // OLD HMAC secret; the real "is this really the fallback" proof is
     // config.ts's own docstring identifying exactly which constant this is).
     const config = loadServerConfig(DEV_OPT_IN);
-    expect(config.sessionSigningKey.length).toBeGreaterThan(0);
-    expect(config.sessionSigningKey).not.toBe("a-real-signing-key");
+    expect(config.sessionPublicKey.length).toBeGreaterThan(0);
+    expect(config.sessionPublicKey).not.toBe("a-real-public-key");
   });
 
   it("still refuses to start in production even with the dev opt-in flag set", () => {
@@ -111,13 +109,13 @@ describe("loadServerConfig + createSessionTokenIssuer — the FULL boot path ref
     // Deliberately NOT a valid 32-byte Ed25519 seed once base64url-decoded —
     // `loadServerConfig` itself does not reject this (see its own docstring:
     // shape validation is `createSessionTokenIssuer`'s job).
-    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_SIGNING_KEY: "not-a-real-key" });
-    expect(config.sessionSigningKey).toBe("not-a-real-key");
+    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key" });
+    expect(config.sessionPublicKey).toBe("not-a-real-key");
   });
 
   it("createSessionTokenIssuer refuses the malformed key loadServerConfig passed through — the composition root's top-level `await` (index.ts) turns this into a boot crash, same convention as redis-client.ts's fail-loud connect", async () => {
-    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_SIGNING_KEY: "not-a-real-key" });
-    await expect(createSessionTokenIssuer(config.sessionSigningKey)).rejects.toThrow(/malformed/i);
+    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key" });
+    await expect(createSessionTokenVerifier(config.sessionPublicKey)).rejects.toThrow(/malformed/i);
   });
 });
 
@@ -130,7 +128,7 @@ describe("loadServerConfig + createSessionTokenIssuer — the FULL boot path ref
  * same gap from this file.
  */
 describe("loadServerConfig numeric guards", () => {
-  const base = { HEXDEV_SESSION_SIGNING_KEY: "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI" };
+  const base = { HEXDEV_SESSION_PUBLIC_KEY: "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw" };
 
   it("refuses a non-numeric PORT rather than listening on NaN", () => {
     expect(() => loadServerConfig({ ...base, PORT: "not-a-port" })).toThrow(/PORT/);
@@ -142,16 +140,16 @@ describe("loadServerConfig numeric guards", () => {
   });
 
   it("refuses a non-numeric rate limit or window, naming the variable", () => {
-    expect(() => loadServerConfig({ ...base, HEXDEV_EMBED_IP_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
+    expect(() => loadServerConfig({ ...base, HEXDEV_JOIN_IP_RATE_WINDOW_MS: "soon" })).toThrow(/HEXDEV_JOIN_IP_RATE_WINDOW_MS/);
     expect(() => loadServerConfig({ ...base, HEXDEV_JOIN_IP_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_JOIN_IP_RATE_LIMIT/);
-    expect(() => loadServerConfig({ ...base, HEXDEV_EMBED_KEY_RATE_WINDOW_MS: "soon" })).toThrow(/HEXDEV_EMBED_KEY_RATE_WINDOW_MS/);
+    expect(() => loadServerConfig({ ...base, HEXDEV_SESSION_TTL_SECONDS: "ages" })).toThrow(/HEXDEV_SESSION_TTL_SECONDS/);
   });
 
   it("still accepts well-formed values", () => {
-    const config = loadServerConfig({ ...base, PORT: "4000", HEXDEV_EMBED_IP_RATE_LIMIT: "5" });
+    const config = loadServerConfig({ ...base, PORT: "4000", HEXDEV_JOIN_IP_RATE_LIMIT: "5" });
 
     expect(config.port).toBe(4000);
-    expect(config.embedIpRateLimit.limit).toBe(5);
+    expect(config.joinIpRateLimit.limit).toBe(5);
   });
 
   it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {
@@ -160,5 +158,46 @@ describe("loadServerConfig numeric guards", () => {
 
   it("refuses a HEXDEV_TENANTS_JSON that parses but is not a list", () => {
     expect(() => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: '{"id":"solo"}' })).toThrow(/HEXDEV_TENANTS_JSON/);
+  });
+});
+
+/**
+ * The match role holds NO seed. That is the entire point of the split
+ * (handoff §P4.3): compromising a match-serving replica must not be a way to
+ * mint tokens for the whole fleet. These assertions are what stop a future
+ * edit from quietly handing it minting power back.
+ */
+describe("the match role cannot mint", () => {
+  const base = { HEXDEV_SESSION_PUBLIC_KEY: "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw" };
+
+  it("exposes no signing key at all", () => {
+    expect(loadServerConfig(base)).not.toHaveProperty("sessionSigningKey");
+  });
+
+  it("ignores a signing key even when one is handed to it", () => {
+    const config = loadServerConfig({ ...base, HEXDEV_SESSION_SIGNING_KEY: "a-seed-that-must-not-be-used" });
+
+    expect(JSON.stringify(config)).not.toContain("a-seed-that-must-not-be-used");
+  });
+
+  /**
+   * The front door moved to the minting role, so the knobs that shaped it
+   * have no meaning here. Their absence is asserted so a future edit cannot
+   * re-couple the two roles' configuration by accident.
+   */
+  it("carries no front-door rate limits", () => {
+    const config = loadServerConfig(base);
+
+    expect(config).not.toHaveProperty("embedIpRateLimit");
+    expect(config).not.toHaveProperty("embedKeyRateLimit");
+  });
+
+  it("still carries what a match replica genuinely needs", () => {
+    const config = loadServerConfig(base);
+
+    expect(config.joinIpRateLimit.limit).toBeGreaterThan(0);
+    expect(config.tenants).toHaveLength(1);
+    expect(config.allowedWidgetOrigins).toHaveLength(1);
+    expect(config.queueBotFillSeconds).toBeGreaterThan(0);
   });
 });

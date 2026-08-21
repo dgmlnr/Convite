@@ -121,6 +121,13 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
   const mintOrigin = `http://localhost:${String(mintPort)}`;
   const matchOrigin = `http://localhost:${String(matchPort)}`;
 
+  // The roles get DIFFERENT key material, which is the split itself: the
+  // mint role keeps the seed (its own dev default, via
+  // HEXDEV_ALLOW_DEV_DEFAULTS above) and the match role is given only the
+  // public half. Neither is spelled out here — each role's config supplies
+  // its own dev default, and the match role's default is the public key of
+  // the mint role's default seed, so the pair stays consistent by
+  // construction rather than by a constant duplicated in this harness.
   const mintEnv: NodeJS.ProcessEnv = { ...serverEnv, PORT: String(mintPort) };
   const matchEnv: NodeJS.ProcessEnv = { ...serverEnv, PORT: String(matchPort) };
 

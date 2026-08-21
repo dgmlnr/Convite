@@ -27,7 +27,7 @@ export default defineConfig({
     // files one at a time removes cross-file resource contention as a
     // possible source of that.
     fileParallelism: false,
-    testTimeout: 12 * 60_000,
+    testTimeout: 17 * 60_000,
     hookTimeout: 5 * 60_000,
   },
 });

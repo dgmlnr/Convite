@@ -25,9 +25,6 @@
       "path": "../../packages/games/truco-module"
     },
     {
-      "path": "../../packages/widget-frontdoor"
-    },
-    {
       "path": "../../packages/widget-protocol"
     }
   ]

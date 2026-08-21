@@ -25,12 +25,23 @@ import { readRedisUrlForOwnTests } from "./redis-test-support.js";
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const GAME_ID = "truco-argentino" as GameId;
 const TENANT_ID = "cross-instance-tenant" as TenantId;
-// The EXACT property this file exists to prove (apply prompt: "all instances
-// must verify each other's tokens"): every spawned instance gets this SAME
-// derived Ed25519 signing key via `HEXDEV_SESSION_SIGNING_KEY`, and a token
-// minted LOCALLY (in THIS process, never one of the spawned ones) from the
-// SAME key must verify on any of them.
+// The EXACT property this file exists to prove ("all instances must verify
+// each other's tokens"), and it is now proved the way a real deployment
+// works rather than the way that was convenient.
+//
+// This file used to hand every spawned instance the SIGNING SEED via
+// HEXDEV_SESSION_SIGNING_KEY. That was the debt of handoff §P4.3 written as
+// a fixture: it made the property trivially true, because every replica
+// could mint as well as verify, and it meant compromising any one of them
+// minted for the whole fleet.
+//
+// After the mint/verify split the seed stays HERE, in the test process,
+// which stands in for the minting role. The spawned instances receive only
+// the PUBLIC half, so they are structurally incapable of minting — and a
+// token minted locally still has to verify on any of them, which is the
+// property, now with teeth.
 const SHARED_SIGNING_KEY = await deriveTestSessionSigningKey("cross-instance-shared-secret");
+const SHARED_PUBLIC_KEY = (await createSessionTokenIssuer(SHARED_SIGNING_KEY)).publicKey;
 const SESSION_TTL_SECONDS = 60;
 const TENANT_PAGE_ORIGIN = "https://cross-instance.example";
 /** A REAL load-balanced deployment puts every process behind ONE public
@@ -62,17 +73,22 @@ interface Instance {
   readonly process: ChildProcess;
 }
 
-async function waitForReachable(url: string, timeoutMs: number): Promise<void> {
+/**
+ * Readiness from the instance's OWN "listening on" line rather than an HTTP
+ * probe. The match role serves no plain GET any more — the front door moved
+ * to the minting role — and this signal is the honest one for colyseus
+ * anyway: `gameServer.listen` is what performs `matchMaker.accept()` and
+ * `bindRoutes()`, so the line is printed exactly when a matchmake call can
+ * actually be answered.
+ */
+async function waitForListening(readOutput: () => string, port: number, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  const marker = `listening on :${String(port)}`;
   while (Date.now() < deadline) {
-    try {
-      await fetch(url);
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
+    if (readOutput().includes(marker)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`server never became reachable at ${url}`);
+  throw new Error(`instance never reported "${marker}" within ${String(timeoutMs)}ms`);
 }
 
 /**
@@ -89,7 +105,7 @@ async function startInstance(port: number, redisUrl: string, envOverrides: NodeJ
   delete env.NODE_ENV; // never accidentally "production" in a throwaway test harness (same reasoning as e2e/support/system.ts)
   Object.assign(env, {
     HEXDEV_ALLOW_DEV_DEFAULTS: "true",
-    HEXDEV_SESSION_SIGNING_KEY: SHARED_SIGNING_KEY,
+    HEXDEV_SESSION_PUBLIC_KEY: SHARED_PUBLIC_KEY,
     HEXDEV_SESSION_TTL_SECONDS: String(SESSION_TTL_SECONDS),
     HEXDEV_TENANTS_JSON: JSON.stringify(tenants),
     // SAME shared origin on every instance — see SHARED_WIDGET_ORIGIN's own
@@ -105,10 +121,16 @@ async function startInstance(port: number, redisUrl: string, envOverrides: NodeJ
   let output = "";
   child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+  // The match role no longer serves the widget's front door — `/loader.js`
+  // moved to the minting role with the rest of it — so readiness is taken
+  // from the instance's own "listening on" line instead of an HTTP path.
+  // That signal is also the honest one for colyseus: `gameServer.listen` is
+  // what performs `matchMaker.accept()` and `bindRoutes()`, so the line is
+  // printed exactly when the instance can actually answer a matchmake call.
   try {
-    await waitForReachable(`${origin}/loader.js`, 20_000);
+    await waitForListening(() => output, port, 20_000);
   } catch (error) {
-    throw new Error(`instance on port ${String(port)} never became reachable:\n${output}`, { cause: error });
+    throw new Error(`instance on port ${String(port)} never started listening:\n${output}`, { cause: error });
   }
   return { origin, process: child };
 }

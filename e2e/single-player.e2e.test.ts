@@ -36,11 +36,20 @@ import { startSystem, type SystemHandle } from "./support/system.js";
 // pauses ~1s per action simply takes several minutes, and the spread between
 // runs is inherent to how the cards fall.
 //
-// Ten minutes is roughly 40% headroom over the worst run measured after the
-// optimisation. The previous 4-minute budget was not a stall, it was simply
-// too small, and every red report it produced cost someone a stall
-// investigation that had nothing to find.
-const MATCH_TIMEOUT_MS = 10 * 60_000;
+// Ten minutes was then set from those three samples, and THAT WAS STILL TOO
+// TIGHT: the first run against the two-role topology reached 12 of 15 points
+// and was still climbing at +614s. Three samples do not characterise a tail
+// this wide — observed completions now span 289s to 440s, with at least one
+// run past 614s — and the split adds a proxy hop to every request the widget
+// makes. Fifteen minutes is set from the longest run actually observed, not
+// from an average, and the honest read is that this spec's duration is
+// dominated by a 15-point match against a bot that pauses ~1s per action.
+//
+// If this ever needs to shrink, the lever is the bot's thinking delay, which
+// the spec documents as tunable but which nothing wires to a knob: the
+// `GameModule.createBot` port would have to widen, which is a product
+// decision, not a test one.
+const MATCH_TIMEOUT_MS = 15 * 60_000;
 const POLL_INTERVAL_MS = 150;
 const PROGRESS_LOG_INTERVAL_MS = 10_000;
 
