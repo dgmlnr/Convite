@@ -13,8 +13,8 @@ import {
   createSessionTokenIssuer,
   createSessionTokenVerifier,
   createStaticTenantRepository,
-  connectRedis,
 } from "@hexdev/platform-core";
+import { connectRedis } from "@hexdev/platform-core/node";
 import type { JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { ExpressAppCallback, PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
