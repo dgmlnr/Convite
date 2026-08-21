@@ -22,6 +22,24 @@ export type Route =
   | { readonly kind: "card-front"; readonly file: string }
   | { readonly kind: "not-found" };
 
+/**
+ * Whether `/embed` should answer with the widget shell rather than the JSON
+ * API. It is content negotiation on ONE path, and it exists because a real
+ * browser navigating the iframe's `src` needs the mint result INLINED — a
+ * same-origin fetch from inside that iframe back here would carry no origin
+ * evidence at all, so there would be nothing to authorise against.
+ *
+ * Matched on the media type rather than by substring: a caller asking for
+ * `application/vnd.my-html-tool+json` wants JSON, and answering it with a
+ * page would not error, it would just silently fail to parse. Pure and
+ * exported so that branch is pinned by a test instead of living unexamined
+ * inside the request handler.
+ */
+export function prefersHtml(acceptHeader: string | undefined): boolean {
+  if (acceptHeader === undefined) return false;
+  return acceptHeader.split(",").some((entry) => entry.split(";")[0]?.trim() === "text/html");
+}
+
 const CARD_FRONT_PREFIX = "/assets/fronts/";
 
 const NOT_FOUND: Route = { kind: "not-found" };

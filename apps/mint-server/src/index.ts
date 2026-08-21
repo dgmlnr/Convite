@@ -14,7 +14,7 @@ import {
   type EmbedBootstrap,
 } from "@hexdev/widget-frontdoor";
 import { loadMintConfig } from "./config.js";
-import { resolveRoute } from "./routing.js";
+import { prefersHtml, resolveRoute } from "./routing.js";
 
 /**
  * The MINTING role's composition root.
@@ -108,7 +108,7 @@ const server = createServer((req, res) => {
           // the mint result INLINED, because a same-origin fetch from inside
           // the iframe back here would carry no origin evidence at all. A
           // programmatic caller asking for JSON still gets the plain API.
-          if ((req.headers.accept ?? "").includes("text/html")) {
+          if (prefersHtml(req.headers.accept)) {
             const bootstrap: EmbedBootstrap | undefined = status === 200 ? (JSON.parse(body) as EmbedBootstrap) : undefined;
             res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
             res.end(renderEmbedShell(bootstrap));

@@ -66,6 +66,61 @@ describe("loadMintConfig", () => {
   });
 
   /**
+   * A numeric env var that is not a number is the failure mode this repo
+   * already learned the hard way on HEXDEV_QUEUE_BOT_FILL_SECONDS: `Number()`
+   * yields NaN, NaN slips straight through `??` because it is not nullish,
+   * and every comparison against it is false — so the process starts and
+   * misbehaves silently instead of refusing. Naming the offending variable
+   * in the message is the difference between a five-minute fix and an hour.
+   */
+  describe("with a numeric variable that is not a number", () => {
+    it("refuses a non-numeric PORT rather than listening on NaN", () => {
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "not-a-port" })).toThrow(/PORT/);
+    });
+
+    it("refuses a non-positive or absurd PORT", () => {
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "0" })).toThrow(/PORT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "70000" })).toThrow(/PORT/);
+    });
+
+    it("refuses a non-numeric rate limit, naming the variable", () => {
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_KEY_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_EMBED_KEY_RATE_LIMIT/);
+    });
+
+    it("refuses a non-numeric rate window, naming the variable", () => {
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_WINDOW_MS: "soon" })).toThrow(/HEXDEV_EMBED_IP_RATE_WINDOW_MS/);
+    });
+
+    /** A limit of zero would lock every legitimate visitor out silently. */
+    it("refuses a non-positive rate limit", () => {
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_LIMIT: "0" })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
+    });
+
+    it("still accepts a well-formed one", () => {
+      const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "4000", HEXDEV_EMBED_IP_RATE_LIMIT: "5" });
+
+      expect(config.port).toBe(4000);
+      expect(config.embedIpRateLimit.limit).toBe(5);
+    });
+  });
+
+  /**
+   * A malformed tenants document is an operator typo, and the operator is
+   * the one who has to fix it. A bare `SyntaxError: Unexpected token }` does
+   * not say which variable it came from; the signing-key guard in this same
+   * function already sets the standard for what a config failure should read
+   * like.
+   */
+  it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {
+    expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: "{oops" })).toThrow(/HEXDEV_TENANTS_JSON/);
+  });
+
+  it("refuses a HEXDEV_TENANTS_JSON that parses but is not a list of tenants", () => {
+    expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: '{"id":"solo"}' })).toThrow(/HEXDEV_TENANTS_JSON/);
+  });
+
+  /**
    * The mint role does NOT carry the match role's knobs. Naming that here
    * keeps a future edit from quietly re-coupling the two configs.
    */

@@ -1,6 +1,37 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveRoute } from "./routing.js";
+import { prefersHtml, resolveRoute } from "./routing.js";
+
+/**
+ * The one real DECISION inside the request handler, lifted out so it can be
+ * pinned. `/embed` answers two audiences on one path: a browser navigating
+ * the iframe's src gets the shell with the mint result inlined, because a
+ * same-origin fetch from inside that iframe back here would carry no origin
+ * evidence at all; a programmatic caller gets the plain JSON API.
+ *
+ * Getting it backwards does not error — it silently serves JSON to a browser
+ * that renders it as text, or HTML to a caller that fails to parse it. That
+ * is exactly the class of failure this repo keeps paying for.
+ */
+describe("prefersHtml", () => {
+  it("says yes to what a navigating browser actually sends", () => {
+    expect(prefersHtml("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")).toBe(true);
+  });
+
+  it("says no to an explicit JSON caller", () => {
+    expect(prefersHtml("application/json")).toBe(false);
+  });
+
+  /** No header at all is a programmatic caller, not a browser. */
+  it("says no when the header is absent", () => {
+    expect(prefersHtml(undefined)).toBe(false);
+    expect(prefersHtml("")).toBe(false);
+  });
+
+  it("is not fooled by a header that merely mentions html elsewhere", () => {
+    expect(prefersHtml("application/vnd.my-html-tool+json")).toBe(false);
+  });
+});
 
 /**
  * `resolveRoute` is pure precisely so this file can exist. The `node:http`

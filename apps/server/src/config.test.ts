@@ -120,3 +120,45 @@ describe("loadServerConfig + createSessionTokenIssuer — the FULL boot path ref
     await expect(createSessionTokenIssuer(config.sessionSigningKey)).rejects.toThrow(/malformed/i);
   });
 });
+
+/**
+ * The same guard `HEXDEV_QUEUE_BOT_FILL_SECONDS` already carries, applied to
+ * the other numeric variables this config reads. NaN is the dangerous value:
+ * it is not nullish, so it slips through `??`, and every comparison against
+ * it is false — the process starts and misbehaves silently instead of
+ * refusing. Found by the review of apps/mint-server, which had inherited the
+ * same gap from this file.
+ */
+describe("loadServerConfig numeric guards", () => {
+  const base = { HEXDEV_SESSION_SIGNING_KEY: "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI" };
+
+  it("refuses a non-numeric PORT rather than listening on NaN", () => {
+    expect(() => loadServerConfig({ ...base, PORT: "not-a-port" })).toThrow(/PORT/);
+  });
+
+  it("refuses a port outside the representable range", () => {
+    expect(() => loadServerConfig({ ...base, PORT: "0" })).toThrow(/PORT/);
+    expect(() => loadServerConfig({ ...base, PORT: "70000" })).toThrow(/PORT/);
+  });
+
+  it("refuses a non-numeric rate limit or window, naming the variable", () => {
+    expect(() => loadServerConfig({ ...base, HEXDEV_EMBED_IP_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
+    expect(() => loadServerConfig({ ...base, HEXDEV_JOIN_IP_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_JOIN_IP_RATE_LIMIT/);
+    expect(() => loadServerConfig({ ...base, HEXDEV_EMBED_KEY_RATE_WINDOW_MS: "soon" })).toThrow(/HEXDEV_EMBED_KEY_RATE_WINDOW_MS/);
+  });
+
+  it("still accepts well-formed values", () => {
+    const config = loadServerConfig({ ...base, PORT: "4000", HEXDEV_EMBED_IP_RATE_LIMIT: "5" });
+
+    expect(config.port).toBe(4000);
+    expect(config.embedIpRateLimit.limit).toBe(5);
+  });
+
+  it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {
+    expect(() => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: "{oops" })).toThrow(/HEXDEV_TENANTS_JSON/);
+  });
+
+  it("refuses a HEXDEV_TENANTS_JSON that parses but is not a list", () => {
+    expect(() => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: '{"id":"solo"}' })).toThrow(/HEXDEV_TENANTS_JSON/);
+  });
+});

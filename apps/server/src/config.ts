@@ -81,10 +81,61 @@ const DEFAULT_JOIN_IP_LIMIT = 10;
 // never comes.
 const DEFAULT_QUEUE_BOT_FILL_SECONDS = 30;
 
+const MAX_PORT = 65535;
+
+/**
+ * Reads a numeric env var, or refuses to start.
+ *
+ * This is the guard `HEXDEV_QUEUE_BOT_FILL_SECONDS` below already carries,
+ * generalised to the other numeric variables this config reads — they had
+ * been left on a bare `Number()`. NaN is the dangerous value precisely
+ * because it is not nullish: it slips straight through `??`, and every
+ * comparison against it is false, so the process boots and misbehaves
+ * silently instead of failing. The message names the variable for the same
+ * reason that one does.
+ *
+ * Found by the review of `apps/mint-server`, which inherited the gap from
+ * this file; fixed in both rather than only in the newer one.
+ */
+function readPositiveNumber(env: NodeJS.ProcessEnv, name: string, fallback: number, max?: number): number {
+  const raw = env[name];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0 || (max !== undefined && value > max)) {
+    throw new Error(
+      `${name} must be a finite number greater than 0${max !== undefined ? ` and at most ${String(max)}` : ""}, got "${raw}" — ` +
+        "refusing to start with a value that would misbehave silently rather than fail.",
+    );
+  }
+  return value;
+}
+
+/**
+ * Parses the tenants document, or refuses to start with a message an
+ * operator can act on. A bare `SyntaxError: Unexpected token }` does not name
+ * the variable it came from. The shape is checked too: a document parsing to
+ * an object rather than a list would otherwise surface much later, as an
+ * empty catalog on every `/embed`.
+ */
+function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]): readonly TenantRecord[] {
+  const raw = env.HEXDEV_TENANTS_JSON;
+  if (raw === undefined) return fallback;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error("HEXDEV_TENANTS_JSON is set but is not valid JSON — refusing to start with an unreadable tenant list.", { cause: error });
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`HEXDEV_TENANTS_JSON must be a JSON array of tenant records, got ${typeof parsed} — refusing to start with an unusable tenant list.`);
+  }
+  return parsed as readonly TenantRecord[];
+}
+
 function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: string, defaultLimit: number): RateLimitConfig {
   return {
-    limit: env[limitVar] !== undefined ? Number(env[limitVar]) : defaultLimit,
-    windowMs: env[windowVar] !== undefined ? Number(env[windowVar]) : DEFAULT_RATE_WINDOW_MS,
+    limit: readPositiveNumber(env, limitVar, defaultLimit),
+    windowMs: readPositiveNumber(env, windowVar, DEFAULT_RATE_WINDOW_MS),
   };
 }
 
@@ -148,9 +199,8 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   // `loadServerConfig` stays synchronous (importing a key is unavoidably
   // async — Web Crypto has no sync digest/import) and pure (no crypto calls
   // of its own), matching every existing test in `config.test.ts`.
-  const tenants: readonly TenantRecord[] =
-    env.HEXDEV_TENANTS_JSON !== undefined ? (JSON.parse(env.HEXDEV_TENANTS_JSON) as readonly TenantRecord[]) : [DEV_TENANT];
-  const port = env.PORT !== undefined ? Number(env.PORT) : DEFAULT_PORT;
+  const tenants: readonly TenantRecord[] = readTenants(env, [DEV_TENANT]);
+  const port = readPositiveNumber(env, "PORT", DEFAULT_PORT, MAX_PORT);
   const queueBotFillSeconds = env.HEXDEV_QUEUE_BOT_FILL_SECONDS !== undefined ? Number(env.HEXDEV_QUEUE_BOT_FILL_SECONDS) : DEFAULT_QUEUE_BOT_FILL_SECONDS;
   // Fail-loud, same convention as the signing-key guard above: a NaN slips
   // straight through PresenceRoom's `??` default (nullish coalescing only
@@ -167,7 +217,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   return {
     port,
     sessionSigningKey: sessionSigningKey ?? DEV_SESSION_SIGNING_KEY,
-    sessionTtlSeconds: env.HEXDEV_SESSION_TTL_SECONDS !== undefined ? Number(env.HEXDEV_SESSION_TTL_SECONDS) : DEFAULT_TTL_SECONDS,
+    sessionTtlSeconds: readPositiveNumber(env, "HEXDEV_SESSION_TTL_SECONDS", DEFAULT_TTL_SECONDS),
     tenants,
     embedIpRateLimit: readRateLimit(env, "HEXDEV_EMBED_IP_RATE_LIMIT", "HEXDEV_EMBED_IP_RATE_WINDOW_MS", DEFAULT_EMBED_IP_LIMIT),
     embedKeyRateLimit: readRateLimit(env, "HEXDEV_EMBED_KEY_RATE_LIMIT", "HEXDEV_EMBED_KEY_RATE_WINDOW_MS", DEFAULT_EMBED_KEY_LIMIT),
