@@ -12,6 +12,7 @@
     { "path": "packages/transport-colyseus" },
     { "path": "packages/transport-colyseus-client" },
     { "path": "packages/widget-sdk" },
+    { "path": "packages/widget-frontdoor" },
     { "path": "apps/server" },
     { "path": "apps/widget-app" }
   ]

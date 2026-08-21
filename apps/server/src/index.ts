@@ -22,10 +22,8 @@ import { loadServerConfig } from "./config.js";
 import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
 import { handleEmbedRequest } from "./embed-handler.js";
 import { handleSessionRenewRequest } from "./session-renew-handler.js";
-import { refererOrigin } from "./referer-origin.js";
+import { refererOrigin, serveCardFrontAsset, serveLoaderAsset, serveWidgetAppAsset } from "@hexdev/widget-frontdoor";
 import { connectRedis } from "./redis-client.js";
-import { serveCardFrontAsset } from "./static-deck-assets.js";
-import { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 
 // The composition root: wires existing pieces (registry, auth primitives,
 // the generic MatchRoom, the deal factory) together. No game rules live

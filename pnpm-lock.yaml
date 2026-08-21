@@ -53,6 +53,9 @@ importers:
       '@hexdev/truco-module':
         specifier: workspace:*
         version: link:../../packages/games/truco-module
+      '@hexdev/widget-frontdoor':
+        specifier: workspace:*
+        version: link:../../packages/widget-frontdoor
       '@hexdev/widget-protocol':
         specifier: workspace:*
         version: link:../../packages/widget-protocol
@@ -216,6 +219,22 @@ importers:
       ioredis:
         specifier: ^5.11.1
         version: 5.11.1
+
+  packages/widget-frontdoor:
+    dependencies:
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../platform-contract
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../platform-core
+      '@hexdev/widget-protocol':
+        specifier: workspace:*
+        version: link:../widget-protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
 
   packages/widget-protocol: {}
 
