@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { createGameModuleRegistry, createRateLimiter, createRedisRateLimiter, createSessionTokenIssuer, createStaticTenantRepository, connectRedis } from "@hexdev/platform-core";
+import { createGameModuleRegistry, createRateLimiter, createRedisRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import { connectRedis } from "@hexdev/platform-core/node";
 import type { RateLimiter } from "@hexdev/platform-core";
 import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import {

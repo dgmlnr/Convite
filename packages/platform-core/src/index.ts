@@ -3,7 +3,10 @@ export { createGameModuleRegistry } from "./registry.js";
 export type { RateLimiter, RateLimiterOptions } from "./rate-limiter.js";
 export { createRateLimiter } from "./rate-limiter.js";
 export type { RedisRateLimiterOptions } from "./redis-rate-limiter.js";
-export { connectRedis } from "./redis-client.js";
+// `connectRedis` is deliberately NOT here: it is a VALUE import of ioredis,
+// and this barrel is reachable from the browser bundle. It lives behind
+// `@hexdev/platform-core/node`. See that file for the regression this split
+// exists to prevent.
 export { createRedisRateLimiter } from "./redis-rate-limiter.js";
 export type { RedisJtiReplayGuardOptions } from "./redis-jti-replay-guard.js";
 export { createRedisJtiReplayGuard } from "./redis-jti-replay-guard.js";
