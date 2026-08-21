@@ -1,0 +1,20 @@
+{
+  "name": "@hexdev/widget-frontdoor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/platform-core": "workspace:*",
+    "@hexdev/widget-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
+  }
+}

@@ -36,13 +36,13 @@ module.exports = {
       severity: "error",
       comment: "L1 packages (platform-core, truco-bot, truco-ui) must not depend on L2 adapters or L3 apps.",
       from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui)/src" },
-      to: { path: "^(packages/(games/truco-module|transport-colyseus|widget-sdk)|apps)/" },
+      to: { path: "^(packages/(games/truco-module|transport-colyseus|widget-frontdoor|widget-sdk)|apps)/" },
     },
     {
       name: "l2-no-l3",
       severity: "error",
-      comment: "L2 adapters (truco-module, transport-colyseus, widget-sdk) must not depend on L3 composition-root apps.",
-      from: { path: "^packages/(games/truco-module|transport-colyseus|widget-sdk)/src" },
+      comment: "L2 adapters (truco-module, transport-colyseus, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps.",
+      from: { path: "^packages/(games/truco-module|transport-colyseus|widget-frontdoor|widget-sdk)/src" },
       to: { path: "^apps/" },
     },
     {
