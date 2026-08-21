@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PINNED_PLAYWRIGHT_VERSION, imageRefFor, resolveContainerRun } from "./visual-container.mjs";
+import { PINNED_PLAYWRIGHT_VERSION, hostSpawnNeedsShell, imageRefFor, posixUserFor, resolveContainerRun, writesBaseline } from "./visual-container.mjs";
 
 /**
  * Both functions here are pure precisely so this file can exist — the
@@ -104,5 +104,99 @@ describe("resolveContainerRun", () => {
 
   it("passes the pinned image, never a floating tag", () => {
     expect(resolveContainerRun(base).args).toContain("mcr.microsoft.com/playwright:v1.62.1-noble");
+  });
+
+  /**
+   * The regression this pins is a real one this script shipped with: the
+   * entry point called `process.getuid()` unconditionally, and that API does
+   * not exist on Windows — so the command meant to make rendering
+   * OS-independent was the one command that could not start there.
+   */
+  describe("on a platform without POSIX user ids", () => {
+    it("omits --user rather than passing undefined into docker", () => {
+      const { args } = resolveContainerRun({ ...base, uid: undefined, gid: undefined });
+
+      expect(args).not.toContain("--user");
+      expect(args.join(" ")).not.toContain("undefined");
+    });
+
+    it("still mounts, still runs the suite", () => {
+      const { args } = resolveContainerRun({ ...base, uid: undefined, gid: undefined });
+
+      expect(args).toContain(`${base.repoRoot}:${base.repoRoot}`);
+      expect(args.slice(args.indexOf(base.image) + 1)).toEqual(["node_modules/.bin/vitest", "run", "--config", "vitest.visual.config.ts"]);
+    });
+
+    /** A half-known identity is not an identity: docker needs both halves. */
+    it("omits --user when only one half is known", () => {
+      expect(resolveContainerRun({ ...base, gid: undefined }).args).not.toContain("--user");
+      expect(resolveContainerRun({ ...base, uid: undefined }).args).not.toContain("--user");
+    });
+  });
+});
+
+/**
+ * `visual/README.md` tells developers never to write a baseline from the
+ * host runner, because it would bake their own machine's rasterizer into the
+ * repo — the exact problem the container exists to remove. A rule with no
+ * enforcement is a suggestion, and this is the enforcement.
+ */
+describe("writesBaseline", () => {
+  it("recognises the long flag", () => {
+    expect(writesBaseline(["--update"])).toBe(true);
+  });
+
+  it("recognises it among other arguments", () => {
+    expect(writesBaseline(["table.visual.test.ts", "--update", "--reporter", "dot"])).toBe(true);
+  });
+
+  it("recognises the `=` form", () => {
+    expect(writesBaseline(["--update=true"])).toBe(true);
+  });
+
+  it("recognises the short flag", () => {
+    expect(writesBaseline(["-u"])).toBe(true);
+  });
+
+  it("leaves an ordinary verification run alone", () => {
+    expect(writesBaseline([])).toBe(false);
+    expect(writesBaseline(["table.visual.test.ts"])).toBe(false);
+  });
+
+  /** A file whose NAME contains the word must not trip the guard. */
+  it("does not match a filename that merely mentions update", () => {
+    expect(writesBaseline(["update-notice.visual.test.ts"])).toBe(false);
+  });
+});
+
+/**
+ * `scripts/vitest-runner.mjs` already documents why this matters, and the
+ * host runner shipped without it: a pnpm-installed CLI is a `vitest.cmd` /
+ * `vitest.ps1` shim on Windows, and Node's spawn without a shell goes to
+ * `CreateProcess`, which can execute neither.
+ */
+describe("hostSpawnNeedsShell", () => {
+  it("asks for a shell on windows, where the CLI is a .cmd shim", () => {
+    expect(hostSpawnNeedsShell("win32")).toBe(true);
+  });
+
+  it("does not on platforms where the binary is directly executable", () => {
+    expect(hostSpawnNeedsShell("linux")).toBe(false);
+    expect(hostSpawnNeedsShell("darwin")).toBe(false);
+  });
+});
+
+describe("posixUserFor", () => {
+  it("reads the ids when the platform provides them", () => {
+    expect(posixUserFor({ getuid: () => 1000, getgid: () => 1000 })).toEqual({ uid: 1000, gid: 1000 });
+  });
+
+  /** Windows: the functions are simply absent, not throwing. */
+  it("reports both ids as unknown when the APIs are absent", () => {
+    expect(posixUserFor({})).toEqual({ uid: undefined, gid: undefined });
+  });
+
+  it("never invents an id from a half-present API", () => {
+    expect(posixUserFor({ getuid: () => 1000 })).toEqual({ uid: 1000, gid: undefined });
   });
 });

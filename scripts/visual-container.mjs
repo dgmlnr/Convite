@@ -78,14 +78,19 @@ export function imageRefFor(playwrightVersion) {
  * on the host is one a developer can click.
  */
 export function resolveContainerRun({ repoRoot, uid, gid, image, args }) {
+  // BOTH halves or neither. On Linux and macOS this maps the container's
+  // writes back to the caller, so a regenerated baseline is not root-owned
+  // in their own working tree. On Windows the ids do not exist, and Docker
+  // Desktop does not need them — passing a literal "undefined:undefined"
+  // there would fail the run for no reason.
+  const user = uid !== undefined && gid !== undefined ? ["--user", `${uid}:${gid}`] : [];
+
   return {
     command: "docker",
     args: [
       "run",
       "--rm",
-      // Written baselines belong to whoever ran the script, not to root.
-      "--user",
-      `${uid}:${gid}`,
+      ...user,
       "--volume",
       `${repoRoot}:${repoRoot}`,
       "--workdir",
@@ -106,12 +111,63 @@ export function resolveContainerRun({ repoRoot, uid, gid, image, args }) {
   };
 }
 
+/**
+ * Whether an argv would make vitest WRITE baselines rather than verify them.
+ *
+ * `visual/README.md` tells developers never to do that from the host runner,
+ * because the baseline would carry their own machine's rasterizer into the
+ * repo — precisely the problem the container removes. That was documentation
+ * only, and a rule with no enforcement is a suggestion; `scripts/visual-host.mjs`
+ * uses this to make it real.
+ *
+ * Matched exactly, never by substring: a test file named
+ * `update-notice.visual.test.ts` is not a request to rewrite anything.
+ */
+export function writesBaseline(args) {
+  return args.some((arg) => arg === "-u" || arg === "--update" || arg.startsWith("--update="));
+}
+
+/**
+ * Whether spawning a workspace CLI needs a shell on this platform.
+ *
+ * Windows is the only one that does, and it genuinely does — the same
+ * decision `scripts/vitest-runner.mjs` already carries for `pnpm test`. A
+ * pnpm-installed CLI is a `vitest.cmd` / `vitest.ps1` shim there, and Node's
+ * spawn goes straight to `CreateProcess`, which can execute neither; it
+ * wants a real `.exe`.
+ *
+ * It lives HERE rather than beside the host runner that uses it so that
+ * `visual-container.test.ts` can pin it without importing the host runner —
+ * importing a module whose body spawns vitest would start a second vitest
+ * inside the first.
+ */
+export function hostSpawnNeedsShell(platform) {
+  return platform === "win32";
+}
+
+/**
+ * `process.getuid`/`getgid` are POSIX-only: on Windows they are ABSENT, not
+ * throwing, so calling them unconditionally crashed this script before it
+ * could do anything — which is a poor showing for the one command whose
+ * entire purpose is making rendering independent of the operating system.
+ *
+ * Takes the process-like object as an argument rather than reading the
+ * global so the Windows shape is reachable from a test on any platform.
+ */
+export function posixUserFor(processLike) {
+  return {
+    uid: typeof processLike.getuid === "function" ? processLike.getuid() : undefined,
+    gid: typeof processLike.getgid === "function" ? processLike.getgid() : undefined,
+  };
+}
+
 /* c8 ignore start — the spawn, deliberately thin; the decisions above are what is tested. */
 if (import.meta.url === `file://${process.argv[1]}`) {
+  const { uid, gid } = posixUserFor(process);
   const { command, args } = resolveContainerRun({
     repoRoot: process.cwd(),
-    uid: process.getuid(),
-    gid: process.getgid(),
+    uid,
+    gid,
     image: imageRefFor(PINNED_PLAYWRIGHT_VERSION),
     args: process.argv.slice(2),
   });
