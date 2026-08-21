@@ -24,13 +24,22 @@
  * `no-colyseus-outside-transport` rule already guarantees the other half for
  * free — the front door serves plain HTTP and never runs a room.
  *
- * The extraction arrives in two commits, because the provider-owned reviewer
+ * The extraction arrived in two commits, because the provider-owned reviewer
  * context accepts at most 32 evidence paths and moving all seven modules at
- * once came to 37. This first one carries the leaf modules — the ones with no
- * dependency on any other module in the set; the request handlers and the
- * catalog they share follow together, since they cannot be separated.
+ * once came to 37. The first carried the leaf modules; this one completes the
+ * package with the two request handlers, the shell they render and the
+ * catalog they share — which had to travel together, since they depend on
+ * each other.
  */
+export { buildCatalog } from "./catalog.js";
+export type { CatalogEntry } from "./catalog.js";
+export { handleEmbedRequest } from "./embed-handler.js";
+export type { EmbedRequestDeps, EmbedRequestResult } from "./embed-handler.js";
+export { renderEmbedShell } from "./embed-shell.js";
+export type { EmbedBootstrap } from "./embed-shell.js";
 export { refererOrigin } from "./referer-origin.js";
+export { handleSessionRenewRequest } from "./session-renew-handler.js";
+export type { SessionRenewDeps, SessionRenewResult } from "./session-renew-handler.js";
 export { serveCardFrontAsset } from "./static-deck-assets.js";
 export { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 export type { StaticAssetResult } from "./static-widget-app.js";

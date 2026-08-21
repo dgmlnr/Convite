@@ -19,10 +19,8 @@ import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { ExpressAppCallback, PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
 import { requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
-import { renderEmbedShell, type EmbedBootstrap } from "./embed-shell.js";
-import { handleEmbedRequest } from "./embed-handler.js";
-import { handleSessionRenewRequest } from "./session-renew-handler.js";
-import { refererOrigin, serveCardFrontAsset, serveLoaderAsset, serveWidgetAppAsset } from "@hexdev/widget-frontdoor";
+import { handleEmbedRequest, handleSessionRenewRequest, refererOrigin, renderEmbedShell, serveCardFrontAsset, serveLoaderAsset, serveWidgetAppAsset } from "@hexdev/widget-frontdoor";
+import type { EmbedBootstrap } from "@hexdev/widget-frontdoor";
 import { connectRedis } from "./redis-client.js";
 
 // The composition root: wires existing pieces (registry, auth primitives,
