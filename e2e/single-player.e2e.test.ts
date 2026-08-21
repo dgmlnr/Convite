@@ -11,12 +11,37 @@ import { startSystem, type SystemHandle } from "./support/system.js";
 // cards only — the underlying stall itself (a bot match occasionally never
 // advances past its first hand; see the progress diagnostics below) is a
 // genuine, NOT-yet-root-caused, low-probability issue this suite surfaced
-// and disclosed, not a defect in this spec. Calling truco is therefore
-// deliberately NOT part of this spec's own strategy, even though it would
-// make a normal match finish faster — see PROGRESS_LOG below for what to
-// look at if this spec is ever red again.
-const MATCH_TIMEOUT_MS = 4 * 60_000;
-const POLL_INTERVAL_MS = 300;
+// and disclosed, not a defect in this spec.
+//
+// That avoidance was REVERSED after measuring it, and the measurement is
+// worth keeping. Refusing to call truco costs roughly HALF the scoring
+// rate: with the identical script and budget, the score at +253s was 6
+// without calling truco and 14 with it, and the run that called truco
+// reached a real ending (the match-over overlay's `play-again` was on
+// screen) while the one that did not was still mid-match. So the avoidance
+// bought nothing observable and cost the spec its own budget — and it also
+// meant this spec never exercised truco at all, the central mechanic of the
+// game it claims to play end to end.
+//
+// No stall reproduced in that measurement. That is one run, not a proof:
+// the historical figure was ~7% over 24 runs, and if this spec goes red
+// again the progress diagnostic below is what says whether the match is
+// genuinely frozen (score, turn, pendingCall and offered actions all
+// unchanged across samples) or merely unfinished.
+// MEASURED, three runs each, not estimated — every earlier guess at this
+// number was wrong. Before the loop below was collapsed to one cross-frame
+// read per turn: 410s, 561s, 713s. After: 440s, 289s, 409s. So the repeated
+// iframe round trips were worth about a THIRD of the wall clock, not the
+// bulk of it — the honest read is that a 15-point match against a bot that
+// pauses ~1s per action simply takes several minutes, and the spread between
+// runs is inherent to how the cards fall.
+//
+// Ten minutes is roughly 40% headroom over the worst run measured after the
+// optimisation. The previous 4-minute budget was not a stall, it was simply
+// too small, and every red report it produced cost someone a stall
+// investigation that had nothing to find.
+const MATCH_TIMEOUT_MS = 10 * 60_000;
+const POLL_INTERVAL_MS = 150;
 const PROGRESS_LOG_INTERVAL_MS = 10_000;
 
 /**
@@ -76,56 +101,91 @@ const CARD_POWER_ORDER: readonly string[] = [
   "4-copa",
 ];
 
-/** Picks the strongest of the currently-playable cards' `data-card` values. */
-async function pickStrongestPlayableCard(table: FrameLocator): Promise<string | null> {
-  const ids = await table.locator('[data-playable="true"]').evaluateAll((elements) => elements.map((el) => el.getAttribute("data-card")));
-  const present = ids.filter((id): id is string => id !== null);
-  if (present.length === 0) return null;
-  present.sort((a, b) => CARD_POWER_ORDER.indexOf(a) - CARD_POWER_ORDER.indexOf(b));
-  return present[0]!;
+/**
+ * ONE cross-frame read per turn, deliberately.
+ *
+ * This loop used to ask the frame up to five separate questions every 300ms
+ * — four `count()` calls plus an `evaluateAll` — and each one crosses an
+ * iframe boundary. That, not the bot's ~1s thinking delay, was where the
+ * match's wall clock actually went: three measured runs of a full 15-point
+ * match took 410s, 561s and 713s, while the bot itself only accounts for
+ * roughly 90s of that. Collapsing the reads into a single snapshot is what
+ * makes a tight, meaningful timeout possible instead of an ever-growing one.
+ */
+/**
+ * Every diagnostic snapshot goes through this. The scoreboard's own
+ * textContent carries newlines and runs of indentation, and interpolating it
+ * raw SPLIT THE LOG LINE — which is why earlier timeout reports showed a
+ * score and then nothing: the turn and the offered actions were on lines
+ * nobody read. A diagnostic that only survives the happy path is not one.
+ */
+function collapse(text: string | null): string {
+  return (text ?? "?").replace(/\s+/g, " ").trim();
+}
+
+interface TurnSnapshot {
+  readonly actions: readonly { readonly action: string; readonly disabled: boolean; readonly text: string }[];
+  readonly playableCards: readonly string[];
+}
+
+async function readTurn(table: FrameLocator): Promise<TurnSnapshot> {
+  return table.locator("body").evaluate((body) => ({
+    actions: [...body.querySelectorAll("[data-action]")].map((el) => ({
+      action: el.getAttribute("data-action") ?? "",
+      disabled: (el as HTMLButtonElement).disabled === true,
+      text: (el.textContent ?? "").trim(),
+    })),
+    playableCards: [...body.querySelectorAll('[data-playable="true"]')].map((el) => el.getAttribute("data-card") ?? "").filter((id) => id !== ""),
+  }));
+}
+
+function strongest(playableCards: readonly string[]): string | null {
+  if (playableCards.length === 0) return null;
+  return [...playableCards].sort((a, b) => CARD_POWER_ORDER.indexOf(a) - CARD_POWER_ORDER.indexOf(b))[0]!;
 }
 
 /**
- * Accept anything pending on us, otherwise play the strongest legal card.
- * Deliberately never CALLS "truco"/"envido" itself (see MATCH_TIMEOUT_MS's
- * own doc comment for why) — but it MUST still answer a call the BOT opens,
- * envido included: the easy bot's own fallback ("a proactive truco/envido
- * call is NEVER volunteered, only ever taken when it is the sole legal
- * action left" — `truco-bot/easy.ts`) genuinely calls envido on its own
- * during ordinary play, same as it calls truco, whenever a still-open first
- * trick leaves it with only a proactive call — not a rare edge case, both
- * MUST be treated as ordinary parts of the match this spec is playing.
- * THE FIX for a real, root-caused stall (not fixed by chance): this
- * function checked ONLY `respond-truco`, never `respond-envido` — the ONE
- * button the widget correctly renders and offers to a real human, but this
- * script had no code path to click. Once the bot called envido (proven via
- * server-side `MatchRoom.advance()` tracing: a genuine overlapping-decision
- * race — see apply-progress — that end the truco call before the bot's
- * OWN queued decision resolved, leaving envido as the bot's next "sole
- * legal action"), the match froze from THIS SCRIPT's perspective forever:
- * envido stayed `pending`, targeted at the human, and nothing here ever
- * answered it. Every action taken is read straight off the DOM the real
- * widget rendered — nothing here re-decides legality client-side.
+ * Answer anything pending on us, call truco when it is on offer, otherwise
+ * play the strongest legal card. Every action is read straight off the DOM
+ * the real widget rendered — nothing here re-decides legality client-side.
+ *
+ * It MUST answer a call the BOT opens, envido included: the easy bot's own
+ * fallback ("a proactive truco/envido call is NEVER volunteered, only ever
+ * taken when it is the sole legal action left" — `truco-bot/easy.ts`)
+ * genuinely calls envido during ordinary play whenever a still-open first
+ * trick leaves it with only a proactive call. That is not a rare edge case.
+ * A previous version of this function checked ONLY `respond-truco`, and the
+ * match then froze from this script's perspective forever while the widget
+ * sat there correctly offering a Quiero button nobody clicked — a stall that
+ * was first reported as a product hang and was not one.
  */
 async function playOneTurnIfAvailable(table: FrameLocator): Promise<void> {
-  const quieroTruco = table.locator('[data-action="respond-truco"]', { hasText: "Quiero" });
-  if ((await quieroTruco.count()) > 0) {
-    await quieroTruco.first().click();
+  const { actions, playableCards } = await readTurn(table);
+  const offers = (action: string, withText?: string): boolean =>
+    actions.some((candidate) => candidate.action === action && !candidate.disabled && (withText === undefined || candidate.text.includes(withText)));
+
+  if (offers("respond-truco", "Quiero")) {
+    await table.locator('[data-action="respond-truco"]', { hasText: "Quiero" }).first().click();
     return;
   }
-  const quieroEnvido = table.locator('[data-action="respond-envido"]', { hasText: "Quiero" });
-  if ((await quieroEnvido.count()) > 0) {
-    await quieroEnvido.first().click();
+  if (offers("respond-envido", "Quiero")) {
+    await table.locator('[data-action="respond-envido"]', { hasText: "Quiero" }).first().click();
     return;
   }
-  const reveal = table.locator('[data-action="reveal-envido"]');
-  if ((await reveal.count()) > 0) {
-    await reveal.first().click();
+  if (offers("reveal-envido")) {
+    await table.locator('[data-action="reveal-envido"]').first().click();
     return;
   }
-  const strongestCardId = await pickStrongestPlayableCard(table);
-  if (strongestCardId !== null) {
-    await table.locator(`[data-card="${strongestCardId}"]`).click();
+  // Raising the stakes is what lets a 15-point match finish in sane wall
+  // clock, and it is real coverage: without it this spec plays truco without
+  // ever calling truco. See MATCH_TIMEOUT_MS for the measurement.
+  if (offers("call-truco")) {
+    await table.locator('[data-action="call-truco"]').first().click();
+    return;
+  }
+  const cardId = strongest(playableCards);
+  if (cardId !== null) {
+    await table.locator(`[data-card="${cardId}"]`).click();
   }
 }
 
@@ -183,14 +243,26 @@ describe("single-player: a real bot match, on a foreign origin, reaches a real e
         // stall this spec's own doc comment names) versus something new.
         if (Date.now() - lastProgressLogAt >= PROGRESS_LOG_INTERVAL_MS) {
           lastProgressLogAt = Date.now();
-          const scoreSnapshot = await table.locator(".hexdev-truco-scoreboard-panel").textContent().catch(() => null);
+          const scoreSnapshot = collapse(await table.locator(".hexdev-truco-scoreboard-panel").textContent().catch(() => null));
           const handCardIds = await table
             .locator("[data-card]")
             .evaluateAll((elements) => elements.map((el) => `${el.getAttribute("data-card")}:${el.getAttribute("data-playable")}`))
             .catch(() => ["(evaluateAll failed)"]);
-          const turnIndicatorText = await table.locator(".hexdev-truco-turn-indicator").textContent().catch(() => null);
+          const turnIndicatorText = collapse(await table.locator(".hexdev-truco-turn-indicator").textContent().catch(() => null));
+          // What the widget is OFFERING right now. This is the line that
+          // separates "the match is genuinely stuck" from "the widget is
+          // waiting for a click this script does not know how to make" —
+          // the distinction a previous investigation could only reach with
+          // server-side tracing, and the reason that stall was first
+          // misreported as a product hang when it was a gap in this file.
+          const offered = await table
+            .locator("[data-action]")
+            .evaluateAll((elements) => elements.map((el) => `${el.getAttribute("data-action")}${(el as HTMLButtonElement).disabled ? ":disabled" : ""}`))
+            .catch(() => ["(evaluateAll failed)"]);
+          const pendingCall = collapse(await table.locator(".hexdev-truco-pending-call").textContent().catch(() => null));
           console.log(
-            `[single-player.e2e] progress at +${String(Math.round((Date.now() - (deadline - MATCH_TIMEOUT_MS)) / 1000))}s: score=${scoreSnapshot ?? "?"} turn="${turnIndicatorText ?? "?"}" hand=[${handCardIds.join(",")}]`,
+            `[single-player.e2e] progress at +${String(Math.round((Date.now() - (deadline - MATCH_TIMEOUT_MS)) / 1000))}s: ` +
+              `score="${scoreSnapshot}" turn="${turnIndicatorText}" pendingCall="${pendingCall}" offered=[${offered.join(",")}] hand=[${handCardIds.join(",")}]`,
           );
         }
       }
