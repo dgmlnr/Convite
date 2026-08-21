@@ -88,7 +88,14 @@ export default defineConfig({
           // outside `packages/`/`apps/`, and it now gates every run in the
           // repo — including this one. Left out of `include` its test would
           // never execute, which is worse than not having written it.
-          include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "scripts/**/*.test.ts"],
+          // `e2e/support/` is in here for the same reason and with the same
+          // narrowness: the harness's own pure helpers gate every e2e run,
+          // and a helper whose test never executes is worse than one with no
+          // test at all. Scoped to `support/` deliberately — the specs
+          // themselves are `*.e2e.test.ts` at the `e2e/` root and belong to
+          // the separate, opt-in `pnpm test:e2e` project, which spawns real
+          // servers and a real browser.
+          include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "scripts/**/*.test.ts", "e2e/support/**/*.test.ts"],
           // `.redis.test.ts` files require a real Redis (Docker container)
           // and run only via the separate `pnpm test:redis` project
           // (`vitest.redis.config.ts`) — the default unit suite stays
