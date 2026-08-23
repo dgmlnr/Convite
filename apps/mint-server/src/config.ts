@@ -1,3 +1,4 @@
+import { findTenantRecordListProblem } from "@hexdev/platform-core";
 import type { TenantId, TenantRecord } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
 
@@ -110,8 +111,9 @@ function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]):
   } catch (error) {
     throw new Error(`HEXDEV_TENANTS_JSON is set but is not valid JSON — refusing to start the minting role with an unreadable tenant list.`, { cause: error });
   }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`HEXDEV_TENANTS_JSON must be a JSON array of tenant records, got ${typeof parsed} — refusing to start the minting role with an unusable tenant list.`);
+  const problem = findTenantRecordListProblem(parsed);
+  if (problem !== null) {
+    throw new Error(`HEXDEV_TENANTS_JSON ${problem} — refusing to start the minting role with an unusable tenant list.`);
   }
   return parsed as readonly TenantRecord[];
 }

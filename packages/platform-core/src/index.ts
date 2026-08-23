@@ -27,6 +27,7 @@ export type {
   TenantRecord,
   TenantRepository,
 } from "./tenant-auth.js";
+export { findTenantRecordListProblem } from "./tenant-record-shape.js";
 export {
   createJtiReplayGuard,
   createSessionTokenIssuer,

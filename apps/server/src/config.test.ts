@@ -113,7 +113,7 @@ describe("loadServerConfig + createSessionTokenIssuer — the FULL boot path ref
     expect(config.sessionPublicKey).toBe("not-a-real-key");
   });
 
-  it("createSessionTokenIssuer refuses the malformed key loadServerConfig passed through — the composition root's top-level `await` (index.ts) turns this into a boot crash, same convention as redis-client.ts's fail-loud connect", async () => {
+  it("createSessionTokenVerifier refuses the malformed key loadServerConfig passed through — the composition root's top-level `await` (index.ts) turns this into a boot crash, same convention as redis-client.ts's fail-loud connect", async () => {
     const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key" });
     await expect(createSessionTokenVerifier(config.sessionPublicKey)).rejects.toThrow(/malformed/i);
   });
@@ -150,6 +150,46 @@ describe("loadServerConfig numeric guards", () => {
 
     expect(config.port).toBe(4000);
     expect(config.joinIpRateLimit.limit).toBe(5);
+  });
+
+  /**
+   * The gap this closes. `readTenants` used to check `Array.isArray` and then
+   * cast — so a list whose ELEMENTS are wrong started the process and surfaced
+   * much later as tenants that silently never match. Its own docstring claimed
+   * the shape was checked; it was not.
+   *
+   * A bare string where a list of origins belongs is the dangerous case, not an
+   * obviously wrong one: it is iterable, so an origin check would compare
+   * against single CHARACTERS and reject every real origin without ever looking
+   * broken.
+   */
+  it("refuses a tenant list whose ELEMENTS are the wrong shape, naming the offending index", () => {
+    // Each shape asserts its OWN message. A shared regex would pass even if
+    // every shape reported the same generic reason, which is the difference
+    // between proving the guard discriminates and proving it merely throws.
+    const badShapes: readonly { readonly tenants: unknown; readonly expected: RegExp }[] = [
+      { tenants: [42], expected: /index 0 that is a number, not an object/ },
+      { tenants: [{ id: "acme" }], expected: /index 0 whose "embedKey" is not a non-empty string/ },
+      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: "https://acme.example", entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
+      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: "truco" }], expected: /"entitledGames" is not an array of non-empty strings/ },
+      { tenants: [{ id: "", embedKey: "k", allowedOrigins: [], entitledGames: [] }], expected: /index 0 whose "id" is not a non-empty string/ },
+      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: [""], entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
+    ];
+
+    for (const { tenants, expected } of badShapes) {
+      const load = (): unknown => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });
+
+      expect(load).toThrow(/HEXDEV_TENANTS_JSON/); // names the variable an operator must fix
+      expect(load).toThrow(expected); // and names WHICH record, and why
+    }
+  });
+
+  it("still accepts a well-formed tenant list, theme optional", () => {
+    const withTheme = [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: ["truco"], theme: { feltColor: "#0b3d2e" } }];
+    const withoutTheme = [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: ["truco"] }];
+
+    expect(loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: JSON.stringify(withTheme) }).tenants).toHaveLength(1);
+    expect(loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: JSON.stringify(withoutTheme) }).tenants).toHaveLength(1);
   });
 
   it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {

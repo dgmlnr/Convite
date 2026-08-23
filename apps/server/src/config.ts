@@ -1,3 +1,4 @@
+import { findTenantRecordListProblem } from "@hexdev/platform-core";
 import type { TenantId, TenantRecord } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
 
@@ -116,9 +117,14 @@ function readPositiveNumber(env: NodeJS.ProcessEnv, name: string, fallback: numb
 /**
  * Parses the tenants document, or refuses to start with a message an
  * operator can act on. A bare `SyntaxError: Unexpected token }` does not name
- * the variable it came from. The shape is checked too: a document parsing to
- * an object rather than a list would otherwise surface much later, as an
- * empty catalog on every `/embed`.
+ * the variable it came from.
+ *
+ * The ELEMENTS are checked too, by `findTenantRecordListProblem` next to the
+ * type itself — this used to claim they were while only checking
+ * `Array.isArray` and then casting, which let a list of the wrong shape start
+ * the process and surface much later as tenants that silently never match.
+ * The rules live in `platform-core` because both roles read this same document
+ * and two copies of them is how the two drift apart.
  */
 function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]): readonly TenantRecord[] {
   const raw = env.HEXDEV_TENANTS_JSON;
@@ -129,8 +135,9 @@ function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]):
   } catch (error) {
     throw new Error("HEXDEV_TENANTS_JSON is set but is not valid JSON — refusing to start with an unreadable tenant list.", { cause: error });
   }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`HEXDEV_TENANTS_JSON must be a JSON array of tenant records, got ${typeof parsed} — refusing to start with an unusable tenant list.`);
+  const problem = findTenantRecordListProblem(parsed);
+  if (problem !== null) {
+    throw new Error(`HEXDEV_TENANTS_JSON ${problem} — refusing to start with an unusable tenant list.`);
   }
   return parsed as readonly TenantRecord[];
 }

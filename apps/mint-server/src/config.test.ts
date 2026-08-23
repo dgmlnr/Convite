@@ -112,6 +112,30 @@ describe("loadMintConfig", () => {
    * function already sets the standard for what a config failure should read
    * like.
    */
+  /** The same gap, in the other role. Both configs read the same document, so
+   * both must refuse the same shapes — a mint that accepts a tenant the match
+   * role rejects is a split-brain waiting to happen. */
+  it("refuses a tenant list whose ELEMENTS are the wrong shape, naming the offending index", () => {
+    // Each shape asserts its OWN message. A shared regex would pass even if
+    // every shape reported the same generic reason, which is the difference
+    // between proving the guard discriminates and proving it merely throws.
+    const badShapes: readonly { readonly tenants: unknown; readonly expected: RegExp }[] = [
+      { tenants: [42], expected: /index 0 that is a number, not an object/ },
+      { tenants: [{ id: "acme" }], expected: /index 0 whose "embedKey" is not a non-empty string/ },
+      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: "https://acme.example", entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
+      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: "truco" }], expected: /"entitledGames" is not an array of non-empty strings/ },
+      { tenants: [{ id: "", embedKey: "k", allowedOrigins: [], entitledGames: [] }], expected: /index 0 whose "id" is not a non-empty string/ },
+      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: [""], entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
+    ];
+
+    for (const { tenants, expected } of badShapes) {
+      const load = (): unknown => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });
+
+      expect(load).toThrow(/HEXDEV_TENANTS_JSON/); // names the variable an operator must fix
+      expect(load).toThrow(expected); // and names WHICH record, and why
+    }
+  });
+
   it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {
     expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: "{oops" })).toThrow(/HEXDEV_TENANTS_JSON/);
   });
