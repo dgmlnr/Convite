@@ -13,6 +13,7 @@ import {
 } from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
+import { LIVE_TEST_TIMEOUT_MS, waitForView } from "./live-wait.test-support.js";
 
 /**
  * Deliberately non-truco (same reasoning as every other live-socket fixture
@@ -56,15 +57,7 @@ const TENANT_ID = "tenant-solo" as TenantId;
 const ALLOWED_ORIGIN = "https://tenant.example";
 const P0 = "solo-seat-0" as PlayerId;
 
-async function waitFor(views: readonly SoloState[], matches: (view: SoloState) => boolean, timeoutMs = 3000): Promise<SoloState> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const found = views.find(matches);
-    if (found !== undefined) return found;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("timed out waiting for the expected view");
-}
+const describeSolo = (view: SoloState): string => `turnSeat=${String(view.turnSeat)} movesLeft=${String(view.movesLeft)}`;
 
 describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single-Player vs Bot Mode)", () => {
   let testServer: ColyseusTestServer;
@@ -109,12 +102,12 @@ describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single
     // in between (3 -> 2) and closes the match alone (1 -> 0) — no client
     // ever occupies seat 1.
     client0.send("action", { type: "advance", playerId: P0 });
-    await waitFor(views, (view) => view.turnSeat === 0 && view.movesLeft === 2);
+    await waitForView({ views, matches: (view) => view.turnSeat === 0 && view.movesLeft === 2, what: "the bot to play and hand the turn back to seat 0", describe: describeSolo });
     client0.send("action", { type: "advance", playerId: P0 });
 
-    const outcome = await waitFor(views, (view) => view.movesLeft === 0);
+    const outcome = await waitForView({ views, matches: (view) => view.movesLeft === 0, what: "the match to run out of moves", describe: describeSolo });
     expect(outcome.movesLeft).toBe(0);
     // No second client EVER connected — a second seat filled entirely by
     // the bot `createBot("hard")` created at room creation.
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });

@@ -16,6 +16,7 @@ import {
 import type { SessionTokenIssuerHandle, TenantId } from "@hexdev/platform-core";
 import { PresenceRoom } from "./presence-room.js";
 import { createMatchServer } from "./server.js";
+import { LIVE_TEST_TIMEOUT_MS, waitForView } from "./live-wait.test-support.js";
 
 /**
  * Deliberately non-truco (same reasoning as `match-room.test.ts`'s fixture):
@@ -108,7 +109,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     expect(paired1[0]).toMatchObject({ players: ["p0", "p1"], modality: { roundLength: 15 } });
     const lastCounts = counts0[counts0.length - 1] as Array<{ modality: { roundLength: number }; waitingCount: number }>;
     expect(lastCounts.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(0);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("keeps two different modalities independent: a lone waiting client in a different modality is never paired", async () => {
     const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
@@ -119,7 +120,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
 
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(paired0).toHaveLength(0);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   /**
    * The selection screen (spec: "Lobby Presence Counters Per Point-Target
@@ -154,7 +155,7 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     const after = counts[counts.length - 1] as Array<{ modality: { roundLength: number }; waitingCount: number }>;
     expect(after.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
     expect(paired).toHaveLength(0);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
 
 /**
@@ -189,14 +190,7 @@ const handoffModule: GameModule<HandoffState, HandoffAction, HandoffState, unkno
   createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
 };
 
-async function waitForMoves(views: readonly HandoffState[], expected: number, timeoutMs = 3000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (views.some((view) => view.moves === expected)) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`timed out waiting for moves === ${expected}`);
-}
+const describeHandoff = (view: HandoffState): string => `moves=${String(view.moves)}`;
 
 describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unscheduled gap disclosed in apply-progress)", () => {
   const TENANT_ID = "tenant-handoff" as TenantId;
@@ -261,9 +255,9 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
     expect(matchRoom0.roomId).toBe(matchRoom1.roomId); // same real MatchRoom, not two different ones
 
     matchRoom0.send("action", { type: "move", playerId: P0 });
-    await waitForMoves(views0, 1);
+    await waitForView({ views: views0, matches: (view) => view.moves === 1, what: "the handed-off match to register its first move", describe: describeHandoff });
     expect(views0.some((view) => view.moves === 1)).toBe(true);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("still enforces MatchRoom.onAuth after the hand-off: a reservation consumed without a valid token is rejected, never silently seated", async () => {
     const presenceRoom = await testServer.createRoom("presence", { gameId: HANDOFF_GAME_ID });
@@ -281,7 +275,7 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
     // ...but the hand-off is NOT a second identity path: consuming the
     // reservation with no token still fails MatchRoom's real onAuth.
     await expect(testServer.sdk.consumeSeatReservation(paired0[0]!.matchReservation as never)).rejects.toBeDefined();
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
 
 /**
@@ -403,7 +397,7 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
     expect(pairedA0[0]).toMatchObject({ players: ["a0", "a1"] });
     // B0 is STILL alone: it was never a candidate for A's pairing.
     expect(pairedB0).toHaveLength(0);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   /**
    * Defense in depth (necessary because `filterBy` only governs colyseus's
@@ -435,7 +429,7 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
     await expect(
       testServer.connectTo(roomA, { gameId: "fixture-isolation-b", modality: { roundLength: 15 }, playerId: "attacker" }),
     ).rejects.toBeDefined();
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
 
 /**
@@ -555,7 +549,7 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
     const started = views.find((view) => view.players.length === 4);
     expect(started).toBeDefined();
     expect([...started!.players].sort()).toEqual([...PLAYERS].sort());
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("reserving ALL four seats locks the MatchRoom before any member is told: an outsider with a VALID token cannot joinById into the group's room", async () => {
     const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
@@ -587,7 +581,7 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
       const matchRoom = await testServer.sdk.consumeSeatReservation(messages[0]!.matchReservation as never);
       expect(matchRoom.roomId).toBe(reservation.roomId);
     }
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("fails the WHOLE group when one member vanished between the pool pop and the hand-off: everyone still present gets 'pairing-failed', nobody gets 'paired'", async () => {
     const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID });
@@ -623,7 +617,7 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
     // failed (the vanished member's tracking entry is exactly what's gone).
     for (const index of [0, 2, 3]) expect(failed[index]).toHaveLength(1);
     expect(failed[1]).toHaveLength(0);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   /**
    * GREEN-FROM-BIRTH PIN (disclosed as such): the mid-loop rollback branch
@@ -697,7 +691,7 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
     } finally {
       roomPrototype._reserveSeat = originalReserveSeat;
     }
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   /**
    * Phase B containment (this amendment's RED-first fix): one member whose
@@ -748,7 +742,7 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
     // delivered reservations are real, and the unreachable member's one
     // simply expires under colyseus's own 15s reservation TTL.
     expect(failed.flat()).toHaveLength(0);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
 
 /**
@@ -852,7 +846,7 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     const humanSet = new Set<string>(HUMANS);
     expect(started.players.filter((playerId) => humanSet.has(playerId))).toHaveLength(3);
     expect(started.players.filter((playerId) => !humanSet.has(playerId))).toHaveLength(1);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("rescues a LONE waiter past the timeout in a 4-seat modality: paired alone, match starts as 1 human + 3 bots (the arity-1 pool claim)", async () => {
     const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 0.05, sweepTickMs: 25 });
@@ -869,7 +863,7 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     const started = await consumeAndAwaitStart([paired[0]!.matchReservation]);
     expect(started.players).toContain(HUMANS[0]);
     expect(started.players.filter((playerId) => playerId !== HUMANS[0])).toHaveLength(3);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   /** GREEN-FROM-BIRTH PIN (disclosed as such): 1v1 has never degraded — this
    * pins the strict `seatCount > 2` guard so it can never START degrading. A
@@ -889,7 +883,7 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     expect(paired).toHaveLength(0);
     const lastCounts = counts[counts.length - 1]!;
     expect(lastCounts.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   /** GREEN-FROM-BIRTH PIN (disclosed as such): the other edge of the knob —
    * waiters YOUNGER than `botFillAfterSeconds` are never popped, however many
@@ -909,5 +903,5 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     expect(paired.flat()).toHaveLength(0);
     const lastCounts = counts[counts.length - 1]!;
     expect(lastCounts.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(2);
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });

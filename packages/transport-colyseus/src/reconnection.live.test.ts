@@ -13,6 +13,7 @@ import {
 } from "@hexdev/platform-core";
 import type { SessionTokenIssuerHandle, TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
+import { LIVE_TEST_TIMEOUT_MS, waitForView } from "./live-wait.test-support.js";
 
 /**
  * Deliberately non-truco, same boundary reasoning as `single-player.live.test.ts`:
@@ -66,15 +67,11 @@ const ALLOWED_ORIGIN = "https://tenant.example";
 const P0 = "reconnect-seat-0" as PlayerId;
 const P1 = "reconnect-seat-1" as PlayerId;
 
-async function waitFor(views: readonly ReconnectState[], matches: (view: ReconnectState) => boolean, timeoutMs = 3000): Promise<ReconnectState> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const found = views.find(matches);
-    if (found !== undefined) return found;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("timed out waiting for the expected view");
-}
+/** Every wait says what it is for and how to render what arrived — see
+ * `live-wait.test-support.ts` for why the private copy that used to live here
+ * was not good enough. */
+const describeReconnect = (view: ReconnectState): string =>
+  `turnSeat=${String(view.turnSeat)} pendingOn=${String(view.pendingOn)} resolved=${String(view.resolved)}`;
 
 describe("MatchRoom — disconnect, reconnection window, and bot takeover over a real WebSocket (spec: 'Disconnect, Reconnection Window, and Bot Takeover')", () => {
   let testServer: ColyseusTestServer;
@@ -120,14 +117,14 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
     const reconnected = await testServer.sdk.reconnect(reconnectionToken);
     const views: ReconnectState[] = [];
     reconnected.onMessage("view", (message: { view: ReconnectState }) => views.push(message.view));
-    await waitFor(views, () => true); // onReconnect resends the current view unprompted
+    await waitForView({ views, matches: () => true, what: "any view at all — onReconnect resends the current one unprompted", describe: describeReconnect });
     expect(views[0]).toMatchObject({ turnSeat: 0 });
 
     // Still a HUMAN-controlled seat, not a bot: this player's own action is
     // what advances the match, proving the seat was genuinely resumed.
     reconnected.send("action", { type: "advance", playerId: P0 });
-    await waitFor(views, (view) => view.turnSeat === 1);
-  });
+    await waitForView({ views, matches: (view) => view.turnSeat === 1, what: "the turn to reach seat 1", describe: describeReconnect });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("window expires without reconnection: a bot takes over the seat AND resolves a decision demanded of it (spec 6.4)", async () => {
     const room = await testServer.createRoom("match", { gameId: "fixture-reconnect", config: undefined, reconnectionWindowSeconds: 0.2 });
@@ -144,7 +141,7 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
     // The remaining human demands a decision FROM the now-bot-controlled
     // seat — exactly "a call pending the disconnected player's response".
     client1.send("action", { type: "demand", playerId: P1 });
-    const resolved = await waitFor(views1, (view) => view.resolved);
+    const resolved = await waitForView({ views: views1, matches: (view) => view.resolved, what: "the bot to resolve the demand left to it", describe: describeReconnect });
     expect(resolved.pendingOn).toBeNull(); // the takeover bot answered it, unprompted
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
