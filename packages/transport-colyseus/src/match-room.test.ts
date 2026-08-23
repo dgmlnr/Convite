@@ -703,19 +703,67 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
   };
 
-  /** Flushes pending work deterministically before the next assertion — no
-   * arbitrary real delay, no flakiness. Token verification
-   * (`SessionTokenIssuer.verify`) does real signature-checking crypto,
-   * which Node schedules on the libuv threadpool rather than settling on a
-   * pure microtask — a `Promise.resolve()` loop alone never observes it
-   * complete. A couple of macrotask boundaries (`setTimeout`) give that
-   * real async work an actual event-loop turn to finish, and the
-   * surrounding microtask flushes drain everything chained off it
-   * (`advance()`'s own `.then()` link, an async fixture body). */
+  /**
+   * Give the chain a fair chance to progress, then assert something did NOT
+   * happen. That is the ONLY thing a fixed number of drained turns can honestly
+   * do, and — since this file's flake — the only thing it is used for.
+   *
+   * A couple of macrotask boundaries rather than a `Promise.resolve()` loop,
+   * because token verification (`SessionTokenIssuer.verify`) does real
+   * signature-checking crypto, which Node schedules on the libuv threadpool
+   * and a microtask loop never observes complete. The surrounding microtask
+   * flushes drain what chains off it (`advance()`'s own `.then()` link, an
+   * async fixture body).
+   *
+   * NEVER use it to wait for something TO happen — see `waitUntil`. Counting
+   * turns to reach a state is a guess about scheduling, and this file's own
+   * description called itself "deterministic, no timers" while this was built
+   * on `setTimeout`. What that guess actually cost was NOT a slow release:
+   * `handleAction` returns EARLY and SILENTLY while `matchState` is unset or
+   * the seat is not yet a known controller, so dispatching a human action
+   * after a mere `flush()` could drop it without a trace, leaving the bot
+   * never asked again and a later release waiting on something that could no
+   * longer happen. It failed about once in twenty-three full-suite runs, only
+   * under load, never in isolation. Starving this loop to one turn reproduced
+   * it on every run.
+   */
   async function flush(): Promise<void> {
     for (let i = 0; i < 3; i += 1) {
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       for (let j = 0; j < 5; j += 1) await Promise.resolve();
+    }
+  }
+
+  /** How long ONE condition gets before we call it a genuine hang. */
+  const CONDITION_TIMEOUT_MS = 2_000;
+
+  /**
+   * Every test below declares this explicitly, and the reason is the whole
+   * point of `waitUntil`: its failure must be the one a reader sees.
+   *
+   * These tests chain several waits — the busiest has two explicit ones plus
+   * the two inside `releaseNextBotDecision` — so a worst case of 4 x 2s
+   * overshoots vitest's 5s default. Leave the default in place and a slow
+   * run under load dies of an opaque "test timed out" BEFORE any `waitUntil`
+   * can say which condition never arrived, which is exactly the diagnostic
+   * this change exists to provide. The ceiling is generous on purpose: it is
+   * not what bounds a hang — each `waitUntil` already does that — it only
+   * guarantees the named error always wins the race to report.
+   */
+  const OVERLAP_TEST_TIMEOUT_MS = 30_000;
+
+  /**
+   * Wait for a condition to actually hold, instead of assuming some number of
+   * drained turns got us there. A real hang still fails — bounded, and naming
+   * what never happened.
+   */
+  async function waitUntil(condition: () => boolean, description: string): Promise<void> {
+    const deadline = Date.now() + CONDITION_TIMEOUT_MS;
+    while (!condition()) {
+      if (Date.now() > deadline) {
+        throw new Error(`waited ${String(CONDITION_TIMEOUT_MS)}ms for ${description} and it never happened`);
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
   }
 
@@ -754,7 +802,13 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     };
     return {
       module,
-      releaseNextBotDecision: (): void => {
+      /** Awaits the decision's ARRIVAL before releasing it. The caller no
+       * longer has to guess how many turns the chain needs to reach
+       * `chooseAction`. The guess this replaces was never the whole flake —
+       * see `flush` — but it is what turned the real cause into an opaque
+       * "test setup error" instead of a message naming what never arrived. */
+      releaseNextBotDecision: async (): Promise<void> => {
+        await waitUntil(() => pendingReleases.length > 0, "a bot decision to become pending");
         const resolve = pendingReleases.shift();
         if (resolve === undefined) throw new Error("test setup error: no pending bot decision to release");
         resolve();
@@ -785,9 +839,12 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     // parks on the held-open `chooseAction`. Deliberately NOT awaited: the
     // whole point is to act again while this is still in flight.
     const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
-    await flush();
+    await waitUntil(() => pendingCount() === 1, "the bot's first decision to be pending");
+    // `pendingCount()` is NOT re-asserted here: the wait above already
+    // established it, and nothing can run between the two lines. `totalCalls`
+    // is a different observable and still fences something real — that the
+    // room asked for exactly ONE decision, not that one is outstanding.
     expect(totalCalls()).toBe(1);
-    expect(pendingCount()).toBe(1);
 
     // The human's OWN move is legal right now (turnSeat is still seat0's) —
     // this is the exact trigger the debt describes: a real, legal human
@@ -808,13 +865,12 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     // continues (turnSeat already flipped by the human's move above) and
     // discovers the bot's `move` is now legal too — a second, SEQUENTIAL
     // (not concurrent) decision, still within the same serialized chain.
-    releaseNextBotDecision();
-    await flush();
+    await releaseNextBotDecision();
+    await waitUntil(() => pendingCount() === 1, "the bot's second decision to be pending");
     expect(totalCalls()).toBe(2);
-    expect(pendingCount()).toBe(1);
     expect(maxConcurrentCalls()).toBe(1); // still never overlapped
 
-    releaseNextBotDecision();
+    await releaseNextBotDecision();
     await joinPromise;
     await handlePromise;
 
@@ -823,20 +879,30 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     // nothing left to do, instead of erroneously re-triggering the bot.
     expect(totalCalls()).toBe(2);
     expect(maxConcurrentCalls()).toBe(1);
-  });
+  }, OVERLAP_TEST_TIMEOUT_MS);
 
   it("still drives the advance() that arrived mid-flight to completion — nothing is silently dropped (liveness)", async () => {
     const { module, releaseNextBotDecision, totalCalls } = controllableRaceModule();
     const { room, seat0, auth } = await createRaceRoom(module);
 
     const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
-    await flush();
+    // THE precondition, and the one this test used to only assume.
+    // `handleAction` returns EARLY — untouched state, nothing queued — while
+    // `matchState` is unset or the seat is not yet a known controller. Send it
+    // a turn too early and the human's move never lands, so the bot is never
+    // asked a second time and the release below waits for something that can
+    // no longer happen. That is the whole flake: not a slow release, a move
+    // that was silently dropped before it.
+    await waitUntil(() => totalCalls() === 1, "the join to start the match and park the bot's first decision");
+    // Synchronous all the way to `this.matchState = result.state` once the
+    // precondition above holds, so there is nothing here to wait for.
     const handlePromise = room.handleAction(seat0.client, { type: "move", playerId: P0 });
-    await flush();
 
-    releaseNextBotDecision(); // bot's `call`
-    await flush();
-    releaseNextBotDecision(); // bot's `move`
+    // No `flush()` between these two either: each release waits for its own
+    // decision to arrive. That is what keeps `flush`'s doc comment true —
+    // it is used ONLY before asserting something did not happen.
+    await releaseNextBotDecision(); // bot's `call`
+    await releaseNextBotDecision(); // bot's `move`
 
     // Both the request that was already in flight AND the one that
     // arrived mid-flight resolve — neither promise hangs forever, which is
@@ -859,14 +925,18 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
       { type: "call", playerId: P0 },
       { type: "move", playerId: P0 },
     ]);
-  });
+  }, OVERLAP_TEST_TIMEOUT_MS);
 
   it("onDispose() waits for any in-flight or queued advance() work to settle before the room finishes disposing", async () => {
-    const { module, releaseNextBotDecision, legalActionQueries } = controllableRaceModule();
+    const { module, releaseNextBotDecision, legalActionQueries, pendingCount } = controllableRaceModule();
     const { room, seat0, auth } = await createRaceRoom(module);
 
     const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
-    await flush();
+    // Same precondition as the liveness test above: disposal can only be
+    // observed WAITING if there is something in flight to wait for. Reaching
+    // `onDispose` before the bot's decision is parked would settle it at once
+    // and turn the assertion below green for the wrong reason.
+    await waitUntil(() => pendingCount() === 1, "the bot's decision to be parked and in flight");
 
     let disposeSettled = false;
     const disposePromise = Promise.resolve(room.onDispose()).then(() => {
@@ -878,7 +948,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     expect(disposeSettled).toBe(false);
 
     const queriesAtDisposal = legalActionQueries();
-    releaseNextBotDecision();
+    await releaseNextBotDecision();
     await joinPromise;
     await disposePromise;
     expect(disposeSettled).toBe(true);
@@ -893,7 +963,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     // asking the module what to drive next, on a room the framework has already
     // released — with `onDispose` still waiting on every bit of it.
     expect(legalActionQueries()).toBe(queriesAtDisposal);
-  });
+  }, OVERLAP_TEST_TIMEOUT_MS);
 
   it("never asks a bot to resolve a timed-out turn that was still queued when the room was disposed", async () => {
     const { module, releaseNextBotDecision, totalCalls } = controllableRaceModule();
@@ -906,8 +976,10 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     const { room, seat0, auth } = await createRaceRoom(module, { turnTimeoutSeconds: 0.03 });
 
     const joinPromise = joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
-    await flush();
-    expect(totalCalls()).toBe(1); // the bot's `call`, parked
+    // Not re-asserted, for the same reason as the test above: the wait already
+    // established it and nothing runs between the two lines. The bot's `call`
+    // is now parked, which is the state the rest of this test needs.
+    await waitUntil(() => totalCalls() === 1, "the bot's `call` decision to be requested and parked");
 
     // Polled, not slept: `onTurnExpired` clears the timer as its first act, so
     // this returns within a couple of ms of the real expiry.
@@ -918,7 +990,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     }
 
     const disposePromise = room.onDispose();
-    releaseNextBotDecision(); // the bot's `call` returns; the queued turn is next
+    await releaseNextBotDecision(); // the bot's `call` returns; the queued turn is next
     await flush();
 
     // THE assertion: the queued turn took its disposal exit instead of building
@@ -931,7 +1003,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
     await joinPromise;
     await disposePromise;
     expect(room.hasPendingTurnTimer()).toBe(false);
-  });
+  }, OVERLAP_TEST_TIMEOUT_MS);
 });
 
 describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-turn time limit, bot plays the expired turn)", () => {
