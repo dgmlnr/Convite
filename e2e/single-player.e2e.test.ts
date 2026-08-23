@@ -1,6 +1,7 @@
 import { chromium, type Browser, type FrameLocator, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { attachConsoleGuard } from "./support/console-guard.js";
+import { collectMatchDiagnostics, formatDiagnosticFailure, formatProgressLine } from "./support/match-diagnostics.js";
 import { startSystem, type SystemHandle } from "./support/system.js";
 
 // A real 15-point match, no shortcuts. Real-run discovery (empirically
@@ -28,28 +29,44 @@ import { startSystem, type SystemHandle } from "./support/system.js";
 // again the progress diagnostic below is what says whether the match is
 // genuinely frozen (score, turn, pendingCall and offered actions all
 // unchanged across samples) or merely unfinished.
-// MEASURED, three runs each, not estimated — every earlier guess at this
-// number was wrong. Before the loop below was collapsed to one cross-frame
-// read per turn: 410s, 561s, 713s. After: 440s, 289s, 409s. So the repeated
-// iframe round trips were worth about a THIRD of the wall clock, not the
-// bulk of it — the honest read is that a 15-point match against a bot that
-// pauses ~1s per action simply takes several minutes, and the spread between
-// runs is inherent to how the cards fall.
+// MEASURED, eight runs, and the three earlier numbers this comment used to
+// carry were all measurements of the WRONG THING. They are kept here because
+// the mistake is more instructive than the fix.
 //
-// Ten minutes was then set from those three samples, and THAT WAS STILL TOO
-// TIGHT: the first run against the two-role topology reached 12 of 15 points
-// and was still climbing at +614s. Three samples do not characterise a tail
-// this wide — observed completions now span 289s to 440s, with at least one
-// run past 614s — and the split adds a proxy hop to every request the widget
-// makes. Fifteen minutes is set from the longest run actually observed, not
-// from an average, and the honest read is that this spec's duration is
-// dominated by a 15-point match against a bot that pauses ~1s per action.
+// This budget was raised three times — 4 minutes, then 10, then 15 — each
+// time from honest timings of runs that took 289s, 409s, 438s, 440s and once
+// past 614s. Every raise blamed the same suspect: a 15-point match against a
+// bot that pauses ~1s per action. That suspect was innocent, and this comment
+// argued its guilt in detail, which is exactly what made it so hard to see.
 //
-// If this ever needs to shrink, the lever is the bot's thinking delay, which
-// the spec documents as tunable but which nothing wires to a knob: the
-// `GameModule.createBot` port would have to widen, which is a product
-// decision, not a test one.
-const MATCH_TIMEOUT_MS = 15 * 60_000;
+// What the wall clock actually went on was the progress diagnostic in the
+// loop below. It read `.hexdev-truco-turn-indicator` with
+// `locator.textContent()` — an element deleted during the a11y work, and an
+// API that AUTO-WAITS. A selector matching nothing does not return null; it
+// blocks for Playwright's full 30s default timeout and then throws, and the
+// `.catch(() => null)` written to keep the diagnostic harmless turned that
+// stall into silence. Timed, one pass:
+//
+//     scoreboard 5ms · hand 15ms · turnIndicator 30005ms · offered 3ms · pendingCall 3ms
+//
+// Firing every 10s, that alone was ~420s of a 438s run, and the whole loop —
+// 84 iterations of reads, clicks and sleeps — measured 14.3s. The bot's
+// delay accounts for ~30s: a full match is only ~30 bot actions. Instrumented
+// proof: with the delay cut to 50ms the spec finished in 10s, because the
+// match ended BEFORE the diagnostic's first firing, which is what made the
+// bot look guilty for so long.
+//
+// `support/match-diagnostics.ts` now takes that snapshot in ONE `evaluate`
+// against `body`, which always exists and therefore cannot wait. Eight runs
+// since, unchanged bot delay: 34s, 34s, 41s, 45s, 45s, 46s, 49s, 52s. The
+// full e2e suite went from ~750s to 77s.
+//
+// Four minutes is set from the longest of those eight (52s), not an average,
+// and leaves room for roughly 225 bot actions against the ~30 a match takes.
+// The lever, if this ever needs to shrink again, is NOT the bot's thinking
+// delay and NOT the `GameModule.createBot` port: widening a domain contract
+// to make a test fast would have buried this bug instead of finding it.
+const MATCH_TIMEOUT_MS = 4 * 60_000;
 const POLL_INTERVAL_MS = 150;
 const PROGRESS_LOG_INTERVAL_MS = 10_000;
 
@@ -110,33 +127,21 @@ const CARD_POWER_ORDER: readonly string[] = [
   "4-copa",
 ];
 
-/**
- * ONE cross-frame read per turn, deliberately.
- *
- * This loop used to ask the frame up to five separate questions every 300ms
- * — four `count()` calls plus an `evaluateAll` — and each one crosses an
- * iframe boundary. That, not the bot's ~1s thinking delay, was where the
- * match's wall clock actually went: three measured runs of a full 15-point
- * match took 410s, 561s and 713s, while the bot itself only accounts for
- * roughly 90s of that. Collapsing the reads into a single snapshot is what
- * makes a tight, meaningful timeout possible instead of an ever-growing one.
- */
-/**
- * Every diagnostic snapshot goes through this. The scoreboard's own
- * textContent carries newlines and runs of indentation, and interpolating it
- * raw SPLIT THE LOG LINE — which is why earlier timeout reports showed a
- * score and then nothing: the turn and the offered actions were on lines
- * nobody read. A diagnostic that only survives the happy path is not one.
- */
-function collapse(text: string | null): string {
-  return (text ?? "?").replace(/\s+/g, " ").trim();
-}
-
 interface TurnSnapshot {
   readonly actions: readonly { readonly action: string; readonly disabled: boolean; readonly text: string }[];
   readonly playableCards: readonly string[];
 }
 
+/**
+ * ONE cross-frame read per turn, deliberately: this loop used to ask the frame
+ * up to five separate questions every 300ms — four `count()` calls plus an
+ * `evaluateAll` — and each one crosses an iframe boundary.
+ *
+ * It is worth ~14s of a match, not the minutes an earlier version of this
+ * comment claimed. That claim named the bot's thinking delay as the rest, and
+ * it was wrong on both counts; `MATCH_TIMEOUT_MS` above carries what the wall
+ * clock actually went on and how it was measured.
+ */
 async function readTurn(table: FrameLocator): Promise<TurnSnapshot> {
   return table.locator("body").evaluate((body) => ({
     actions: [...body.querySelectorAll("[data-action]")].map((el) => ({
@@ -252,27 +257,21 @@ describe("single-player: a real bot match, on a foreign origin, reaches a real e
         // stall this spec's own doc comment names) versus something new.
         if (Date.now() - lastProgressLogAt >= PROGRESS_LOG_INTERVAL_MS) {
           lastProgressLogAt = Date.now();
-          const scoreSnapshot = collapse(await table.locator(".hexdev-truco-scoreboard-panel").textContent().catch(() => null));
-          const handCardIds = await table
-            .locator("[data-card]")
-            .evaluateAll((elements) => elements.map((el) => `${el.getAttribute("data-card")}:${el.getAttribute("data-playable")}`))
-            .catch(() => ["(evaluateAll failed)"]);
-          const turnIndicatorText = collapse(await table.locator(".hexdev-truco-turn-indicator").textContent().catch(() => null));
-          // What the widget is OFFERING right now. This is the line that
-          // separates "the match is genuinely stuck" from "the widget is
-          // waiting for a click this script does not know how to make" —
-          // the distinction a previous investigation could only reach with
-          // server-side tracing, and the reason that stall was first
-          // misreported as a product hang when it was a gap in this file.
-          const offered = await table
-            .locator("[data-action]")
-            .evaluateAll((elements) => elements.map((el) => `${el.getAttribute("data-action")}${(el as HTMLButtonElement).disabled ? ":disabled" : ""}`))
-            .catch(() => ["(evaluateAll failed)"]);
-          const pendingCall = collapse(await table.locator(".hexdev-truco-pending-call").textContent().catch(() => null));
-          console.log(
-            `[single-player.e2e] progress at +${String(Math.round((Date.now() - (deadline - MATCH_TIMEOUT_MS)) / 1000))}s: ` +
-              `score="${scoreSnapshot}" turn="${turnIndicatorText}" pendingCall="${pendingCall}" offered=[${offered.join(",")}] hand=[${handCardIds.join(",")}]`,
-          );
+          // ONE cross-frame call, and `body` always exists so it can never
+          // wait. `match-diagnostics.ts` carries the measurement showing what
+          // the five-locator version of this block cost.
+          //
+          // Guarded because a diagnostic must never be able to fail the run it
+          // is diagnosing: `evaluate` can still reject for reasons unrelated to
+          // the selectors. Reported rather than swallowed — silence is what let
+          // the last one hide for three budget raises.
+          const elapsedSeconds = Math.round((Date.now() - (deadline - MATCH_TIMEOUT_MS)) / 1000);
+          try {
+            const snapshot = await table.locator("body").evaluate(collectMatchDiagnostics);
+            console.log(formatProgressLine(elapsedSeconds, snapshot));
+          } catch (error) {
+            console.log(formatDiagnosticFailure(elapsedSeconds, error));
+          }
         }
       }
 
