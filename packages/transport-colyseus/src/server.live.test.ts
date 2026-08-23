@@ -14,6 +14,7 @@ import {
 } from "@hexdev/platform-core";
 import type { TenantId } from "@hexdev/platform-core";
 import { createMatchServer } from "./server.js";
+import { LIVE_TEST_TIMEOUT_MS, waitForView } from "./live-wait.test-support.js";
 
 /**
  * The first live-socket proof in the project (obs 2941/2942: blocked until
@@ -67,15 +68,7 @@ function collectViews(client: { onMessage(type: string, callback: (message: { vi
   return views;
 }
 
-async function waitFor(views: readonly LiveState[], matches: (view: LiveState) => boolean, timeoutMs = 3000): Promise<LiveState> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const found = views.find(matches);
-    if (found !== undefined) return found;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("timed out waiting for the expected view");
-}
+const describeLive = (view: LiveState): string => `dealt=${String(view.dealt)} moves=${String(view.moves)}`;
 
 describe("createMatchServer — live WebSocket integration (the composition root's own runtime proof)", () => {
   let testServer: ColyseusTestServer;
@@ -131,19 +124,19 @@ describe("createMatchServer — live WebSocket integration (the composition root
     const views0 = collectViews(client0);
     const client1 = await testServer.connectTo(room, { token: token1 });
 
-    const dealt0 = await waitFor(views0, (view) => view.dealt);
+    const dealt0 = await waitForView({ views: views0, matches: (view) => view.dealt, what: "the deal to reach seat 0", describe: describeLive });
     expect(dealt0.dealt).toBe(true);
 
     client0.send("action", { type: "move", playerId: P0 });
-    const moved = await waitFor(views0, (view) => view.moves === 1);
+    const moved = await waitForView({ views: views0, matches: (view) => view.moves === 1, what: "seat 0 to see the first move", describe: describeLive });
     expect(moved.moves).toBe(1);
     client1.leave();
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 
   it("rejects a real client connecting over a real websocket with no token", async () => {
     const room = await testServer.createRoom("match", { gameId: "fixture-live", config: undefined });
     await expect(testServer.connectTo(room, {})).rejects.toBeDefined();
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
 
 /**
@@ -211,5 +204,5 @@ describe("createMatchServer — the express option (custom routes coexisting wit
     expect(matchmakeResponse.status, responseText).toBe(200);
     const body = JSON.parse(responseText) as { roomId?: string };
     expect(body.roomId).toBeDefined();
-  });
+  }, LIVE_TEST_TIMEOUT_MS);
 });
