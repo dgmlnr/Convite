@@ -8,16 +8,21 @@ export interface RateLimitConfig {
 
 export interface ServerConfig {
   readonly port: number;
-  /** Base64url-encoded, 32-byte Ed25519 signing-key seed (see
-   * `@hexdev/platform-core`'s `createSessionTokenIssuer`) — NOT an arbitrary
-   * passphrase (that was the prior HMAC design, obs 2942's disclosed
-   * deviation, now resolved). Generate one with:
-   * `node -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'))"` */
-  readonly sessionSigningKey: string;
+  /**
+   * Base64url-encoded, 32-byte Ed25519 PUBLIC key — never a seed.
+   *
+   * This role verifies tokens and cannot mint them, which is the whole point
+   * of the mint/verify split (handoff §P4.3): before it, every replica held
+   * the signing seed, so compromising ANY instance meant minting for the
+   * entire fleet. The seed now lives only in `apps/mint-server`, and this
+   * process is given the matching public half.
+   *
+   * It comes from the mint role's own issuer: `createSessionTokenIssuer`
+   * returns a handle whose `publicKey` is exactly this value.
+   */
+  readonly sessionPublicKey: string;
   readonly sessionTtlSeconds: number;
   readonly tenants: readonly TenantRecord[];
-  readonly embedIpRateLimit: RateLimitConfig;
-  readonly embedKeyRateLimit: RateLimitConfig;
   readonly joinIpRateLimit: RateLimitConfig;
   /** `MatchRoom.onAuth`'s WS-join origin re-validation target (see
    * `MatchRoomAuthOptions`'s own docstring for the real bug this closes: it
@@ -71,8 +76,6 @@ const DEFAULT_RATE_WINDOW_MS = 60_000;
 // higher still since ONE tenant can have many concurrent legitimate
 // visitors, each a different IP, hitting the same key. Room join is a
 // heavier operation (opens a socket) so its default is stricter.
-const DEFAULT_EMBED_IP_LIMIT = 20;
-const DEFAULT_EMBED_KEY_LIMIT = 60;
 const DEFAULT_JOIN_IP_LIMIT = 10;
 // 30s mirrors MatchRoom's reconnection window (obs 2919's decided duration
 // for "how long is a player asked to wait"): long enough that a real fourth
@@ -142,14 +145,14 @@ function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: stri
 /** Obviously a dev-only placeholder — never a real signing credential, and
  * never reachable in production (see the throw below). A validly-shaped
  * (32-byte, base64url) Ed25519 seed is still required even for local dev,
- * since `createSessionTokenIssuer` now validates the SHAPE of whatever key
+ * since `createSessionTokenVerifier` validates the SHAPE of whatever key
  * material it is given, not just its presence — this exact value is the
  * SHA-256 digest of the literal string below it, base64url-encoded, chosen
  * only for reproducibility; it carries no real secrecy and is checked
  * straight into source control. Security posture unchanged from before:
  * the signing key comes from configuration/environment, never hardcoded for
  * a real deployment. */
-const DEV_SESSION_SIGNING_KEY = "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI"; // sha256("dev-only-insecure-signing-key-DO-NOT-USE-IN-PRODUCTION")
+const DEV_SESSION_PUBLIC_KEY = "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw"; // the Ed25519 public half of apps/mint-server's own DEV_SESSION_SIGNING_KEY
 
 /** A single fixture tenant so a fresh clone's server is curl-able with zero
  * setup. Not a secret — an embed key and an origin allowlist are meant to be
@@ -180,20 +183,21 @@ const DEV_TENANT: TenantRecord = {
 export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   const nodeEnv = env.NODE_ENV ?? "development";
   const allowDevDefaults = env.HEXDEV_ALLOW_DEV_DEFAULTS === "true";
-  const sessionSigningKey = env.HEXDEV_SESSION_SIGNING_KEY;
-  if (sessionSigningKey === undefined) {
+  const sessionPublicKey = env.HEXDEV_SESSION_PUBLIC_KEY;
+  if (sessionPublicKey === undefined) {
     if (nodeEnv === "production") {
-      throw new Error("HEXDEV_SESSION_SIGNING_KEY must be set in production — refusing to start signing tokens with an insecure default.");
+      throw new Error("HEXDEV_SESSION_PUBLIC_KEY must be set in production — refusing to start verifying tokens against an insecure default key.");
     }
     if (!allowDevDefaults) {
       throw new Error(
-        "HEXDEV_SESSION_SIGNING_KEY must be set — refusing to start with an insecure default. " +
-          "For local development only, set HEXDEV_ALLOW_DEV_DEFAULTS=true to opt in explicitly.",
+        "HEXDEV_SESSION_PUBLIC_KEY must be set — refusing to start with an insecure default. " +
+          "For local development only, set HEXDEV_ALLOW_DEV_DEFAULTS=true to opt in explicitly. " +
+          "The value is the `publicKey` of the minting role's issuer; this process never holds the seed.",
       );
     }
   }
   // Only PRESENCE is validated here — SHAPE (a well-formed 32-byte Ed25519
-  // seed) is validated by `createSessionTokenIssuer` itself, awaited at the
+  // public key) is validated by `createSessionTokenVerifier` itself, awaited at the
   // top of `apps/server/src/index.ts`'s composition root, same "throw,
   // crash boot" convention `redis-client.ts`'s own fail-loud connect uses.
   // `loadServerConfig` stays synchronous (importing a key is unavoidably
@@ -216,11 +220,9 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   }
   return {
     port,
-    sessionSigningKey: sessionSigningKey ?? DEV_SESSION_SIGNING_KEY,
+    sessionPublicKey: sessionPublicKey ?? DEV_SESSION_PUBLIC_KEY,
     sessionTtlSeconds: readPositiveNumber(env, "HEXDEV_SESSION_TTL_SECONDS", DEFAULT_TTL_SECONDS),
     tenants,
-    embedIpRateLimit: readRateLimit(env, "HEXDEV_EMBED_IP_RATE_LIMIT", "HEXDEV_EMBED_IP_RATE_WINDOW_MS", DEFAULT_EMBED_IP_LIMIT),
-    embedKeyRateLimit: readRateLimit(env, "HEXDEV_EMBED_KEY_RATE_LIMIT", "HEXDEV_EMBED_KEY_RATE_WINDOW_MS", DEFAULT_EMBED_KEY_LIMIT),
     joinIpRateLimit: readRateLimit(env, "HEXDEV_JOIN_IP_RATE_LIMIT", "HEXDEV_JOIN_IP_RATE_WINDOW_MS", DEFAULT_JOIN_IP_LIMIT),
     allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${port}`],
     redisUrl: env.HEXDEV_REDIS_URL,

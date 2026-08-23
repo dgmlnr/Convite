@@ -72,9 +72,6 @@ importers:
       '@hexdev/truco-module':
         specifier: workspace:*
         version: link:../../packages/games/truco-module
-      '@hexdev/widget-frontdoor':
-        specifier: workspace:*
-        version: link:../../packages/widget-frontdoor
       '@hexdev/widget-protocol':
         specifier: workspace:*
         version: link:../../packages/widget-protocol
