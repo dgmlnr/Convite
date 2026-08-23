@@ -27,7 +27,9 @@ export default defineConfig({
     // files one at a time removes cross-file resource contention as a
     // possible source of that.
     fileParallelism: false,
-    testTimeout: 17 * 60_000,
+    // The single-player spec sets its own (`MATCH_TIMEOUT_MS + 30_000`);
+    // this is the ceiling for every other e2e spec.
+    testTimeout: 5 * 60_000,
     hookTimeout: 5 * 60_000,
   },
 });
