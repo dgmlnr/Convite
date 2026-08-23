@@ -184,28 +184,39 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
   // has to take them with it. Without this, a failure between spawning and
   // returning leaks BOTH roles — strictly worse than the single process that
   // could leak before this file grew a second one.
+  //
+  // The guard covers EVERY step that follows the spawn, the host fixture's
+  // own bind included. It used to stop one step short of it, which left the
+  // exact leak it exists to prevent sitting just past its edge: a host port
+  // already in use — the ordinary symptom of a PREVIOUS spec having leaked —
+  // would reject after both roles and the proxy were already up, and take
+  // none of them with it. One leak would then cause the next.
   let proxy: { stop(): Promise<void> } | undefined;
+  let hostServer: HttpServer | undefined;
   try {
     await Promise.all([waitForRoleListening("mint", mintPort), waitForRoleListening("match", matchPort)]);
     proxy = await startFrontProxy({ port: serverPort, mintOrigin, matchOrigin });
     // Now that both upstreams are up, this proves the ROUTING — the part no
     // amount of waiting on the roles themselves can establish.
     await waitForHttpReachable(`${info.serverOrigin}/loader.js`, 20_000, () => `role output so far:\n${serverOutput}`);
+
+    hostServer = createHttpServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(renderHostPage(info.serverOrigin, info.embedKey));
+    });
+    const binding = hostServer;
+    await new Promise<void>((resolve, reject) => {
+      binding.once("error", reject);
+      binding.listen(hostPort, "127.0.0.1", () => resolve());
+    });
   } catch (error) {
+    await new Promise<void>((resolve) => (hostServer === undefined ? resolve() : hostServer.close(() => resolve())));
     await proxy?.stop();
     mintProcess.kill("SIGKILL");
     serverProcess.kill("SIGKILL");
     throw error;
   }
-
-  const hostServer: HttpServer = createHttpServer((_req, res) => {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(renderHostPage(info.serverOrigin, info.embedKey));
-  });
-  await new Promise<void>((resolve, reject) => {
-    hostServer.once("error", reject);
-    hostServer.listen(hostPort, "127.0.0.1", () => resolve());
-  });
+  const boundHostServer = hostServer;
 
   // Every spec file starts its own system, so anything left running here
   // leaks into the next file — and a leaked listener on an ephemeral port
@@ -226,7 +237,7 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
     });
 
   const stop = async (): Promise<void> => {
-    await new Promise<void>((resolve) => hostServer.close(() => resolve()));
+    await new Promise<void>((resolve) => boundHostServer.close(() => resolve()));
     await proxy?.stop();
     await Promise.all([stopProcess(serverProcess), stopProcess(mintProcess)]);
   };

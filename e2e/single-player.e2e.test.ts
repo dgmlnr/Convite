@@ -1,7 +1,7 @@
 import { chromium, type Browser, type FrameLocator, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { attachConsoleGuard } from "./support/console-guard.js";
-import { collectMatchDiagnostics, formatDiagnosticFailure, formatProgressLine } from "./support/match-diagnostics.js";
+import { collectMatchDiagnostics, readDiagnosticLine } from "./support/match-diagnostics.js";
 import { startSystem, type SystemHandle } from "./support/system.js";
 
 // A real 15-point match, no shortcuts. Real-run discovery (empirically
@@ -266,12 +266,7 @@ describe("single-player: a real bot match, on a foreign origin, reaches a real e
           // the selectors. Reported rather than swallowed — silence is what let
           // the last one hide for three budget raises.
           const elapsedSeconds = Math.round((Date.now() - (deadline - MATCH_TIMEOUT_MS)) / 1000);
-          try {
-            const snapshot = await table.locator("body").evaluate(collectMatchDiagnostics);
-            console.log(formatProgressLine(elapsedSeconds, snapshot));
-          } catch (error) {
-            console.log(formatDiagnosticFailure(elapsedSeconds, error));
-          }
+          console.log(await readDiagnosticLine(elapsedSeconds, () => table.locator("body").evaluate(collectMatchDiagnostics)));
         }
       }
 

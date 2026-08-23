@@ -126,3 +126,27 @@ function describeThrown(error: unknown): string | null {
     return "a thrown value that cannot be converted to a string";
   }
 }
+
+/**
+ * The guard, owned here rather than inlined at the call site.
+ *
+ * A diagnostic must never be able to fail the run it is diagnosing, and the
+ * read it performs can reject for reasons that have nothing to do with its
+ * selectors — a detached iframe, a navigation mid-call. Inlined in the spec
+ * this was one `try` nobody could reach with a test; as a function it is the
+ * failure path itself that gets proven.
+ *
+ * The failure is REPORTED, never swallowed. `.catch(() => null)` is exactly
+ * what turned a 30s stall into silence for as long as it did.
+ *
+ * `read` is invoked inside the `try` on purpose: a locator can throw
+ * synchronously, before it ever returns a promise, and a version that called
+ * it outside would let that one escape.
+ */
+export async function readDiagnosticLine(elapsedSeconds: number, read: () => Promise<MatchDiagnosticSnapshot>): Promise<string> {
+  try {
+    return formatProgressLine(elapsedSeconds, await read());
+  } catch (error) {
+    return formatDiagnosticFailure(elapsedSeconds, error);
+  }
+}
