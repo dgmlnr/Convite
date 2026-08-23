@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectMatchDiagnostics, formatDiagnosticFailure, formatProgressLine } from "./match-diagnostics.js";
+import { collectMatchDiagnostics, formatDiagnosticFailure, formatProgressLine, readDiagnosticLine } from "./match-diagnostics.js";
 
 /**
  * A fake `body` carrying only the two methods the collector is allowed to use.
@@ -237,5 +237,53 @@ describe("formatDiagnosticFailure", () => {
 
     expect(line).toContain("diagnostic failed: ?");
     expect(line.endsWith(" ")).toBe(false);
+  });
+});
+
+/**
+ * The GUARD, as a unit rather than as wiring nobody can reach.
+ *
+ * A review pointed out that the spec's own try/catch had no test forcing
+ * `evaluate` to reject — and it was right that this is the one line the whole
+ * change turns on: a diagnostic that can fail the run it is diagnosing is the
+ * bug, not the fix. Pulling the guard in here makes the failure path provable
+ * without an e2e harness, and leaves the spec holding only the binding.
+ */
+describe("readDiagnosticLine", () => {
+  const SNAPSHOT = { score: "0-0", turn: null, pendingCall: null, offered: [], hand: [] };
+
+  it("formats the snapshot when the read succeeds", async () => {
+    const line = await readDiagnosticLine(30, () => Promise.resolve(SNAPSHOT));
+
+    expect(line).toContain("+30s");
+    expect(line).toContain('score="0-0"');
+    expect(line).not.toContain("diagnostic failed");
+  });
+
+  /** THE case. A rejecting read must produce a line, never a rejection. */
+  it("reports a rejected read instead of letting it escape", async () => {
+    const line = await readDiagnosticLine(42, () => Promise.reject(new Error("frame was detached")));
+
+    expect(line).toContain("+42s");
+    expect(line).toContain("diagnostic failed");
+    expect(line).toContain("frame was detached");
+  });
+
+  it("survives a read that throws synchronously, not just one that rejects", async () => {
+    const line = await readDiagnosticLine(7, () => {
+      throw new Error("locator blew up before returning a promise");
+    });
+
+    expect(line).toContain("diagnostic failed");
+    expect(line).toContain("locator blew up");
+  });
+
+  /** Same invariant as `formatDiagnosticFailure`'s own: the reporter must not
+   * become the thing that fails the run. */
+  it("survives a rejection carrying a value that cannot be stringified", async () => {
+    const line = await readDiagnosticLine(9, () => Promise.reject(Object.create(null) as Error));
+
+    expect(line).toContain("diagnostic failed");
+    expect(line).toContain("+9s");
   });
 });

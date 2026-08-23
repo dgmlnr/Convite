@@ -71,11 +71,23 @@ export async function startFrontProxy(options: FrontProxyOptions): Promise<{ rea
     clientReq.pipe(upstream);
   });
 
+  // Every socket handed over by an upgrade, so `stop()` can reach them.
+  //
+  // Node DETACHES a hijacked socket from its server, which means
+  // `closeAllConnections()` never sees it and `server.close()` waits on it
+  // forever. Without this set, `stop()` simply never resolved once any match
+  // had been played — and `system.ts` awaits it with no timeout of its own,
+  // so that is a hang in every spec's teardown.
+  const upgradedSockets = new Set<Socket>();
+
   // Colyseus upgrades to a WebSocket after its HTTP matchmake call, so the
   // proxy has to hand the raw socket over rather than answer the request.
   server.on("upgrade", (req, clientSocket: Socket, head: Buffer) => {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     const target = routesToMint(pathname) ? mint : match;
+    // Registered before the connection is established, not inside the
+    // callback: a connect that never completes still leaves a socket that
+    // `stop()` has to be able to destroy.
     const upstreamSocket = connect(target.port, target.host, () => {
       const headerLines = Object.entries(req.headers).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : String(value)}`);
       upstreamSocket.write(`${req.method ?? "GET"} ${req.url ?? "/"} HTTP/1.1\r\n${headerLines.join("\r\n")}\r\n\r\n`);
@@ -83,12 +95,21 @@ export async function startFrontProxy(options: FrontProxyOptions): Promise<{ rea
       upstreamSocket.pipe(clientSocket);
       clientSocket.pipe(upstreamSocket);
     });
+    upgradedSockets.add(clientSocket).add(upstreamSocket);
+
+    // Both directions, on BOTH close and error. Only `error` was handled
+    // before, so a peer that went away CLEANLY — a browser closing its tab is
+    // the ordinary case — left the other half open with nothing to end it.
     const destroyBoth = (): void => {
+      upgradedSockets.delete(clientSocket);
+      upgradedSockets.delete(upstreamSocket);
       upstreamSocket.destroy();
       clientSocket.destroy();
     };
     upstreamSocket.on("error", destroyBoth);
+    upstreamSocket.on("close", destroyBoth);
     clientSocket.on("error", destroyBoth);
+    clientSocket.on("close", destroyBoth);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -100,6 +121,10 @@ export async function startFrontProxy(options: FrontProxyOptions): Promise<{ rea
     server,
     stop: () =>
       new Promise<void>((resolve) => {
+        // The detached sockets first — `server.close()` below would otherwise
+        // wait on sockets it can no longer see.
+        for (const socket of upgradedSockets) socket.destroy();
+        upgradedSockets.clear();
         server.closeAllConnections?.();
         server.close(() => resolve());
       }),
