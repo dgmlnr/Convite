@@ -30,7 +30,7 @@ const page = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sitio de prueba — HexDev Gamify</title>
+<title>Sitio de prueba — Convite</title>
 <style>
   body { margin: 0; font: 16px/1.6 system-ui, sans-serif; color: #1b1b1b; background: #f4f2ee; }
   .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }

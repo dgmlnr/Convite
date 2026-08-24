@@ -34,8 +34,8 @@ beforeEach(() => {
   window.addEventListener("message", hostileListener);
 
   // 3. A conflicting global namespace: some OTHER script on this page
-  // already owns `window.hexdevGamify` before our loader ever runs.
-  (window as unknown as Record<string, unknown>).hexdevGamify = "some-unrelated-hostile-value";
+  // already owns `window.Convite` before our loader ever runs.
+  (window as unknown as Record<string, unknown>).Convite = "some-unrelated-hostile-value";
 });
 
 afterEach(() => {
@@ -46,7 +46,7 @@ afterEach(() => {
   resetStyle?.remove();
   resetStyle = undefined;
   window.removeEventListener("message", hostileListener);
-  delete (window as unknown as Record<string, unknown>).hexdevGamify;
+  delete (window as unknown as Record<string, unknown>).Convite;
 });
 
 function readyMessage(protocolVersions: readonly number[]): ReadyMessage {
@@ -66,7 +66,7 @@ describe("widget survives a hostile host page", () => {
     expect(handle?.iframe.src).toContain("k=pk_live_t_abc");
   });
 
-  it("does not touch the host's own conflicting `window.hexdevGamify` global", () => {
+  it("does not touch the host's own conflicting `window.Convite` global", () => {
     scriptTag = document.createElement("script");
     scriptTag.setAttribute("data-embed-key", "pk_live_t_abc");
     document.body.appendChild(scriptTag);
@@ -74,7 +74,7 @@ describe("widget survives a hostile host page", () => {
 
     handle = initWidget(scriptTag, document, window, { widgetOrigin });
 
-    expect((window as unknown as Record<string, unknown>).hexdevGamify).toBe("some-unrelated-hostile-value");
+    expect((window as unknown as Record<string, unknown>).Convite).toBe("some-unrelated-hostile-value");
   });
 
   it("keeps content inside the iframe's own document unaffected by the host's CSS reset (real cross-document boundary)", async () => {

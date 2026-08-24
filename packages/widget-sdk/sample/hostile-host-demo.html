@@ -51,7 +51,7 @@
       hostile conditions at once, per the apply prompt: an aggressive global CSS reset
       (<code>* { all: unset }</code>, applied above — notice this text still renders legibly),
       the host's own unrelated <code>message</code> listener, and a colliding
-      <code>window.hexdevGamify</code> global defined BEFORE the loader ever runs.
+      <code>window.Convite</code> global defined BEFORE the loader ever runs.
     </p>
 
     <div class="callout">
@@ -65,7 +65,7 @@
         <code id="sandbox-readback">(none)</code>
       </p>
       <p>
-        <code>window.hexdevGamify</code> after mounting (must be untouched):
+        <code>window.Convite</code> after mounting (must be untouched):
         <code id="global-readback">(none)</code>
       </p>
     </div>
@@ -86,7 +86,7 @@
     <script>
       // 3. The conflicting global namespace — some OTHER, unrelated script
       // on this host page already owns this name before our loader runs.
-      window.hexdevGamify = "some-unrelated-hostile-value";
+      window.Convite = "some-unrelated-hostile-value";
 
       // 2. The host's own, unrelated postMessage listener.
       let hostileListenerHits = 0;
@@ -110,7 +110,7 @@
       document.getElementById("mount-status").textContent = handle ? "mounted" : "FAILED TO MOUNT";
       if (handle) {
         document.getElementById("sandbox-readback").textContent = handle.iframe.getAttribute("sandbox");
-        document.getElementById("global-readback").textContent = window.hexdevGamify;
+        document.getElementById("global-readback").textContent = window.Convite;
 
         handle.iframe.style.height = "160px";
         handle.iframe.style.border = "2px solid #0f0";

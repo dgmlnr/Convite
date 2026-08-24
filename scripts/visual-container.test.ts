@@ -35,7 +35,7 @@ describe("imageRefFor", () => {
 });
 
 describe("resolveContainerRun", () => {
-  const base = { repoRoot: "/home/dev/HexDev-Gamify", uid: 1000, gid: 1000, image: "mcr.microsoft.com/playwright:v1.62.1-noble", args: [] };
+  const base = { repoRoot: "/home/dev/Convite", uid: 1000, gid: 1000, image: "mcr.microsoft.com/playwright:v1.62.1-noble", args: [] };
 
   it("runs docker, never the host browser", () => {
     expect(resolveContainerRun(base).command).toBe("docker");
@@ -45,8 +45,8 @@ describe("resolveContainerRun", () => {
     const { args } = resolveContainerRun(base);
 
     expect(args).toContain("--volume");
-    expect(args).toContain("/home/dev/HexDev-Gamify:/home/dev/HexDev-Gamify");
-    expect(args[args.indexOf("--workdir") + 1]).toBe("/home/dev/HexDev-Gamify");
+    expect(args).toContain("/home/dev/Convite:/home/dev/Convite");
+    expect(args[args.indexOf("--workdir") + 1]).toBe("/home/dev/Convite");
   });
 
   /**

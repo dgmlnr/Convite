@@ -34,7 +34,7 @@ export default defineConfig({
     lib: {
       entry: `${packageDir}src/auto-init.ts`,
       formats: ["iife"],
-      name: "__hexdevGamifyLoader",
+      name: "__conviteLoader",
       fileName: () => "loader.js",
     },
   },
