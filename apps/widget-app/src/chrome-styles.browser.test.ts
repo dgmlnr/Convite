@@ -19,7 +19,7 @@ describe("ensureChromeStyles", () => {
   });
 });
 
-/** Mounts a bare `.hexdev-gamify-chrome[data-chrome-view="lobby"]` tree at a
+/** Mounts a bare `.convite-chrome[data-chrome-view="lobby"]` tree at a
  * given width — real Chromium, real @container engagement, no
  * `renderGameSelection` involved (this suite is only about the CSS cascade
  * engaging correctly, not about DOM-building logic already covered by
@@ -34,7 +34,7 @@ describe("ensureChromeStyles", () => {
 function mountedChrome(width: number): { readonly content: HTMLElement; readonly games: HTMLElement } {
   ensureChromeStyles(document);
   container = document.createElement("div");
-  container.className = "hexdev-gamify-chrome";
+  container.className = "convite-chrome";
   container.dataset.chromeView = "lobby";
   container.style.width = `${width}px`;
   const content = document.createElement("div");
@@ -52,7 +52,7 @@ function mountedChrome(width: number): { readonly content: HTMLElement; readonly
  * findings established: a claim that a later, equal-specificity rule wins a
  * @container override is not trustworthy from reading the CSS string alone,
  * it needs a real computed-style read at real widths. This suite's FIRST
- * draft asserted against `root` (`.hexdev-gamify-chrome` itself) and caught
+ * draft asserted against `root` (`.convite-chrome` itself) and caught
  * a real bug this way: a query container can never be targeted by its own
  * container query, so that draft's wide-tier assertion genuinely failed
  * (RED) even though the CSS "looked" correct as a string — fixed by moving
@@ -107,7 +107,7 @@ describe("chrome/felt focus-ring precedence (the felt's gold guarantee must not 
     ensureTableStyles(document);
     ensureChromeStyles(document);
     container = document.createElement("div");
-    container.className = "hexdev-gamify-chrome";
+    container.className = "convite-chrome";
     const shell = document.createElement("div");
     shell.className = "hexdev-truco-table-shell";
     const button = document.createElement("button");

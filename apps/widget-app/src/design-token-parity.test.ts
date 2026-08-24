@@ -7,7 +7,7 @@ import { buildChromeStylesheet } from "./chrome-styles.js";
  * radii, elevation, type, motion, colour — design §10.3) is declared TWICE
  * -- once on table-styles.ts's :root (the matchstick <defs>-sibling
  * scoping constraint forces :root there), once on chrome-styles.ts's own
- * .hexdev-gamify-chrome (ordinary descendant scoping, no sibling problem).
+ * .convite-chrome (ordinary descendant scoping, no sibling problem).
  * Two independent literal declarations only stay a single source of truth
  * if something keeps them honest -- this file is that something: it fails
  * the moment either stylesheet drops a token or drifts its value from the
@@ -95,7 +95,7 @@ function tableRootTokens(): Record<string, string> {
 }
 
 function chromeSurfaceTokens(): Record<string, string> {
-  return extractHxTokens(extractDeclarationBlock(buildChromeStylesheet(), /\.hexdev-gamify-chrome\s*\{([^}]*)\}/));
+  return extractHxTokens(extractDeclarationBlock(buildChromeStylesheet(), /\.convite-chrome\s*\{([^}]*)\}/));
 }
 
 describe("design-token-parity (VDS-1: the --hx-* token layer is identical in both stylesheets)", () => {
@@ -107,11 +107,11 @@ describe("design-token-parity (VDS-1: the --hx-* token layer is identical in bot
     }
   });
 
-  it("declares every expected --hx-* token in chrome-styles.ts's .hexdev-gamify-chrome block", () => {
+  it("declares every expected --hx-* token in chrome-styles.ts's .convite-chrome block", () => {
     const chromeTokens = chromeSurfaceTokens();
 
     for (const name of EXPECTED_HX_TOKEN_NAMES) {
-      expect(chromeTokens[name], `chrome-styles.ts .hexdev-gamify-chrome is missing ${name}`).toBeDefined();
+      expect(chromeTokens[name], `chrome-styles.ts .convite-chrome is missing ${name}`).toBeDefined();
     }
   });
 

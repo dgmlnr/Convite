@@ -15,12 +15,12 @@ function freshContainer(): HTMLElement {
 }
 
 describe("renderUnsupportedGame (PR6-T9: the dead-end fallback becomes a real navigable screen)", () => {
-  it("renders as a .hexdev-gamify-chrome / .hexdev-chrome-status styled card, not bare <p> elements", () => {
+  it("renders as a .convite-chrome / .hexdev-chrome-status styled card, not bare <p> elements", () => {
     const el = freshContainer();
 
     renderUnsupportedGame(el, { onBackToLobby: () => {} });
 
-    expect(el.className).toBe("hexdev-gamify-chrome");
+    expect(el.className).toBe("convite-chrome");
     // WCR-3: gates chrome-styles.ts's [data-chrome-view="unsupported"]
     // centered-card rule -- unreachable before this task, since nothing
     // set this value.

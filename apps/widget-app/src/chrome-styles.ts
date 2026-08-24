@@ -1,4 +1,4 @@
-export const CHROME_STYLE_ID = "hexdev-gamify-chrome-styles";
+export const CHROME_STYLE_ID = "convite-chrome-styles";
 
 /**
  * The lobby/selection screen's own stylesheet, generated as a string for the
@@ -18,7 +18,7 @@ export const CHROME_STYLE_ID = "hexdev-gamify-chrome-styles";
  */
 export function buildChromeStylesheet(): string {
   return `
-.hexdev-gamify-chrome {
+.convite-chrome {
   box-sizing: border-box;
   min-height: 100%;
   display: flex;
@@ -83,25 +83,25 @@ export function buildChromeStylesheet(): string {
    * a real tenant surface, where that token is correct. Mirrored for parity. */
   --hx-felt-outline: #65b08a;
 }
-.hexdev-gamify-chrome * { box-sizing: border-box; }
+.convite-chrome * { box-sizing: border-box; }
 
 /* WCR-1 (container query axis, PR6-T1): the same "a size container cannot
  * be styled by its own @container rules" split table-styles.ts's felt
  * already solved (.hexdev-truco-table-shell vs .hexdev-truco-table) --
- * .hexdev-gamify-chrome establishes the inline-size container here, and its
+ * .convite-chrome establishes the inline-size container here, and its
  * descendant .hexdev-chrome-content below is what the @container rules
  * further down actually repaint. A CSS query container can never be
  * targeted by its OWN container query (proven empirically in
  * chrome-styles.browser.test.ts's cascade-order suite: a first attempt at
  * this PR put the wide-tier padding override directly on
- * .hexdev-gamify-chrome, and it silently never engaged at any width -- this
+ * .convite-chrome, and it silently never engaged at any width -- this
  * is why ALL responsive repainting below targets .hexdev-chrome-content or
- * deeper, never .hexdev-gamify-chrome itself). Gated by [data-chrome-view]
+ * deeper, never .convite-chrome itself). Gated by [data-chrome-view]
  * (set once by whichever render function owns the screen --
  * game-selection.ts / status-view.ts -- the same data-*-as-contract
  * convention as data-prominent/data-result/data-turn), so this only
  * activates once a screen has genuinely opted in, never on bare class
- * presence alone. Deliberately NOT id-qualified (no #hexdev-gamify-app
+ * presence alone. Deliberately NOT id-qualified (no #convite-app
  * prefix, even though that is the real production element's id): every
  * other selector in this stylesheet (and table-styles.ts's own) is
  * class-only, and every existing test in this package mounts these render
@@ -109,7 +109,7 @@ export function buildChromeStylesheet(): string {
  * silently defeat this whole container-query axis under every one of those
  * tests, and under any future embedding that reuses these render functions
  * with a differently-id'd root. */
-.hexdev-gamify-chrome[data-chrome-view] {
+.convite-chrome[data-chrome-view] {
   container-type: inline-size;
   container-name: hexdev-chrome;
 }
@@ -117,9 +117,9 @@ export function buildChromeStylesheet(): string {
 /* The inner content column: centers at a comfortable reading/grid width
  * (1120px) inside the (often much wider) container a host page gives this
  * widget, owns the vertical gap between its own children (the exact job
- * .hexdev-gamify-chrome's own gap used to do before this split), and now
+ * .convite-chrome's own gap used to do before this split), and now
  * carries ALL of the shell's edge padding too -- moved down from
- * .hexdev-gamify-chrome for the self-query reason above: this element is a
+ * .convite-chrome for the self-query reason above: this element is a
  * genuine DESCENDANT of the query container, so its padding CAN respond to
  * the @container override below, at 24px 16px (nearest --hx-space-* pair to
  * the former hardcoded 20px 16px, a deliberate small snap) by default. */
@@ -135,9 +135,9 @@ export function buildChromeStylesheet(): string {
 /* WCR-3 (status/error/unsupported share the language, PR6-T2): these
  * screens are a single centered card, never a top-anchored block -- the
  * lobby's own top-anchored list stays the (unmarked) default. */
-.hexdev-gamify-chrome[data-chrome-view="status"],
-.hexdev-gamify-chrome[data-chrome-view="error"],
-.hexdev-gamify-chrome[data-chrome-view="unsupported"] {
+.convite-chrome[data-chrome-view="status"],
+.convite-chrome[data-chrome-view="error"],
+.convite-chrome[data-chrome-view="unsupported"] {
   justify-content: center;
 }
 
@@ -261,7 +261,7 @@ export function buildChromeStylesheet(): string {
 
 .hexdev-bot-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.hexdev-gamify-chrome button {
+.convite-chrome button {
   min-height: 42px;
   padding: 9px 18px;
   border: 2px solid transparent;
@@ -275,8 +275,8 @@ export function buildChromeStylesheet(): string {
   border-color: var(--gx-color-primary, #2f6f4f);
   color: var(--gx-color-on-surface, #1a1a1a);
 }
-.hexdev-gamify-chrome button:hover,
-.hexdev-gamify-chrome button:focus-visible {
+.convite-chrome button:hover,
+.convite-chrome button:focus-visible {
   filter: brightness(1.08);
 }
 
@@ -300,7 +300,7 @@ export function buildChromeStylesheet(): string {
  * which would silently trade the felt's tenant-proof gold for a
  * tenant-dependent currentColor. Pinned by the precedence test in
  * chrome-styles.browser.test.ts. */
-.hexdev-gamify-chrome :where(:focus-visible) {
+.convite-chrome :where(:focus-visible) {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
@@ -311,7 +311,7 @@ export function buildChromeStylesheet(): string {
  * escape action on a stranded-state card, so both get the same
  * accent-outlined, elevated, centered treatment instead of the plain
  * primary-outlined default every other chrome button gets above -- higher
- * specificity (attribute selector) than the base .hexdev-gamify-chrome
+ * specificity (attribute selector) than the base .convite-chrome
  * button rule, so it wins regardless of source order. margin-inline: auto
  * centers each button horizontally, the same mechanism
  * .hexdev-chrome-status's own "margin: 0 auto" already uses; display: block
@@ -319,8 +319,8 @@ export function buildChromeStylesheet(): string {
  * the block-level status card, where an inline-block's auto inline margins
  * resolve to zero -- retry is a flex item of .hexdev-chrome-content and
  * already blockified, so display: block is a no-op for it. */
-.hexdev-gamify-chrome button[data-action="retry"],
-.hexdev-gamify-chrome button[data-action="back-to-lobby"] {
+.convite-chrome button[data-action="retry"],
+.convite-chrome button[data-action="back-to-lobby"] {
   display: block;
   margin-inline: auto;
   border-color: var(--gx-color-accent, var(--hx-gold));

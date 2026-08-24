@@ -6,7 +6,7 @@ describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lob
   it("drives every visible surface from the tenant's --gx- tokens, never a hardcoded truco-specific color", () => {
     const css = buildChromeStylesheet();
 
-    expect(css).toMatch(/\.hexdev-gamify-chrome[^}]*var\(--gx-color-surface/);
+    expect(css).toMatch(/\.convite-chrome[^}]*var\(--gx-color-surface/);
     expect(css).toMatch(/\.hexdev-chrome-title[^}]*var\(--gx-color-on-surface/);
     expect(css).toMatch(/\.hexdev-game-card[^}]*var\(--gx-radius/);
   });
@@ -19,7 +19,7 @@ describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lob
   });
 
   it("exposes a stable element id for idempotent injection", () => {
-    expect(CHROME_STYLE_ID).toBe("hexdev-gamify-chrome-styles");
+    expect(CHROME_STYLE_ID).toBe("convite-chrome-styles");
   });
 
   it("gives the promoted vs-bot CTA a stronger visual treatment than the plain vs-person action (zero-counter UX rule)", () => {
@@ -36,11 +36,11 @@ describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lob
 //
 // A naive `/selector\s*\{[^}]*\}/` single-pass scan is unsafe for the
 // selectors below for the exact reason table-styles.test.ts's own comment
-// documents: `.hexdev-gamify-chrome button[data-action="retry"]`'s tail is
-// byte-identical to `.hexdev-gamify-chrome button`'s own opening, so a naive
+// documents: `.convite-chrome button[data-action="retry"]`'s tail is
+// byte-identical to `.convite-chrome button`'s own opening, so a naive
 // scan would find the wrong (shorter, earlier) rule first. This stylesheet
 // also nests real rules inside `@container` blocks (PR6-T1/T2's own
-// .hexdev-chrome-games and .hexdev-gamify-chrome overrides), which a
+// .hexdev-chrome-games and .convite-chrome overrides), which a
 // single-pass regex cannot see at all — `collectLeafRules` below is the
 // balanced-brace walk PR4's native-review fix introduced in table-styles.ts,
 // copied verbatim (not reinvented) for the same reason.

@@ -36,7 +36,7 @@ import { renderUnsupportedGame } from "./unsupported-game-view.js";
  * isn't already covered where it lives.
  */
 function main(): void {
-  const app = document.getElementById("hexdev-gamify-app");
+  const app = document.getElementById("convite-app");
   if (app === null) return;
 
   const params = new URLSearchParams(window.location.search);

@@ -9,7 +9,7 @@ import { renderUnsupportedGame } from "./unsupported-game-view.js";
  * NEW file (PR7-T1/T2, spec VB-3): no visual test previously captured
  * `.hexdev-chrome-status` (`rg` confirmed before writing this file —
  * `status-view.ts` only had a `.browser.test.ts`) or the unregistered-game
- * fallback. Both render through the same `.hexdev-gamify-chrome` >
+ * fallback. Both render through the same `.convite-chrome` >
  * `.hexdev-chrome-content` > `.hexdev-chrome-status` card language
  * (chrome-styles.ts, WCR-3), so they share this one file rather than each
  * needing their own — following `game-selection.visual.test.ts`'s own

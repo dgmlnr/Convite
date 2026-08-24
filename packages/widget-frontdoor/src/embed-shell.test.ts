@@ -26,11 +26,11 @@ describe("renderEmbedShell (spec: widget-embed — the iframe needs real content
   });
 });
 
-describe("renderEmbedShell — a descriptive document title (WCAG 2.4.2/4.1.2: 'hexdev-gamify' names the package, not the page)", () => {
+describe("renderEmbedShell — a descriptive document title (WCAG 2.4.2/4.1.2: 'convite' names the package, not the page)", () => {
   it("titles the inner document in descriptive Spanish", () => {
     const html = renderEmbedShell(BOOTSTRAP);
     expect(html).toContain("<title>Juegos — HexDev</title>");
-    expect(html).not.toContain("<title>hexdev-gamify</title>");
+    expect(html).not.toContain("<title>convite</title>");
   });
 
   it("keeps the descriptive title on the mint-failure error page too", () => {

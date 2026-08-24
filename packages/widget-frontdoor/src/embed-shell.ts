@@ -32,7 +32,7 @@ export function renderEmbedShell(bootstrap: EmbedBootstrap | undefined): string 
   const body =
     bootstrap === undefined
       ? `<p>No se pudo cargar el juego. Comprobá que la página esté autorizada para este contenido.</p>`
-      : `<div id="hexdev-gamify-app"></div>
+      : `<div id="convite-app"></div>
 <script>window.__HEXDEV_BOOTSTRAP__=${JSON.stringify(bootstrap)}</script>
 <script type="module" src="/assets/widget-app.js"></script>`;
 

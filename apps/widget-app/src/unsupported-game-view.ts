@@ -18,7 +18,7 @@ export interface UnsupportedGameView {
  * this build's `gameUiRegistry` (see `main.ts`'s own `enterMatch`). Renders
  * as the SAME chrome/card language every other screen in this package uses
  * (`status-view.ts`'s `renderStatusMessage`/`renderErrorWithRetry` are the
- * template this follows: `.hexdev-gamify-chrome` > `.hexdev-chrome-content` >
+ * template this follows: `.convite-chrome` > `.hexdev-chrome-content` >
  * `.hexdev-chrome-status` card), not the bare unstyled `<p>` dead end this
  * replaces -- and, unlike that former dead end, offers a real way back to
  * the lobby instead of leaving the player stranded.
@@ -26,7 +26,7 @@ export interface UnsupportedGameView {
 export function renderUnsupportedGame(container: HTMLElement, options: { readonly onBackToLobby: () => void }): UnsupportedGameView {
   ensureChromeStyles(container.ownerDocument);
   container.replaceChildren();
-  container.className = "hexdev-gamify-chrome";
+  container.className = "convite-chrome";
   // WCR-3: gates chrome-styles.ts's [data-chrome-view="unsupported"]
   // centered-card rule -- unreachable before this task (the PR6a review's
   // own "unreachable selector" SUGGESTION), since nothing ever set this

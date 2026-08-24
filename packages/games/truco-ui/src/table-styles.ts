@@ -40,7 +40,7 @@ export function buildTableStylesheet(): string {
   --truco-table-cloth: #123f2f;
   /* --hx-* private token layer (design token-parity, VDS-1): spacing,
    * radii, elevation, type, motion, and private colour, identical to
-   * chrome-styles.ts's own .hexdev-gamify-chrome block below (proved by
+   * chrome-styles.ts's own .convite-chrome block below (proved by
    * design-token-parity.test.ts). This slice only DECLARES these tokens --
    * no rule anywhere above or below reads any of them yet, so it repaints
    * nothing (pnpm test:visual stays at zero baseline diff). Never exposed
@@ -218,7 +218,7 @@ export function buildTableStylesheet(): string {
   --truco-card-width: 60px;
   /* --hx-felt-gap / --hx-felt-pad (PR3, tasks §3.8): the per-tier scalar
    * pair driving this grid's own gap/padding. Declared HERE, never on :root
-   * — design-token-parity.test.ts only scans :root/.hexdev-gamify-chrome,
+   * — design-token-parity.test.ts only scans :root/.convite-chrome,
    * so a felt-only scalar living outside that block cannot trip the parity
    * guard or need a chrome-side twin it has no reason to share. */
   --hx-felt-gap: 8px;
@@ -557,7 +557,7 @@ export function buildTableStylesheet(): string {
      * collapses on a container that is only barely wide enough nor runs away
      * on an extremely wide one. Declared HERE (on .hexdev-truco-table, inside
      * this @container block), never on :root — design-token-parity.test.ts
-     * only scans :root/.hexdev-gamify-chrome, and a felt-only layout
+     * only scans :root/.convite-chrome, and a felt-only layout
      * constant with no chrome-side twin has no reason to risk tripping that
      * guard (same discipline as --hx-felt-gap/--hx-felt-pad above). */
     --hx-log-rail: clamp(200px, 22%, 280px);

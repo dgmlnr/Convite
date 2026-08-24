@@ -115,14 +115,14 @@ describe("match session persistence (the reconnection-window bearer secret, not 
 
   it("returns undefined for malformed/tampered JSON — fails closed, never throws into the caller", () => {
     const storage = createFakeStorage();
-    storage.setItem("hexdev-gamify:active-match", "{not valid json");
+    storage.setItem("convite:active-match", "{not valid json");
     expect(() => readPersistedMatchSession(storage)).not.toThrow();
     expect(readPersistedMatchSession(storage)).toBeUndefined();
   });
 
   it("returns undefined for well-formed JSON missing the fields this shape requires", () => {
     const storage = createFakeStorage();
-    storage.setItem("hexdev-gamify:active-match", JSON.stringify({ gameId: "truco-argentino" }));
+    storage.setItem("convite:active-match", JSON.stringify({ gameId: "truco-argentino" }));
     expect(readPersistedMatchSession(storage)).toBeUndefined();
   });
 

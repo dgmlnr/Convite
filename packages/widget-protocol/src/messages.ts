@@ -12,7 +12,7 @@
 
 /** Every message on the channel carries this namespace. Ignore anything else
  * — a host page routinely runs several widgets on one `window`. */
-export const PROTOCOL_NAMESPACE = "hexdev-gamify";
+export const PROTOCOL_NAMESPACE = "convite";
 
 /** Protocol versions this build of the vocabulary understands. The iframe
  * advertises its own supported set in `ready`; the loader picks the highest

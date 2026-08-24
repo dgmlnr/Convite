@@ -171,7 +171,7 @@ export function renderGameSelection(
   // needs this restore path the moment the data really changes.
   const focusSnapshot = captureFocus(container);
   container.replaceChildren();
-  container.className = "hexdev-gamify-chrome";
+  container.className = "convite-chrome";
   // WCR-1: gates chrome-styles.ts's container-type declaration and the
   // status/error/unsupported centering rule — the lobby is the one screen
   // that does NOT want that centering (it stays top-anchored).

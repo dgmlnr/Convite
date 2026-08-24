@@ -142,7 +142,7 @@ describe("renderGameSelection — chrome styling (design §10: this screen takes
 
     renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
-    expect(el.className).toBe("hexdev-gamify-chrome");
+    expect(el.className).toBe("convite-chrome");
     expect(el.querySelector("h1")?.className).toBe("hexdev-chrome-title");
     expect(document.head.querySelectorAll(`#${CHROME_STYLE_ID}`)).toHaveLength(1);
   });

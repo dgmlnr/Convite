@@ -9,8 +9,8 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
-const PLAYER_ID_KEY = "hexdev-gamify:player-id";
-const MATCH_SESSION_KEY = "hexdev-gamify:active-match";
+const PLAYER_ID_KEY = "convite:player-id";
+const MATCH_SESSION_KEY = "convite:active-match";
 
 /**
  * The reconnection-window bearer secret (`MatchConnection.reconnectionToken`

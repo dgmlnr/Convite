@@ -24,7 +24,7 @@ export function renderHostPage(serverOrigin: string, embedKey: string): string {
     <h2>Cómo cuidar las suculentas en invierno</h2>
     <p>Reducí el riego a una vez cada dos semanas y evitá el sol directo del mediodía.</p>
   </article>
-  <section id="hexdev-gamify-slot">
+  <section id="convite-slot">
     <script src="${serverOrigin}/loader.js" data-embed-key="${embedKey}" defer></script>
   </section>
 </main>

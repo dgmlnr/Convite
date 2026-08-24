@@ -89,7 +89,7 @@ export const AA_NORMAL_TEXT_CONTRAST = 4.5;
 /**
  * The FIXED near-black every accent surface paints its own text with,
  * declared as `--hx-ink` in BOTH stylesheets (`table-styles.ts`'s `:root`,
- * `chrome-styles.ts`'s `.hexdev-gamify-chrome`) and once more as a bare
+ * `chrome-styles.ts`'s `.convite-chrome`) and once more as a bare
  * literal at `chrome-styles.ts`'s prominent lobby CTA.
  *
  * It is NOT a tenant token and never will be: there is no

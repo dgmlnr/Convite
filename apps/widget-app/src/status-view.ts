@@ -61,7 +61,7 @@ function openScreen(container: HTMLElement, view: "status" | "error", message: s
   for (const child of [...container.children]) {
     if (child !== announcer) child.remove();
   }
-  container.className = "hexdev-gamify-chrome";
+  container.className = "convite-chrome";
   // WCR-1/WCR-3: gates the container-type declaration and the centered-card
   // treatment chrome-styles.ts's [data-chrome-view] rules apply.
   container.dataset.chromeView = view;

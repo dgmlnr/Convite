@@ -46,7 +46,7 @@ const page = `<!doctype html>
   <h1>Sitio de prueba</h1>
   <p class="lede">Una página cualquiera que embebe el widget, para probarlo a mano.</p>
 
-  <div class="slot" id="hexdev-gamify-slot">
+  <div class="slot" id="convite-slot">
     <script src="${serverOrigin}/loader.js" data-embed-key="${embedKey}" defer></script>
   </div>
 

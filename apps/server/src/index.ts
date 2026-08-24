@@ -160,5 +160,5 @@ gameServer
 // handshake for the first time — it hung with literally zero response,
 // forever, rather than erroring.
 gameServer.listen(config.port, undefined, undefined, () => {
-  console.log(`hexdev-gamify server listening on :${config.port}`);
+  console.log(`convite server listening on :${config.port}`);
 });

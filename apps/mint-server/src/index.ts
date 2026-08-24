@@ -171,6 +171,6 @@ const server = createServer((req, res) => {
 });
 
 server.listen(config.port, () => {
-  console.log(`hexdev-gamify mint role listening on :${String(config.port)}`);
+  console.log(`convite mint role listening on :${String(config.port)}`);
 });
 /* c8 ignore stop */
