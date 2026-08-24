@@ -1,4 +1,4 @@
-# HexDev-Gamify
+# Convite
 
 Plataforma multitenant de juegos embebibles en cualquier sitio web.
 
