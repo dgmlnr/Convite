@@ -90,7 +90,16 @@ describe("when you may ask", () => {
   });
 
   it("and the same for an envido", () => {
-    const called = apply(dealt2v2(), { type: "call-envido", playerId: east, level: "envido" });
+    // Only a pie opens an envido (envido-opener.test.ts), and with the default
+    // dealer the pies are west and north — so the floor is walked to west,
+    // east and south playing their first card on the way. north's team is the
+    // one that then owes the answer.
+    let state = dealt2v2();
+    for (const seat of [east, south]) {
+      const card = getLegalActions(state, seat).find((action) => action.type === "play-card")!;
+      state = apply(state, card);
+    }
+    const called = apply(state, { type: "call-envido", playerId: west, level: "envido" });
     expect(canConsult(called, north)).toBe(true);
   });
 

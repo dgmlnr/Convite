@@ -151,12 +151,34 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  *
  * If Convite ever offers house rules, this is one of them, and the two seat
  * sets above are the two options — do not "fix" this by picking one. */
-function canOpenEnvido(hand: HandState, player: Player): boolean {
+/**
+ * The pie of each team: the last seat of that team to speak in the round.
+ *
+ * Reading around from the mano, the LAST TWO seats are one pie each — the
+ * seats alternate teams, so whoever speaks last for one side speaks
+ * second-to-last for the other. That is why this needs no team bookkeeping,
+ * and why 1v1 needs no special case: with two seats "the last two" is
+ * everybody, which is exactly the exemption Wikipedia spells out ("en el 1v1
+ * cualquiera puede cantarlo"). 3v3 falls out the same way.
+ */
+function isPie(hand: HandState, player: Player, seatCount: number): boolean {
+  return (player.seat - hand.manoSeat + seatCount) % seatCount >= seatCount - 2;
+}
+
+function canOpenEnvido(hand: HandState, player: Player, seatCount: number): boolean {
   if (hand.truco.status === "declined") return false; // hand already ended by a truco decline
   if (hand.trickOutcomes.length > 0) return false; // first trick already resolved — never legal in trick 2/3
   // Playing your card is how you give up the right to call this hand — true
   // of both branches below, so it is asked once, before them.
   if (hand.currentTrickPlays.some((play) => play.playerId === player.id)) return false;
+
+  // THE PIE GATE, ahead of BOTH branches on purpose. Opening as a reply to a
+  // pending truco is not turn-gated (a pending call freezes `turnSeat`), so
+  // leaving the gate out of that branch would hand a non-pie back the very
+  // call this rule takes away: they would only have to wait to be trucked.
+  // Escalating an envido that is already standing is a different act and
+  // stays the whole team's — see getLegalEnvidoActions below.
+  if (!isPie(hand, player, seatCount)) return false;
 
   // REPLYING. "El envido está primero" is the answering side's right and
   // nobody else's: interposing an envido over an unanswered truco is a way of
@@ -182,7 +204,7 @@ export function getLegalEnvidoActions(state: MatchState, playerId: PlayerId): re
   const player = findPlayer(state, playerId)!;
   const envido = hand.envido;
   if (envido.status === "none") {
-    return canOpenEnvido(hand, player) ? [{ type: "call-envido", playerId, level: "envido" }] : [];
+    return canOpenEnvido(hand, player, state.players.length) ? [{ type: "call-envido", playerId, level: "envido" }] : [];
   }
   if (envido.status === "pending") {
     if (player.teamId === envido.callingTeamId) return [];
@@ -250,6 +272,29 @@ const isLegalEnvido = (state: MatchState, action: EnvidoAction): boolean =>
  * `EnvidoDeclaration` TYPE, never this function, design checklist item 1) so
  * this file's own tests can exercise it directly, without needing a full
  * call/quiero/reveal chain first. */
+
+/**
+ * The three cards this player was DEALT, which is what an envido is worth —
+ * not the ones still in their hand.
+ *
+ * `card-play.ts` removes a played card from `player.hand`, correctly: that
+ * array is the trick game's hand. Reading envido points off it made a player
+ * dealt espada 7 + espada 6 worth 6 instead of 33 the moment the 7 went down,
+ * silently, with a number plausible enough that nothing caught it.
+ *
+ * `currentTrickPlays` is enough to put them back, and needs no new state: the
+ * envido is legal only while the FIRST trick is unresolved, and the
+ * declaration round freezes the cards while it runs, so nothing this player
+ * has played has been swept into a TrickOutcome yet (which keeps a winner,
+ * not the cards). Adding a `dealtHand` field instead would have created a
+ * second copy of every hand for `getViewFor` to redact — a leak waiting to
+ * happen, for information that is face up on the table anyway.
+ */
+function dealtCardsFor(hand: HandState, player: Player): readonly Card[] {
+  const played = hand.currentTrickPlays.filter((play) => play.playerId === player.id).map((play) => play.card);
+  return played.length === 0 ? player.hand : [...player.hand, ...played];
+}
+
 export function resolveEnvidoDeclarations(state: MatchState, manoSeat: number): readonly EnvidoDeclaration[] {
   const playerCount = state.players.length;
   const rotation = Array.from({ length: playerCount }, (_, i) => (manoSeat + i) % playerCount).map(
@@ -259,7 +304,7 @@ export function resolveEnvidoDeclarations(state: MatchState, manoSeat: number): 
   const declarations: EnvidoDeclaration[] = [];
   let runningBest = -Infinity;
   for (const player of rotation) {
-    const points = calculateEnvidoPoints(player.hand);
+    const points = calculateEnvidoPoints(dealtCardsFor(state.hand!, player));
     if (points > runningBest) {
       declarations.push({ declaration: "points", playerId: player.id, teamId: player.teamId, seat: player.seat, points });
       runningBest = points;
@@ -310,7 +355,7 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   // unrendered.
   const entry: EnvidoDeclaration =
     declaring.declaration === "points"
-      ? { declaration: "points", playerId: player.id, teamId: player.teamId, seat: player.seat, points: calculateEnvidoPoints(player.hand) }
+      ? { declaration: "points", playerId: player.id, teamId: player.teamId, seat: player.seat, points: calculateEnvidoPoints(dealtCardsFor(hand, player)) }
       : { declaration: "sonBuenas", playerId: player.id, teamId: player.teamId, seat: player.seat };
   const declarations = [...accepted.declarations, entry];
   const event: CallEvent = { kind: "envido-declaration", playerId: player.id, teamId: player.teamId, seat: player.seat, declaration: declaring.declaration };

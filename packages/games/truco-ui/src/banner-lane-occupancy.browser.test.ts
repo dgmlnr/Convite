@@ -125,6 +125,19 @@ function occupants(el: HTMLElement): string[] {
   }).map(({ name }) => name);
 }
 
+/** Plays each seat ahead of `playerId` so the floor is theirs. */
+function withFloorAt(state: MatchState, playerId: PlayerId): MatchState {
+  let current = state;
+  for (let guard = 0; guard <= current.players.length; guard += 1) {
+    if (getLegalActions(current, playerId).some((action) => action.type === "call-envido")) return current;
+    const onTheClock = current.players.find((player) => player.seat === current.hand?.turnSeat);
+    const card = onTheClock === undefined ? undefined : getLegalActions(current, onTheClock.id).find((action) => action.type === "play-card");
+    if (card === undefined) break;
+    current = dispatch(current, card);
+  }
+  throw new Error(`the floor never reached ${playerId} with an envido to open`);
+}
+
 function setup(): { el: HTMLElement; render: Render; dealt: MatchState } {
   container = document.createElement("div");
   container.style.width = "1280px";
@@ -132,12 +145,15 @@ function setup(): { el: HTMLElement; render: Render; dealt: MatchState } {
   return {
     el: container,
     render: createMatchTableRenderer({ senaNoticeMs: NOTICE_MS, envidoRevealNoticeMs: NOTICE_MS, handOutcomeBannerMs: NOTICE_MS, seatCallNoticeMs: NOTICE_MS }),
-    // dealerSeat 0 makes OPPONENT (seat 1) the mano, and every case below
-    // opens the envido with them: taking the floor starts with the mano
-    // (truco-engine's `canOpenEnvido`). The seat that opens is incidental to
-    // what this file measures — it is about the LANE — so the fixture names
-    // a dealer rather than each test naming a different caller.
-    dealt: startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 0 }), DEAL),
+    // Every case below opens the envido with OPPONENT, so the fixture is what
+    // makes that legal rather than each test arranging it. dealerSeat 2 puts
+    // the mano on seat 3, which makes OPPONENT (seat 1) a PIE — the only kind
+    // of seat that may open an envido at all — and `withFloorAt` then walks
+    // the two seats ahead of them out of the way, because a pie is never the
+    // mano and so never opens before cards are down. The seat that opens is
+    // incidental to what this file measures (it is about the LANE); the cards
+    // on the table are too.
+    dealt: withFloorAt(startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 2 }), DEAL), OPPONENT),
   };
 }
 
@@ -205,15 +221,15 @@ describe("across a whole exchange, never more than one", () => {
       { type: "call-envido", playerId: OPPONENT, level: "envido" },
       { type: "send-sena", playerId: TEAMMATE, signal: "asDeBasto" },
       { type: "respond-envido", playerId: SELF, response: "quiero" },
-      // The declaration round, seat by seat from the mano. This fixture's
-      // dealer puts the mano on seat 1 (OPPONENT), so the order around the
-      // table is OPPONENT, TEAMMATE, OPPONENT_2, SELF. Walking it as steps
-      // rather than through `declareAll` is the point here: the lane is
-      // checked after EVERY one of them.
-      { type: "declare-envido", playerId: OPPONENT, declaration: "points" },
-      { type: "declare-envido", playerId: TEAMMATE, declaration: "points" },
+      // The declaration round, seat by seat from the mano — a DIFFERENT order
+      // from the one that opens the envido, which is why it is walked as
+      // steps rather than through `declareAll`: the lane is checked after
+      // EVERY one of them. This fixture's dealer puts the mano on seat 3, so
+      // the order around the table is OPPONENT_2, SELF, OPPONENT, TEAMMATE.
       { type: "declare-envido", playerId: OPPONENT_2, declaration: "points" },
       { type: "declare-envido", playerId: SELF, declaration: "points" },
+      { type: "declare-envido", playerId: OPPONENT, declaration: "points" },
+      { type: "declare-envido", playerId: TEAMMATE, declaration: "points" },
     ];
 
     for (const step of steps) {

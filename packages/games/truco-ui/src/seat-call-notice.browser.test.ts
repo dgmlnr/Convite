@@ -119,6 +119,25 @@ function dealt2v2SelfMano(): MatchState {
   return startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
 }
 
+/**
+ * SELF holding an envido to open, which the mano fixture above cannot give:
+ * only a PIE opens an envido and a pie is never the mano. dealerSeat 1 seats
+ * the mano at 2, making SELF (seat 0) a pie, and the two seats ahead of them
+ * play their first card on the way — which is what every 2v2 envido looks
+ * like, not a fixture convenience.
+ */
+function dealt2v2SelfOpensEnvido(): MatchState {
+  let state: MatchState = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 1 }), DEAL_2V2);
+  for (let guard = 0; guard <= state.players.length; guard += 1) {
+    if (getLegalActions(state, SELF).some((action) => action.type === "call-envido")) return state;
+    const onTheClock = state.players.find((player) => player.seat === state.hand?.turnSeat);
+    const card = onTheClock === undefined ? undefined : getLegalActions(state, onTheClock.id).find((action) => action.type === "play-card");
+    if (card === undefined) break;
+    state = dispatch(state, card);
+  }
+  throw new Error("fence setup: the floor never reached SELF with an envido to open");
+}
+
 describe("the chip lands on whoever spoke", () => {
   it("2v2: an opponent's truco marks that opponent's own seat, not the team's half of the table", () => {
     const el = mounted();
@@ -150,11 +169,11 @@ describe("the chip lands on whoever spoke", () => {
   it("says the same words the record says — one source of Spanish, not two", () => {
     const el = mounted();
     const render = renderer();
-    const state = dealt2v2SelfMano();
+    const state = dealt2v2SelfOpensEnvido();
     paint(render, el, state);
-    // SELF opens, because SELF is the mano in this fixture and opening the
-    // envido is taking the floor. This test compares the WORDS on the chip
-    // against the words in the record, so which seat says them is incidental.
+    // SELF opens, because this fixture is the one that seats SELF as a pie
+    // with the floor. This test compares the WORDS on the chip against the
+    // words in the record, so which seat says them is incidental.
     paint(render, el, dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" }));
 
     const spoken = chip(el)?.textContent ?? "";
@@ -331,8 +350,9 @@ describe("every open call is marked, not just the newest", () => {
 
     let called = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "truco" });
     paint(render, el, called);
-    // The answering team interposes — the only way two calls can be open.
-    called = dispatch(called, { type: "call-envido", playerId: TEAMMATE, level: "envido" });
+    // The answering team's PIE interposes — the only way two calls can be
+    // open, and only a pie may put the envido up.
+    called = dispatch(called, { type: "call-envido", playerId: SELF, level: "envido" });
     paint(render, el, called);
 
     const chips = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-seat-call-chip")].map((node) => (node.textContent ?? "").trim());
@@ -349,16 +369,17 @@ describe("every open call is marked, not just the newest", () => {
 
     let called = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "truco" });
     paint(render, el, called);
-    called = dispatch(called, { type: "call-envido", playerId: TEAMMATE, level: "envido" });
+    called = dispatch(called, { type: "call-envido", playerId: SELF, level: "envido" });
     paint(render, el, called);
 
     const seats = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-seat-call-chip")].map(
       (node) => node.closest<HTMLElement>(".hexdev-truco-anchor")?.dataset.position,
     );
-    // OPPONENT is seat 1 (right); TEAMMATE is seat 2 (top). Attribution is the
-    // whole point of the mark, and putting either on the wrong seat would be
-    // worse than showing neither.
-    expect([...seats].sort()).toEqual(["right", "top"]);
+    // OPPONENT is seat 1 (right); SELF is seat 0 (bottom), and is the pie of
+    // the team that owes the answer — the only seat allowed to put the envido
+    // up. Attribution is the whole point of the mark, and putting either on
+    // the wrong seat would be worse than showing neither.
+    expect([...seats].sort()).toEqual(["bottom", "right"]);
   });
 
   it("one seat is never asked to hold both — the rules do not allow it", () => {
@@ -383,7 +404,7 @@ describe("every open call is marked, not just the newest", () => {
 
     let called = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "truco" });
     paint(render, el, called);
-    called = dispatch(called, { type: "call-envido", playerId: TEAMMATE, level: "envido" });
+    called = dispatch(called, { type: "call-envido", playerId: SELF, level: "envido" });
     paint(render, el, called);
     paint(render, el, called);
     paint(render, el, called);
