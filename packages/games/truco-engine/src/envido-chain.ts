@@ -127,7 +127,30 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  *
  * Its second reason — that no other call in this engine is turn-gated — was
  * a consistency argument rather than a rules one, and consistency with a gap
- * is not a reason to keep the gap. */
+ * is not a reason to keep the gap.
+ *
+ * TWO WIDELY-PUBLISHED VARIANTS RESTRICT THIS FURTHER, and they contradict
+ * each other, which is the whole reason this note exists rather than a code
+ * change. In a 2v2 dealt from seat 0, play order is 1, 2, 3, 0:
+ *
+ *   - trucoargentino.com.ar/reglas: "los dos jugadores a la izquierda de
+ *     quien repartió son los que podrán cantar envido, real envido o falta
+ *     envido" — seats 1 and 2.
+ *   - es.wikipedia.org/wiki/Truco_argentino: "los jugadores con el derecho a
+ *     cantarlo serán los pie de cada equipo (3v3 o 2v2) ... en el 1v1
+ *     cualquiera puede cantarlo" — seats 3 and 0.
+ *
+ * Those are the exact complements of each other: each source hands the right
+ * to precisely the two seats the other withholds it from. Convite implements
+ * NEITHER, and that is a decision, not an oversight. It implements the
+ * turn-of-speech rule quoted above, which was stated from real play and is
+ * the superset both variants are restrictions of — every seat may open, but
+ * only when the floor reaches it. Anyone can still open in the order the
+ * table would actually let them speak, and no seat is silently robbed of a
+ * call by a variant the players at this table may not use.
+ *
+ * If Convite ever offers house rules, this is one of them, and the two seat
+ * sets above are the two options — do not "fix" this by picking one. */
 function canOpenEnvido(hand: HandState, player: Player): boolean {
   if (hand.truco.status === "declined") return false; // hand already ended by a truco decline
   if (hand.trickOutcomes.length > 0) return false; // first trick already resolved — never legal in trick 2/3
