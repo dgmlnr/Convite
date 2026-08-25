@@ -98,14 +98,14 @@ export function withThinkingDelay<TView, TAction>(
   delayForAction?: (action: TAction) => number,
 ): BotStrategy<TView, TAction> {
   return {
-    async chooseAction(view, legalActions, budgetMs) {
+    async chooseAction(view, legalActions, budgetMs, answer) {
       // The base pause still runs CONCURRENTLY with the strategy, which is
       // the whole point of the original shape: total latency is
       // max(strategyTime, delayMs), never their sum. Only the top-up below
       // has to wait, because until the strategy answers there is no action
       // to classify.
       const [action] = await Promise.all([
-        Promise.resolve(strategy.chooseAction(view, legalActions, budgetMs)),
+        Promise.resolve(strategy.chooseAction(view, legalActions, budgetMs, answer)),
         sleep(delayMs),
       ]);
       const total = delayForAction?.(action) ?? delayMs;

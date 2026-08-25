@@ -3,6 +3,7 @@ import type { Action, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
 import { dealtEnvidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 import { chooseSenaEmission } from "./sena-emission.js";
+import { askPartnerAboutEnvido } from "./ask-partner.js";
 import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
 /** Heuristic thresholds (bot domain knowledge, not the engine's real point
@@ -66,7 +67,7 @@ function cardPlayChoice(view: PlayerView, group: readonly PlayCard[]): Action {
 
 export function createNormalBot(rng: RandomSource): BotStrategy<PlayerView, Action> {
   return {
-    chooseAction(view, legalActions) {
+    chooseAction(view, legalActions, _budgetMs, answer) {
       if (legalActions.length === 0) {
         throw new Error("createNormalBot: no legal actions to choose from");
       }
@@ -98,6 +99,13 @@ export function createNormalBot(rng: RandomSource): BotStrategy<PlayerView, Acti
 
       const wantsToCallEnvido = legalActions.find((a) => a.type === "call-envido");
       if (wantsToCallEnvido !== undefined && dealtEnvidoPoints(view) >= AGGRESSIVE_ENVIDO_THRESHOLD) return wantsToCallEnvido;
+
+      // Its own hand did not justify the call — but only a pie may open one,
+      // and the seat holding the tantos may be the partner who is not allowed
+      // to speak. Ask before letting it go. (`ask-partner.ts` owns the "have
+      // I asked / was I answered" bookkeeping, and asks at most once.)
+      const aboutTheEnvido = askPartnerAboutEnvido(legalActions, answer);
+      if (aboutTheEnvido !== undefined) return aboutTheEnvido;
 
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) return cardPlayChoice(view, cardPlays);

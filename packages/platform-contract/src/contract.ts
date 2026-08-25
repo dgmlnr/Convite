@@ -47,11 +47,40 @@ export interface MatchOutcome {
 export type BotTier = "easy" | "normal" | "hard";
 
 /** A bot's only inputs are exactly what a human client would see: its own
- * view and the legal actions offered to it. It cannot reach hidden state —
- * a cheating bot is unrepresentable at the type level (design §9). */
+ * view, the legal actions offered to it, and the answer to a question it
+ * ASKED and PAID FOR. It cannot reach hidden state — a cheating bot is
+ * unrepresentable at the type level (design §9). */
 export interface BotStrategy<TView, TAction> {
-  chooseAction(view: TView, legalActions: readonly TAction[], budgetMs: number): TAction | Promise<TAction>;
+  chooseAction(view: TView, legalActions: readonly TAction[], budgetMs: number, answer?: JsonValue | null): TAction | Promise<TAction>;
 }
+
+/**
+ * `answer` — WHAT THIS BOT BOUGHT, and nothing else.
+ *
+ * Some games let a player spend something to learn something: truco's
+ * consult costs a seña, out of the same per-hand budget signalling spends.
+ * A human gets that answer on their own socket. A bot had no way to receive
+ * one at all, so it could take the action, pay the price, and learn nothing
+ * — which is strictly worse than not asking, and is why bots simply never
+ * asked.
+ *
+ * THIS IS NOT A HOLE IN THE RULE ABOVE, and the distinction is the whole
+ * design. "Cannot reach hidden state" forbids a bot READING what it was
+ * never given. This is the opposite: the transport puts here only what the
+ * module's own advice provider produced in answer to a question this bot
+ * already spent a legal action on — the same information, at the same price,
+ * as the human sitting in that seat. A bot that never asks never receives
+ * anything, because the transport has nothing to put here.
+ *
+ * SHAPED SO IT CANNOT BECOME A BACKDOOR. It is `JsonValue`, opaque to this
+ * package and to the transport: neither can construct a meaningful one, only
+ * carry the module's own. It arrives EXACTLY ONCE — on the decision
+ * immediately after the question, discarded the moment the bot does anything
+ * else — so it can never accumulate into a standing feed. And `undefined`
+ * (never asked) is distinct from `null` (asked, no answer came), so a
+ * strategy can tell "I have not asked yet" from "I asked and got nothing"
+ * and never spends twice on the same question.
+ */
 
 /**
  * The game-agnostic seam a transport programs against. Two deliberate

@@ -1,5 +1,5 @@
 import { CloseCode, Room, ServerError, type AuthContext, type Client } from "colyseus";
-import type { BotStrategy, BotTier, GameId, GameModule, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { BotStrategy, BotTier, GameId, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenVerifier, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
@@ -201,6 +201,24 @@ export class MatchRoom extends Room {
    * timed-out turn for any seat. */
   private timeoutBot: BotStrategy<unknown, ErasedAction> | undefined;
   private readonly controllers = new Map<number, Controller>();
+  /**
+   * What a bot BOUGHT, held from the question to its very next decision.
+   *
+   * A human's answer goes out on their own socket (`handleConsult` below). A
+   * bot has no socket and only three inputs, so before this the transport had
+   * nowhere to put one: a bot could spend the action, pay the price, and
+   * learn nothing — strictly worse than not asking, which is why no tier ever
+   * asked.
+   *
+   * SET ONLY AFTER A PAID QUESTION, and cleared by anything else that bot
+   * does. That is what keeps it from becoming a standing feed of the
+   * partner's hand: the answer exists for exactly one decision, the one
+   * immediately after the question it paid for. `has` vs `get` is
+   * load-bearing — a present `null` means "asked, no answer came", which a
+   * strategy must be able to tell from "never asked" so it does not spend a
+   * second seña on the same question.
+   */
+  private readonly boughtAnswers = new Map<PlayerId, JsonValue | null>();
   /**
    * The serialization boundary for `advance()` (closes the disclosed
    * overlap debt, apply-progress obs 2927/2925). Every external trigger —
@@ -610,15 +628,32 @@ export class MatchRoom extends Room {
     const controller = this.controllerFor(client);
     if (registry === undefined || gameId === undefined || controller === undefined || this.matchState === undefined) return;
 
+    const advice = await this.adviceFor(controller.playerId);
+    if (advice !== null) client.send("consult-advice", { advice });
+  }
+
+  /**
+   * The module's answer to a question one seat asked, or `null` when there
+   * is none — for a human on their socket, and for a bot into `boughtAnswers`.
+   *
+   * ONE PATH FOR BOTH, deliberately: the whole claim this feature rests on is
+   * that a bot receives the same information as the human in that seat, at
+   * the same price. Two call sites forming that answer differently is how
+   * that claim quietly stops being true.
+   *
+   * A module that throws while forming an opinion must not take the room with
+   * it: the action has already been applied, and the asker simply gets no
+   * answer. Deliberately silent for the same reason `runAdvanceOnce` swallows
+   * — this is one seat's question, not the match's integrity.
+   */
+  private async adviceFor(playerId: PlayerId): Promise<JsonValue | null> {
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (registry === undefined || gameId === undefined || this.matchState === undefined) return null;
     try {
-      const advice = await registry.getConsultAdvice(gameId, this.matchState, controller.playerId, this.botTier);
-      if (advice !== null) client.send("consult-advice", { advice });
+      return await registry.getConsultAdvice(gameId, this.matchState, playerId, this.botTier);
     } catch {
-      // A module that throws while forming an opinion must not take the room
-      // with it: the action has already been applied and broadcast, and the
-      // player simply gets no answer. Deliberately silent for the same reason
-      // `runAdvanceOnce` swallows: this is one client's question, not the
-      // match's integrity.
+      return null;
     }
   }
 
@@ -735,10 +770,20 @@ export class MatchRoom extends Room {
         if (actingBot !== undefined) {
           const view = module.getViewFor(this.matchState, actingBot.playerId);
           const legal = module.getLegalActions(this.matchState, actingBot.playerId);
-          const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS);
+          const bought = this.boughtAnswers.get(actingBot.playerId);
+          const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS, bought);
           const result = module.applyAction(this.matchState, action);
           if (result.ok) {
             this.matchState = result.state;
+            // The answer lives for exactly one decision. Asking replaces it;
+            // doing anything else spends it. Resolved only for an action the
+            // GAME calls a paid question — handing advice over after any bot
+            // move would give a bot what it never paid for.
+            if (registry.isPaidQuestion(gameId, action)) {
+              this.boughtAnswers.set(actingBot.playerId, await this.adviceFor(actingBot.playerId));
+            } else {
+              this.boughtAnswers.delete(actingBot.playerId);
+            }
             this.broadcastViews();
           }
           continue;

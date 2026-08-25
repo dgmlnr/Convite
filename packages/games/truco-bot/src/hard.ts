@@ -5,6 +5,7 @@ import { sampleHiddenHands } from "./determinize.js";
 import type { HiddenHands } from "./determinize.js";
 import { dealtCardsOf, envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 import { chooseSenaEmission } from "./sena-emission.js";
+import { askPartnerAboutEnvido } from "./ask-partner.js";
 import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
 /** Number of determinizations sampled per decision — a tunable search
@@ -125,7 +126,7 @@ function leadingCardPlayChoice(group: readonly PlayCard[], roundsOfOpposingHands
 
 export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): BotStrategy<PlayerView, Action> {
   return {
-    chooseAction(view, legalActions) {
+    chooseAction(view, legalActions, _budgetMs, answer) {
       if (legalActions.length === 0) {
         throw new Error("createHardBot: no legal actions to choose from");
       }
@@ -168,6 +169,13 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
 
       const wantsToCallEnvido = legalActions.find((a) => a.type === "call-envido");
       if (wantsToCallEnvido !== undefined && teamWinRate(dealtCardsOf(view), rounds, envidoPoints) > 0.5) return wantsToCallEnvido;
+
+      // The simulation said no — but it simulates from THIS seat's view, and
+      // the partner's hand is exactly what it cannot see. Only a pie may open
+      // an envido, so the tantos may be sitting with the seat that is not
+      // allowed to speak. Ask before letting it go.
+      const aboutTheEnvido = askPartnerAboutEnvido(legalActions, answer);
+      if (aboutTheEnvido !== undefined) return aboutTheEnvido;
 
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) {
