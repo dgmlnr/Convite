@@ -58,16 +58,23 @@ function terminalFixtureState(): MatchState {
   return { ...state, teams: state.teams.map((team) => ({ ...team, score: config.pointsToWin })) };
 }
 
-const legalAction: TrucoModuleAction = { type: "call-truco", playerId: playerAId, level: "truco" };
+/** playerB, not playerA, and that is the module's own geometry rather than a
+ * preference: `createMatch2v2` leaves the dealer at seat 0, so the mano is
+ * seat 1 — and opening a call is taking the floor, which starts with the
+ * mano (truco-engine's `getLegalTrucoActions`). */
+const legalAction: TrucoModuleAction = { type: "call-truco", playerId: playerBId, level: "truco" };
 
 describeGameModule(
   trucoModule2v2,
   {
     config,
     seats,
-    playerId: playerAId,
+    playerId: playerBId,
     reachableState: dealtFixtureState(),
     legalAction,
+    // NOTE: `playerId` above is playerB for the same reason `legalAction` is —
+    // the conformance harness checks that the action belongs to the player it
+    // is given, and only the mano has an opening call to offer.
     terminalState: terminalFixtureState(),
     botTier: "easy",
   },

@@ -27,7 +27,10 @@ function freshTeamHand(): MatchState {
  * are genuinely on offer — the only way the "cap gates nothing else" fence
  * below has something other than `send-sena` to lose. */
 function dealtTeamHand(): MatchState {
-  const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
+  // dealerSeat 3 -> playerA (seat 0) is the mano, so playerA genuinely holds
+  // calls to lose. Opening one is taking the floor (truco-chain.ts), and the
+  // fence below needs playerA to have something OTHER than send-sena legal.
+  const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15, dealerSeat: 3 });
   const deal: readonly (readonly Card[])[] = [
     [{ suit: "espada", rank: 1 }, { suit: "espada", rank: 2 }, { suit: "espada", rank: 3 }],
     [{ suit: "basto", rank: 1 }, { suit: "basto", rank: 2 }, { suit: "basto", rank: 3 }],

@@ -3,6 +3,7 @@ import type { Action, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
 import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 import { chooseSenaEmission } from "./sena-emission.js";
+import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
 /** Heuristic thresholds (bot domain knowledge, not the engine's real point
  * values — see `heuristics.ts`). Roughly the midpoint of a 3-card hand's
@@ -89,8 +90,8 @@ export function createNormalBot(rng: RandomSource): BotStrategy<PlayerView, Acti
       const respondEnvido = legalActions.filter((a): a is RespondEnvido => a.type === "respond-envido");
       if (respondEnvido.length > 0) return respondEnvidoChoice(view, respondEnvido);
 
-      const reveal = legalActions.find((a) => a.type === "reveal-envido");
-      if (reveal !== undefined) return reveal;
+      const declaring = chooseEnvidoDeclaration(view, legalActions);
+      if (declaring !== undefined) return declaring;
 
       const wantsToCallTruco = legalActions.find((a) => a.type === "call-truco");
       if (wantsToCallTruco !== undefined && handPower(view.self.hand) >= AGGRESSIVE_TRUCO_THRESHOLD) return wantsToCallTruco;

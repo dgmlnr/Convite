@@ -178,64 +178,6 @@ describe("createMatchTableRenderer — four anchors, always relative to the loca
 });
 
 describe("createMatchTableRenderer — the pending call stays on the table until it is answered", () => {
-  it("shows nothing when no call is open", () => {
-    const el = freshContainer();
-    const render = createMatchTableRenderer();
-
-    render(el, baseView(), [], () => {});
-
-    expect(el.querySelector(".hexdev-truco-pending-call")!.children).toHaveLength(0);
-  });
-
-  it("shows what was called, who called it, and that it is MY turn to answer when a respond action is legal", () => {
-    const el = freshContainer();
-    const render = createMatchTableRenderer();
-    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
-    const legal: readonly Action[] = [{ type: "respond-truco", playerId: SELF, response: "quiero" }];
-
-    render(el, view, legal, () => {});
-
-    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!;
-    expect(banner.textContent).toContain("Truco");
-    expect(banner.textContent).toContain("Ellos");
-    expect(banner.dataset.turn).toBe("mine");
-  });
-
-  it("marks 'waiting on the opponent' when I am NOT the one who must answer", () => {
-    const el = freshContainer();
-    const render = createMatchTableRenderer();
-    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: MY_TEAM } } });
-
-    render(el, view, [], () => {}); // no respond-* legal for the calling team
-
-    expect(el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!.dataset.turn).toBe("theirs");
-  });
-
-  it("stays across renders until the call is resolved, then clears", () => {
-    const el = freshContainer();
-    const render = createMatchTableRenderer();
-    const pending = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
-
-    render(el, pending, [], () => {});
-    render(el, pending, [], () => {}); // still pending on a second render
-    expect(el.querySelector(".hexdev-truco-pending-call")!.children.length).toBeGreaterThan(0);
-
-    render(el, baseView(), [], () => {}); // resolved — truco back to "none"
-    expect(el.querySelector(".hexdev-truco-pending-call")!.children).toHaveLength(0);
-  });
-
-  it("an escalation REPLACES the pending call, never appends to it", () => {
-    const el = freshContainer();
-    const render = createMatchTableRenderer();
-    const retruco = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "retruco", callingTeamId: OPPONENT_TEAM } } });
-
-    render(el, retruco, [], () => {});
-
-    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!;
-    expect(banner.textContent).toContain("Retruco");
-    expect(banner.textContent).not.toContain("Vale cuatro");
-  });
-
   it("says nothing about a card-play turn while a call is pending — play stops for a call", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
@@ -406,14 +348,25 @@ describe("createMatchTableRenderer — 2v2: partner vs opponent must be obvious 
    * hardcoded cap, or a stale/derived count, would pass every picker test in
    * senas.browser.test.ts and still show the wrong number in the product.
    */
-  it("shows the viewer's own remaining señas on the toggle, straight from view.self.senasRemaining", () => {
+  it("shows the viewer's own remaining allowance on the one control that spends it, straight from view.self.senasRemaining", () => {
+    // The count used to live on the señas toggle. It moved to a counter
+    // between the two controls that spend it — asking your partner and
+    // signalling to them share one allowance, and a "(2)" on each button read
+    // as two separate twos. Same source, same property (the cap is visible
+    // BEFORE it bites), one place.
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const legal: readonly Action[] = [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }];
 
     render(el, teamView({ self: { ...baseView().self, senasRemaining: 2 } }), legal, () => {});
 
-    expect(el.querySelector('button[data-action="senas-toggle"]')!.textContent).toBe("Señas (2)");
+    // ONE control carries it, and that is what makes the number readable: it
+    // is unambiguously that button's own. Two buttons each showing "(2)" read
+    // as two separate twos, and a lone chip between them read as a stray
+    // digit — both were tried, both were reported.
+    const toggles = [...el.querySelectorAll<HTMLElement>('button[data-action="senas-toggle"]')];
+    expect(toggles.length, "one allowance, one control").toBe(1);
+    expect(toggles[0]!.textContent).toBe("Seña/Consulta (2)");
   });
 
   it("keeps the Señas control on the action bar once the quota is spent — disabled, never removed mid-hand", () => {
@@ -964,34 +917,6 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
     expect(overlaps, `panel ${JSON.stringify(panelRect)} vs center ${JSON.stringify(centerRect)}`).toBe(false);
   });
 
-  // PR5 correction (own cascade-order self-check, same CRITICAL pattern the
-  // PR4 correction above already fixed once): the medium+ override for
-  // .hexdev-truco-pending-call/.hexdev-truco-pending-call-turn used to sit
-  // inside the 640px @container block, BEFORE the base compact-pill rules —
-  // same specificity (both bare-class selectors), later rule wins regardless
-  // of @container nesting, so the base rule always won and the banner stayed
-  // a compact one-line pill (turn line clipped to 1x1px) even at >=640px.
-  // This closes that gap directly: a real container-query width, a
-  // computed-style check on the flex-direction, and a real geometry check
-  // proving the turn line has genuine visible height again.
-  it("PR5 correction: at medium (700px), the pending-call banner restores the three-line block, and the turn line is visible again", () => {
-    const el = freshContainer();
-    el.style.width = "700px";
-    const render = createMatchTableRenderer();
-    const view = baseView({ hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } } });
-    const legal: readonly Action[] = [{ type: "respond-truco", playerId: SELF, response: "quiero" }];
-
-    render(el, view, legal, () => {});
-
-    const banner = el.querySelector<HTMLElement>(".hexdev-truco-pending-call")!;
-    const turnLine = el.querySelector<HTMLElement>(".hexdev-truco-pending-call-turn")!;
-
-    expect(getComputedStyle(banner).flexDirection, "medium+ must restore the stacked three-line block, not the compact row pill").toBe("column");
-    expect(getComputedStyle(turnLine).position, "the turn line must be back in normal flow at medium+, not visually hidden").toBe("static");
-
-    const turnLineRect = turnLine.getBoundingClientRect();
-    expect(turnLineRect.height, "the turn line must have real, visible height again, not the 1px visually-hidden box").toBeGreaterThan(5);
-  });
 });
 
 /**

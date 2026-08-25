@@ -14,7 +14,16 @@ const playerC = "player-c" as PlayerId;
 const playerD = "player-d" as PlayerId;
 
 function freshHand(): MatchState {
-  const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+  // dealerSeat 1 makes playerA the MANO, and every chain in this file opens
+  // with playerA. Opening a call — truco or envido — is taking the floor, and
+  // the floor starts with the mano (see `getLegalTrucoActions` and
+  // `canOpenEnvido`). The default of 0 had every fixture here opening out of
+  // turn, which only ever worked because the rule did not exist yet.
+  //
+  // The hands are EMPTY on purpose, which is what keeps the exhaustive
+  // `toEqual` assertions below readable: the mano holds the turn, so a real
+  // hand would add three play-card actions to every one of them.
+  const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15, dealerSeat: 1 });
   return startHand(state, [[], []]);
 }
 
@@ -40,17 +49,29 @@ function pendingAt(level: TrucoCallLevel): MatchState {
 }
 
 describe("getLegalActions — truco call chain", () => {
-  it("either player may call truco when nothing is pending (envido is also legal — see envido-chain.test.ts)", () => {
+  it("at the start of a hand ONLY the mano may speak — both calls are hers, and the pie has none", () => {
+    // playerB is the mano — `dealerSeat` defaults to 0 and mano is the seat
+    // after the dealer. Truco is not turn-gated in this engine; opening an
+    // envido is taking the floor, and the floor starts with the mano. See
+    // envido-chain.test.ts for that rule's own coverage.
     const state = freshHand();
 
-    expect(getLegalActions(state, playerA)).toEqual([{ type: "call-truco", playerId: playerA, level: "truco" }, { type: "call-envido", playerId: playerA, level: "envido" }]);
-    expect(getLegalActions(state, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }, { type: "call-envido", playerId: playerB, level: "envido" }]);
+    expect(getLegalActions(state, playerA)).toEqual([
+      { type: "call-truco", playerId: playerA, level: "truco" },
+      { type: "call-envido", playerId: playerA, level: "envido" },
+    ]);
+    expect(getLegalActions(state, playerB), "the pie has nothing to say until the floor reaches them").toEqual([]);
   });
 
-  it("only the non-calling team may respond while a call is pending (envido may still interrupt it — see envido-chain.test.ts for the dedicated opening-gate coverage)", () => {
+  it("while a truco is pending the callers have NOTHING to say — the floor, including the envido, is the answering team's", () => {
     const state = pendingAt("truco");
 
-    expect(getLegalActions(state, playerA)).toEqual([{ type: "call-envido", playerId: playerA, level: "envido" }]);
+    // The caller used to keep `call-envido` here, and it was wrong: putting an
+    // envido on top of a truco is a way of REPLYING to that truco ("el envido
+    // está primero"), so it belongs to whoever owes the reply. Reported from
+    // real play as one seat calling truco and then, with nobody having
+    // answered, calling the envido on its own call.
+    expect(getLegalActions(state, playerA), "they already spoke; the turn to speak is the other team's").toEqual([]);
     expect(getLegalActions(state, playerB)).toEqual([
       { type: "respond-truco", playerId: playerB, response: "quiero" },
       { type: "respond-truco", playerId: playerB, response: "no-quiero" },
@@ -61,10 +82,13 @@ describe("getLegalActions — truco call chain", () => {
   it("only the accepting team may escalate truco after quiero (envido may still interrupt it)", () => {
     const accepted = apply(pendingAt("truco"), { type: "respond-truco", playerId: playerB, response: "quiero" });
 
+    // playerA holds the floor (mano, nobody has played) so the envido is
+    // still theirs to open, but the truco chain is not: they called it.
+    // playerB may escalate — that is answering, not opening, so the turn does
+    // not gate it — but may NOT open an envido out of turn.
     expect(getLegalActions(accepted, playerA)).toEqual([{ type: "call-envido", playerId: playerA, level: "envido" }]);
     expect(getLegalActions(accepted, playerB)).toEqual([
       { type: "call-truco", playerId: playerB, level: "retruco" },
-      { type: "call-envido", playerId: playerB, level: "envido" },
     ]);
   });
 
@@ -75,8 +99,10 @@ describe("getLegalActions — truco call chain", () => {
       response: "quiero",
     });
 
-    expect(getLegalActions(accepted, playerA)).toEqual([{ type: "call-envido", playerId: playerA, level: "envido" }]);
-    expect(getLegalActions(accepted, playerB)).toEqual([{ type: "call-envido", playerId: playerB, level: "envido" }]);
+    expect(getLegalActions(accepted, playerA), "the truco ceiling is reached, but the floor is still theirs").toEqual([
+      { type: "call-envido", playerId: playerA, level: "envido" },
+    ]);
+    expect(getLegalActions(accepted, playerB), "nothing left to escalate, and not their turn to open").toEqual([]);
   });
 
   it("no truco action is legal after a decline", () => {
@@ -90,8 +116,13 @@ describe("getLegalActions — truco call chain", () => {
     const declined = apply(pendingAt("truco"), { type: "respond-truco", playerId: playerB, response: "no-quiero" });
     const handTwo = startHand(declined, [[], []]);
 
-    expect(getLegalActions(handTwo, playerA)).toEqual([{ type: "call-truco", playerId: playerA, level: "truco" }, { type: "call-envido", playerId: playerA, level: "envido" }]);
-    expect(getLegalActions(handTwo, playerB)).toEqual([{ type: "call-truco", playerId: playerB, level: "truco" }, { type: "call-envido", playerId: playerB, level: "envido" }]);
+    // `startHand` does not rotate the dealer (that is `rotateDealer`'s job),
+    // so playerB is still the mano in this second hand.
+    expect(getLegalActions(handTwo, playerA)).toEqual([
+      { type: "call-truco", playerId: playerA, level: "truco" },
+      { type: "call-envido", playerId: playerA, level: "envido" },
+    ]);
+    expect(getLegalActions(handTwo, playerB)).toEqual([]);
   });
 
   it("returns no actions once the hand has not started", () => {
@@ -137,7 +168,8 @@ describe("applyAction — decline terminates the hand (spec: truco-rules)", () =
 
 describe("applyAction/getLegalActions — match termination (spec: 'Match and Hand Termination')", () => {
   it("a decline that reaches the target ends the match: no further action is legal for either player", () => {
-    const almostWonMatch = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    // dealerSeat 1 -> playerA is mano, which is who calls below.
+    const almostWonMatch = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15, dealerSeat: 1 });
     const oneCallFromTarget: MatchState = {
       ...almostWonMatch,
       teams: [{ ...almostWonMatch.teams[0]!, score: 14 }, almostWonMatch.teams[1]!],
@@ -157,7 +189,12 @@ describe("applyAction/getLegalActions — match termination (spec: 'Match and Ha
     const nextHand = startHand(rotateDealer(declined), [[], []]);
 
     expect(nextHand.hand?.manoSeat).not.toBe(declined.hand?.manoSeat);
-    expect(getLegalActions(nextHand, playerA).length).toBeGreaterThan(0);
+    // Asked of the NEW mano rather than of playerA, and the difference is the
+    // point of the rotation: the floor moved with it. playerA opened the last
+    // hand; this one opens with playerB, who now has calls to make while
+    // playerA waits their turn to speak.
+    expect(nextHand.hand?.manoSeat).toBe(1);
+    expect(getLegalActions(nextHand, playerB).length, "a fresh hand really is open — for whoever now holds the floor").toBeGreaterThan(0);
   });
 });
 
@@ -276,7 +313,7 @@ describe("callEvents — property: no append site is missing (design §3, T-6)",
       action.type === "respond-truco" ||
       action.type === "call-envido" ||
       action.type === "respond-envido" ||
-      action.type === "reveal-envido";
+      action.type === "declare-envido";
 
     fc.assert(
       fc.property(dealArb, walkArb, (cards, walk) => {
@@ -300,7 +337,9 @@ describe("callEvents — property: no append site is missing (design §3, T-6)",
 
 describe("2v2 — either member of the opposing team may respond to a truco call", () => {
   function freshTeamHand(): MatchState {
-    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15 });
+    // dealerSeat 3 -> playerA (seat 0) is mano, which is who calls in every
+    // case below. Opening is taking the floor, and the floor starts there.
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15, dealerSeat: 3 });
     return startHand(state, [[], [], [], []]);
   }
 
@@ -327,5 +366,89 @@ describe("2v2 — either member of the opposing team may respond to a truco call
     expect(getLegalActions(accepted, playerB).some((a) => a.type === "respond-truco")).toBe(false);
     expect(getLegalActions(accepted, playerA).some((a) => a.type === "call-truco")).toBe(false); // calling team may not escalate its own accepted call
     expect(getLegalActions(accepted, playerB)).toContainEqual({ type: "call-truco", playerId: playerB, level: "retruco" });
+  });
+});
+
+/**
+ * OPENING A TRUCO FOLLOWS THE TURN TO SPEAK; ESCALATING DOES NOT.
+ *
+ * The same split `canOpenEnvido` draws, for the same reason. Taking the floor
+ * belongs to whoever holds it — the mano first, then each seat as the play
+ * order reaches it. Escalating is answering a call that is already on the
+ * table, and an unanswered call FREEZES `turnSeat`, so gating a reply on the
+ * turn would refuse the very move the chain exists to allow.
+ *
+ * Reported from real 2v2 play against bots: "en lugar de cantarlo la mano, lo
+ * canta el compañero sin que sea su turno".
+ */
+describe("who may open a truco", () => {
+  function dealt2v2(dealerSeat: number): MatchState {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 15, dealerSeat });
+    return startHand(state, [
+      [{ suit: "espada", rank: 1 }, { suit: "basto", rank: 4 }, { suit: "espada", rank: 3 }],
+      [{ suit: "basto", rank: 5 }, { suit: "oro", rank: 1 }, { suit: "basto", rank: 6 }],
+      [{ suit: "oro", rank: 4 }, { suit: "copa", rank: 4 }, { suit: "basto", rank: 4 }],
+      [{ suit: "copa", rank: 5 }, { suit: "basto", rank: 3 }, { suit: "copa", rank: 6 }],
+    ]);
+  }
+
+  const mayOpen = (state: MatchState, playerId: PlayerId): boolean =>
+    getLegalActions(state, playerId).some((action) => action.type === "call-truco" && action.level === "truco");
+
+  /** This file's shared `apply` is typed to the truco chain alone, and these
+   * cases need a card on the table — the only way the floor ever moves. */
+  const play = (state: MatchState, action: Action): MatchState => {
+    const result = applyAction(state, action);
+    if (!result.ok) throw new Error(`test setup: engine rejected ${action.type} — ${result.violation}`);
+    return result.state;
+  };
+
+  it("the mano, and nobody else — not even their own partner", () => {
+    // dealerSeat 3 puts the mano on seat 0 (playerA). playerC is playerA's
+    // partner, and that is the case the report was about: the partner
+    // speaking out of turn is still speaking out of turn.
+    const hand = dealt2v2(3);
+
+    expect(mayOpen(hand, playerA), "the mano holds the floor").toBe(true);
+    for (const waiting of [playerB, playerC, playerD]) {
+      expect(mayOpen(hand, waiting), "nobody may jump ahead of a seat that has not spoken").toBe(false);
+    }
+  });
+
+  it("the floor moves down the play order as each seat plays", () => {
+    const hand = dealt2v2(3);
+    const played = play(hand, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
+
+    expect(mayOpen(played, playerA), "your card is down; your say is spent").toBe(false);
+    expect(mayOpen(played, playerB), "the next seat in order now holds it").toBe(true);
+    expect(mayOpen(played, playerC), "and the one after it still does not").toBe(false);
+  });
+
+  it("ESCALATING is not turn-gated — an unanswered call freezes the turn, so gating it would refuse the reply", () => {
+    // playerA (the mano) opens and playerB accepts. The turn never moved:
+    // calls do not advance it. If escalation were gated the same way, playerB
+    // could never retruco — which is the whole shape of the chain.
+    const accepted = apply(apply(dealt2v2(3), { type: "call-truco", playerId: playerA, level: "truco" }), {
+      type: "respond-truco",
+      playerId: playerB,
+      response: "quiero",
+    });
+
+    expect(accepted.hand?.turnSeat, "fence setup: the turn really is still the mano's").toBe(0);
+    expect(
+      getLegalActions(accepted, playerB).some((action) => action.type === "call-truco" && action.level === "retruco"),
+      "the accepting team may escalate from wherever they are sitting",
+    ).toBe(true);
+  });
+
+  it("RESPONDING is not turn-gated either", () => {
+    const called = apply(dealt2v2(3), { type: "call-truco", playerId: playerA, level: "truco" });
+
+    for (const answerer of [playerB, playerD]) {
+      expect(
+        getLegalActions(called, answerer).some((action) => action.type === "respond-truco"),
+        "either member of the answering team may reply, whoever holds the turn",
+      ).toBe(true);
+    }
   });
 });

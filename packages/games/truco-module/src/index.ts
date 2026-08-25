@@ -9,8 +9,9 @@ import {
   startHand,
 } from "@hexdev/truco-engine";
 import type { Action as EngineAction, MatchConfig, MatchState, PlayerView } from "@hexdev/truco-engine";
-import { createBotStrategy, withThinkingDelay } from "@hexdev/truco-bot";
+import { DEFAULT_THINKING_DELAY_MS, SPOKEN_MOVE_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/truco-bot";
 import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { Action as EngineActionType } from "@hexdev/truco-engine";
 import { SYSTEM_ACTOR_ID, requestSystemAction, requestSystemAction2v2 } from "./deal.js";
 import type { StartHandAction } from "./deal.js";
 
@@ -112,12 +113,69 @@ const defaultRng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1)
  * (spec: "Three Difficulty Tiers"), wrapped in the ~1s thinking delay
  * (spec: "Tunable Bot Move Latency") — the delay wraps the STRATEGY here,
  * never lives inside it, so `truco-bot`'s own strategy tests stay instant. */
+/**
+ * Which of truco's moves are SPOKEN. Playing a card is self-evident and
+ * permanent once it lands; a call is a claim that appears, is marked on a
+ * seat and then goes, so it is the one that needs room to be read. Señas are
+ * absent on purpose: a bot never sends one on its own initiative (see the
+ * transport's own non-blocking classifier), so classifying them here would
+ * be describing a case that cannot occur.
+ */
+const SPOKEN_MOVES: ReadonlySet<string> = new Set(["call-truco", "respond-truco", "call-envido", "respond-envido"]);
+
 function createBot(tier: BotTier): BotStrategy<PlayerView, TrucoModuleAction> {
-  const strategy = withThinkingDelay(createBotStrategy(tier, defaultRng));
+  const strategy = withThinkingDelay(createBotStrategy(tier, defaultRng), DEFAULT_THINKING_DELAY_MS, undefined, (action) =>
+    SPOKEN_MOVES.has(action.type) ? SPOKEN_MOVE_DELAY_MS : DEFAULT_THINKING_DELAY_MS,
+  );
   return {
     chooseAction: (view, legalActions, budgetMs) => strategy.chooseAction(view, toEngineActions(legalActions), budgetMs),
   };
 }
+
+/**
+ * WHAT YOUR PARTNER WOULD DO, asked on your behalf.
+ *
+ * The engine owns whether you MAY ask and what asking costs (a seña — see
+ * `consult.ts`); it deliberately owns nothing else, because a recommendation
+ * is judgement rather than a rule and a pure reducer has no business
+ * inventing one. This is where the judgement comes from, and it is the same
+ * judgement the partner would actually apply: their OWN bot strategy, at the
+ * match's own tier, given their OWN view and their OWN legal responses.
+ *
+ * That last part is what makes the answer honest rather than decorative. It
+ * is not a heuristic invented for the advice surface — ask them and then
+ * ignore them, and you have ignored exactly the move they were about to make
+ * on their own.
+ *
+ * NO THINKING DELAY, unlike `createBot` below. That pause exists so a bot's
+ * MOVE does not land faster than a human can read the one before it; this is
+ * a reply to a question the player just asked, and a reply that arrives late
+ * reads as a broken button rather than as a thoughtful partner.
+ *
+ * Returns null rather than guessing when there is nobody to ask (a heads-up
+ * match) or nothing to ask about — the engine will already have refused the
+ * action in both cases, so this is the belt to that suspenders.
+ */
+const CONSULT_RESPONSES: ReadonlySet<string> = new Set(["respond-truco", "respond-envido"]);
+
+export async function getConsultAdvice(state: MatchState, playerId: PlayerId, tier: BotTier): Promise<JsonValue | null> {
+  const teammate = getViewFor(state, playerId).teammates[0];
+  if (teammate === undefined) return null;
+
+  const theirResponses = engineGetLegalActions(state, teammate.playerId).filter((action) => CONSULT_RESPONSES.has(action.type));
+  if (theirResponses.length === 0) return null;
+
+  const chosen: EngineActionType = await createBotStrategy(tier, defaultRng).chooseAction(
+    getViewFor(state, teammate.playerId),
+    theirResponses,
+    CONSULT_BUDGET_MS,
+  );
+  return chosen.type === "respond-truco" || chosen.type === "respond-envido" ? chosen.response : null;
+}
+
+/** The same order of magnitude `MatchRoom` gives a bot for a real move. The
+ * hard tier is the only strategy that reads it at all. */
+const CONSULT_BUDGET_MS = 1000;
 
 export const trucoModule: GameModule<MatchState, TrucoModuleAction, PlayerView, MatchConfig> = {
   id: "truco-argentino",

@@ -502,6 +502,100 @@ describe("MatchRoom + single-player vs bot (spec: Single-Player vs Bot Mode)", (
   });
 });
 
+/**
+ * Joining must not wait for the bots' opening.
+ *
+ * THE BUG THIS CLOSES, reported from real play and then measured: a 2v2 match
+ * against bots sat on "Buscando jugadores…" for 12 seconds and then dropped
+ * the player into a hand that already had nine calls in its log — envido
+ * shown, retruco and vale cuatro accepted, several of them by their own
+ * partner. They arrived at a table where the stakes had been raised to four
+ * points by decisions they never made.
+ *
+ * Nothing was slow and nothing was lost. `onJoin` ENDED with
+ * `await this.advance()`, and `@colyseus/core@0.17.46`'s own `Room.ts` sends
+ * the JOIN_ROOM confirmation — the message that resolves the client's
+ * `join()`/`create()` promise — only after `await this.onJoin(...)` returns
+ * (src/Room.ts:1251 and :1293). So the join hung for the whole bot opening:
+ * three bots at a real ~1s `withThinkingDelay` each, through an entire
+ * envido/truco/retruco chain. The views were not lost either — that same
+ * file queues messages sent during `onJoin` and flushes them once the client
+ * has joined (src/Room.ts:1694), which is exactly why the hand arrived all at
+ * once instead of unfolding.
+ *
+ * The thinking delay exists so a player can WATCH the bots think. Awaiting
+ * the chain here turned it into a waiting room.
+ *
+ * `handleAction` already had this right, and says so in its own comment:
+ * Colyseus never awaits a message handler's return value, so that path has
+ * always been fire-and-forget. This makes the join path agree with it.
+ */
+describe("MatchRoom.onJoin — the join completes at once; the bots' opening plays out afterwards, in view", () => {
+  /** Long enough that awaiting even ONE of them is unmistakable in the
+   * assertion below, short enough that the suite never waits in real time. */
+  const BOT_THINKING_MS = 150;
+
+  /** The fixture, with two changes: the FIRST turn belongs to the bot seat
+   * (so the room genuinely has bot work to do the moment the human joins),
+   * and its bot takes a real, measurable moment to decide. */
+  function moduleWithSlowOpeningBot(): GameModule<FixtureState, FixtureAction, FixtureView, void> {
+    return {
+      ...fixtureModule,
+      createMatch: (config, seats) => ({ ...fixtureModule.createMatch(config, seats), turnSeat: 1 }),
+      createBot: () => ({
+        chooseAction: async (_view, legal) => {
+          await new Promise((resolve) => setTimeout(resolve, BOT_THINKING_MS));
+          return legal[0]!;
+        },
+      }),
+    };
+  }
+
+  async function botMatchRoom() {
+    const auth = await createAuth();
+    const module = moduleWithSlowOpeningBot();
+    const registry = createGameModuleRegistry([module]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, botTier: "normal" });
+    const seat0 = fakeClient("s0");
+    return { room, seat0, auth };
+  }
+
+  it("resolves without waiting for the bot to decide", async () => {
+    const { room, seat0, auth } = await botMatchRoom();
+
+    const started = Date.now();
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    const elapsed = Date.now() - started;
+
+    // The whole point: the human is IN before the bot has finished thinking.
+    expect(elapsed, `joining took ${String(elapsed)}ms; one bot decision alone is ${String(BOT_THINKING_MS)}ms`).toBeLessThan(BOT_THINKING_MS);
+  });
+
+  it("sends the opening view immediately, so the player sees the deal rather than a wait", async () => {
+    const { room, seat0, auth } = await botMatchRoom();
+
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+
+    // Queued during onJoin and flushed on join (Room.ts:1694) — either way it
+    // is on its way before any bot has moved.
+    expect(seat0.sent, "the table is on screen before the bots start playing").toHaveLength(1);
+    expect(seat0.sent[0]).toMatchObject({ type: "view", message: { view: { turnSeat: 1 } } });
+  });
+
+  it("the bot still plays — not awaiting it must not mean abandoning it", async () => {
+    const { room, seat0, auth } = await botMatchRoom();
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+
+    await new Promise((resolve) => setTimeout(resolve, BOT_THINKING_MS * 3));
+
+    // A SECOND view, arriving on its own after the join: the bot's move,
+    // reaching the player as a move they can watch rather than as history.
+    expect(seat0.sent.length, "the bot's opening arrives as its own broadcast").toBeGreaterThan(1);
+    expect(seat0.sent.at(-1)).toMatchObject({ type: "view", message: { view: { turnSeat: 0 } } });
+  });
+});
+
 describe("MatchRoom.advance() — a misbehaving bot strategy must not crash the room (root cause of the disclosed intermittent single-player stall, obs 2973/2925)", () => {
   /**
    * NOT a hypothetical: `truco-bot`'s `easy`/`normal`/`hard` tiers ALL throw
@@ -633,6 +727,109 @@ describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal'
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(tiers).toEqual([]); // no bot was ever built for a room that is going away
     expect(seat1.sent).toHaveLength(1); // and nothing was driven: still just the initial view
+  });
+});
+
+/**
+ * The "quit affordance" `onLeave`'s own docstring said did not exist yet.
+ *
+ * Until this, a player who deliberately walked away and a player whose wifi
+ * dropped were the SAME event to this room: both got the full reconnection
+ * window, so the table sat waiting ~30 seconds for someone who was never
+ * coming back. That is the right default for a drop and the wrong one for a
+ * decision, and the room had no way to tell them apart because the client
+ * had no way to say which one it was.
+ *
+ * The mechanism deliberately adds no state. A quit takes the seat over
+ * FIRST; `seatOfClient` only ever matches a controller that is still
+ * `kind: "human"`, so by the time the socket closes and `onLeave` runs,
+ * there is no seat to find and it returns before reaching
+ * `allowReconnection` at all. No "already quit" set to keep in step with
+ * anything, and no second code path through the window.
+ */
+describe("MatchRoom — a deliberate quit is not a disconnect (skips the reconnection window)", () => {
+  function moduleWithTierSpy() {
+    const tiers: BotTier[] = [];
+    const module: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+      ...fixtureModule,
+      createBot: (tier) => {
+        tiers.push(tier);
+        return fixtureModule.createBot(tier);
+      },
+    };
+    return { module, tiers };
+  }
+
+  async function twoJoinedSeats(module: GameModule<FixtureState, FixtureAction, FixtureView, void>, reconnectionWindowSeconds: number) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([module]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, reconnectionWindowSeconds });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    return { room, seat0, seat1 };
+  }
+
+  /** Fails loudly instead of letting a re-opened window quietly stall the
+   * suite for the full 30 seconds and read as an unrelated timeout. */
+  async function withinMs<T>(work: Promise<T>, ms: number, description: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${description} did not settle within ${String(ms)}ms`)), ms);
+    });
+    try {
+      return await Promise.race([work, deadline]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
+
+  it("hands the seat to a bot at once, without waiting out the window", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    // A window long enough that waiting it out is unmistakable: if the quit
+    // went through the ordinary disconnect path, no bot would exist yet.
+    const { room, seat0 } = await twoJoinedSeats(module, 30);
+
+    room.handleQuit(seat0.client);
+
+    expect(tiers, "the bot is built on the quit itself, not 30 seconds later").toEqual(["normal"]);
+  });
+
+  it("the socket closing right after a quit opens no window and takes no second seat", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    const { room, seat0 } = await twoJoinedSeats(module, 30);
+
+    room.handleQuit(seat0.client);
+    // What really happens next: the client closes its connection, so
+    // Colyseus calls onLeave. If that still opened a window it would hang
+    // here for thirty seconds.
+    await withinMs(Promise.resolve(room.onLeave(seat0.client)), 1000, "onLeave after a quit");
+
+    expect(tiers, "no second takeover for a seat that is already a bot").toEqual(["normal"]);
+  });
+
+  it("the other seats keep playing — a quit ends one player's match, not the table's", async () => {
+    const { module } = moduleWithTierSpy();
+    const { room, seat0, seat1 } = await twoJoinedSeats(module, 30);
+    const seatOneViewsBefore = seat1.sent.length;
+
+    room.handleQuit(seat0.client);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(seat1.sent.length, "the bot took the vacated seat and the room advanced").toBeGreaterThan(seatOneViewsBefore);
+  });
+
+  it("ignores a quit from a connection that holds no seat — never a crash, never someone else's seat", async () => {
+    const { module, tiers } = moduleWithTierSpy();
+    const { room } = await twoJoinedSeats(module, 30);
+    const stranger = fakeClient("not-seated");
+
+    expect(() => {
+      room.handleQuit(stranger.client);
+    }).not.toThrow();
+    expect(tiers, "no seat was taken over on behalf of a client that never had one").toEqual([]);
   });
 });
 

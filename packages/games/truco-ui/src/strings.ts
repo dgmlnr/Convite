@@ -37,6 +37,15 @@ export const TABLE_STRINGS = {
   matchOverNeutral: "Partida finalizada",
   finalScore: "Resultado final",
   playAgain: "Jugar de nuevo",
+  // Leaving a match in progress. The question names the real consequence
+  // rather than asking an abstract "are you sure?": the seat is handed to a
+  // bot and the others keep playing (MatchRoom.handleQuit), which is the one
+  // thing a player needs to know before deciding.
+  leaveMatch: "Salir",
+  leaveMatchTitle: "¿Salir de la partida?",
+  leaveMatchBody: "Sigue un bot en tu lugar y la partida continúa sin vos. No vas a poder volver a esta mesa.",
+  leaveMatchConfirm: "Salir",
+  leaveMatchCancel: "Seguir jugando",
   // 2v2 only (obs 33's engine work): "obvious at a glance who you are
   // helping" — a short, real text label on the anchor, same discipline the
   // turn badge already established ("text alone is not enough" cuts both
@@ -50,7 +59,24 @@ export const TABLE_STRINGS = {
   // layout reason as much as a copy one: this button sits in a FIXED-height
   // action band that must never grow, and a parenthesised number costs the
   // band nothing while a second element would have to find room in it.
-  senasToggle: (remaining: number): string => `Señas (${remaining})`,
+  /* ONE CONTROL, ONE NUMBER. Signalling to your partner and asking them spend
+   * a single allowance, and the two earlier shapes both failed to say so: a
+   * "(3)" on each of two buttons read as two separate threes, and moving the
+   * count to a chip between them read as a stray digit. So there is one
+   * button now, carrying the count that is unambiguously its own, and the two
+   * ways to spend it live inside it — "un solo boton que ponga
+   * 'Seña/Consulta' y al darle click muestre ambos botones". */
+  senasToggle: (remaining: number): string => `Seña/Consulta (${remaining})`,
+  consultToggle: "Consultar al compañero",
+  consultAsking: "Preguntando…",
+  /* The declaration round. "Mis tantos" is the button; the LOG and the seat
+   * chip show the number itself, because by then it has been said out loud.
+   * The concession reuses the `sonBuenas` string this file already had for
+   * the tantos list — one phrase, one place. */
+  declareMine: "Mis tantos",
+  consultAdvicePrefix: "Tu compañero:",
+  consultQuiero: "Quiere",
+  consultNoQuiero: "No quiere",
   // The spent state, said in words rather than as "Señas (0)": a zero in
   // parentheses reads as a counter that happens to be empty, "Sin señas"
   // reads as a state the player is in. Same terse register as "Sin envido"
@@ -72,6 +98,11 @@ export const TABLE_STRINGS = {
   // `partner`/`opponent` above are reused for the top anchor (1v1 vs 2v2);
   // these two cover the 2v2-only side anchors.
   callLogTitle: "Cantos",
+  /** The transient reveal notice's own heading. Deliberately NOT reusing
+   * `tantosTitle` ("Tantos"): that one names the standing record in the side
+   * panel, this one names a moment that just happened, and a player reading
+   * the same word in two places would reasonably expect the same thing. */
+  envidoRevealTitle: "Envido cantado",
   tantosTitle: "Tantos",
   sonBuenas: "Son buenas",
   // Past tense — a log entry, not a button (CALL_LABELS.revealEnvido stays

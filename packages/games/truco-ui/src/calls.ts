@@ -1,5 +1,5 @@
 import type { Action } from "@hexdev/truco-engine";
-import { CALL_LABELS } from "./strings.js";
+import { CALL_LABELS, TABLE_STRINGS } from "./strings.js";
 
 /** Every call this row can label — deliberately excludes `play-card`, which
  * renders on the hand itself (tapping a card), not as a call button. */
@@ -9,7 +9,7 @@ function labelFor(action: Action): string | null {
   if (action.type === "respond-truco" || action.type === "respond-envido") {
     return action.response === "quiero" ? CALL_LABELS.quiero : CALL_LABELS.noQuiero;
   }
-  if (action.type === "reveal-envido") return CALL_LABELS.revealEnvido;
+  if (action.type === "declare-envido") return action.declaration === "points" ? TABLE_STRINGS.declareMine : TABLE_STRINGS.sonBuenas;
   return null; // play-card — not a "call"
 }
 

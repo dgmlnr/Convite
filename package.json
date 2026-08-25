@@ -10,8 +10,9 @@
     "test:redis": "vitest run --config vitest.redis.config.ts",
     "test:visual": "node scripts/visual-container.mjs",
     "test:visual:host": "node scripts/visual-host.mjs",
-    "dev:server": "tsc -b && HEXDEV_WIDGET_ORIGIN=http://localhost:2567 pnpm -r build && HEXDEV_ALLOW_DEV_DEFAULTS=true pnpm --filter @hexdev/server start",
+    "dev:server": "node scripts/dev-stack.mjs localhost",
     "dev:host": "node scripts/dev-host.mjs",
+    "dev:lan": "node scripts/dev-stack.mjs",
     "typecheck": "tsc -b",
     "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs"
   },

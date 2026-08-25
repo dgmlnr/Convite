@@ -20,6 +20,13 @@ export interface GameUiPayload {
    * reaches for it, and an older or partial payload that simply lacks the
    * field renders an untimed table rather than crashing. */
   readonly turnDeadline?: number | null;
+  /** The partner's private answer to a consult, and whether one is in flight.
+   * Rides on the payload rather than on the view because it never travels IN
+   * a view: `MatchRoom` sends it to the asking client alone, and a redacted
+   * view able to carry it would carry it to everyone. Optional for the same
+   * reason `turnDeadline` is — an older payload simply has no answer to
+   * report, which renders a table with no question outstanding. */
+  readonly consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean };
 }
 
 export interface GameUiEntry {
@@ -29,7 +36,13 @@ export interface GameUiEntry {
    * between two different matches sharing one widget session. `onPlayAgain`
    * is optional: the fallback "connection is live" path has nowhere to
    * return to and never renders a match-over overlay in the first place. */
-  createRenderer(): (container: HTMLElement, payload: GameUiPayload, dispatch: (action: unknown) => void, onPlayAgain?: () => void) => void;
+  createRenderer(): (
+    container: HTMLElement,
+    payload: GameUiPayload,
+    dispatch: (action: unknown) => void,
+    onPlayAgain?: () => void,
+    onLeaveMatch?: () => void,
+  ) => void;
 }
 
 /**
@@ -47,7 +60,7 @@ export interface GameUiEntry {
 function createTrucoRenderer(): GameUiEntry["createRenderer"] {
   return () => {
     const render = createMatchTableRenderer();
-    return (container, payload, dispatch, onPlayAgain) => {
+    return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
       render(
         container,
         payload.view as PlayerView,
@@ -58,6 +71,13 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
           onPlayAgain,
         },
         payload.turnDeadline ?? null,
+        // Two different departures, deliberately NOT the same callback:
+        // `onPlayAgain` fires on a match that is already over, while this one
+        // abandons a match still in progress and has to tell the server so
+        // (MatchConnection.quit) — otherwise the table sits out the full
+        // reconnection window waiting for someone who chose to leave.
+        onLeaveMatch,
+        payload.consult,
       );
     };
   };

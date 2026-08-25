@@ -64,6 +64,17 @@ function dealtMatch(): MatchState {
   return withScore1v1(startHand(base, FIXED_DEAL));
 }
 
+/** The same deal with the OPPONENT as mano, for the pending-call shot alone.
+ * Opening a call is taking the floor and the floor starts with the mano
+ * (truco-engine's `getLegalTrucoActions`), so a table where the rival's truco
+ * is WAITING ON the local player needs the rival seated as mano. Every other
+ * baseline here keeps `dealtMatch`'s own dealer, because they are about the
+ * local player holding the turn. */
+function dealtMatchOpponentMano(): MatchState {
+  const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 0 });
+  return withScore1v1(startHand(base, FIXED_DEAL));
+}
+
 function dealtTeamMatch(): MatchState {
   const base = createTeamMatch({ seatOrder: [SELF, OPPONENT, PARTNER, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 });
   return withScore2v2(startHand(base, FIXED_DEAL_4));
@@ -150,7 +161,7 @@ describe("visual: the game table at the wide/ultra container tiers (VB-3 — new
 
   it("wide (960px), a pending truco call: the same deal table-truco-pending captures, banner lane + reserved action-bar row both in flow (PR5)", async () => {
     const container = await mountedContainer(960);
-    const called = applyAction(dealtMatch(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
+    const called = applyAction(dealtMatchOpponentMano(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
     if (!called.ok) throw new Error(`visual fixture setup: illegal action — ${called.violation}`);
     const view = getViewFor(called.state, SELF);
     const legalActions = getLegalActions(called.state, SELF);

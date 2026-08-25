@@ -38,6 +38,35 @@ describe("joinMatchFromReservation — the client's half of the lobby hand-off (
     expect(client.room.left).toEqual([false]);
   });
 
+  it("quit() tells the room it is a decision BEFORE closing — the order is the whole mechanism", async () => {
+    const client = createFakeClient();
+    const connection = await joinMatchFromReservation(client, { roomId: "match-1" });
+
+    await connection.quit();
+
+    // Sent first, on a socket that is still open: MatchRoom.handleQuit hands
+    // the seat to a bot right then, which is what makes the close that
+    // follows skip the reconnection window. Reversed, the server would see an
+    // ordinary disconnect and hold the seat for ~30s — the exact wait this
+    // exists to remove.
+    expect(client.room.sent).toEqual([{ type: "quit", payload: {} }]);
+    // And the close itself stays on the fast path: the server has already
+    // acted, so there is nothing to wait for it to confirm.
+    expect(client.room.left).toEqual([false]);
+  });
+
+  it("leave() alone never sends quit — a teardown is not a decision to abandon the match", async () => {
+    const client = createFakeClient();
+    const connection = await joinMatchFromReservation(client, { roomId: "match-1" });
+
+    await connection.leave();
+
+    // The distinction this whole feature rests on: closing the connection
+    // (a reload, a teardown, a lost network) must still get the reconnection
+    // window. Only an explicit quit gives it up.
+    expect(client.room.sent).toEqual([]);
+  });
+
   it("leave(true) still honors an EXPLICIT caller override — never silently forces the fast path when the caller specifically wants the graceful notify-server leave", async () => {
     const client = createFakeClient();
     const connection = await joinMatchFromReservation(client, { roomId: "match-1" });

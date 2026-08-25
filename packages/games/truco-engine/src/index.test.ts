@@ -41,7 +41,9 @@ describe("truco-engine public API (node)", () => {
   it("escalates and declines the truco chain through the package's public entry point", () => {
     const playerA = "player-a" as PlayerId;
     const playerB = "player-b" as PlayerId;
-    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    // dealerSeat 1 -> playerA is the mano, which is who calls below: opening
+    // a call is taking the floor (truco-chain.ts), and the floor starts there.
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15, dealerSeat: 1 });
     const hand = startHand(match, [[], []]);
 
     const called = applyAction(hand, { type: "call-truco", playerId: playerA, level: "truco" });
@@ -59,7 +61,10 @@ describe("truco-engine public API (node)", () => {
   it("calls envido and computes envido points through the package's public entry point", () => {
     const playerA = "player-a" as PlayerId;
     const hand = startHand(
-      createHeadToHeadMatch({ playerAId: playerA, playerBId: "player-b" as PlayerId, pointsToWin: 15 }),
+      // dealerSeat 1 makes playerA the mano, which is who may open an envido:
+      // taking the floor starts with the mano (envido-chain.ts). The default
+      // of 0 would have this smoke test opening out of turn.
+      createHeadToHeadMatch({ playerAId: playerA, playerBId: "player-b" as PlayerId, pointsToWin: 15, dealerSeat: 1 }),
       [[], []],
     );
     const called = applyAction(hand, { type: "call-envido", playerId: playerA, level: "envido" });
@@ -96,7 +101,9 @@ describe("truco-engine public API (node)", () => {
   it("reports the match winner once a team's score reaches the target through the package's public entry point", () => {
     const playerA = "player-a" as PlayerId;
     const playerB = "player-b" as PlayerId;
-    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    // dealerSeat 1 -> playerA is the mano, which is who calls below: opening
+    // a call is taking the floor (truco-chain.ts), and the floor starts there.
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15, dealerSeat: 1 });
     const oneCallFromTarget = { ...match, teams: [{ ...match.teams[0]!, score: 14 }, match.teams[1]!] };
     const hand = startHand(oneCallFromTarget, [[], []]);
     const called = applyAction(hand, { type: "call-truco", playerId: playerA, level: "truco" });

@@ -33,7 +33,32 @@ export interface MatchConnection<TView = unknown> {
   onActionRejected(callback: (violation: RuleViolation) => void): Unsubscribe;
   onDisconnected(callback: (code: number, reason?: string) => void): Unsubscribe;
   sendAction(action: ErasedAction): void;
+  /**
+   * Send an action AND ask to be told what the game makes of it, privately.
+   *
+   * Separate from `sendAction` because the two are not the same request: this
+   * one is a question, and a question expects an answer addressed to the
+   * asker alone. Everything else about it is identical — same authentication,
+   * same legality, same rejection path through `onActionRejected` — so a
+   * refused consult is refused exactly like any other action.
+   */
+  sendConsult(action: ErasedAction): void;
+  /** Fires on every `"consult-advice"` message: the private answer to a
+   * consult this client sent. Never broadcast, so it arrives only here. */
+  onConsultAdvice(callback: (advice: unknown) => void): Unsubscribe;
   leave(consented?: boolean): Promise<void>;
+  /**
+   * Leave the match ON PURPOSE — the player chose to walk away, as opposed
+   * to a reload, a teardown or a lost connection.
+   *
+   * Distinct from `leave()` because the SERVER has to be able to tell them
+   * apart: `MatchRoom.onLeave` holds a departing seat open for its
+   * reconnection window, which is right for a drop and wrong for a decision
+   * — the remaining players would wait out a window for someone who already
+   * walked. This announces the intent while the socket is still open, so the
+   * room hands the seat to a bot at once, and only then closes.
+   */
+  quit(): Promise<void>;
 }
 
 function wrapMatchRoom<TView>(room: Awaited<ReturnType<ClientLike["join"]>>): MatchConnection<TView> {
@@ -52,6 +77,8 @@ function wrapMatchRoom<TView>(room: Awaited<ReturnType<ClientLike["join"]>>): Ma
       };
     },
     sendAction: (action) => room.send("action", action),
+    sendConsult: (action) => room.send("consult", action),
+    onConsultAdvice: (callback) => room.onMessage<{ readonly advice: unknown }>("consult-advice", (message) => { callback(message.advice); }),
     // Defaults to `false`, the OPPOSITE of real @colyseus/sdk `Room.leave`'s
     // own default (`true`). Found running this live, not assumed: `true`
     // sends a LEAVE_ROOM protocol message and waits for the SERVER to close
@@ -67,6 +94,14 @@ function wrapMatchRoom<TView>(room: Awaited<ReturnType<ClientLike["join"]>>): Ma
     // promise resolves, not what the server does. A caller that specifically
     // wants the graceful, server-notified leave can still pass `true`.
     leave: (consented = false) => room.leave(consented).then(() => undefined),
+    // Send first, close second — see the interface docstring. The payload is
+    // empty on purpose: the room already knows which seat this connection
+    // holds, and a client-supplied seat would be a claim to validate rather
+    // than a fact to read.
+    quit: async () => {
+      room.send("quit", {});
+      await room.leave(false);
+    },
   };
 }
 

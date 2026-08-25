@@ -45,7 +45,18 @@ export type EnvidoCallLevel = "envido" | "envidoEnvido" | "realEnvido" | "faltaE
 export type EnvidoState =
   | { readonly status: "none" }
   | { readonly status: "pending"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId }
-  | { readonly status: "accepted"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly acceptedValue: number }
+  | { readonly status: "accepted"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly acceptedValue: number;
+      /** The declaration round IN PROGRESS, mano-rotation order, oldest
+       * first. Empty the instant the envido is accepted, one entry longer per
+       * `declare-envido`, and gone once the round ends and the state moves to
+       * `revealed`.
+       *
+       * It lives on `accepted` rather than being computed all at once at the
+       * end because the round is something players DO, one at a time — and a
+       * player who has not spoken yet must have their number nowhere in
+       * state, which is the redaction property an all-at-once resolution
+       * could only offer by not existing until it was over. */
+      readonly declarations: readonly EnvidoDeclaration[] }
   | { readonly status: "declined"; readonly calls: readonly EnvidoCallLevel[]; readonly callingTeamId: TeamId; readonly decliningTeamId: TeamId }
   | { readonly status: "revealed"; readonly calls: readonly EnvidoCallLevel[]; readonly winningTeamId: TeamId; readonly awardedValue: number;
       /** Mano-rotation order, oldest first. Present ONLY on `revealed` — an
@@ -148,7 +159,11 @@ export type CallEvent =
   | { readonly kind: "truco-response"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly response: "quiero" | "no-quiero" }
   | { readonly kind: "envido-call"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly level: EnvidoCallLevel }
   | { readonly kind: "envido-response"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly response: "quiero" | "no-quiero" }
-  | { readonly kind: "envido-reveal"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number };
+  /** One player saying their tantos, or conceding with "son buenas".
+   * MARKER-ONLY like every other event here: the NUMBER stays in
+   * `envido.declarations` and never travels in the log (D-1/D-5), so there is
+   * exactly one copy of it. */
+  | { readonly kind: "envido-declaration"; readonly playerId: PlayerId; readonly teamId: TeamId; readonly seat: number; readonly declaration: "points" | "sonBuenas" };
 
 /** State materialized once a hand's deal has been dealt (design §4). */
 export interface HandState {

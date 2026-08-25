@@ -144,11 +144,51 @@ async function waitForArt(el: HTMLElement): Promise<void> {
   await Promise.all(images.map((img) => img.decode()));
 }
 
+/**
+ * Whoever currently holds the floor, and the opponent who would answer them.
+ *
+ * Opening a truco is taking the floor, so it belongs to the seat on turn —
+ * and after a trick resolves that seat is its WINNER, which these chains do
+ * not (and should not) hard-code. Naming the caller literally made every one
+ * of them depend on which card happened to win, which is exactly the kind of
+ * fixture that breaks for a reason unrelated to what it measures.
+ */
+function openTruco(state: MatchState): { readonly caller: PlayerId; readonly answerer: PlayerId } {
+  const hand = state.hand;
+  if (hand === undefined || hand === null) throw new Error("test setup: no hand in progress");
+  const caller = state.players.find((player) => player.seat === hand.turnSeat);
+  if (caller === undefined) throw new Error("test setup: nobody holds the turn");
+  const answerer = state.players.find((player) => player.teamId !== caller.teamId);
+  if (answerer === undefined) throw new Error("test setup: the caller has no opponent");
+  return { caller: caller.id, answerer: answerer.id };
+}
+
 function dispatch(state: MatchState, action: Action): MatchState {
   const result = applyAction(state, action);
   if (!result.ok) throw new Error(`test setup: illegal action ${JSON.stringify(action)} — ${result.violation}`);
   return result.state;
 }
+/**
+ * The whole declaration round, everybody saying their number.
+ *
+ * A reveal used to be ONE action that settled the envido for every seat. It
+ * is a round now — one `declare-envido` per player, from the mano around the
+ * table. Declaring for everybody reproduces the old outcome exactly (the
+ * highest number wins either way), which is what keeps these fixtures
+ * measuring what they always measured. Conceding is left out on purpose:
+ * "son buenas" ends the round for the conceding TEAM, which is a different
+ * scenario and belongs to the engine's own tests.
+ */
+function declareAll(state: MatchState): MatchState {
+  let next = state;
+  for (let i = 0; i < next.players.length; i += 1) {
+    const seat = (next.hand!.manoSeat + i) % next.players.length;
+    const who = next.players.find((player) => player.seat === seat)!;
+    next = dispatch(next, { type: "declare-envido", playerId: who.id, declaration: "points" });
+  }
+  return next;
+}
+
 
 function findPlayCard(state: MatchState, playerId: PlayerId): Action | undefined {
   return getLegalActions(state, playerId).find((action) => action.type === "play-card");
@@ -283,12 +323,62 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * the old numbers still written here. They are updated because a constant that
  * names a height nothing measures any more is a slow lie, not because anything
  * was red. The property that makes them portable at all now has its own fence:
- * relation-label-line-box.browser.test.ts. */
+ * relation-label-line-box.browser.test.ts.
+ *
+ *
+ * ONE BANNER RESERVE FOR EVERY TIER (375 both: -4; 700 1v1: -20; 960 1v1: -24;
+ * 1280 1v1: -28). `--hx-band-banner` used to be a ladder of five literals
+ * (60/76/80/84/112) because the pending-call pill WRAPPED, and wrapped
+ * differently at every width. That pill no longer paints in this lane at all
+ * -- it moved onto the seat that spoke (.hexdev-truco-seat-call) -- and the
+ * two occupants left over never wrap: measured in real Chromium at
+ * 375/700/960/1280/1550 in BOTH seat counts, the senas strip is 50px and the
+ * end-of-hand banner 47px, flat. The ladder collapses to one 56px reserve
+ * (50px worst case + ~12% for font variance), and each row here drops by
+ * exactly the reserve that tier used to carry.
+ *   375  1v1: 587.34375 -> 561.34375   375  2v2: 587.34375 -> 583.34375
+ *   700  1v1: 690.96875 -> 648.96875
+ *   960  1v1: 817.375   -> 771.375
+ *   1280 1v1: 910.59375 -> 860.59375
+ * 1v1 drops a further 22px on top of that because the reserve splits ONCE, by
+ * SEAT COUNT: `table.ts` mounts exactly two things into the lane, and the
+ * señas strip (50px) is 2v2-only -- there is no partner to signal to in 1v1,
+ * whose lane therefore holds the 29.28px end-of-hand banner alone and reserves
+ * 34px. That split is the one this token is allowed; splitting by WIDTH is
+ * what banner-lane-reserve.browser.test.ts now rejects, in both directions
+ * (too small clips the strip, too large is this same silent waste).
+ * THE 2v2 ROWS AT 700/960/1280 DO NOT MOVE, and that is the interesting half:
+ * those totals are set by the side column (three backs stacked vertically),
+ * which is taller than the centre column's banner-plus-trick stack, so the
+ * banner lane has no reach into them -- measured, not reasoned, and the same
+ * fact `--hx-fit-residual`'s own comment in table-styles.ts leans on for the
+ * 2v2 fullscreen fit. Which is also why 2v2 fullscreen gained nothing here:
+ * that layout was already AT its fit limit (table-viewport-fit rejects -34px
+ * where -28px passes), so the residual absorbs the 28px the banner gave up
+ * instead of spending it on bigger cards.
+ * ULTRA 2v2, THE ACTION BAR STOPS STACKING (1280 2v2: 1043.515625 ->
+ * 983.515625). The two strips -- calls, then senas -- stacked at every tier
+ * from 640px up, which the 640px block introduced when the bar really was too
+ * narrow to seat both. Measured at ultra it no longer is: the calls row asks
+ * 166px and senas 102px inside a bar 955px wide, so the stack was spending a
+ * whole extra band of HEIGHT to buy width that was already there. From 1280px
+ * up they sit side by side and --hx-band-action-total drops from
+ * calc(56px * 2 + 4px) back to one 56px strip.
+ *
+ * The delta is that 60px and nothing else, which is the point of re-locking it
+ * here rather than widening the tolerance: this row is the only one that moves
+ * (375/700/960 keep the stacked bar, and every 1v1 row is untouched because
+ * --hx-band-action-total was only ever overridden for 2v2), and it moves by
+ * exactly the band the felt got back. A height that changed by some other
+ * amount would mean this change reached something it had no business
+ * reaching. Note that what this file actually fences -- the height never
+ * MOVING across a played hand -- stayed green throughout: expectStableHeights
+ * passed, and only this pinned constant went stale. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 587.34375, "2v2": 587.34375 },
-  700: { "1v1": 690.96875, "2v2": 837.328125 },
-  960: { "1v1": 817.375, "2v2": 873.328125 },
-  1280: { "1v1": 910.59375, "2v2": 1043.515625 },
+  375: { "1v1": 561.34375, "2v2": 583.34375 },
+  700: { "1v1": 648.96875, "2v2": 837.328125 },
+  960: { "1v1": 771.375, "2v2": 873.328125 },
+  1280: { "1v1": 860.59375, "2v2": 983.515625 },
 };
 
 function expectExactHeight(actual: number, expected: number, label: string): void {
@@ -321,7 +411,7 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
     await recordRender(state); // banner clears — accepted, awaiting reveal
 
-    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    state = declareAll(state);
     await recordRender(state); // envido revealed, points awarded, still no banner
 
     state = playNextCard(state, SELF, OPPONENT); // mano leads trick 1
@@ -330,10 +420,11 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     state = playNextCard(state, SELF, OPPONENT); // trick 1 resolves
     await recordRender(state); // trick-feedback line now announces the winner
 
-    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    const opening = openTruco(state);
+    state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
     await recordRender(state); // pending-call banner: "Truco"
 
-    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    state = dispatch(state, { type: "respond-truco", playerId: opening.answerer, response: "quiero" });
     await recordRender(state); // banner clears again
 
     let guard = 0;
@@ -365,10 +456,11 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     );
     await recordRender(state); // baseline
 
-    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    const opening = openTruco(state);
+    state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
     await recordRender(state); // pending-call banner: "Truco"
 
-    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "no-quiero" });
+    state = dispatch(state, { type: "respond-truco", playerId: opening.answerer, response: "no-quiero" });
     await recordRender(state); // pending clears, hand-outcome banner: "Ganaste la mano"
 
     expectStableHeights(heights);
@@ -401,7 +493,7 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
     await recordRender(state); // banner clears — accepted, awaiting reveal
 
-    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    state = declareAll(state);
     await recordRender(state); // envido revealed, still no banner
 
     const allFourSeats = [SELF, OPPONENT, TEAMMATE, OPPONENT_2] as const;
@@ -414,10 +506,11 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
       await recordRender(state);
     }
 
-    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    const opening = openTruco(state);
+    state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
     await recordRender(state); // pending-call banner: "Truco"
 
-    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    state = dispatch(state, { type: "respond-truco", playerId: opening.answerer, response: "quiero" });
     await recordRender(state); // banner clears again
 
     let guard = 0;
@@ -486,12 +579,13 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     await recordRender(state);
     state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
     await recordRender(state);
-    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    state = declareAll(state);
     await recordRender(state);
 
-    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    const opening = openTruco(state);
+    state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
     await recordRender(state);
-    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    state = dispatch(state, { type: "respond-truco", playerId: opening.answerer, response: "quiero" });
     await recordRender(state);
     state = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "retruco" }); // only the non-calling team may escalate
     await recordRender(state);
@@ -547,12 +641,13 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     await recordRender(state);
     state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
     await recordRender(state);
-    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
+    state = declareAll(state);
     await recordRender(state);
 
-    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
+    const opening = openTruco(state);
+    state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
     await recordRender(state);
-    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    state = dispatch(state, { type: "respond-truco", playerId: opening.answerer, response: "quiero" });
     await recordRender(state);
     state = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "retruco" }); // team B escalates
     await recordRender(state);
@@ -628,7 +723,7 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
   // reserve for the anchors/trick-area/hand, and it never forces additional
   // row growth. A future change to either constant could invert that
   // inequality silently; this fence is what would go RED first if it did.
-  it("PR4: the felt's height with an empty call log matches its height with a fully-escalated 9-entry call chain — the log rail (in flow at wide/ultra) contains its own content instead of growing the felt", async () => {
+  it("PR4: the felt's height with an empty call log matches its height with a fully-escalated 10-entry call chain — the log rail (in flow at wide/ultra) contains its own content instead of growing the felt", async () => {
     const el = mountedContainer(width);
     const render = createMatchTableRenderer();
 
@@ -642,9 +737,10 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
 
     state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
     state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
-    state = dispatch(state, { type: "reveal-envido", playerId: SELF });
-    state = dispatch(state, { type: "call-truco", playerId: SELF, level: "truco" });
-    state = dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
+    state = declareAll(state);
+    const opening = openTruco(state);
+    state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
+    state = dispatch(state, { type: "respond-truco", playerId: opening.answerer, response: "quiero" });
     state = dispatch(state, { type: "call-truco", playerId: OPPONENT, level: "retruco" }); // only the non-calling team may escalate
     state = dispatch(state, { type: "respond-truco", playerId: SELF, response: "quiero" });
     state = dispatch(state, { type: "call-truco", playerId: SELF, level: "valeCuatro" }); // escalated to the ceiling
@@ -653,7 +749,7 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     await waitForArt(el);
     const fullLogHeight = el.getBoundingClientRect().height; // 9 call-log entries + the tantos row
 
-    expect(el.querySelectorAll(".hexdev-truco-call-log-entry").length, "sanity: the log really did grow to its full chain").toBe(9);
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry").length, "sanity: the log really did grow to its full chain").toBe(10);
     expect(
       Math.abs(fullLogHeight - emptyLogHeight),
       `empty-log height ${emptyLogHeight}px vs fully-escalated-chain height ${fullLogHeight}px at ${width}px`,

@@ -93,9 +93,20 @@ describe("getLegalActions/applyAction — play-card turn validation", () => {
 
     expect(accepted.hand?.envido.status).toBe("accepted");
     expect(getLegalActions(accepted, playerA).some((a) => a.type === "play-card")).toBe(false);
+
+    // And still blocked HALFWAY THROUGH the round, which is the part the
+    // all-at-once reveal could not express: one player has said their tantos
+    // and the other has not, so the envido is neither settled nor gone.
+    const halfway = apply(accepted, { type: "declare-envido", playerId: playerA, declaration: "points" });
+    expect(halfway.hand?.envido.status, "one declaration does not end a round").toBe("accepted");
+    expect(getLegalActions(halfway, playerB).some((a) => a.type === "play-card")).toBe(false);
     expect(getLegalActions(accepted, playerB).some((a) => a.type === "play-card")).toBe(false);
-    // The only thing legal for anyone is resolving the reveal — never a raw play-card.
-    expect(getLegalActions(accepted, playerA)).toEqual([{ type: "reveal-envido", playerId: playerA }]);
+    // The only thing legal is declaring — never a raw play-card. TWO options
+    // now, because saying your tantos and conceding are both real choices.
+    expect(getLegalActions(accepted, playerA)).toEqual([
+      { type: "declare-envido", playerId: playerA, declaration: "points" },
+      { type: "declare-envido", playerId: playerA, declaration: "sonBuenas" },
+    ]);
 
     const result = applyAction(accepted, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
     expect(result.ok).toBe(false);

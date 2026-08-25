@@ -6,6 +6,8 @@ import type { PlayerId } from "./ids.js";
 import { getMatchWinner } from "./match.js";
 import type { CallEvent, MatchState, Player, TrucoCallLevel, TrucoState } from "./match.js";
 import { applySenaAction, getLegalSenaActions } from "./senas.js";
+import { applyConsultAction, getLegalConsultActions } from "./consult.js";
+import type { ConsultPartnerAction } from "./consult.js";
 import type { SenaAction } from "./senas.js";
 import { DECLINE_VALUE } from "./truco-scoring.js";
 
@@ -25,7 +27,7 @@ export interface RespondTrucoAction {
 export type TrucoAction = CallTrucoAction | RespondTrucoAction;
 
 /** Every action the reducer pair accepts (spec: "Pure, Deterministic Engine API"). PR5 widened truco-only to truco+envido; this card-play slice widens it again the same way, never forking a parallel reducer. Señas widen it once more, same convention. */
-export type Action = TrucoAction | EnvidoAction | PlayCardAction | SenaAction;
+export type Action = TrucoAction | EnvidoAction | PlayCardAction | SenaAction | ConsultPartnerAction;
 
 export type ApplyResult =
   | { readonly ok: true; readonly state: MatchState }
@@ -74,7 +76,19 @@ function getLegalTrucoActions(state: MatchState, playerId: PlayerId): readonly T
   const truco = hand.truco;
 
   if (truco.status === "none") {
-    return [{ type: "call-truco", playerId, level: "truco" }];
+    // OPENING IS TAKING THE FLOOR, so it belongs to whoever holds it — the
+    // mano first, then each seat as the play order reaches it. `turnSeat` IS
+    // that floor: it starts at the mano and moves only when somebody plays.
+    // Reported from real 2v2 play against bots: "en lugar de cantarlo la
+    // mano, lo canta el compañero sin que sea su turno".
+    //
+    // ESCALATING IS NOT OPENING, which is why the gate sits here and not on
+    // the `accepted` branch below. A retruco is the answering side's reply to
+    // a call that has already been accepted, and an unanswered call freezes
+    // `turnSeat` — so gating a reply on the turn would refuse the very move
+    // the chain exists to allow. Same split, and for the same reason, as
+    // `canOpenEnvido` in envido-chain.ts.
+    return player.seat === hand.turnSeat ? [{ type: "call-truco", playerId, level: "truco" }] : [];
   }
 
   if (truco.status === "pending") {
@@ -110,6 +124,7 @@ export function getLegalActions(state: MatchState, playerId: PlayerId): readonly
     ...getLegalEnvidoActions(state, playerId),
     ...getLegalCardPlayActions(state, playerId),
     ...getLegalSenaActions(state, playerId),
+    ...getLegalConsultActions(state, playerId),
   ];
 }
 
@@ -192,5 +207,6 @@ export function applyAction(state: MatchState, action: Action): ApplyResult {
   if (action.type === "call-truco" || action.type === "respond-truco") return applyTrucoAction(state, action);
   if (action.type === "play-card") return applyCardPlayAction(state, action);
   if (action.type === "send-sena") return applySenaAction(state, action);
+  if (action.type === "consult-partner") return applyConsultAction(state, action);
   return applyEnvidoAction(state, action);
 }

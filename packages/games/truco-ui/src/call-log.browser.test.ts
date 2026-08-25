@@ -50,7 +50,7 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
       { kind: "envido-call", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, level: "envido" },
       { kind: "truco-call", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, level: "truco" },
       { kind: "envido-response", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, response: "quiero" },
-      { kind: "envido-reveal", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0 },
+      { kind: "envido-declaration", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, declaration: "points" },
       { kind: "truco-response", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, response: "no-quiero" },
     ];
 
@@ -61,7 +61,12 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
       expect.stringContaining("Envido"),
       expect.stringContaining("Truco"),
       expect.stringContaining("Quiero"),
-      expect.stringContaining("Mostró el envido"),
+      // A declaration reads as the NUMBER, not as a phrase: by the time it
+      // reaches the log the player has said it out loud. The fixture's
+      // `envido` here is `none`, so there is no declarations list to read the
+      // figure from and the entry carries only its speaker — which is the
+      // honest rendering of "we were not told".
+      expect.stringContaining("Vos"),
       expect.stringContaining("No quiero"),
     ]);
   });
@@ -107,12 +112,17 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
     expect(el.querySelector(".hexdev-truco-call-log-tantos")).toBeNull();
   });
 
-  it("renders the tantos row once envido is revealed: mano's entry first with a 'Mano' tag, a sonBuenas entry with NO number", () => {
+  it("each declaration is its own entry, in the order it was said, with the number inline and none on a concession", () => {
+    // THE SHAPE CHANGED WITH THE RULES. Declarations used to arrive as one
+    // reveal event carrying a block of rows; the round is played one player
+    // at a time now, so each declaration is an ordinary entry in the same
+    // chronology as everything else — which is what the panel was always for.
     const el = freshHost();
     const events: readonly CallEvent[] = [
       { kind: "envido-call", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, level: "envido" },
       { kind: "envido-response", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, response: "quiero" },
-      { kind: "envido-reveal", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1 },
+      { kind: "envido-declaration", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, declaration: "points" },
+      { kind: "envido-declaration", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, declaration: "sonBuenas" },
     ];
     const revealed: EnvidoState = {
       status: "revealed",
@@ -128,19 +138,24 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
 
     renderCallLog(el, { events, envido: revealed, manoSeat: 1, selfSeat: 0, positions: POSITIONS_1V1 });
 
-    const tantos = el.querySelector<HTMLElement>(".hexdev-truco-call-log-tantos");
-    expect(tantos).not.toBeNull();
-    const rows = [...tantos!.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-tantos-entry")];
-    expect(rows).toHaveLength(2);
-    // mano (seat 1) is listed first, exactly the declarations array's own order.
-    expect(rows[0]!.dataset.seat).toBe("1");
-    expect(rows[0]!.textContent).toContain("31");
-    expect(rows[0]!.querySelector(".hexdev-truco-call-log-mano-tag")?.textContent).toBe("Mano");
-    // sonBuenas (seat 0) carries no number anywhere in its rendered text.
-    expect(rows[1]!.dataset.seat).toBe("0");
-    expect(rows[1]!.textContent).toContain("Son buenas");
-    expect(rows[1]!.textContent).not.toMatch(/\d/);
-    expect(rows[1]!.querySelector(".hexdev-truco-call-log-mano-tag")).toBeNull();
+    const list = el.querySelector<HTMLElement>(".hexdev-truco-call-log-list")!;
+    const entries = [...list.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-entry")];
+    const declarations = entries.filter((entry) => (entry.textContent ?? "").match(/31|Son buenas/));
+    expect(declarations, "one entry per player who spoke").toHaveLength(2);
+
+    // Mano (seat 1) said 31 and said it FIRST — the events' own order.
+    expect(declarations[0]!.dataset.seat).toBe("1");
+    expect(declarations[0]!.textContent).toContain("31");
+
+    // The concession carries no number, and that is structural rather than
+    // cosmetic: a withheld declaration never materialises a `points` key
+    // (D-1), so there is nothing here to leak even by accident.
+    expect(declarations[1]!.dataset.seat).toBe("0");
+    expect(declarations[1]!.textContent).toContain("Son buenas");
+    expect(declarations[1]!.textContent).not.toMatch(/\d/);
+
+    // ONE scroller over everything: nothing is left outside the list.
+    expect(el.querySelector(".hexdev-truco-call-log-tantos"), "the pinned block is gone").toBeNull();
   });
 
   it("scrollCallLogToNewest leaves the inner list's scrollTop at its maximum once the host is attached to the document", () => {
@@ -192,11 +207,16 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
   // PR-4a review rider: `renderCallLog` is called on every table re-render
   // (table.ts), never only once — a stale entry from a PREVIOUS render must
   // never survive a second call with different data.
-  it("a second render on the SAME host fully replaces the first — no stale or duplicated nodes, and the tantos row disappears when no longer revealed", () => {
+  it("a second render on the SAME host fully replaces the first — no stale or duplicated nodes, and the declarations go with the hand that produced them", () => {
     const el = freshHost();
+    // The reveal EVENT is in this list on purpose. The declarations now hang
+    // off that entry, so a `revealed` envido with no matching event would
+    // render no numbers at all — a shape the engine cannot actually produce
+    // (envido-chain.ts appends the event and sets the state in one
+    // transition), and therefore not one worth fixturing.
     const firstEvents: readonly CallEvent[] = [
       { kind: "truco-call", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, level: "truco" },
-      { kind: "truco-response", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, response: "quiero" },
+      { kind: "envido-declaration", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, declaration: "points" },
     ];
     const firstRevealed: EnvidoState = {
       status: "revealed",
@@ -210,7 +230,10 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
     };
     renderCallLog(el, { events: firstEvents, envido: firstRevealed, manoSeat: 0, selfSeat: 0, positions: POSITIONS_1V1 });
     expect(el.querySelectorAll(".hexdev-truco-call-log-entry")).toHaveLength(2);
-    expect(el.querySelector(".hexdev-truco-call-log-tantos")).not.toBeNull();
+    // A declaration is an ordinary entry now — no special class, because it
+    // no longer carries a block of other people's numbers. Its own number is
+    // read from `envido.declarations` by seat, so the check is on the text.
+    expect([...el.querySelectorAll(".hexdev-truco-call-log-entry")].some((entry) => (entry.textContent ?? "").includes("28"))).toBe(true);
 
     // Second render: fewer events, envido no longer revealed for THIS hand
     // (design §2.3: the field is only present on the `revealed` variant —
@@ -221,7 +244,7 @@ describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => 
     const entries = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-entry")];
     expect(entries).toHaveLength(1); // never 3 (2 stale + 1 new) or 2 (1 stale + 1 new)
     expect(entries[0]!.textContent).toContain("Envido");
-    expect(el.querySelector(".hexdev-truco-call-log-tantos")).toBeNull(); // no longer revealed -> the row is gone, not just empty
+    expect(entries[0]!.textContent, "a fresh hand carries none of the last one's numbers").not.toMatch(/28/);
   });
 
   it("scrollCallLogToNewest is a no-op on a DETACHED node — exactly why it's a separate export from renderCallLog (design §5.2)", () => {
@@ -286,7 +309,7 @@ describe("the call-log panel has a real heading outline (WCAG 1.3.1)", () => {
       { declaration: "sonBuenas", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0 },
     ],
   };
-  const EVENTS: readonly CallEvent[] = [{ kind: "envido-reveal", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1 }];
+  const EVENTS: readonly CallEvent[] = [{ kind: "envido-declaration", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, declaration: "points" }];
 
   function renderRevealed(): HTMLElement {
     const el = freshHost();
@@ -294,20 +317,23 @@ describe("the call-log panel has a real heading outline (WCAG 1.3.1)", () => {
     return el;
   }
 
-  it("titles the panel with an H2 and its tantos section with a nested H3", () => {
+  it("titles the panel with ONE H2 — the declarations need no heading of their own now that they sit under the entry that produced them", () => {
     const el = renderRevealed();
 
     const panelTitle = el.querySelector<HTMLElement>(".hexdev-truco-call-log-title")!;
-    const tantosTitle = el.querySelector<HTMLElement>(".hexdev-truco-call-log-tantos-title")!;
     expect([panelTitle.tagName, panelTitle.textContent]).toEqual(["H2", "Cantos"]);
-    expect([tantosTitle.tagName, tantosTitle.textContent]).toEqual(["H3", "Tantos"]);
+    // The old H3 labelled a pinned section that no longer exists. A heading
+    // announcing a sub-list INSIDE one log entry would be structure that
+    // says more than the content does.
+    expect(el.querySelector(".hexdev-truco-call-log-tantos-title")).toBeNull();
+    expect(el.querySelectorAll("h2, h3")).toHaveLength(1);
   });
 
   it("paints both titles exactly as before — the shared rule owns every property a heading's UA default would otherwise supply", () => {
     ensureTableStyles(document);
     const el = renderRevealed();
 
-    for (const title of el.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-title, .hexdev-truco-call-log-tantos-title")) {
+    for (const title of el.querySelectorAll<HTMLElement>(".hexdev-truco-call-log-title")) {
       const style = getComputedStyle(title);
       expect([style.marginTop, style.marginBottom], `${title.tagName} margins`).toEqual(["0px", "0px"]);
       expect(style.fontWeight, `${title.tagName} weight`).toBe("700");
@@ -315,5 +341,64 @@ describe("the call-log panel has a real heading outline (WCAG 1.3.1)", () => {
       expect(style.fontSize, `${title.tagName} size`).toBe("11.2px");
     }
     document.getElementById(TABLE_STYLE_ID)?.remove();
+  });
+});
+
+/**
+ * The log's scrollbar is felt furniture too.
+ *
+ * This list is the ONE scroller a player looks at for minutes at a time, and
+ * it sat inside a dark, tenant-themed panel wearing whatever the operating
+ * system paints by default — a light grey bar with a light track, on a panel
+ * that is nearly black. Reported as "podría estar personalizado y acorde al
+ * estilo de la UI", and it is: everything else on this felt reads a token.
+ *
+ * Asserted through the STANDARD properties (`scrollbar-width` /
+ * `scrollbar-color`) rather than `::-webkit-scrollbar`. Chromium honours the
+ * standard ones and, once `scrollbar-color` is set, ignores the webkit
+ * pseudo-elements entirely — so declaring both would ship a rule that can
+ * never apply anywhere and would quietly rot. One mechanism, asserted.
+ */
+describe("the log's own scrollbar is styled, not the platform default", () => {
+  function mountedList(): HTMLElement {
+    const el = freshHost();
+    ensureTableStyles(document);
+    renderCallLog(el, {
+      events: [
+        { kind: "envido-call", playerId: "p" as PlayerId, teamId: TEAM_A, seat: 0, level: "envido" },
+        { kind: "envido-response", playerId: "q" as PlayerId, teamId: TEAM_B, seat: 1, response: "quiero" },
+      ],
+      envido: ENVIDO_NONE,
+      manoSeat: 0,
+      selfSeat: 0,
+      positions: POSITIONS_1V1,
+    });
+    const list = el.querySelector<HTMLElement>(".hexdev-truco-call-log-list");
+    if (list === null) throw new Error("fence setup: the log list did not render");
+    return list;
+  }
+
+  afterEach(() => {
+    document.getElementById(TABLE_STYLE_ID)?.remove();
+  });
+
+  it("asks for the thin variant rather than the platform's full-width bar", () => {
+    expect(getComputedStyle(mountedList()).scrollbarWidth).toBe("thin");
+  });
+
+  it("paints the thumb from a token and leaves the track to the panel underneath", () => {
+    const scrollbarColor = getComputedStyle(mountedList()).scrollbarColor;
+
+    expect(scrollbarColor, "the default is the one thing this must not be").not.toBe("auto");
+    // Two colours, thumb then track. Compared against the computed
+    // serialisation rather than the authored keyword: Chromium resolves
+    // `transparent` to `rgba(0, 0, 0, 0)`, so asserting the word would fail
+    // against a stylesheet that is perfectly correct.
+    const [thumb, track] = scrollbarColor.split(") ").map((part, index, parts) => (index < parts.length - 1 ? `${part})` : part));
+    expect(thumb, "the thumb is the felt's own green, not the platform's grey").toBe("rgba(101, 176, 138, 0.55)");
+    // Transparent on purpose: the panel it sits on already carries the
+    // surface, and a second opaque strip over it reads as a seam down the
+    // side of the log.
+    expect(track, "the track lets the panel underneath show through").toBe("rgba(0, 0, 0, 0)");
   });
 });

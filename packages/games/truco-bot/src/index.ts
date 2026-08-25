@@ -9,7 +9,8 @@ export { createNormalBot } from "./normal.js";
 export { createHardBot } from "./hard.js";
 export { sampleOpponentHand } from "./determinize.js";
 export { envidoPoints, handPower, scoreFollowingCardPlay } from "./heuristics.js";
-export { DEFAULT_THINKING_DELAY_MS, withThinkingDelay } from "./latency.js";
+export { DEFAULT_THINKING_DELAY_MS, SPOKEN_MOVE_DELAY_MS, withThinkingDelay } from "./latency.js";
+export { chooseEnvidoDeclaration } from "./declare-envido.js";
 export type { Sleep } from "./latency.js";
 
 /**

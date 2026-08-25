@@ -4,7 +4,24 @@ import { attachConsoleGuard } from "./support/console-guard.js";
 import { startSystem, type SystemHandle } from "./support/system.js";
 
 const MATCH_START_TIMEOUT_MS = 30_000;
-const ACTOR_WAIT_TIMEOUT_MS = 15_000;
+/**
+ * Deliberately generous, and deliberately NOT tied to how fast the bots
+ * think.
+ *
+ * This was 15s, a number that silently encoded the bots' own pace: in 2v2
+ * the human waits out a whole bot opening before their first playable turn,
+ * and three bots can chain an entire envido/truco/retruco exchange first —
+ * nine decisions in a row is an ordinary run. 15s cleared nine decisions at
+ * a 1000ms pause and stopped clearing them the moment that pause was tuned
+ * up, at which point the spec failed as "never got a real playable turn":
+ * a message that reads like a broken 2v2 room rather than a stale timer.
+ *
+ * The loop exits the instant a turn is playable, so a large budget costs
+ * nothing on a healthy run — it is only ever spent on a genuine hang. That
+ * is what this bound should mean, and pinning it to the bot's pace was what
+ * made it mean something else.
+ */
+const ACTOR_WAIT_TIMEOUT_MS = 60_000;
 const POLL_INTERVAL_MS = 200;
 
 /**

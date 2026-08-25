@@ -1,4 +1,4 @@
-import type { CallEvent, EnvidoState } from "@hexdev/truco-engine";
+import type { CallEvent, EnvidoDeclaration, EnvidoState } from "@hexdev/truco-engine";
 import type { TableAnchor } from "./seat-position.js";
 import { CALL_LABELS, TABLE_STRINGS } from "./strings.js";
 
@@ -12,9 +12,10 @@ import { CALL_LABELS, TABLE_STRINGS } from "./strings.js";
  */
 export interface CallLogInput {
   readonly events: readonly CallEvent[];
-  /** The tantos row reads only the `revealed` variant (spec: "Mano-Ordered
-   * Envido Row" — hidden entirely otherwise, which the type makes natural:
-   * `declarations` exists only on `revealed`). */
+  /** Read only in its `revealed` variant (spec: "Mano-Ordered Envido Row"),
+   * which the type makes natural: `declarations` exists only there. Its
+   * numbers reach the log through the reveal EVENT's own entry — the event
+   * itself carries none, and must not (D-1/D-5). */
   readonly envido: EnvidoState;
   readonly manoSeat: number;
   readonly selfSeat: number;
@@ -31,7 +32,7 @@ export interface CallLogInput {
  * opposite, at `top`), so `left`/`right` map directly to "Rival izq."/"Rival
  * der." regardless of seat count.
  */
-function speakerLabel(seat: number, input: CallLogInput): string {
+export function speakerLabel(seat: number, input: CallLogInput): string {
   if (seat === input.selfSeat) return TABLE_STRINGS.speakerSelf;
   const anchor = input.positions.get(seat) ?? "top";
   if (anchor === "left") return TABLE_STRINGS.speakerOpponentLeft;
@@ -46,8 +47,14 @@ function speakerLabel(seat: number, input: CallLogInput): string {
  * legal-action buttons; this one covers the PAST-TENSE log instead. A reveal
  * carries no points/winner (design §2.1: "marker only"), so it gets its own
  * past-tense phrase, `TABLE_STRINGS.showedEnvido`.
+ *
+ * Exported for `seat-call-notice.ts`, which shows the SAME words over the
+ * caller's own cards at the moment they are said. That notice is the moment
+ * and this panel is the record, but the two must never disagree about what
+ * was called -- so they share one function rather than keeping a second copy
+ * of the same Spanish in sync by hand.
  */
-function callEventText(event: CallEvent): string {
+export function callEventText(event: CallEvent, envido?: EnvidoState): string {
   switch (event.kind) {
     case "truco-call":
       return CALL_LABELS[event.level];
@@ -57,9 +64,24 @@ function callEventText(event: CallEvent): string {
       return CALL_LABELS[event.level];
     case "envido-response":
       return event.response === "quiero" ? CALL_LABELS.quiero : CALL_LABELS.noQuiero;
-    case "envido-reveal":
-      return TABLE_STRINGS.showedEnvido;
+    case "envido-declaration":
+      // THE NUMBER COMES FROM `envido`, NEVER FROM THE EVENT. The event is
+      // marker-only by design (D-1/D-5) so the tantos have exactly one home:
+      // the structurally-redacted declarations list. A concession has no
+      // number to find, and must not — that is what keeps "son buenas"
+      // genuinely unknowable rather than merely unrendered.
+      return event.declaration === "sonBuenas" ? TABLE_STRINGS.sonBuenas : declaredPointsAt(event.seat, envido);
   }
+}
+
+/** The number this seat said, from whichever variant currently holds the
+ * round: `accepted` while it is in progress, `revealed` once it is over. */
+function declaredPointsAt(seat: number, envido: EnvidoState | undefined): string {
+  const declarations = envido === undefined ? [] : envido.status === "accepted" || envido.status === "revealed" ? envido.declarations : [];
+  const said = declarations.find(
+    (entry): entry is Extract<EnvidoDeclaration, { declaration: "points" }> => entry.seat === seat && entry.declaration === "points",
+  );
+  return said === undefined ? "" : String(said.points);
 }
 
 function buildEntry(event: CallEvent, input: CallLogInput): HTMLElement {
@@ -79,60 +101,21 @@ function buildEntry(event: CallEvent, input: CallLogInput): HTMLElement {
 
   const text = entry.appendChild(document.createElement("span"));
   text.className = "hexdev-truco-call-log-text";
-  text.textContent = callEventText(event);
+  text.textContent = callEventText(event, input.envido);
+
+  // The numbers belong to THIS event, so they hang off it. Read from
+  // `input.envido` and never from the event: the event carries no points and
+  // must not (envido-chain.ts keeps the reveal marker-only, D-1/D-5 — the
+  // declarations list is the one structurally-redacted home for them).
 
   return entry;
 }
 
 /**
- * The tantos row (spec: "Mano-Ordered Envido Row"). `envido.declarations` is
- * ALREADY in mano-rotation order, mano first (design §2.3's own contract on
- * `EnvidoState.revealed`) — this function renders that order as given, it
- * does not re-sort or re-derive it.
- */
-function buildTantosRow(envido: Extract<EnvidoState, { status: "revealed" }>, input: CallLogInput): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "hexdev-truco-call-log-tantos";
-
-  // H3, not H2 (WCAG 1.3.1): the tantos row is a section INSIDE this panel,
-  // under the panel's own title below — never a sibling of it.
-  const title = row.appendChild(document.createElement("h3"));
-  title.className = "hexdev-truco-call-log-tantos-title";
-  title.textContent = TABLE_STRINGS.tantosTitle;
-
-  const list = row.appendChild(document.createElement("ul"));
-  list.className = "hexdev-truco-call-log-tantos-list";
-
-  for (const declaration of envido.declarations) {
-    const item = list.appendChild(document.createElement("li"));
-    item.className = "hexdev-truco-call-log-tantos-entry";
-    item.dataset.seat = String(declaration.seat);
-    item.dataset.position = input.positions.get(declaration.seat) ?? "top";
-
-    const speaker = item.appendChild(document.createElement("span"));
-    speaker.className = "hexdev-truco-call-log-speaker";
-    speaker.textContent = speakerLabel(declaration.seat, input);
-
-    if (declaration.seat === input.manoSeat) {
-      const manoTag = item.appendChild(document.createElement("span"));
-      manoTag.className = "hexdev-truco-call-log-mano-tag";
-      manoTag.textContent = TABLE_STRINGS.manoTag;
-    }
-
-    // A withheld declaration never carries a `points` key at all (design D-1
-    // — the engine never materializes the number in the first place), so
-    // there is nothing to accidentally render here beyond the Spanish phrase.
-    const points = item.appendChild(document.createElement("span"));
-    points.className = "hexdev-truco-call-log-points";
-    points.textContent = declaration.declaration === "points" ? String(declaration.points) : TABLE_STRINGS.sonBuenas;
-  }
-
-  return row;
-}
-
-/**
  * Renders the whole call-log panel into `host` (design §5.2/D-10: ONE panel,
- * tantos row + event list, never two independent floating boxes). `host`
+ * never two independent floating boxes — and now literally one list, with
+ * the reveal's own declarations hanging off the reveal's own entry rather
+ * than pinned above the scroller). `host`
  * itself is the panel element — `table.ts` mounts it as a child of
  * `.hexdev-truco-center`; this function never creates or positions that
  * mount point, only fills it.
@@ -162,12 +145,6 @@ export function renderCallLog(host: HTMLElement, input: CallLogInput): void {
   const title = host.appendChild(document.createElement("h2"));
   title.className = "hexdev-truco-call-log-title";
   title.textContent = TABLE_STRINGS.callLogTitle;
-
-  // Outside the scroller (design §5.2: "so auto-scroll never pushes it
-  // away") — appended to `host` directly, before the scrollable list below.
-  if (input.envido.status === "revealed") {
-    host.appendChild(buildTantosRow(input.envido, input));
-  }
 
   const list = host.appendChild(document.createElement("ol"));
   list.className = "hexdev-truco-call-log-list";

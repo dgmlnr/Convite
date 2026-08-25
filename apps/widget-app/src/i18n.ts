@@ -49,6 +49,11 @@ export const STRINGS = {
   // modality, and a 4-seat queue waits for a partner AND two rivals — a
   // singular "Buscando rival…" was accurate only for 1v1.
   searchingPlayers: "Buscando jugadores…",
+  /** The bot path had been reusing `searchingPlayers`, which is not true —
+   * nobody is being looked for — and made its own wait read as matchmaking.
+   * A bot match is created outright, so the only honest thing this covers is
+   * the moment between the click and the deal arriving. */
+  preparingTable: "Preparando la mesa…",
   pairingFailed: (message: string): string => `No se pudo emparejar: ${message}`,
   // Plain, warm, jargon-free (bug fix, obs 2968: a rejected join used to
   // leave the UI doing nothing at all — the player pressed a button and

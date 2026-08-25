@@ -64,6 +64,22 @@ export function connectToHost(
     },
     sendLayout(mode) {
       postProtocolMessage(target, { ns: PROTOCOL_NAMESPACE, v: version, type: "layout", payload: { mode } }, hostOrigin);
+      // The same fact, recorded where this document's own CSS can read it.
+      //
+      // Telling the host to go fullscreen and knowing, inside the iframe,
+      // that we ARE fullscreen are the same fact, and they used to be
+      // knowable only on the host side. The truco felt needs the inside
+      // half: fullscreen is the one mode where the widget must fit a height
+      // it did not choose (the host pins the container to the viewport and
+      // cannot scroll it), so that is the only mode where it caps its own
+      // card size — see the FULLSCREEN FIT block in truco-ui's
+      // table-styles.ts, and table-viewport-fit.browser.test.ts.
+      //
+      // Written HERE, in the one function that changes the mode, rather than
+      // at the two call sites in main.ts: a third call site added later
+      // cannot forget to keep the attribute in step, because there is
+      // nothing to remember.
+      listenerWindow.document.documentElement.dataset.hexdevLayout = mode;
     },
     dispose() {
       listenerWindow.removeEventListener("message", listener);

@@ -195,10 +195,12 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
 
     const announcers = [...el.querySelectorAll<HTMLElement>("[data-announces]")];
-    // hand-outcome, partner-sena, turn, turn-clock, pending-call, trick,
-    // match-over — the count keeps this fence complete: a renamed or added
-    // region that dodged the filter below would tick-spam unpinned.
-    expect(announcers).toHaveLength(7);
+    // hand-outcome, partner-sena, envido-reveal, turn, turn-clock,
+    // pending-call, trick, match-over — the count keeps this fence complete:
+    // a renamed or added region that dodged the filter below would tick-spam
+    // unpinned. It earned that keep: `envido-reveal` was added for the reveal
+    // notice and this assertion is what caught it, before anything else did.
+    expect(announcers).toHaveLength(8);
     // The turn-clock region is the clock's own sanctioned coarse voice — held
     // to its two whole sentences below, never to byte-identity: that is the
     // one region a threshold crossing is ALLOWED to change, exactly once.
@@ -282,4 +284,47 @@ describe("turn countdown — it must not move a single fenced pixel", () => {
     const overlaps = badge.left < bar.right - 0.5 && bar.left < badge.right - 0.5 && badge.top < bar.bottom - 0.5 && bar.top < badge.bottom - 0.5;
     expect(overlaps).toBe(false);
   });
+});
+
+/**
+ * The badge must not sit on top of the cards it is about.
+ *
+ * Reported from real play, with a screenshot: "la indicación del turno con el
+ * tiempo... está muy pegada a las cartas en la parte del número y no se llega
+ * a ver bien porque lo tapa". Measured, the badge overlapped the top 9px of
+ * whichever cards sat under it — and in a Spanish deck the rank index lives
+ * in exactly that corner, so it was covering the one mark that says WHICH
+ * card it is.
+ *
+ * It sat at `top: -11px` against an anchor whose height is its content: 11px
+ * of a 20px badge above the edge, the other 9px inside, over the cards.
+ *
+ * FIXING IT MUST COST NO HEIGHT. This felt is vertically saturated — the
+ * cards only reached their current size by reclaiming reserved pixels one at
+ * a time — so pushing the hand down to make room would pay for a readable
+ * badge with smaller cards. The badge stays out of flow; only where it hangs
+ * changes.
+ */
+describe("the turn badge clears the cards it belongs to", () => {
+  for (const width of [375, 570, 960, 1280]) {
+    it(`does not cover any of the player's own cards at ${width}px`, () => {
+      const el = freshContainer(`${width}px`);
+      const render = clockedRenderer(() => T0);
+      render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+      const badge = el.querySelector<HTMLElement>(".hexdev-truco-turn-badge");
+      if (badge === null) throw new Error("fence setup: no turn badge rendered");
+      const box = badge.getBoundingClientRect();
+      const cards = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-hand .hexdev-truco-card")];
+      expect(cards.length, "fence setup: the player's own hand rendered").toBeGreaterThan(0);
+
+      for (const card of cards) {
+        const rect = card.getBoundingClientRect();
+        const overlapX = Math.min(box.right, rect.right) - Math.max(box.left, rect.left);
+        const overlapY = Math.min(box.bottom, rect.bottom) - Math.max(box.top, rect.top);
+        const overlaps = overlapX > 0 && overlapY > 0;
+        expect(overlaps, `badge vs a card at ${String(width)}px — covering its top ${String(Math.round(overlapY))}px`).toBe(false);
+      }
+    });
+  }
 });

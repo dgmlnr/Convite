@@ -129,7 +129,9 @@ describe("createMatchTableRenderer — every card renders at its own whole heigh
     container.style.width = "375px";
     document.body.appendChild(container);
 
-    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 });
+    // dealerSeat 0 seats OPPONENT as the mano — the caller has to hold the
+    // floor, since opening a call is taking it (truco-chain.ts).
+    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 0 });
     const dealt = startHand(base, DEAL_1V1);
     const called = dispatch(dealt, { type: "call-truco", playerId: OPPONENT, level: "truco" });
     const view = getViewFor(called, SELF);
@@ -263,7 +265,9 @@ describe("createMatchTableRenderer — a squeezed container overflows its own sh
 
   it("1v1: a container squeezed well below the felt's essential need still shows the whole hand", async () => {
     const container = squeezedContainer(100);
-    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 });
+    // dealerSeat 0 seats OPPONENT as the mano — the caller has to hold the
+    // floor, since opening a call is taking it (truco-chain.ts).
+    const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 0 });
     const dealt = startHand(base, DEAL_1V1);
     const called = dispatch(dealt, { type: "call-truco", playerId: OPPONENT, level: "truco" });
     const view = getViewFor(called, SELF);
