@@ -8,21 +8,48 @@ y adopta los colores de identidad del sitio.
 
 ## Estado
 
-En desarrollo. El cambio `platform-foundation-truco` entrega la base de la plataforma
-junto con el primer juego, el Truco Argentino.
+En desarrollo, y jugable de punta a punta. Están el motor de reglas completo, el contrato
+genérico de juegos, el transporte con autenticación por tenant, los dos roles de servidor,
+el lobby con emparejamiento, los bots y el widget embebible.
 
-Ya funciona: el motor de reglas completo, el contrato genérico de juegos, el transporte
-con autenticación por tenant, el servidor, el lobby con emparejamiento y los bots.
-Falta el widget embebible.
+Se juega mano a mano y también **2 contra 2**. La suite e2e levanta la topología real
+—los dos roles detrás de un mismo origen— y juega partidas completas contra ella.
 
 ## Primer juego: Truco Argentino
 
-La primera versión es mano a mano, sin flor, a 15 o 30 puntos según elija el jugador.
-Toda partida puede jugarse contra otra persona o contra un bot en tres niveles de
-dificultad, de modo que nadie quede bloqueado cuando no hay rival esperando.
+Sin flor, a 15 o 30 puntos según elija el jugador, mano a mano o en parejas. Toda partida
+puede jugarse contra otra persona o contra bots en tres niveles de dificultad, de modo que
+nadie quede bloqueado cuando no hay rival esperando.
 
-Si un jugador se desconecta se abre una ventana de reconexión; si no vuelve, un bot
-ocupa su lugar en nivel normal y la partida continúa.
+Si un jugador se desconecta se abre una ventana de reconexión; si no vuelve, un bot ocupa
+su lugar en nivel normal y la partida continúa.
+
+### Lo que trae el 2 contra 2
+
+En parejas aparecen cosas que mano a mano no existen, y cada una es una regla, no un
+adorno:
+
+- **Señas.** Vocabulario cerrado —las dos matas, los dos sietes bravos, el tres y el dos—
+  con un tope por mano. En una mesa real señalar de más te hace *leer*; acá ese costo no
+  existe, así que lo pone el tope.
+- **Consultar al compañero.** Preguntarle qué haría, y gasta de la misma cuota que las
+  señas: preguntar y señalar compran lo mismo, así que pagan lo mismo.
+- **Ronda de tantos, uno por uno.** El envido se canta por turno desde la mano, cada
+  jugador con su propia mini card. Decir *"son buenas"* concede por **todo el equipo**,
+  no sólo por uno.
+
+### Una regla de la casa, elegida a propósito
+
+**El envido lo abre el pie de cada equipo.** Tres reglamentos publicados se contradicen
+entre sí sobre esto: Wikipedia dice los pie, trucoargentino.com.ar dice los dos a la
+izquierda del repartidor —justo los otros dos— y el reglamento de juegosdesalon.com dice
+que cualquiera en su turno. Convite juega la primera, y el motor lo deja escrito junto al
+código para que nadie lo "corrija" contra el reglamento que le toque tener a mano.
+
+Esa regla le saca el canto a dos de los cuatro asientos, y uno de ellos puede ser el que
+tiene los tantos. Las señas nombran **cartas**, nunca tantos, así que un compañero con 33
+no tenía cómo decirlo. Por eso el pie puede **preguntar** antes de cantar: misma ventana
+que el canto, mismo precio que una seña.
 
 ## Próximos juegos
 
@@ -76,26 +103,35 @@ pnpm test
 
 ### Probarlo a mano
 
-Hacen falta **dos terminales**. El widget vive embebido en un sitio ajeno, así que probarlo
-de verdad necesita un sitio que lo embeba: servirlo suelto no ejercita el camino real.
+Un solo comando. El widget vive embebido en un sitio ajeno, así que probarlo de verdad
+necesita un sitio que lo embeba: servirlo suelto no ejercita el camino real.
 
 ```sh
-# terminal 1 — compila y levanta la plataforma en :2567
 pnpm dev:server
-
-# terminal 2 — sirve un sitio de prueba que embebe el widget, en :5173
-pnpm dev:host
 ```
 
 Después abrí <http://localhost:5173>.
 
+Eso levanta **el producto entero**: los dos roles de servidor, el proxy que los pone
+detrás de un mismo origen, y un sitio de prueba que embebe el widget. Es la misma
+topología que arma la suite e2e, y es deliberado: un arranque de un solo proceso no es
+una versión más chica del despliegue, es una distinta y rota.
+
+Para abrirlo desde otro dispositivo de la red:
+
+```sh
+pnpm dev:lan            # detecta la dirección LAN de esta máquina
+pnpm dev:lan 10.0.0.5   # o nombrala a mano
+```
+
 Tres detalles que cuestan una tarde si no se saben:
 
 - **El origen de la plataforma se hornea al compilar**, no al arrancar: `loader.js` es un
-  script clásico sin acceso a variables de entorno en tiempo de ejecución, así que
-  `dev:server` define `HEXDEV_WIDGET_ORIGIN` antes de construir. Compilar sin esa variable
-  produce un loader que apunta a un dominio de producción inexistente y el widget no monta,
-  en silencio y sin error en consola.
+  script clásico sin acceso a variables de entorno en tiempo de ejecución. Por eso el
+  script de arranque **también construye**: es el único que sabe qué dirección está por
+  servir, así que el origen horneado y el servido no pueden separarse porque alguien corrió
+  las dos mitades en el orden equivocado. Un bundle horneado para `localhost` no funciona
+  desde otro dispositivo, en silencio y sin error en consola.
 - **El puerto 5173 no es decorativo.** Está en la lista blanca del tenant de desarrollo
   (`DEV_TENANT` en `apps/server/src/config.ts`). Servir la página desde otro puerto hace que
   el servidor la rechace, que es exactamente lo que debe pasar.
@@ -143,8 +179,9 @@ la topología está probada y no solamente descrita.
 | `pnpm test:visual` | Regresión visual por captura de pantalla, dentro del contenedor de render pinneado (requiere Docker; ver `visual/README.md`) |
 | `pnpm test:visual:host` | La misma suite contra el navegador de tu máquina: chequeo rápido, no canónico |
 | `pnpm test:redis` | Propiedades entre instancias contra un Redis real en Docker |
-| `pnpm dev:server` | Compila con el origen local y levanta la plataforma en `:2567` |
-| `pnpm dev:host` | Sirve un sitio de prueba que embebe el widget en `:5173` |
+| `pnpm dev:server` | Compila y levanta el producto entero en `localhost`: ambos roles, el proxy y un sitio de prueba |
+| `pnpm dev:lan` | Lo mismo, en la dirección de red de esta máquina, para abrirlo desde otro dispositivo |
+| `pnpm dev:host` | Sólo el sitio de prueba, en `:5173` |
 | `pnpm typecheck` | Verificación de tipos de todo el workspace |
 | `pnpm check:boundaries` | Verifica que ningún paquete viole la dirección de dependencias |
 | `pnpm exec eslint .` | Linter, incluidas las reglas de determinismo del motor |
@@ -157,11 +194,15 @@ la topología está probada y no solamente descrita.
 | `platform-core` | Registro de juegos, autenticación de tenants, presencia y emparejamiento |
 | `spanish-deck-ui` | El mazo español. Fuera del truco, porque la escoba usa el mismo |
 | `games/truco-engine` | Reglas del truco. Puro, sin entrada ni salida |
-| `games/truco-module` | Adaptador que implementa el puerto sobre el motor |
+| `games/truco-module` | Adaptador que implementa el puerto sobre el motor, mano a mano y en parejas |
+| `games/truco-ui` | La mesa: cartas, cantos, señas y el tablero |
 | `games/truco-bot` | Los tres niveles de bot |
 | `transport-colyseus` | Sala de partida genérica y sala de presencia |
-| `widget-sdk`, `widget-protocol` | Superficie de embebido para el tenant |
-| `apps/server` | Composition root: cablea todo y escucha |
+| `transport-colyseus-client` | El lado cliente del mismo transporte |
+| `widget-sdk`, `widget-protocol`, `widget-frontdoor` | Superficie de embebido para el tenant |
+| `apps/mint-server` | Rol acuñador: tiene la semilla de firma y sirve la puerta de entrada |
+| `apps/server` | Rol partida: sólo verifica. Cablea el registro de juegos y escucha |
+| `apps/widget-app` | El widget en sí: selección de juego, lobby y mesa |
 
 ## Créditos
 
