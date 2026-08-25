@@ -278,28 +278,27 @@ export function buildTableStylesheet(): string {
    * anchor; the banner gets its own padding-top lane on the centre column)
    * instead of patched by repositioning either one. Never on :root — same
    * felt-only-scalar discipline as --hx-felt-gap/--hx-felt-pad above.
-   * --hx-band-banner: PR5-T3 MEASUREMENT (real Chromium, real DejaVu-backed
-   * font metrics, via a standalone probe/full-mount comparison against
-   * renderPendingCallBanner): the design's own <=34px assumption did NOT
-   * hold. The common case (level "Truco" + caller "Cantó: Nosotros")
-   * measured 46px; the worst realistic case (level "Falta envido" + the same
-   * caller) measured 58px. Root cause, not a bug PR5 is scoped to fix (task
-   * text: "raise the token value, not the pill's layout"): the pill's
-   * absolutely-positioned ancestor (.hexdev-truco-banner-slot) sizes itself
-   * shrink-to-fit, which computes an available width narrower than the
-   * caller span's own single-line max-content width, so the caller text
-   * (and, at the worst-case level label, the level text too) wraps onto a
-   * second line inside its own flex item — taller than the design's one-line
-   * assumption predicted. Raised to 60px (worst-case 58px + ~2px headroom)
-   * so the pill fits without clipping/overlap even at its tallest realistic
-   * text combination. (The half-column shrink-to-fit anchor described above
-   * has since been replaced — the slot now pins both inline edges, see its
-   * own rule below — but the 60px stands: re-measured over the full
-   * vocabulary at this tier, the 2v2 worst case is 58.22px from the full
-   * column too.) --hx-band-action-total: equals --hx-band-action at
-   * compact (1 strip, calls+señas share it, tasks §3.8) — the 2v2 two-strip
-   * formula only starts at medium (below). */
-  --hx-band-banner: 60px;
+   * --hx-band-banner: ONE value per SEAT COUNT and none per width, PR5-T3
+   * MEASUREMENT re-run in real Chromium after the pending-call pill was
+   * withdrawn from this lane (it now paints per-seat, see
+   * .hexdev-truco-seat-call). That pill was the only occupant that ever
+   * wrapped, and wrapping is what forced the old per-tier ladder
+   * (60/76/80/84/112 — five literals for one lane, each arguing about how
+   * the pill broke at that width). With it gone the lane holds exactly two
+   * things (table.ts mounts nothing else into .hexdev-truco-banner-slot) and
+   * neither wraps at any width: the end-of-hand banner measures 29.28px, and
+   * the señas strip 50px. 34px here = the 29.28px 1v1 case plus ~16%
+   * headroom, which is what absorbs the font variance the line-box fence
+   * below describes (both occupants' text is "line-height: normal", answered
+   * by whatever font the host actually has); the 2v2 rule after this one
+   * carries the strip's own 56px, because the strip only exists when there
+   * is a partner to signal to. Raise either ONLY against a fresh measurement
+   * of the tallest occupant — never per tier, and never to make room for
+   * something that wraps: fix the wrap instead.
+   * --hx-band-action-total: equals --hx-band-action at compact (1 strip,
+   * calls+señas share it, tasks §3.8) — the 2v2 two-strip formula only
+   * starts at medium (below). */
+  --hx-band-banner: 34px;
   --hx-band-action: 40px;
   --hx-band-action-total: var(--hx-band-action);
   position: relative;
@@ -404,6 +403,20 @@ export function buildTableStylesheet(): string {
   color: var(--hx-felt-text);
   overflow: hidden;
 }
+
+/* The ONE legitimate split of --hx-band-banner, and it is by what the lane
+ * HOLDS, never by width. The señas strip is 2v2-only — there is no partner to
+ * signal to in 1v1 — so 1v1's lane holds the end-of-hand banner alone, which
+ * measures 29.28px at every tier. The base above is sized for that; this is
+ * sized for the 50px strip that joins it when there is a fourth seat. Written
+ * as an attribute selector rather than a container query on purpose: the
+ * ladder this replaced was five width-keyed overrides, and the reason it
+ * survived so long is that no single mount could see more than one rung.
+ * banner-lane-reserve.browser.test.ts mounts every tier in both seat counts
+ * and fails if this token ever varies with width again. */
+.hexdev-truco-table[data-seat-count="4"] {
+  --hx-band-banner: 56px;
+}
 .hexdev-truco-table * { box-sizing: border-box; }
 
 /* The hard case (spec): four seats on a phone. Two seats (v1) never touch
@@ -498,16 +511,13 @@ export function buildTableStylesheet(): string {
      * @media axis) — covered by table-height-stability's own 700px fence. */
     --hx-felt-gap: 12px;
     --hx-felt-pad: 16px;
-    /* PR5-T3/T5 (tasks §3.8/§9): medium-tier band values. --hx-band-banner
-     * restores the full three-line pending-call block's own real height
-     * (D-6 — the compact one-line pill is compact-only); --hx-band-action is
+    /* PR5-T3/T5 (tasks §3.8/§9): medium-tier band value. --hx-band-action is
      * ONE strip's height — --hx-band-action-total below overrides this for
      * 2v2 into the two-strip formula, and, because --hx-band-action-total is
      * itself declared via var(--hx-band-action) (derived, not a fixed
      * literal — same discipline as --hx-play-max's own comment further
      * below), 1v1 automatically keeps its single-strip total at every wider
      * tier without needing its own redeclaration anywhere. */
-    --hx-band-banner: 76px;
     --hx-band-action: 48px;
   }
   .hexdev-truco-table[data-seat-count="4"] {
@@ -558,31 +568,6 @@ export function buildTableStylesheet(): string {
      * whichever value is cascaded for THIS element at used-value time, so it
      * never needs its own redeclaration at wide/ultra. */
     --hx-band-action-total: calc(var(--hx-band-action) * 2 + 4px);
-    /* PR5-T3/T7 MEASUREMENT (own zero-overlap "own lane" test finding, not
-     * anticipated by tasks §3.8's own per-tier table): 2v2's center grid
-     * area is narrower than 1v1's at every tier (the side-seat gutters plus,
-     * from 900px on, the log-rail column both eat into it), which — same
-     * shrink-to-fit text-wrap mechanism PR5-T3 found at compact — makes the
-     * pending-call pill wrap onto MORE lines for 2v2 than for 1v1 at this
-     * tier, needing more real height than the shared design-table value
-     * (76px) provides. Measured 86px real worst-case at 700px/2v2 (1v1 stays
-     * a comfortable 71px here); raised to 94px (~8% headroom, this file's
-     * own established convention). This 2v2-only override is MORE specific
-     * than the base .hexdev-truco-table rule declaring 76px for everyone
-     * else, so it wins regardless of source order.
-     *
-     * FU-4 RE-MEASURE (94px -> 112px): that 86px measurement was taken
-     * against geometry the 414px test viewport had silently masked — under
-     * 16vw both gutters floor-clamped to 72px, leaving the center ~500px
-     * wide at a 700px container. With honest container-relative gutters
-     * (16cqw = 112px per side at 700px) the center narrows to ~420px and
-     * the pill wraps to the SAME 101px worst case the wide tier's own
-     * comment below already documents — so this lane takes the same 112px
-     * (wide-tier precedent, the file's ~8% headroom convention over 101px).
-     * In a real full-bleed ~700px browser 16vw and 16cqw are identical, so
-     * that 101px-over-94px spill was ALREADY shipping; the vw tracks only
-     * hid it from the test environment, never from production. */
-    --hx-band-banner: 112px;
   }
   /* PR5-T2 (tasks §9, design §7.2): 2v2 only — the action bar stacks its two
    * strips vertically instead of scrolling one row horizontally; each strip
@@ -619,8 +604,9 @@ export function buildTableStylesheet(): string {
      * --hx-log-rail just above (a fixed clamp(), not derived from anything),
      * no separate ultra-tier redeclaration is needed for this one. */
     --hx-play-max: calc(var(--truco-card-width) * 7);
-    /* PR5-T3/T5 (tasks §3.8/§9): wide-tier band values. */
-    --hx-band-banner: 80px;
+    /* PR5-T3/T5 (tasks §3.8/§9): wide-tier strip height. Same note as the
+     * ultra block below: this lane still tiers by width, the banner's no
+     * longer does. */
     --hx-band-action: 52px;
   }
   /* 1v1 only grows here — the 4-seat felt is already width-constrained by
@@ -647,20 +633,6 @@ export function buildTableStylesheet(): string {
       "log left    center  right"
       "log bottom  bottom  bottom"
       "log actions actions actions";
-    /* PR5-T3/T7 MEASUREMENT (own zero-overlap "own lane" test finding — see
-     * the 640px block's own identical-purpose comment above for the full
-     * mechanism). At wide the log-rail column reservation narrows 2v2's
-     * center area even further than at medium, so the real worst-case grew
-     * MORE here, not less: measured 101px (1v1 stays a comfortable 71px at
-     * this same width). Raised to 112px (~11% headroom — kept a little
-     * wider than the file's usual ~8%, since this value sits closer to its
-     * own measured floor than the other bands do). 2v2 at ultra measured
-     * only 71px (the felt's own extra ultra-tier width room resolves the
-     * wrap this tier and the one below it both hit) — reset back down in
-     * the 1280px block below, rather than silently inheriting this 112px
-     * forever (D-1: a lane is a fixed, budgeted size, not a worst case that
-     * only ever grows). */
-    --hx-band-banner: 112px;
   }
   /* FU-1: from wide up the felt grows a log-rail COLUMN, and the popover's
    * containing block is the whole felt — so the compact/medium inset would
@@ -708,21 +680,13 @@ export function buildTableStylesheet(): string {
      * above and left alone here) it DOES need its own redeclaration at every
      * tier that changes it. */
     --hx-log-rail: clamp(240px, 20%, 320px);
-    /* PR5-T3/T5 (tasks §3.8/§9): ultra-tier band values. */
-    --hx-band-banner: 84px;
+    /* PR5-T3/T5 (tasks §3.8/§9): ultra-tier strip height. --hx-band-banner
+     * is deliberately absent from this block and from every other tier —
+     * it splits by seat count only, see its own comment on the felt. */
     --hx-band-action: 56px;
   }
   .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-tier: 108px; }
-  /* PR5-T3 MEASUREMENT: resets --hx-band-banner back down to the shared 84px
-   * ultra value for 2v2 specifically — without this, the seat-scoped 112px
-   * set in the 900px block above would keep cascading forward forever (this
-   * selector is MORE specific than the bare .hexdev-truco-table rule just
-   * above, which also sets 84px at this same tier, so specificity alone
-   * would otherwise keep the stale 112px value pinned here regardless of
-   * source order). 2v2 measured 71px at ultra — the felt's own extra
-   * ultra-tier width resolves the medium/wide-tier text wrap, so 84px
-   * (matching 1v1's own value here) is real headroom again, not a guess. */
-  .hexdev-truco-table[data-seat-count="4"] { --truco-card-tier: 100px; --hx-band-banner: 84px; }
+  .hexdev-truco-table[data-seat-count="4"] { --truco-card-tier: 100px; }
   /* MEASURED at a 1550px shell: the calls row asks 166px and the senas strip
    * a few hundred more, inside an action bar 955px wide. Stacking them here
    * spent a whole extra band of HEIGHT -- the one thing this felt is short of
@@ -1486,7 +1450,7 @@ export function buildTableStylesheet(): string {
   height: var(--hx-band-banner);
   /* Font-independence (banner-lane-line-box.browser.test.ts), the same defect
    * .hexdev-truco-trick-feedback carries its own note about further below.
-   * "--hx-band-banner" is a hardcoded pixel constant — the same 60/76/80/84/112
+   * "--hx-band-banner" is a hardcoded pixel constant — the same 56px
    * on every machine — but every line of text this lane holds was
    * "line-height: normal", which each font answers out of its own
    * ascent/descent/line-gap. So the lane was budgeted against one desktop's
@@ -2751,12 +2715,27 @@ export function buildTableStylesheet(): string {
      * --hx-band-banner because in 1v1 the banner sits above the trick and
      * genuinely costs height. Here it does not: the side column is taller
      * than the whole banner-plus-trick stack, so the centre row never pays
-     * for the banner at all. The residual gives those 84px back, minus ~6 of
-     * headroom — anything else would mean lying in the rows count instead,
-     * which is exactly the kind of two-errors-that-cancel that made every
-     * earlier attempt at this file come out wrong. */
+     * for the banner at all, so the residual hands most of that subtraction
+     * back — anything else would mean lying in the rows count instead, which
+     * is exactly the kind of two-errors-that-cancel that made every earlier
+     * attempt at this file come out wrong.
+     *
+     * MOST, not all, and the exact amount is FITTED, not derived. An earlier
+     * revision of this comment claimed the residual "gives the banner's 84px
+     * back", but the number sitting under it was -56px: the formula went on
+     * paying 28px of banner, and nobody could tell which of the two was the
+     * stale one. Deriving it (calc(6px - var(--hx-band-banner))) was tried
+     * and is WRONG — table-viewport-fit caught it overflowing by 21px at
+     * 1440x810. What this value really encodes is how much taller the side
+     * column is than the banner-plus-trick stack it replaces, which no
+     * single token expresses. Measured against that fence: -28px fits at
+     * every fullscreen size it checks, -34px already overflows by ~5px. So
+     * this layout sits AT its fit limit, and the banner reserve shrinking
+     * from 84px to 56px bought 2v2 fullscreen nothing — the residual absorbs
+     * it exactly (28 - 56 = -28), which is why the number moved when the
+     * banner did. Re-fit it against that fence, never by arithmetic. */
     --hx-fit-rows: 4.0;
-    --hx-fit-residual: -56px;
+    --hx-fit-residual: -28px;
   }
 }
 

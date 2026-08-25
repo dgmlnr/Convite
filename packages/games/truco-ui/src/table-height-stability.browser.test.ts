@@ -325,6 +325,37 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * was red. The property that makes them portable at all now has its own fence:
  * relation-label-line-box.browser.test.ts.
  *
+ *
+ * ONE BANNER RESERVE FOR EVERY TIER (375 both: -4; 700 1v1: -20; 960 1v1: -24;
+ * 1280 1v1: -28). `--hx-band-banner` used to be a ladder of five literals
+ * (60/76/80/84/112) because the pending-call pill WRAPPED, and wrapped
+ * differently at every width. That pill no longer paints in this lane at all
+ * -- it moved onto the seat that spoke (.hexdev-truco-seat-call) -- and the
+ * two occupants left over never wrap: measured in real Chromium at
+ * 375/700/960/1280/1550 in BOTH seat counts, the senas strip is 50px and the
+ * end-of-hand banner 47px, flat. The ladder collapses to one 56px reserve
+ * (50px worst case + ~12% for font variance), and each row here drops by
+ * exactly the reserve that tier used to carry.
+ *   375  1v1: 587.34375 -> 561.34375   375  2v2: 587.34375 -> 583.34375
+ *   700  1v1: 690.96875 -> 648.96875
+ *   960  1v1: 817.375   -> 771.375
+ *   1280 1v1: 910.59375 -> 860.59375
+ * 1v1 drops a further 22px on top of that because the reserve splits ONCE, by
+ * SEAT COUNT: `table.ts` mounts exactly two things into the lane, and the
+ * señas strip (50px) is 2v2-only -- there is no partner to signal to in 1v1,
+ * whose lane therefore holds the 29.28px end-of-hand banner alone and reserves
+ * 34px. That split is the one this token is allowed; splitting by WIDTH is
+ * what banner-lane-reserve.browser.test.ts now rejects, in both directions
+ * (too small clips the strip, too large is this same silent waste).
+ * THE 2v2 ROWS AT 700/960/1280 DO NOT MOVE, and that is the interesting half:
+ * those totals are set by the side column (three backs stacked vertically),
+ * which is taller than the centre column's banner-plus-trick stack, so the
+ * banner lane has no reach into them -- measured, not reasoned, and the same
+ * fact `--hx-fit-residual`'s own comment in table-styles.ts leans on for the
+ * 2v2 fullscreen fit. Which is also why 2v2 fullscreen gained nothing here:
+ * that layout was already AT its fit limit (table-viewport-fit rejects -34px
+ * where -28px passes), so the residual absorbs the 28px the banner gave up
+ * instead of spending it on bigger cards.
  * ULTRA 2v2, THE ACTION BAR STOPS STACKING (1280 2v2: 1043.515625 ->
  * 983.515625). The two strips -- calls, then senas -- stacked at every tier
  * from 640px up, which the 640px block introduced when the bar really was too
@@ -344,10 +375,10 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * MOVING across a played hand -- stayed green throughout: expectStableHeights
  * passed, and only this pinned constant went stale. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 587.34375, "2v2": 587.34375 },
-  700: { "1v1": 690.96875, "2v2": 837.328125 },
-  960: { "1v1": 817.375, "2v2": 873.328125 },
-  1280: { "1v1": 910.59375, "2v2": 983.515625 },
+  375: { "1v1": 561.34375, "2v2": 583.34375 },
+  700: { "1v1": 648.96875, "2v2": 837.328125 },
+  960: { "1v1": 771.375, "2v2": 873.328125 },
+  1280: { "1v1": 860.59375, "2v2": 983.515625 },
 };
 
 function expectExactHeight(actual: number, expected: number, label: string): void {
