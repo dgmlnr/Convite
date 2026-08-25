@@ -31,12 +31,35 @@ export interface RespondEnvidoAction {
   readonly playerId: PlayerId;
   readonly response: "quiero" | "no-quiero";
 }
-/** Points are awarded at reveal, not at call time (spec). Legal once accepted; either player may submit it — it triggers computation, not a per-team choice. */
-export interface RevealEnvidoAction {
-  readonly type: "reveal-envido";
+/**
+ * ONE PLAYER SAYING THEIR TANTOS, or conceding with "son buenas".
+ *
+ * This replaces an all-at-once `reveal-envido` that computed every
+ * declaration in a single step. That was correct arithmetic and the wrong
+ * SHAPE: the declaration round is something players do out loud, one after
+ * another, and collapsing it meant nobody could see who said what, in what
+ * order — or choose. Reported from real play: "me gustaría que vayan por
+ * ronda... uno a uno".
+ *
+ * THE PLAYER NEVER SUPPLIES A NUMBER. Your tantos are whatever your cards
+ * say, and the engine reads them from the hand it already holds; a
+ * caller-supplied figure would be a lie the rules do not allow. What a player
+ * genuinely chooses is only whether to say it — or to concede.
+ *
+ * AND CONCEDING IS NOT FREE. In pairs, "son buenas" gives the envido up for
+ * the WHOLE TEAM, not just for the player saying it: es.wikipedia.org's own
+ * Truco article is explicit — "en caso de estar jugando en parejas, al decir
+ * 'son buenas' se le da por perdido el envido a todo el equipo". This engine
+ * used to model it as a per-player statement and let the round carry on to
+ * the partner, which was wrong, and was caught by a player asking the
+ * question the implementation could not answer.
+ */
+export interface DeclareEnvidoAction {
+  readonly type: "declare-envido";
   readonly playerId: PlayerId;
+  readonly declaration: "points" | "sonBuenas";
 }
-export type EnvidoAction = CallEnvidoAction | RespondEnvidoAction | RevealEnvidoAction;
+export type EnvidoAction = CallEnvidoAction | RespondEnvidoAction | DeclareEnvidoAction;
 
 export type ApplyEnvidoResult =
   | { readonly ok: true; readonly state: MatchState }
@@ -79,19 +102,54 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  * call, as long as it is still the first trick and the opener has not yet
  * played their own card. A truco DECLINE still blocks opening — it already
  * ended the hand, independent of trick position.
- * INFERENCE, explicitly flagged: this does not additionally require "mano
- * acts before pie may open" as a strict turn-order rule gated on
- * `hand.turnSeat`. Two reasons: (1) `turnSeat` only advances on card play,
- * never on calls, so gating on it would incorrectly block a pie
- * response-by-envido to a still-pending mano truco call — exactly the
- * scenario this fix is meant to unlock; (2) no OTHER call in this engine is
- * turn-gated either (`getLegalTrucoActions` lets either player make the
- * first truco call), so this stays consistent with that existing
- * convention rather than inventing a new one. */
+ * OPENING FOLLOWS THE TURN TO SPEAK; REPLYING DOES NOT. Those are two
+ * different acts wearing one action type, and the rule only makes sense once
+ * they are told apart:
+ *
+ *   - OPENING is taking the floor, so it belongs to whoever holds it. The
+ *     mano speaks first, and the right passes down the play order as each
+ *     seat plays. You cannot jump ahead of seats that have not spoken yet.
+ *     Reported from real play in exactly those terms: "la mano puede cantar
+ *     el envido, el compañero tiene que esperar su turno... no se puede
+ *     saltar el turno del compañero y el primer rival cantando envido".
+ *   - REPLYING with an envido to a pending truco ("el envido está primero")
+ *     is answering, not taking the floor, so the turn does not gate it — the
+ *     answering team may say envido instead of quiero whenever the question
+ *     is theirs.
+ *
+ * THIS FILE USED TO REFUSE THE TURN GATE, and its reason is worth recording
+ * because it was a good one that stopped being true. It argued that gating on
+ * `hand.turnSeat` "would incorrectly block a pie response-by-envido to a
+ * still-pending mano truco call", since `turnSeat` never advances on calls.
+ * That is exactly right, and it is why the pending-truco branch below is
+ * carved out ahead of the gate rather than subject to it. Once the two acts
+ * are separated the objection dissolves.
+ *
+ * Its second reason — that no other call in this engine is turn-gated — was
+ * a consistency argument rather than a rules one, and consistency with a gap
+ * is not a reason to keep the gap. */
 function canOpenEnvido(hand: HandState, player: Player): boolean {
   if (hand.truco.status === "declined") return false; // hand already ended by a truco decline
   if (hand.trickOutcomes.length > 0) return false; // first trick already resolved — never legal in trick 2/3
-  return !hand.currentTrickPlays.some((play) => play.playerId === player.id); // opener must not have played their own card yet
+  // Playing your card is how you give up the right to call this hand — true
+  // of both branches below, so it is asked once, before them.
+  if (hand.currentTrickPlays.some((play) => play.playerId === player.id)) return false;
+
+  // REPLYING. "El envido está primero" is the answering side's right and
+  // nobody else's: interposing an envido over an unanswered truco is a way of
+  // saying something back, so it belongs to the team that owes the answer.
+  // Scoped to the TEAM rather than the caller, because a partner piling an
+  // envido onto their own side's unanswered truco is the same thing said by a
+  // different mouth. NOT turn-gated, for the reason the docblock records: a
+  // pending call freezes `turnSeat`, so a gate here would refuse the very
+  // reply the rule exists to allow.
+  if (hand.truco.status === "pending") return player.teamId !== hand.truco.callingTeamId;
+
+  // OPENING. Taking the floor belongs to whoever holds it — the mano first,
+  // then each seat as the play order reaches it. `turnSeat` IS that floor:
+  // it starts at the mano and moves only when somebody plays, which is
+  // exactly how the right to speak moves.
+  return player.seat === hand.turnSeat;
 }
 
 /** Envido-chain legality, mirroring the truco chain's `getLegalActions`. */
@@ -109,7 +167,18 @@ export function getLegalEnvidoActions(state: MatchState, playerId: PlayerId): re
     const escalations: EnvidoAction[] = ENVIDO_CALL_ORDER.filter((level) => ENVIDO_CALL_WEIGHT[level] > highest).map((level) => ({ type: "call-envido", playerId, level }));
     return [{ type: "respond-envido", playerId, response: "quiero" }, { type: "respond-envido", playerId, response: "no-quiero" }, ...escalations];
   }
-  if (envido.status === "accepted") return [{ type: "reveal-envido", playerId }];
+  if (envido.status === "accepted") {
+    // THE ROUND HAS A TURN ORDER OF ITS OWN, and it is not `hand.turnSeat`:
+    // cards are frozen while an envido resolves, so the card turn cannot
+    // serve. It runs from the MANO around the table — "el primero en cantar
+    // será el jugador que es mano" (trucogame.com's reglamento) — and
+    // deliberately NOT from whoever called the envido.
+    if (declarerSeatFor(state, hand, envido) !== player.seat) return [];
+    return [
+      { type: "declare-envido", playerId, declaration: "points" },
+      { type: "declare-envido", playerId, declaration: "sonBuenas" },
+    ];
+  }
   return []; // "declined" or "revealed" — envido is done for this hand.
 }
 
@@ -117,7 +186,7 @@ function envidoActionsEqual(a: EnvidoAction, b: EnvidoAction): boolean {
   if (a.type !== b.type || a.playerId !== b.playerId) return false;
   if (a.type === "call-envido" && b.type === "call-envido") return a.level === b.level;
   if (a.type === "respond-envido" && b.type === "respond-envido") return a.response === b.response;
-  return a.type === "reveal-envido";
+  return a.type === "declare-envido" && b.type === "declare-envido" && a.declaration === b.declaration;
 }
 
 const isLegalEnvido = (state: MatchState, action: EnvidoAction): boolean =>
@@ -197,7 +266,7 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
     if (action.response === "quiero") {
       const isFalta = pending.calls[pending.calls.length - 1] === "faltaEnvido";
       const acceptedValue = isFalta ? faltaEnvidoValue(state) : sumValue(pending.calls);
-      const envido: EnvidoState = { status: "accepted", calls: pending.calls, callingTeamId: pending.callingTeamId, acceptedValue };
+      const envido: EnvidoState = { status: "accepted", calls: pending.calls, callingTeamId: pending.callingTeamId, acceptedValue, declarations: [] };
       const event: CallEvent = { kind: "envido-response", playerId: player.id, teamId: player.teamId, seat: player.seat, response: "quiero" };
       return { ok: true, state: { ...state, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
     }
@@ -209,19 +278,67 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   }
 
   const accepted = hand.envido as Extract<EnvidoState, { status: "accepted" }>;
-  // D-2: `winningTeamId` is DERIVED from the declaration list, computed once
-  // here — the team of the LAST entry whose `declaration === "points"`. Mano
-  // always declares (see `resolveEnvidoDeclarations`), so that entry always
-  // exists. This REPLACES the pre-amendment per-team max+isMano scan: "who
-  // declared the highest number" and "who won" are now a structural fact of
-  // one function, not a coincidence two independent functions had to agree on.
-  const declarations = resolveEnvidoDeclarations(state, hand.manoSeat);
-  const winningTeamId = [...declarations].reverse().find((entry) => entry.declaration === "points")!.teamId;
+  const declaring = action as DeclareEnvidoAction;
+
+  // ONE ENTRY, THIS PLAYER'S. The number is read from the hand the engine
+  // already holds — never supplied by the caller. Conceding carries no number
+  // at all: a withheld declaration never materialises a `points` key (D-1),
+  // which is what keeps "son buenas" genuinely unknowable rather than merely
+  // unrendered.
+  const entry: EnvidoDeclaration =
+    declaring.declaration === "points"
+      ? { declaration: "points", playerId: player.id, teamId: player.teamId, seat: player.seat, points: calculateEnvidoPoints(player.hand) }
+      : { declaration: "sonBuenas", playerId: player.id, teamId: player.teamId, seat: player.seat };
+  const declarations = [...accepted.declarations, entry];
+  const event: CallEvent = { kind: "envido-declaration", playerId: player.id, teamId: player.teamId, seat: player.seat, declaration: declaring.declaration };
+
+  // CONCEDING ENDS THE ROUND, FOR THE WHOLE TEAM. "Son buenas" means "yours
+  // are better", said to the opponents — in pairs it gives the envido up for
+  // both members, so the partner who has not spoken never gets to. That is
+  // the rule (es.wikipedia.org's Truco article states it in exactly those
+  // terms) and it is what makes the button worth thinking about before
+  // pressing: it is a decision for two people, taken by one.
+  //
+  // The winner is the OTHER TEAM by concession, not "whoever declared
+  // highest". Those coincide in ordinary play; they part company only if
+  // somebody concedes while their own side is ahead, and there the concession
+  // is what the player actually said.
+  const conceding = declaring.declaration === "sonBuenas";
+
+  // Otherwise the round runs to every seat. The order alternates teams, so a
+  // player who cannot beat the running best but whose partner has not spoken
+  // keeps the round alive by saying their number — conceding there would end
+  // it over their partner's head.
+  if (!conceding && declarations.length < state.players.length) {
+    const envido: EnvidoState = { ...accepted, declarations };
+    return { ok: true, state: { ...state, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
+  }
+
+  // D-2: derived, never stored twice. On a concession the winner is the
+  // conceding player's opponents; otherwise it is the HIGHEST number said,
+  // ties going to whoever said it first (closest to mano). "Highest" rather
+  // than "the last to declare points", which only held while the engine
+  // declared for everybody and never announced a losing number — a player
+  // choosing to say their tantos when they cannot win is legal, so "last"
+  // stopped meaning "best" the moment the choice became real.
+  const best = declarations.reduce<Extract<EnvidoDeclaration, { declaration: "points" }> | null>(
+    (winner, candidate) => (candidate.declaration === "points" && (winner === null || candidate.points > winner.points) ? candidate : winner),
+    null,
+  );
+  const opposingTeam = state.teams.find((team) => team.id !== player.teamId);
+  const winningTeamId = conceding ? (opposingTeam?.id ?? accepted.callingTeamId) : (best?.teamId ?? accepted.callingTeamId);
   const envido: EnvidoState = { status: "revealed", calls: accepted.calls, winningTeamId, awardedValue: accepted.acceptedValue, declarations };
-  // Marker-only event: no points, no winner (D-1/D-5). The numbers stay
-  // confined to the structurally-redacted `declarations` list inside
-  // `envido` above — the log itself never carries one.
-  const event: CallEvent = { kind: "envido-reveal", playerId: player.id, teamId: player.teamId, seat: player.seat };
   const teams = state.teams.map((team) => (team.id === winningTeamId ? { ...team, score: team.score + accepted.acceptedValue } : team));
   return { ok: true, state: { ...state, teams, hand: { ...hand, envido, callEvents: [...hand.callEvents, event] } } };
+}
+
+/**
+ * Whose turn it is to declare — the seat at position `declarations.length` of
+ * the mano rotation.
+ *
+ * Its own turn order, separate from `hand.turnSeat`: an accepted envido
+ * freezes card play, so the card turn is stale and cannot serve here.
+ */
+function declarerSeatFor(state: MatchState, hand: HandState, envido: Extract<EnvidoState, { status: "accepted" }>): number {
+  return (hand.manoSeat + envido.declarations.length) % state.players.length;
 }

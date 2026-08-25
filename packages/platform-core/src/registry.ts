@@ -1,4 +1,4 @@
-import type { GameId, GameModule, PlayerId, RandomSource } from "@hexdev/platform-contract";
+import type { BotTier, GameId, GameModule, JsonValue, PlayerId, RandomSource } from "@hexdev/platform-contract";
 
 /** What every conformant `TAction` structurally carries (`GameModule`'s
  * bound) — kept as the registry's erased action shape instead of `unknown`
@@ -36,6 +36,62 @@ export type SystemActionRequester = (state: unknown, rng: RandomSource) => Actor
  */
 export type NonBlockingActionClassifier = (action: unknown) => boolean;
 
+/**
+ * Classifies an action as one a BOT must not take on its own initiative
+ * while a human seat is being offered the same decision.
+ *
+ * THE CASE IT EXISTS FOR, reported from real 2v2 play: when the opposing
+ * team calls, truco's engine deliberately offers the response to BOTH
+ * members of the answering team — either partner may say quiero. A bot
+ * partner therefore had the answer legal at the same instant its human
+ * teammate did, and `MatchRoom` picks the first bot with a blocking action,
+ * so the bot always won the race. The human never got to decide anything
+ * their partner could decide first: "el bot compañero canta y responde muy
+ * rápido las cosas, debería dejar que responda el jugador (humano), como
+ * prioridad".
+ *
+ * WHY THIS IS A CLASSIFIER AND NOT A RULE IN THE TRANSPORT. The obvious
+ * general rule — "a bot waits whenever a human has a blocking action" —
+ * DEADLOCKS truco outright, and measurably so: `call-truco` is legal for
+ * every player for as long as nobody has called, so a human seat almost
+ * always has a blocking action and no bot would ever move again. What is
+ * actually shared is a specific KIND of decision (answering a pending
+ * call), which only the game knows how to recognise. Same seam, same
+ * reason, and the same pairing convention as `NonBlockingActionClassifier`
+ * above.
+ *
+ * IT CANNOT STALL A MATCH. Deferring is only ever chosen when a human is
+ * being offered that decision — which is exactly the condition under which
+ * `MatchRoom` has already armed that seat's turn clock. If the human never
+ * answers, the clock expires and the existing takeover plays the seat's
+ * move. The bot yields the first word, not the last one.
+ */
+export type HumanPriorityActionClassifier = (action: unknown) => boolean;
+
+/**
+ * Answers a player's question about a decision they are facing, privately.
+ *
+ * WHY IT IS A HOOK AND NOT A PORT MEMBER, same reasoning as the two above:
+ * the answer needs three things that live in three different places, and only
+ * a module holds all of them. The ENGINE knows who a player's partner is and
+ * what that partner is holding, but is a pure reducer and has no business
+ * inventing judgement. The TRANSPORT knows which seats are bots, but has no
+ * team concept at all and must not grow one (`SeatAssignment` is team-free on
+ * purpose). The MODULE has the engine AND `createBot`, so it can ask the
+ * partner's own strategy what it would do and hand back that answer.
+ *
+ * The RESULT IS PRIVATE, which is the whole point: `MatchRoom` sends it to
+ * the asking client alone and never broadcasts it. What everyone else sees is
+ * only the cost — in truco the question spends a seña, and that counter is
+ * ordinary public state.
+ *
+ * `null` for "there is nobody to ask, or nothing to ask about". The game's own
+ * rules will have refused the action already in both cases; this is the belt
+ * to that suspenders, and it is why an unregistered game answers null rather
+ * than throwing.
+ */
+export type ConsultAdviceProvider = (state: unknown, playerId: PlayerId, tier: BotTier) => Promise<JsonValue | null>;
+
 /** Either a bare `GameModule` (no system-action factory — the common case
  * for a game whose players can always act) or a module paired with its
  * optional `requestSystemAction`/`isNonBlockingAction`. Both forms resolve
@@ -48,6 +104,8 @@ export type GameModuleRegistration =
       readonly module: GameModule<any, any, any, any>;
       readonly requestSystemAction?: SystemActionRequester;
       readonly isNonBlockingAction?: NonBlockingActionClassifier;
+      readonly isHumanPriorityAction?: HumanPriorityActionClassifier;
+      readonly getConsultAdvice?: ConsultAdviceProvider;
     };
 
 /**
@@ -68,6 +126,14 @@ export interface GameModuleRegistry {
    * nothing is registered for `gameId` OR the registered module supplied no
    * classifier at all. */
   isNonBlockingAction(gameId: GameId, action: unknown): boolean;
+  /** `false` (a bot may take it — the previous behaviour, unchanged for any
+   * game that registers no classifier) when nothing is registered for
+   * `gameId` OR the registered module supplied none. */
+  isHumanPriorityAction(gameId: GameId, action: unknown): boolean;
+  /** `null` when nothing is registered for `gameId`, OR the module supplied no
+   * provider, OR the game itself has no answer — all three fail closed the
+   * same way, exactly like `getSystemAction` above. */
+  getConsultAdvice(gameId: GameId, state: unknown, playerId: PlayerId, tier: BotTier): Promise<JsonValue | null>;
 }
 
 // See the erasure note above: registering a `GameModule<TState,...>` for a
@@ -94,5 +160,7 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
     get: (gameId) => byId.get(gameId)?.module,
     getSystemAction: (gameId, state, rng) => byId.get(gameId)?.requestSystemAction?.(state, rng) ?? null,
     isNonBlockingAction: (gameId, action) => byId.get(gameId)?.isNonBlockingAction?.(action) ?? false,
+    isHumanPriorityAction: (gameId, action) => byId.get(gameId)?.isHumanPriorityAction?.(action) ?? false,
+    getConsultAdvice: async (gameId, state, playerId, tier) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier)) ?? null,
   };
 }

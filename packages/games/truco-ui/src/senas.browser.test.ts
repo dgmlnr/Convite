@@ -151,14 +151,21 @@ describe("renderSenaPicker — at the per-hand cap the control stays put and say
     expect(toggle.title).toBe(`Ya hiciste las ${MAX_SENAS_PER_HAND} señas de la mano`);
   });
 
-  it("counts down on the button itself while there is quota left, so the cap is visible BEFORE it bites", () => {
+  it("counts down on the button itself, so the cap is visible BEFORE it bites", () => {
+    // THE NUMBER MOVED TWICE BEFORE IT LANDED HERE, and the trail is worth
+    // leaving. Asking your partner spends this same allowance, so it briefly
+    // got a button of its own: two controls each reading "(n)" looked like two
+    // budgets, and moving the count to a chip between them looked like a
+    // stray digit. Both were reported. The shape that works is ONE control —
+    // this one — holding both spends behind its own toggle, which makes the
+    // number unambiguously the toggle's own again.
     for (const remaining of [MAX_SENAS_PER_HAND, 2, 1]) {
       const el = freshContainer();
 
       renderSenaPicker(el, SIX_LEGAL, () => {}, { remaining }, surface);
 
       const toggle = el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!;
-      expect(toggle.textContent).toBe(`Señas (${remaining})`);
+      expect(toggle.textContent).toBe(`Seña/Consulta (${remaining})`);
       expect(toggle.disabled).toBe(false);
       el.remove();
     }

@@ -60,7 +60,7 @@ describe("renderCalls (spec: calls shown ONLY when legal, from getLegalActions â
     expect(dispatch).toHaveBeenCalledExactlyOnceWith(respondQuiero);
   });
 
-  it("labels every truco/envido call level distinctly (Retruco, Vale cuatro, Envido envido, Real envido, Falta envido, Mostrar envido, No quiero)", () => {
+  it("labels every truco/envido call level distinctly (Retruco, Vale cuatro, Envido envido, Real envido, Falta envido, Mis tantos, No quiero)", () => {
     const el = freshContainer();
     const legal: readonly Action[] = [
       { type: "call-truco", playerId: PLAYER, level: "retruco" },
@@ -69,7 +69,7 @@ describe("renderCalls (spec: calls shown ONLY when legal, from getLegalActions â
       { type: "call-envido", playerId: PLAYER, level: "envidoEnvido" },
       { type: "call-envido", playerId: PLAYER, level: "realEnvido" },
       { type: "call-envido", playerId: PLAYER, level: "faltaEnvido" },
-      { type: "reveal-envido", playerId: PLAYER },
+      { type: "declare-envido", playerId: PLAYER, declaration: "points" },
     ];
 
     renderCalls(el, legal, () => {});
@@ -78,7 +78,10 @@ describe("renderCalls (spec: calls shown ONLY when legal, from getLegalActions â
     // FIRST, as its own cluster â€” answering is a different kind of decision
     // from opening/escalating a new one (spec), so the two never interleave.
     const labels = [...el.querySelectorAll<HTMLButtonElement>("button")].map((b) => b.textContent);
-    expect(labels).toEqual(["No quiero", "Retruco", "Vale cuatro", "Envido envido", "Real envido", "Falta envido", "Mostrar envido"]);
+    // "Mis tantos" where "Mostrar envido" used to be: showing the envido was
+    // one button that resolved it for everybody, and it is a round now â€” this
+    // button says only YOUR number, on your turn to speak.
+    expect(labels).toEqual(["No quiero", "Retruco", "Vale cuatro", "Envido envido", "Real envido", "Falta envido", "Mis tantos"]);
   });
 });
 

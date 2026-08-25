@@ -71,42 +71,6 @@ export interface PendingCallBannerProps {
 }
 
 /**
- * Renders the pending-call banner: what was called, who called it, and
- * whether the LOCAL player or the opponent owes the answer — deliberately a
- * plain in-flow block, never a modal-style overlay over the cloth (that is
- * exactly where this project's opacity-over-cloth trap lies in wait; this
- * element sits in normal document flow and never covers a card).
- *
- * `null` clears it back to empty — `:empty { display: none }` in the
- * stylesheet is what makes the banner disappear the instant the call
- * resolves, without this function needing to touch layout at all.
- */
-export function renderPendingCallBanner(container: HTMLElement, props: PendingCallBannerProps | null): void {
-  container.replaceChildren();
-  container.className = "hexdev-truco-pending-call";
-  if (props === null) {
-    delete container.dataset.turn;
-    return;
-  }
-  container.dataset.turn = props.waitingOnMe ? "mine" : "theirs";
-
-  const level = document.createElement("span");
-  level.className = "hexdev-truco-pending-call-level";
-  level.textContent = props.call.levelLabel;
-  container.appendChild(level);
-
-  const caller = document.createElement("span");
-  caller.className = "hexdev-truco-pending-call-caller";
-  caller.textContent = `${TABLE_STRINGS.calledBy} ${props.callerLabel}`;
-  container.appendChild(caller);
-
-  const turn = document.createElement("span");
-  turn.className = "hexdev-truco-pending-call-turn";
-  turn.textContent = props.waitingOnMe ? TABLE_STRINGS.yourTurnToAnswer : TABLE_STRINGS.waitingOnOpponent;
-  container.appendChild(turn);
-}
-
-/**
  * The same banner as ONE spoken sentence, for the live region `table.ts`
  * keeps mounted (see `announcer.ts`). The turn announcer deliberately falls
  * silent while a call is open — its own comment says the banner is the thing

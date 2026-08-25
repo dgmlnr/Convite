@@ -1,17 +1,22 @@
 import type { Action, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { announce, createAnnouncer } from "./announcer.js";
-import { renderCallLog, scrollCallLogToNewest } from "./call-log.js";
+import { renderCallLog, scrollCallLogToNewest, speakerLabel } from "./call-log.js";
 import { renderCalls } from "./calls.js";
+import { deriveEnvidoRevealEvent, describeEnvidoRevealNotice } from "./envido-reveal-notice.js";
+import type { EnvidoRevealEvent } from "./envido-reveal-notice.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { deriveHandOutcomeEvent, describeHandOutcome, renderHandOutcomeBanner } from "./hand-outcome.js";
 import type { HandOutcomeEvent } from "./hand-outcome.js";
 import { renderHand } from "./hand.js";
+import { renderLeaveControl } from "./leave-control.js";
 import type { MatchOutcomeInfo } from "./match-outcome.js";
 import { describeMatchOutcome, renderMatchOverOverlay } from "./match-outcome.js";
 import { renderOpponentHand } from "./opponent-hand.js";
 import { renderPlayedCards } from "./played-cards.js";
-import { derivePendingCall, describePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
+import { derivePendingCall, describePendingCall, isMyTurnToAnswer, respondingTeamId } from "./pending-call.js";
 import { renderScoreboardPanel } from "./scoreboard-panel.js";
+import { derivePendingCallMarks, deriveSeatCallEvent, renderSeatCallNotice } from "./seat-call-notice.js";
+import type { SeatCallEvent } from "./seat-call-notice.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
 import { ANCHOR_ORDER, resolveSeatPositions } from "./seat-position.js";
 import type { TableAnchor } from "./seat-position.js";
@@ -45,9 +50,38 @@ const DEFAULT_SENA_NOTICE_MS = 2000;
  * baseline — never has to wait real seconds to observe it. */
 const DEFAULT_TURN_CLOCK_TICK_MS = 1000;
 
+/** Longer than the seña notice (2000ms) and than the hand-outcome banner
+ * (2600ms), on purpose. Those two acknowledge something the player already
+ * WATCHED happen; this one delivers NUMBERS a player has to read, compare
+ * against their own hand, and work out who took the envido with — reported
+ * from real play as "no se muestran el tiempo suficiente". Reading two or
+ * four declarations is simply slower than recognising an outcome. */
+const DEFAULT_ENVIDO_REVEAL_NOTICE_MS = 4200;
+
+/** Two seconds, and that number came from the report rather than from taste:
+ * "se debe mostrar por 2 segundos para dar tiempo a leerlo". It is the beat
+ * the table is meant to keep -- long enough that a call can be read on the
+ * seat that made it before the next one lands, which is what turns three
+ * bots calling into a sequence instead of a pile.
+ *
+ * PAIRED WITH THE BOT'S OWN PAUSE, which is 2400ms
+ * (truco-bot's DEFAULT_THINKING_DELAY_MS) precisely so a bot cannot act again
+ * while a chip is still up: this 2000 plus a visible beat. The two constants
+ * live in packages that do not depend on each other — a bot has no business
+ * importing a renderer — so each carries the other's number and this reason.
+ * If either moves, the other has to be looked at.
+ *
+ * Injectable for the same reason every duration in this file is: so a test
+ * never waits real seconds, and a visual baseline can freeze it. */
+const DEFAULT_SEAT_CALL_NOTICE_MS = 2000;
+
 export interface MatchTableRendererOptions {
   readonly handOutcomeBannerMs?: number;
   readonly senaNoticeMs?: number;
+  /** How long the envido-reveal notice stays up. Injected for exactly the
+   * reason `senaNoticeMs` is: so a test never waits real seconds, and a
+   * visual baseline can freeze it. */
+  readonly envidoRevealNoticeMs?: number;
   /** The clock the turn countdown measures the server's absolute deadline
    * against. Injected rather than calling `Date.now()` inline so a test can
    * assert an exact number, and so a visual baseline can freeze one — a live
@@ -55,6 +89,9 @@ export interface MatchTableRendererOptions {
    * possibly land in a screenshot. */
   readonly now?: () => number;
   readonly turnClockTickMs?: number;
+  /** How long a call stays marked on the seat that made it. Injected exactly
+   * like the notices above. */
+  readonly seatCallNoticeMs?: number;
 }
 
 /** `outcome === null` while the match is still in progress — the ONLY
@@ -132,24 +169,57 @@ export function createMatchTableRenderer(
   dispatch: (action: Action) => void,
   matchEnd?: MatchEndInfo,
   turnDeadline?: number | null,
+  /** Where "leave this match" goes. Optional: a caller with nowhere to send
+   * the player (the fallback "connection is live" path) renders no control
+   * at all rather than a button that dispatches into nothing. */
+  onLeaveMatch?: () => void,
+  /** The partner's private answer to a consult, and whether one is in flight.
+   * Declared HERE as well as on the implementation below, and that is not
+   * duplication for its own sake: this annotation is what the package
+   * EXPORTS, so a parameter added only to the implementation is invisible to
+   * every caller — the declaration emit simply drops it, and the call site
+   * fails with "expected 4-7 arguments" while the source plainly shows 8. */
+  consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean },
 ) => void {
   let previousTrickCount = 0;
   let trickFeedback = "";
   let previousView: PlayerView | null = null;
   let handOutcomeEvent: HandOutcomeEvent | null = null;
   let handOutcomeTimer: ReturnType<typeof setTimeout> | undefined;
-  // The DOM node currently showing the banner — read by the timer AT FIRE
-  // TIME, not captured at schedule time, so whichever render is CURRENTLY
-  // mounted gets cleared, however many intervening renders happened first.
-  let mountedHandOutcomeEl: HTMLElement | null = null;
   const handOutcomeBannerMs = options?.handOutcomeBannerMs ?? DEFAULT_HAND_OUTCOME_BANNER_MS;
   let senaNoticeEvent: PartnerSenaEvent | null = null;
   let senaNoticeTimer: ReturnType<typeof setTimeout> | undefined;
-  // Read AT FIRE TIME, never captured at schedule time — same reason as
-  // `mountedHandOutcomeEl` above: whichever render is CURRENTLY mounted is
-  // the one the timer must clear, however many renders happened in between.
-  let mountedSenaNoticeEl: HTMLElement | null = null;
   const senaNoticeMs = options?.senaNoticeMs ?? DEFAULT_SENA_NOTICE_MS;
+  // Same timer/re-arm shape as the two notices above it.
+  let envidoRevealEvent: EnvidoRevealEvent | null = null;
+  let envidoRevealTimer: ReturnType<typeof setTimeout> | undefined;
+  const envidoRevealNoticeMs = options?.envidoRevealNoticeMs ?? DEFAULT_ENVIDO_REVEAL_NOTICE_MS;
+  // Same timer/re-arm shape again, with one difference in the mounted node:
+  // this notice can land on ANY of the four anchors, so the timer has a list
+  // to clear rather than a single element. Read at fire time like the others.
+  let seatCallEvent: SeatCallEvent | null = null;
+  let seatCallTimer: ReturnType<typeof setTimeout> | undefined;
+  let mountedSeatCallEls: HTMLElement[] = [];
+  // Same closure shape, and for the same reason, as the banner lane below:
+  // what expires is a timer, not a view. When the two-second moment is up,
+  // the seat mark may still have something to show (a call that is STILL
+  // waiting for an answer), so the timer repaints rather than erases.
+  let repaintSeatCall: (() => void) | null = null;
+  // ONE OCCUPANT AT A TIME. The banner lane has four tenants and each used to
+  // paint itself independently, so any two that were live at once simply sat
+  // side by side -- reported from real 2v2 play with an unanswered ENVIDO and
+  // a partner's seña sharing the lane, which is two things to read at the
+  // moment a player has a call to answer.
+  //
+  // A closure rather than a re-render, because the thing that expires is a
+  // TIMER, not a view: when a notice's two seconds are up, nothing about the
+  // match has changed and no new view is coming. Without this the lane would
+  // simply stay empty until the server next said something -- the pending
+  // call, which is still pending, would have vanished with the notice that
+  // covered it. Reassigned on every render so it always closes over the
+  // newest props.
+  let repaintBannerLane: (() => void) | null = null;
+  const seatCallNoticeMs = options?.seatCallNoticeMs ?? DEFAULT_SEAT_CALL_NOTICE_MS;
 
   // The live regions (announcer.ts). Unlike EVERY other node this renderer
   // touches, these are built ONCE per mount and then left alone: an
@@ -162,6 +232,7 @@ export function createMatchTableRenderer(
   let announcers: {
     readonly handOutcome: HTMLElement;
     readonly sena: HTMLElement;
+    readonly envidoReveal: HTMLElement;
     readonly turn: HTMLElement;
     readonly turnClock: HTMLElement;
     readonly pendingCall: HTMLElement;
@@ -172,9 +243,11 @@ export function createMatchTableRenderer(
   const now = options?.now ?? Date.now;
   const turnClockTickMs = options?.turnClockTickMs ?? DEFAULT_TURN_CLOCK_TICK_MS;
   // The countdown's own repeating timer, plus the two things it reads AT FIRE
-  // TIME rather than capturing at schedule time — the same discipline
-  // `mountedHandOutcomeEl` already documents above: whichever render is
-  // CURRENTLY mounted is the one the tick must redraw.
+  // TIME rather than capturing at schedule time: whichever render is
+  // CURRENTLY mounted is the one the tick must redraw, however many renders
+  // happened in between. (The three banner-lane notices used to keep their
+  // own mounted-node fields for the same reason; they no longer need them,
+  // because the lane closure they now call holds those elements itself.)
   let turnClockTimer: ReturnType<typeof setInterval> | undefined;
   let mountedTurnClockEl: HTMLElement | null = null;
   let mountedTurnDeadline: number | null = null;
@@ -186,6 +259,12 @@ export function createMatchTableRenderer(
   // its one low-time warning.
   let announcedClockDeadline: number | null = null;
   let warnedClockDeadline: number | null = null;
+  // Whether the leave control is mid-question. Lives HERE, in the per-match
+  // closure, for the same reason `previousTrickCount` does: every server view
+  // re-renders the whole table, and a confirmation owned by the DOM would be
+  // wiped by the next opponent move — precisely when a player is most likely
+  // to be looking at it.
+  let leaveAsking = false;
 
   return function render(
     container: HTMLElement,
@@ -194,6 +273,12 @@ export function createMatchTableRenderer(
     dispatch: (action: Action) => void,
     matchEnd?: MatchEndInfo,
     turnDeadline?: number | null,
+    onLeaveMatch?: () => void,
+    /** The partner's private answer to a consult, and whether one is in
+     * flight. Passed in rather than read off the view because it never
+     * travels in a view: `MatchRoom` sends it to the asking client alone, and
+     * a redacted view that could carry it would carry it to everyone. */
+    consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean },
   ): void {
     ensureMatchstickDefs(container.ownerDocument);
     ensureTableStyles(container.ownerDocument);
@@ -213,6 +298,7 @@ export function createMatchTableRenderer(
       announcers = {
         handOutcome: createAnnouncer(container.ownerDocument, "hand-outcome"),
         sena: createAnnouncer(container.ownerDocument, "partner-sena"),
+        envidoReveal: createAnnouncer(container.ownerDocument, "envido-reveal"),
         turn: createAnnouncer(container.ownerDocument, "turn"),
         turnClock: createAnnouncer(container.ownerDocument, "turn-clock"),
         pendingCall: createAnnouncer(container.ownerDocument, "pending-call"),
@@ -229,6 +315,7 @@ export function createMatchTableRenderer(
     const {
       handOutcome: handOutcomeAnnouncer,
       sena: senaAnnouncer,
+      envidoReveal: envidoRevealAnnouncer,
       turn: turnAnnouncer,
       turnClock: turnClockAnnouncer,
       pendingCall: pendingCallAnnouncer,
@@ -247,7 +334,7 @@ export function createMatchTableRenderer(
       if (handOutcomeTimer !== undefined) clearTimeout(handOutcomeTimer);
       handOutcomeTimer = setTimeout(() => {
         handOutcomeEvent = null;
-        if (mountedHandOutcomeEl !== null) renderHandOutcomeBanner(mountedHandOutcomeEl, null);
+        repaintBannerLane?.();
         // The region empties with the chip, not on the next broadcast. Silent:
         // emptying is a REMOVAL, and `aria-relevant` stays at its default
         // ("additions text"), which excludes removals (announcer.ts).
@@ -268,9 +355,46 @@ export function createMatchTableRenderer(
       if (senaNoticeTimer !== undefined) clearTimeout(senaNoticeTimer);
       senaNoticeTimer = setTimeout(() => {
         senaNoticeEvent = null;
-        if (mountedSenaNoticeEl !== null) renderSenaNotice(mountedSenaNoticeEl, null);
+        repaintBannerLane?.();
         announce(senaAnnouncer, null);
       }, senaNoticeMs);
+    }
+
+    // The envido reveal — the third point-in-time moment, and the one this
+    // lane was missing. Before it, the single most consequential thing the
+    // envido produces announced itself by quietly adding a row to a side
+    // panel: measured against the engine, those numbers survive the whole
+    // hand, so the defect was never how LONG they lasted (the report's own
+    // words, "no se muestran el tiempo suficiente") but that nothing ever
+    // put them where the player was looking.
+    //
+    // Derived from `previousView` like the two above, so it must also be
+    // derived BEFORE the assignment below replaces it.
+    // WHO just spoke. Derived from the call-event list rather than from the
+    // view as a whole, because that list is the only append-only record of
+    // what was SAID -- the truco/envido state fields describe where the chain
+    // stands now, which cannot tell a fresh call from a re-render of the same
+    // one. Derived before `previousView` is replaced, exactly like the three
+    // above it.
+    const newSeatCallEvent = deriveSeatCallEvent(previousView?.hand?.callEvents ?? null, view.hand?.callEvents ?? [], view.hand?.envido);
+    if (newSeatCallEvent !== null) {
+      seatCallEvent = newSeatCallEvent;
+      if (seatCallTimer !== undefined) clearTimeout(seatCallTimer);
+      seatCallTimer = setTimeout(() => {
+        seatCallEvent = null;
+        repaintSeatCall?.();
+      }, seatCallNoticeMs);
+    }
+
+    const newEnvidoRevealEvent = deriveEnvidoRevealEvent(previousView, view);
+    if (newEnvidoRevealEvent !== null) {
+      envidoRevealEvent = newEnvidoRevealEvent;
+      if (envidoRevealTimer !== undefined) clearTimeout(envidoRevealTimer);
+      envidoRevealTimer = setTimeout(() => {
+        envidoRevealEvent = null;
+        repaintBannerLane?.();
+        announce(envidoRevealAnnouncer, null);
+      }, envidoRevealNoticeMs);
     }
     previousView = view;
 
@@ -310,6 +434,35 @@ export function createMatchTableRenderer(
 
     const isAnchorActive = (seat: number, teamId: TeamId): boolean =>
       pendingCall !== null ? teamId === respondingTeam : turnSeat !== null && turnSeat === seat;
+
+    /**
+     * EXACTLY ONE SEAT WEARS THE CLOCK.
+     *
+     * `isAnchorActive` answers "may this seat act", and with a call open that
+     * is the whole answering TEAM — which is one player in 1v1 and two in
+     * 2v2. Marking both was written when only the first could happen, and in
+     * 2v2 it produced two rings and two badges at once. Worse, the badge
+     * carries the countdown and the renderer tracks a single mounted clock
+     * node, so only the last one appended ever ticked: reported from real
+     * play as a partner's badge frozen at 0:50 while the player's own counted
+     * down, and reading "Esperando al rival" on a TEAMMATE's seat while it
+     * was in fact the player's own turn to answer.
+     *
+     * The local player comes first, and that is not arbitrary: the server
+     * now stands its bots down from any decision a human teammate is being
+     * offered (platform-core's own HumanPriorityActionClassifier), so when
+     * the viewer is on the answering side the answer really is theirs. When
+     * they are not, the first other active seat wears it.
+     */
+    // Every chain that is still open, each on the seat that opened it. Reads
+    // the hand directly rather than going through `pendingCall`, because that
+    // helper answers "is SOMETHING pending" with one call, and a truco frozen
+    // behind an envido is a second one that is just as open.
+    const pendingCallMarks = derivePendingCallMarks(view.hand ?? null);
+
+    const seatOnTheClock: number | null = isAnchorActive(view.self.seat, view.self.teamId)
+      ? view.self.seat
+      : (others.find((other) => isAnchorActive(other.seat, other.teamId))?.seat ?? null);
 
     const turnBadgeText = (forSelf: boolean): string => {
       if (pendingCall !== null) return forSelf ? TABLE_STRINGS.yourTurnToAnswer : TABLE_STRINGS.waitingOnOpponent;
@@ -382,14 +535,14 @@ export function createMatchTableRenderer(
       // once in the banner lane and gone (see `renderSenaNotice` above). The
       // anchor carries only what is permanently true of a seat: who they are,
       // how many cards they hold, and whether they owe the next move.
-      if (isAnchorActive(other.seat, other.teamId)) {
+      if (other.seat === seatOnTheClock) {
         anchor.classList.add("hexdev-truco-anchor--active");
         mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(false), remainingMs) ?? mountedTurnClockEl;
       }
     }
 
     const bottom = anchors.get("bottom")!;
-    if (isAnchorActive(view.self.seat, view.self.teamId)) {
+    if (view.self.seat === seatOnTheClock) {
       bottom.classList.add("hexdev-truco-anchor--active");
       mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText(true), remainingMs) ?? mountedTurnClockEl;
     }
@@ -508,13 +661,24 @@ export function createMatchTableRenderer(
     // (`replaceChildren` empties it, it does not remove it), so a listener
     // there would outlive the match with nothing left to remove it, no better
     // than `document`.
+    // Beside the señas picker, and that is the point rather than a layout
+    // convenience: the two spend ONE budget (truco-engine's `consult.ts`
+    // charges a seña for a question), so they count down together where a
+    // player can see it happen. Gated on the same static fact the picker
+    // uses — a match with teammates — so a 1v1 felt gains no node at all.
     if (view.teammates.length > 0) {
+      // ONE CONTROL, and its own toggle IS the allowance. Two buttons
+      // counting the same budget were tried twice — a "(3)" on each, then a
+      // lone chip between them — and both read as two budgets. So the picker
+      // hosts both ways to spend it, and the number goes back on the single
+      // button where it can only mean one thing.
       renderSenaPicker(
         actionBar.appendChild(document.createElement("div")),
         legalActions,
         dispatch,
         { remaining: view.self.senasRemaining },
         layout,
+        { advice: consult?.advice ?? null, asking: consult?.asking ?? false },
       );
     }
     const handRow = bottom.appendChild(document.createElement("div"));
@@ -535,10 +699,38 @@ export function createMatchTableRenderer(
     // TOP of the centre column, matching where it already sat in flow, and
     // non-interactive (`pointer-events: none`), so it never swallows a tap
     // meant for anything beneath it.
+    // Hoisted above the banner lane because TWO things read it now: the call
+    // log itself, further down, and the reveal notice's speaker labels. One
+    // object rather than two literals with the same fields — the seat a
+    // player is called by must not depend on which of the two is asking.
+    const callLogInput = {
+      events: view.hand?.callEvents ?? [],
+      envido: view.hand?.envido ?? ({ status: "none" } as const),
+      manoSeat: view.hand?.manoSeat ?? 0,
+      selfSeat: view.self.seat,
+      positions,
+    };
+
     const bannerSlot = center.appendChild(document.createElement("div"));
     bannerSlot.className = "hexdev-truco-banner-slot";
 
-    const banner = bannerSlot.appendChild(document.createElement("div"));
+    /**
+     * THE PENDING CALL HAS NO BANNER IN THE MIDDLE OF THE TABLE ANY MORE.
+     *
+     * It used to sit here naming the LEVEL and the calling TEAM ("Cantó:
+     * Ellos") — which was all it could ever say, because the truco/envido
+     * state fields carry a team and never a seat. Now the call is marked on
+     * the seat that made it, for as long as it stands, so the middle of the
+     * felt was repeating a worse version of something already on screen:
+     * "ahora salen las 2 cards... debemos dejar solo la del jugador".
+     *
+     * Nothing about the call was lost with it. WHO called is the seat mark;
+     * WHOSE turn it is, is the turn badge on that seat; WHAT can be done
+     * about it is the row of buttons under the hand. The announcement below
+     * stays for the same reason the envido reveal's did: a screen-reader user
+     * has no seat to glance at, so the live region is not a duplicate of
+     * anything for them.
+     */
     const pendingCallProps =
       pendingCall === null
         ? null
@@ -547,7 +739,7 @@ export function createMatchTableRenderer(
             callerLabel: pendingCall.callingTeamId === view.self.teamId ? TABLE_STRINGS.us : TABLE_STRINGS.them,
             waitingOnMe: isMyTurnToAnswer(legalActions),
           };
-    renderPendingCallBanner(banner, pendingCallProps);
+    // Painted below, once, by the lane closure — see repaintBannerLane.
     // The FIFTH announcer, closing the one silent gap the turn announcer's
     // own yield created: while a call is open the turn line deliberately says
     // nothing because "the banner is the thing to read" — and the banner,
@@ -559,10 +751,9 @@ export function createMatchTableRenderer(
     announce(pendingCallAnnouncer, pendingCallProps === null ? null : describePendingCall(pendingCallProps));
 
     const handOutcomeBanner = bannerSlot.appendChild(document.createElement("div"));
-    mountedHandOutcomeEl = handOutcomeBanner;
     const handOutcomeProps =
       handOutcomeEvent === null ? null : { event: handOutcomeEvent, wonBySelf: handOutcomeEvent.winnerTeamId === view.self.teamId };
-    renderHandOutcomeBanner(handOutcomeBanner, handOutcomeProps);
+    // Painted by the lane closure below.
     // Spoken from the SAME props the banner draws, so the two can never
     // describe different things; `announce` itself no-ops when the sentence
     // has not changed, which is what keeps a re-render silent.
@@ -577,10 +768,56 @@ export function createMatchTableRenderer(
     // other: the pending call is the most important thing on screen while it
     // is open, and a seña the player never sees is a seña lost.
     const senaNotice = bannerSlot.appendChild(document.createElement("div"));
-    mountedSenaNoticeEl = senaNotice;
     const senaNoticeProps = senaNoticeEvent === null ? null : { signal: senaNoticeEvent.signal };
-    renderSenaNotice(senaNotice, senaNoticeProps);
+    // Painted by the lane closure below.
     announce(senaAnnouncer, senaNoticeProps === null ? null : describeSenaNotice(senaNoticeProps));
+
+    // THE REVEAL HAS NO VISUAL BANNER ANY MORE, and keeping the announcement
+    // is not an oversight. It used to paint a card in the middle of the felt
+    // listing every declaration; reported from real play as the thing to
+    // remove, on the grounds that the record panel plus a chip on each seat
+    // already cover it: "esa card yo la sacaría, teniendo el log y los cantos
+    // bien marcados sobre cada jugador en mini cards ya es suficiente".
+    //
+    // A screen-reader user has no side panel to glance at, so for them this
+    // announcement is not a duplicate of anything — it is the only real-time
+    // channel the reveal has. Dropping it because a sighted player found the
+    // visual redundant would be trading one audience's clutter for another
+    // audience's silence. `describeEnvidoRevealNotice` and the props below
+    // therefore survive; only the painted node is gone.
+    //
+    // `speakerLabel` is IMPORTED from call-log.ts rather than reimplemented:
+    // that module owns how a seat becomes "Vos"/"Rival"/"Compañero" from
+    // table geometry, and a second copy is how the two would drift into
+    // naming the same seat differently in two places on one screen.
+    const envidoRevealProps =
+      envidoRevealEvent === null
+        ? null
+        : {
+            declarations: envidoRevealEvent.declarations,
+            labelForSeat: (seat: number): string => speakerLabel(seat, callLogInput),
+          };
+    /**
+     * WHO GETS THE LANE. A MOMENT outranks a STANDING STATE, because a moment
+     * is the only one of the two that can be missed: the pending call is
+     * still there after the notice clears, and this closure is what puts it
+     * back. Among the moments, the order is how much a player loses by not
+     * reading it — a hand outcome carries a result, a seña carries a hint.
+     * (The envido reveal used to lead this order; it no longer paints
+     * anything, so it no longer competes for the lane.)
+     *
+     * Reads the renderer's own event fields rather than the captured props,
+     * so a timer that nulls its event and calls this gets the next occupant
+     * rather than the one that just expired.
+     */
+    const paintBannerLane = (): void => {
+      const occupant = handOutcomeEvent !== null ? "outcome" : senaNoticeEvent !== null ? "sena" : "none";
+      renderHandOutcomeBanner(handOutcomeBanner, occupant === "outcome" ? handOutcomeProps : null);
+      renderSenaNotice(senaNotice, occupant === "sena" ? senaNoticeProps : null);
+    };
+    repaintBannerLane = paintBannerLane;
+    paintBannerLane();
+    announce(envidoRevealAnnouncer, envidoRevealProps === null ? null : describeEnvidoRevealNotice(envidoRevealProps));
 
     const trickArea = center.appendChild(document.createElement("div"));
     // Every card played THIS HAND, not only the trick in progress (spec:
@@ -655,13 +892,81 @@ export function createMatchTableRenderer(
     // with a definite grid-area is contained by that area" rule, with no
     // change to `renderCallLog`'s own argument list.
     const callLog = document.createElement("div");
-    renderCallLog(callLog, {
-      events: view.hand?.callEvents ?? [],
-      envido: view.hand?.envido ?? { status: "none" },
-      manoSeat: view.hand?.manoSeat ?? 0,
-      selfSeat: view.self.seat,
-      positions,
-    });
+    renderCallLog(callLog, callLogInput);
+
+    // ONLY on the anchor that spoke, and never speculatively on the other
+    // three. A host on every anchor reads as the tidier shape, and it is
+    // wrong here: `.hexdev-truco-anchor:empty` is what hides the two side
+    // anchors in a 1v1 match, so giving them a child — even an empty,
+    // display:none one — makes them real boxes again. Measured, after
+    // exactly that mistake: the felt grew 16px at 375, 24px at 700 and 32px
+    // at 960, one seat gutter per tier, and four pinned height baselines went
+    // red at once.
+    //
+    // The seat that just spoke always has cards, so this can never resurrect
+    // an empty anchor. The timer empties the host it created; the next render
+    // does not create one at all.
+    /**
+     * A STANDING CALL OUTRANKS A PASSING ONE. While a call is still waiting
+     * for its answer, the mark belongs to whoever made it, for as long as it
+     * stands — that is the state of the table, not a moment, and it is
+     * exactly when a player needs to know which of three other seats spoke.
+     * The two-second moment covers everything else (a response, an
+     * escalation) once nothing is left open.
+     *
+     * Hosts are REMOVED rather than emptied. An empty child is not nothing:
+     * `.hexdev-truco-anchor:empty` is what hides the two side anchors in a
+     * 1v1, and leaving a spent host behind would bring them back as real
+     * boxes — measured once already, at 16 to 32px of felt growth per tier.
+     */
+    const paintSeatCall = (): void => {
+      for (const host of mountedSeatCallEls) host.remove();
+      mountedSeatCallEls = [];
+
+      // STANDING CLAIMS AND THE LATEST MOMENT, TOGETHER -- not one instead of
+      // the other.
+      //
+      // The first cut let the standing marks REPLACE the passing one whenever
+      // anything was open, and that quietly swallowed the case it mattered
+      // most in. A quiero or a no-quiero is only ever a moment; it never
+      // becomes a standing mark of its own. So whenever a call SURVIVED the
+      // answer -- an envido declined while a truco is still waiting, an
+      // ordinary sequence rather than a corner -- the answer was never drawn
+      // at all. Reported as losing track of who replied and what they said,
+      // and the honest reading is that it was never on screen to lose.
+      //
+      // The de-duplication is what makes showing both safe: a fresh CALL is
+      // the newest moment AND the standing mark, so it would otherwise draw
+      // twice on one seat. Matched on seat and text rather than by identity,
+      // because the two reach here from different derivations of one event.
+      //
+      // Grouped BY SEAT rather than one host per mark: the hosts are
+      // absolutely centred on the anchor, so two of them would land exactly
+      // on top of each other.
+      // Read into a local FIRST: `seatCallEvent` is a mutable field of the
+      // renderer that a timer clears, so it cannot be narrowed inside this
+      // closure — and a re-read halfway through would be a real race, not
+      // just a type complaint.
+      const moment = seatCallEvent;
+      const alreadyStanding = moment !== null && pendingCallMarks.some((mark) => mark.seat === moment.seat && mark.text === moment.text);
+      const shown = moment === null || alreadyStanding ? pendingCallMarks : [...pendingCallMarks, moment];
+      const bySeat = new Map<number, string[]>();
+      for (const mark of shown) {
+        const texts = bySeat.get(mark.seat) ?? [];
+        texts.push(mark.text);
+        bySeat.set(mark.seat, texts);
+      }
+
+      for (const [seat, texts] of bySeat) {
+        const anchorEl = anchors.get(positions.get(seat) ?? "top");
+        if (anchorEl === undefined) continue;
+        const host = anchorEl.appendChild(document.createElement("div"));
+        mountedSeatCallEls.push(host);
+        renderSeatCallNotice(host, texts);
+      }
+    };
+    repaintSeatCall = paintSeatCall;
+    paintSeatCall();
 
     for (const anchor of ANCHOR_ORDER) felt.appendChild(anchors.get(anchor)!);
     felt.appendChild(center);
@@ -689,6 +994,44 @@ export function createMatchTableRenderer(
     layout.appendChild(felt);
     layout.appendChild(panel);
     container.appendChild(layout);
+
+    // The way out, mounted as a SIBLING of `layout` and positioned absolutely
+    // over it (table-styles.ts). Deliberately not a row in the felt's grid:
+    // the felt's height is the scarcest thing this widget has — it is already
+    // capped against the viewport in fullscreen — so a permanent control
+    // earns its place only by costing none of it. Absent entirely when the
+    // caller offers nowhere to go, so the fallback "connection is live" path
+    // never grows a button that dispatches into nothing.
+    if (onLeaveMatch !== undefined) {
+      const leaveHost = document.createElement("div");
+      // `focusOnOpen` is false HERE — this call is a re-render, which happens
+      // on every server view. Only the one below, from the player's own tap,
+      // moves focus. Getting this wrong would drag focus back to cancel every
+      // time the opponent moved.
+      const paintLeave = (focusOnOpen = false): void => {
+        renderLeaveControl(leaveHost, {
+          asking: leaveAsking,
+          focusOnOpen,
+          onAsk: () => {
+            leaveAsking = true;
+            paintLeave(true);
+          },
+          onCancel: () => {
+            leaveAsking = false;
+            paintLeave();
+          },
+          onConfirm: () => {
+            // Reset before handing off: the callback tears this match down,
+            // and a renderer reused for a NEXT match must not open on a
+            // question nobody asked.
+            leaveAsking = false;
+            onLeaveMatch();
+          },
+        });
+      };
+      paintLeave();
+      container.appendChild(leaveHost);
+    }
 
     // LOAD-BEARING ORDERING (PR4-T3, tasks §8, design §9.3): this call is only
     // safe once `callLog` is attached all the way up to `container` —

@@ -1,5 +1,7 @@
 import type { Action } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
+import { renderConsultAdvice, renderConsultOffer } from "./consult-control.js";
+import type { ConsultControlProps } from "./consult-control.js";
 import { SENA_LABELS, TABLE_STRINGS } from "./strings.js";
 
 type SendSena = Extract<Action, { type: "send-sena" }>;
@@ -64,6 +66,14 @@ export function renderSenaPicker(
   dispatch: (action: Action) => void,
   quota: SenaQuota,
   dismissSurface: HTMLElement,
+  /**
+   * The OTHER way to spend this allowance. Asking your partner what they make
+   * of a call costs a seña (truco-engine's `consult.ts`), so it belongs
+   * inside this control rather than beside it: one button, one number, and
+   * both spends revealed together. Two separate controls counting the same
+   * budget were tried twice and read as two budgets both times.
+   */
+  consult: ConsultControlProps = { advice: null, asking: false },
 ): void {
   container.replaceChildren();
   // Stable window height (apply prompt): the class is set BEFORE the early
@@ -77,7 +87,10 @@ export function renderSenaPicker(
   container.className = "hexdev-truco-senas";
   const legalSenas = legalActions.filter((action): action is SendSena => action.type === "send-sena");
   const spent = quota.remaining <= 0;
-  if (legalSenas.length === 0 && !spent) return;
+  // An answer can still be owed after the allowance is gone — asking is
+  // frequently what spends the last of it — so a pending reply keeps this
+  // control on the table even when there is nothing left to offer.
+  if (legalSenas.length === 0 && !spent && consult.advice === null) return;
 
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -106,6 +119,7 @@ export function renderSenaPicker(
     reason.textContent = `. ${TABLE_STRINGS.senasSpentHint(MAX_SENAS_PER_HAND)}`;
     toggle.append(reason);
     container.append(toggle);
+    renderConsultAdvice(container, consult);
     return;
   }
 
@@ -132,6 +146,10 @@ export function renderSenaPicker(
   const renderRow = (): void => {
     row.replaceChildren();
     if (!open) return;
+    // The question comes FIRST, before the six claims. It is the only item
+    // here that asks for something rather than tells the partner something,
+    // and it is the one with a deadline — a call is waiting on an answer.
+    renderConsultOffer(row, legalActions, dispatch, consult);
     for (const action of legalSenas) {
       const button = document.createElement("button");
       button.type = "button";
@@ -232,4 +250,7 @@ export function renderSenaPicker(
   toggle.addEventListener("click", () => setOpen(!open));
 
   container.append(toggle, row);
+  // Beside the toggle, never inside the row: the picker closes on the click
+  // that asks, so a reply rendered in there would be a reply nobody sees.
+  renderConsultAdvice(container, consult);
 }

@@ -40,7 +40,9 @@ describe("truco-engine public API (browser)", () => {
   it("escalates the truco chain identically in a real browser", () => {
     const playerA = "player-a" as PlayerId;
     const playerB = "player-b" as PlayerId;
-    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15 });
+    // dealerSeat 1 -> playerA is the mano, which is who calls below: opening
+    // a call is taking the floor (truco-chain.ts), and the floor starts there.
+    const match = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 15, dealerSeat: 1 });
     const hand = startHand(match, [[], []]);
 
     const called = applyAction(hand, { type: "call-truco", playerId: playerA, level: "truco" });
@@ -57,7 +59,10 @@ describe("truco-engine public API (browser)", () => {
   it("offers the envido opening call and computes envido points identically in a real browser", () => {
     const playerA = "player-a" as PlayerId;
     const hand = startHand(
-      createHeadToHeadMatch({ playerAId: playerA, playerBId: "player-b" as PlayerId, pointsToWin: 15 }),
+      // dealerSeat 1 makes playerA the mano, which is who may open an envido:
+      // taking the floor starts with the mano (envido-chain.ts). The default
+      // of 0 would have this smoke test opening out of turn.
+      createHeadToHeadMatch({ playerAId: playerA, playerBId: "player-b" as PlayerId, pointsToWin: 15, dealerSeat: 1 }),
       [[], []],
     );
 

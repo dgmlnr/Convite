@@ -3,7 +3,7 @@ export type { Card, Rank, Suit } from "./card.js";
 export { RANKS, SUITS, cardId } from "./card.js";
 export { cardPower } from "./card-power.js";
 export { buildDeck } from "./deck.js";
-export type { CallEnvidoAction, EnvidoAction, RespondEnvidoAction, RevealEnvidoAction } from "./envido-chain.js";
+export type { CallEnvidoAction, DeclareEnvidoAction, EnvidoAction, RespondEnvidoAction } from "./envido-chain.js";
 export { calculateEnvidoPoints } from "./envido-chain.js";
 export type { HandOutcome } from "./hand-winner.js";
 export { resolveHandWinner } from "./hand-winner.js";
@@ -26,6 +26,8 @@ export type {
   TrucoState,
 } from "./match.js";
 export { createHeadToHeadMatch, createTeamMatch, getMatchWinner, manoSeatFor, rotateDealer, startHand } from "./match.js";
+export type { ConsultPartnerAction } from "./consult.js";
+export { getLegalConsultActions } from "./consult.js";
 export type { SenaAction, SenaSignal, SendSenaAction } from "./senas.js";
 export { MAX_SENAS_PER_HAND, SENA_SIGNALS } from "./senas.js";
 export type { PlayedCard, TrickOutcome } from "./trick.js";

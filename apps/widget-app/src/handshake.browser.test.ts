@@ -65,6 +65,23 @@ describe("connectToHost (widget-embed: the iframe side of the postMessage handsh
     expect(postSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "layout", payload: { mode: "fullscreen" } }), HOST_ORIGIN);
   });
 
+  it("sendLayout also records the mode on this document's own root, so the widget's CSS can read what it just told the host", () => {
+    // The felt caps its own card size in fullscreen and only in fullscreen
+    // (truco-ui's FULLSCREEN FIT block). That cap keys off this attribute,
+    // so the attribute IS the contract between the two — asserted here, at
+    // the one function that changes the mode, rather than trusted.
+    handle = connectToHost(window, window, HOST_ORIGIN, () => {});
+
+    handle.sendLayout("fullscreen");
+    expect(document.documentElement.getAttribute("data-hexdev-layout")).toBe("fullscreen");
+
+    // And it comes back down: "inline that expands" collapses again once
+    // the match is over, and a widget left marked fullscreen would keep
+    // capping its cards against a viewport it no longer fills.
+    handle.sendLayout("inline");
+    expect(document.documentElement.getAttribute("data-hexdev-layout")).toBe("inline");
+  });
+
   it("dispose stops delivering further host-hello messages", () => {
     const onHostHello = vi.fn();
     handle = connectToHost(window, window, HOST_ORIGIN, onHostHello);

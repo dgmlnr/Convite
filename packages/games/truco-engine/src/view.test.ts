@@ -217,6 +217,29 @@ function apply(state: MatchState, action: Action): MatchState {
   if (!result.ok) throw new Error(`expected legal action, got violation: ${result.violation}`);
   return result.state;
 }
+/**
+ * The whole declaration round, everybody saying their number.
+ *
+ * `reveal-envido` used to be ONE action that resolved the envido for all four
+ * seats at once. It is a round now — one `declare-envido` per player, from
+ * the mano around the table — because that is what it is at a real table.
+ * Declaring for everybody reproduces the old all-at-once outcome exactly (the
+ * highest number wins either way), which is what keeps the assertions below
+ * measuring what they always measured.
+ *
+ * Conceding is deliberately NOT used here: "son buenas" ends the round for
+ * the conceding TEAM, so it is a different scenario and gets its own tests.
+ */
+function declareAll(state: MatchState): MatchState {
+  let next = state;
+  for (let i = 0; i < state.players.length; i += 1) {
+    const seat = (next.hand!.manoSeat + i) % next.players.length;
+    const who = next.players.find((player) => player.seat === seat)!;
+    next = apply(next, { type: "declare-envido", playerId: who.id, declaration: "points" });
+  }
+  return next;
+}
+
 
 /**
  * The per-hand seña quota reaches its OWNER and no one else. The sender needs
@@ -319,7 +342,7 @@ const revealedHeadToHeadArb = fc
     const opponent = dealt.players.find((player) => player.seat !== manoSeat)!;
     const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
     const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
-    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+    return declareAll(accepted);
   });
 
 const revealedTeamArb = fc
@@ -332,7 +355,7 @@ const revealedTeamArb = fc
     const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
     const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
     const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
-    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+    return declareAll(accepted);
   });
 
 describe("getViewFor — envido declaration redaction property, for any reachable revealed 1v1/2v2 state", () => {
@@ -433,7 +456,7 @@ describe("getViewFor — call log and trick plays are identical across every pla
     ]);
     state = apply(state, { type: "call-envido", playerId: playerA, level: "envido" });
     state = apply(state, { type: "respond-envido", playerId: playerB, response: "quiero" });
-    state = apply(state, { type: "reveal-envido", playerId: playerA });
+    state = declareAll(state);
     state = apply(state, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
     state = apply(state, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 1 } });
     state = apply(state, { type: "play-card", playerId: playerC, card: { suit: "oro", rank: 1 } });
@@ -441,7 +464,9 @@ describe("getViewFor — call log and trick plays are identical across every pla
 
     const views = seatOrder.map((playerId) => getViewFor(state, playerId));
 
-    expect(views[0]!.hand?.callEvents).toHaveLength(3); // sanity: the log really has content to compare
+    // 6: the call, the quiero, and one declaration per seat — the round is
+    // four events now, not the single reveal it used to collapse into.
+    expect(views[0]!.hand?.callEvents).toHaveLength(6); // sanity: the log really has content to compare
     expect(views[0]!.hand?.resolvedTrickPlays).toHaveLength(1); // sanity: one trick really resolved
     for (const view of views.slice(1)) {
       expect(view.hand?.callEvents).toEqual(views[0]!.hand?.callEvents);

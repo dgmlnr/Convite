@@ -6,7 +6,7 @@ export type { HandCallbacks } from "./hand.js";
 export { renderMatchOverOverlay } from "./match-outcome.js";
 export type { MatchOutcomeInfo, MatchOverProps } from "./match-outcome.js";
 export { renderOpponentHand } from "./opponent-hand.js";
-export { derivePendingCall, isMyTurnToAnswer, renderPendingCallBanner, respondingTeamId } from "./pending-call.js";
+export { derivePendingCall, isMyTurnToAnswer, respondingTeamId } from "./pending-call.js";
 export type { PendingCallBannerProps, PendingCallInfo } from "./pending-call.js";
 export { renderPlayedCards } from "./played-cards.js";
 export { ensureMatchstickDefs, MATCHSTICK_THEME_DEFAULTS, renderCasita, renderGhostCasita, renderScoreboard, splitMalasBuenas } from "./scoreboard.js";

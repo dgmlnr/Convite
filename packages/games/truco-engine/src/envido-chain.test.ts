@@ -5,7 +5,7 @@ import { buildDeck } from "./deck.js";
 import { calculateEnvidoPoints, resolveEnvidoDeclarations } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { createHeadToHeadMatch, createTeamMatch, startHand } from "./match.js";
-import type { EnvidoCallLevel, EnvidoState, MatchState } from "./match.js";
+import type { EnvidoCallLevel, EnvidoState, MatchState, EnvidoDeclaration } from "./match.js";
 import { applyAction, getLegalActions } from "./truco-chain.js";
 import type { Action } from "./truco-chain.js";
 
@@ -16,7 +16,13 @@ const playerD = "player-d" as PlayerId;
 
 /** playerA holds a strong envido (33), playerB a weak one (5) — deterministic reveal winner below. */
 function freshHand(): MatchState {
-  const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30 });
+  // dealerSeat 1 makes playerA the MANO (mano is the seat after the dealer),
+  // and that matters now: opening the envido is taking the floor, and the
+  // floor starts with the mano. Every caller in this file opens with playerA,
+  // so naming the dealer here keeps those readings honest instead of
+  // rewriting each of them — the default of 0 had them all quietly opening
+  // out of turn.
+  const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat: 1 });
   return startHand(state, [
     [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
     [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
@@ -28,6 +34,29 @@ function apply(state: MatchState, action: Action): MatchState {
   if (!result.ok) throw new Error(`expected legal action, got violation: ${result.violation}`);
   return result.state;
 }
+/**
+ * The whole declaration round, everybody saying their number.
+ *
+ * `reveal-envido` used to be ONE action that resolved the envido for all four
+ * seats at once. It is a round now — one `declare-envido` per player, from
+ * the mano around the table — because that is what it is at a real table.
+ * Declaring for everybody reproduces the old all-at-once outcome exactly (the
+ * highest number wins either way), which is what keeps the assertions below
+ * measuring what they always measured.
+ *
+ * Conceding is deliberately NOT used here: "son buenas" ends the round for
+ * the conceding TEAM, so it is a different scenario and gets its own tests.
+ */
+function declareAll(state: MatchState): MatchState {
+  let next = state;
+  for (let i = 0; i < state.players.length; i += 1) {
+    const seat = (next.hand!.manoSeat + i) % next.players.length;
+    const who = next.players.find((player) => player.seat === seat)!;
+    next = apply(next, { type: "declare-envido", playerId: who.id, declaration: "points" });
+  }
+  return next;
+}
+
 
 /** Escalates the envido chain through `levels`, alternating caller/responder (only the non-calling team may respond), leaving the last level pending. */
 function pendingEnvidoAt(levels: readonly EnvidoCallLevel[]): MatchState {
@@ -42,11 +71,16 @@ function pendingEnvidoAt(levels: readonly EnvidoCallLevel[]): MatchState {
 }
 
 describe("getLegalActions — envido opens alongside truco, then gates it", () => {
-  it("either player may open truco or envido when nothing is pending", () => {
-    expect(getLegalActions(freshHand(), playerA)).toEqual([
-      { type: "call-truco", playerId: playerA, level: "truco" },
-      { type: "call-envido", playerId: playerA, level: "envido" },
-    ]);
+  it("at the start of a hand both calls are the mano's, and the pie has neither", () => {
+    // Opening ANY call is taking the floor, truco included, and the floor
+    // starts with the mano — playerA here, by this fixture's own dealerSeat.
+    const hand = freshHand();
+    // `toContainEqual` for the mano and not `toEqual`: being the mano also
+    // means holding the turn, so playerA's legal set carries their three
+    // playable cards too. The pie's set is exhaustive on purpose — it is the
+    // absence that this test is about.
+    expect(getLegalActions(hand, playerA)).toContainEqual({ type: "call-envido", playerId: playerA, level: "envido" });
+    expect(getLegalActions(hand, playerB), "the pie has to wait their turn to speak").toEqual([]);
   });
 
   it("envido may still open even after truco has been called — it interrupts a pending truco call (real rule; replaces the earlier truco.status==='none' placeholder)", () => {
@@ -163,7 +197,10 @@ describe("getLegalActions — envido escalation", () => {
 
 describe("applyAction — falta envido's accepted value overrides the chain (spec: 'Falta envido cost is dynamic')", () => {
   it("awards exactly pointsToWin minus the leading team's score, NOT the sum of the prior calls plus falta (regression: PR5 caught 37 instead of 6)", () => {
-    const base = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30 });
+    // dealerSeat 1 -> playerA is mano, which is who opens the envido below.
+    // The falta's value depends on the leading team's score and not on who
+    // opened, so naming the dealer changes nothing this test measures.
+    const base = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat: 1 });
     const leading: MatchState = { ...base, teams: [{ ...base.teams[0]!, score: 24 }, base.teams[1]!] };
     const dealt = startHand(leading, [
       [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
@@ -190,7 +227,7 @@ describe("applyAction — envido cumulative cost and reveal (spec: truco-rules)"
 
   it("reveal awards the accepted value to the winning team (playerA's 33 beats playerB's 5)", () => {
     const accepted = apply(pendingEnvidoAt(["envido"]), { type: "respond-envido", playerId: playerB, response: "quiero" });
-    const revealed = apply(accepted, { type: "reveal-envido", playerId: playerA });
+    const revealed = declareAll(accepted);
     expect(revealed.teams[0]!.score).toBe(2);
     expect(revealed.teams[1]!.score).toBe(0);
     expect(revealed.hand?.envido).toMatchObject({ status: "revealed", winningTeamId: revealed.teams[0]!.id });
@@ -223,8 +260,11 @@ describe("applyAction — envido cumulative cost and reveal (spec: truco-rules)"
   it("a tied reveal is won by the mano's team", () => {
     const state = createHeadToHeadMatch({ playerAId: playerA, playerBId: playerB, pointsToWin: 30, dealerSeat: 0 });
     const tied = startHand(state, [[{ suit: "espada", rank: 5 }], [{ suit: "oro", rank: 5 }]]); // manoSeat = 1 (playerB)
-    const accepted = apply(apply(tied, { type: "call-envido", playerId: playerA, level: "envido" }), { type: "respond-envido", playerId: playerB, response: "quiero" });
-    const revealed = apply(accepted, { type: "reveal-envido", playerId: playerA });
+    // playerB OPENS here, and that is the point of the fixture rather than an
+    // incidental choice: this test exists to check that a TIE goes to the
+    // mano's team, so the mano must be playerB — and the mano is who may open.
+    const accepted = apply(apply(tied, { type: "call-envido", playerId: playerB, level: "envido" }), { type: "respond-envido", playerId: playerA, response: "quiero" });
+    const revealed = declareAll(accepted);
     expect(revealed.hand?.envido).toMatchObject({ winningTeamId: revealed.teams[1]!.id });
   });
 });
@@ -244,7 +284,7 @@ describe("applyAction — no flor in v1, and purity (spec: truco-rules)", () => 
 
   it.each([
     ["decline (which awards points)", pendingEnvidoAt(["envido"]), { type: "respond-envido", playerId: playerB, response: "no-quiero" }],
-    ["reveal (which awards points)", apply(pendingEnvidoAt(["envido"]), { type: "respond-envido", playerId: playerB, response: "quiero" }), { type: "reveal-envido", playerId: playerA }],
+    ["reveal (which awards points)", apply(pendingEnvidoAt(["envido"]), { type: "respond-envido", playerId: playerB, response: "quiero" }), { type: "declare-envido", playerId: playerA, declaration: "points" }],
   ] as const)("does not mutate the input state on %s", (_label, state, action) => {
     const before = JSON.stringify(state);
     applyAction(state, action);
@@ -271,7 +311,7 @@ describe("applyAction — 2v2 envido: team value is the BEST among its members, 
     // value must still be team A's BEST (playerC's 33), not the caller's own 4.
     const pending = apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" });
     const accepted = apply(pending, { type: "respond-envido", playerId: playerB, response: "quiero" });
-    const revealed = apply(accepted, { type: "reveal-envido", playerId: playerA });
+    const revealed = declareAll(accepted);
 
     const teamA = revealed.teams.find((t) => t.playerIds.includes(playerA))!;
     const teamB = revealed.teams.find((t) => t.playerIds.includes(playerB))!;
@@ -293,7 +333,7 @@ describe("applyAction — 2v2 envido: team value is the BEST among its members, 
       apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" }),
       { type: "respond-envido", playerId: playerD, response: "quiero" },
     );
-    const revealed = apply(accepted, { type: "reveal-envido", playerId: playerA });
+    const revealed = declareAll(accepted);
 
     const teamA = revealed.teams.find((t) => t.playerIds.includes(playerA))!;
     expect(revealed.hand?.envido).toMatchObject({ winningTeamId: teamA.id });
@@ -318,7 +358,7 @@ describe("callEvents — ordered public call log across truco+envido chains (spe
     let s = apply(state, { type: "call-envido", playerId: playerA, level: "envido" });
     s = apply(s, { type: "call-envido", playerId: playerB, level: "realEnvido" });
     s = apply(s, { type: "respond-envido", playerId: playerA, response: "quiero" });
-    s = apply(s, { type: "reveal-envido", playerId: playerB });
+    s = declareAll(s);
     s = apply(s, { type: "call-truco", playerId: playerA, level: "truco" });
     s = apply(s, { type: "respond-truco", playerId: playerB, response: "quiero" });
     s = apply(s, { type: "call-truco", playerId: playerB, level: "retruco" });
@@ -328,7 +368,11 @@ describe("callEvents — ordered public call log across truco+envido chains (spe
       { kind: "envido-call", playerId: playerA, teamId: teamAId, seat: 0, level: "envido" },
       { kind: "envido-call", playerId: playerB, teamId: teamBId, seat: 1, level: "realEnvido" },
       { kind: "envido-response", playerId: playerA, teamId: teamAId, seat: 0, response: "quiero" },
-      { kind: "envido-reveal", playerId: playerB, teamId: teamBId, seat: 1 },
+      // The reveal is a ROUND now: one marker per player, in mano order.
+      // playerB is the mano here (dealerSeat 1 -> mano seat 0 is playerA...
+      // no: this file's freshHand names dealerSeat 1, so mano is seat 0).
+      { kind: "envido-declaration", playerId: playerA, teamId: teamAId, seat: 0, declaration: "points" },
+      { kind: "envido-declaration", playerId: playerB, teamId: teamBId, seat: 1, declaration: "points" },
       { kind: "truco-call", playerId: playerA, teamId: teamAId, seat: 0, level: "truco" },
       { kind: "truco-response", playerId: playerB, teamId: teamBId, seat: 1, response: "quiero" },
       { kind: "truco-call", playerId: playerB, teamId: teamBId, seat: 1, level: "retruco" },
@@ -451,7 +495,7 @@ const revealedHeadToHeadArb = fc
     const opponent = dealt.players.find((player) => player.seat !== manoSeat)!;
     const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
     const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
-    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+    return declareAll(accepted);
   });
 
 const revealedTeamArb = fc
@@ -464,16 +508,24 @@ const revealedTeamArb = fc
     const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
     const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
     const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
-    return apply(accepted, { type: "reveal-envido", playerId: mano.id });
+    return declareAll(accepted);
   });
 
 describe("envido.declarations — derivation equivalence property (design D-2, T-4)", () => {
-  it("in every revealed state (1v1 and 2v2), the teamId of the LAST 'points' declaration equals envido.winningTeamId", () => {
+  it("in every revealed state (1v1 and 2v2), the teamId of the HIGHEST 'points' declaration equals envido.winningTeamId", () => {
+    // HIGHEST, not "last". The old wording held only while the engine
+    // declared for everybody and never announced a number that could not
+    // win — under that rule the last one said was necessarily the best. A
+    // player choosing to say their tantos when they are behind is legal now,
+    // so "last" and "best" came apart and the derivation names the real one.
     fc.assert(
       fc.property(fc.oneof(revealedHeadToHeadArb, revealedTeamArb), (state) => {
         const revealed = state.hand!.envido as Extract<EnvidoState, { status: "revealed" }>;
-        const lastPointsEntry = [...revealed.declarations].reverse().find((entry) => entry.declaration === "points")!;
-        return lastPointsEntry.teamId === revealed.winningTeamId;
+        const said = revealed.declarations.filter(
+          (entry): entry is Extract<EnvidoDeclaration, { declaration: "points" }> => entry.declaration === "points",
+        );
+        const best = said.reduce((leader, entry) => (entry.points > leader.points ? entry : leader));
+        return best.teamId === revealed.winningTeamId;
       }),
     );
   });
@@ -488,5 +540,219 @@ describe("calculateEnvidoPoints", () => {
     ["no shared suit, only figure cards, is worth zero", [{ suit: "espada", rank: 10 }, { suit: "basto", rank: 11 }], 0],
   ] as const)("%s", (_label, hand, expected) => {
     expect(calculateEnvidoPoints(hand as readonly Card[])).toBe(expected);
+  });
+});
+
+/**
+ * "EL ENVIDO ESTÁ PRIMERO" IS A RIGHT OF THE ANSWERING SIDE.
+ *
+ * Putting an envido on top of an unanswered truco is a way of REPLYING to
+ * that truco — you say envido instead of quiero — so it belongs to whoever
+ * owes the reply. The team that called has already spoken; the floor is the
+ * other team's until they answer.
+ *
+ * Reported from real 2v2 play against bots, with the exact sequence these
+ * tests now refuse: one seat calls truco and then, with nobody having
+ * answered, calls the envido on its own call.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT CHANGE: with nothing on the table, EITHER
+ * side may still open the envido during the first trick. `canOpenEnvido`'s
+ * own docblock argues at length for that permissiveness (no call in this
+ * engine is turn-gated), and the gate below bites only while a truco is
+ * actually pending.
+ */
+describe("who may interpose an envido over a pending truco", () => {
+  function trucoCalledBy(caller: PlayerId): MatchState {
+    // dealerSeat 0 seats playerB (seat 1) as the mano, and playerB is the
+    // caller in every case here: opening a truco is taking the floor too.
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 0 });
+    const dealt = startHand(state, [
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
+    ]);
+    return apply(dealt, { type: "call-truco", playerId: caller, level: "truco" });
+  }
+
+  const mayOpen = (state: MatchState, playerId: PlayerId): boolean =>
+    getLegalActions(state, playerId).some((action) => action.type === "call-envido");
+
+  it("the answering team may — that is what the rule is for", () => {
+    const called = trucoCalledBy(playerB);
+    expect(mayOpen(called, playerA), "playerA owes the answer, so playerA may say envido instead").toBe(true);
+    expect(mayOpen(called, playerC), "and so may their partner").toBe(true);
+  });
+
+  it("the caller may not — they cannot reply to themselves", () => {
+    expect(mayOpen(trucoCalledBy(playerB), playerB)).toBe(false);
+  });
+
+  it("and neither may the caller's PARTNER — the same thing said by a different mouth", () => {
+    // The half of the rule a caller-only check would miss, and the half the
+    // report is actually about: in 2v2 the seat that piles the envido on is
+    // as likely to be the partner as the caller.
+    expect(mayOpen(trucoCalledBy(playerB), playerD)).toBe(false);
+  });
+
+  it("with no truco pending, OPENING follows the turn — the mano and nobody else", () => {
+    // dealerSeat 3 makes seat 0 (playerA) the mano, so playerA holds the
+    // floor and the other three are waiting their turn to speak. This is the
+    // half of the rule that is about taking the floor rather than answering.
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
+    const dealt = startHand(state, [
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
+    ]);
+
+    expect(mayOpen(dealt, playerA), "the mano speaks first").toBe(true);
+    for (const waiting of [playerB, playerC, playerD]) {
+      expect(mayOpen(dealt, waiting), "and nobody may jump ahead of a seat that has not spoken").toBe(false);
+    }
+  });
+
+  it("the floor moves down the play order as each seat plays", () => {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
+    const dealt = startHand(state, [
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
+    ]);
+
+    // The mano plays instead of calling, which is how a seat passes on the
+    // envido: playing your card is giving up your say for the hand.
+    const played = apply(dealt, { type: "play-card", playerId: playerA, card: { suit: "oro", rank: 4 } });
+
+    expect(mayOpen(played, playerA), "you cannot call after your own card is down").toBe(false);
+    expect(mayOpen(played, playerB), "the next seat in order now holds the floor").toBe(true);
+    expect(mayOpen(played, playerC), "and the one after it still does not").toBe(false);
+  });
+
+  it("once the truco is ANSWERED the caller-block lifts, and the ordinary turn rule takes over", () => {
+    // dealerSeat 0 makes seat 1 (playerB) the mano, so the truco's own caller
+    // also holds the floor. That separation is the point: while the truco was
+    // pending playerB could not open the envido BECAUSE they had called it;
+    // once it is answered that reason is gone and only the turn remains — and
+    // the turn is theirs.
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 0 });
+    const dealt = startHand(state, [
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
+      [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
+      [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
+    ]);
+    const called = apply(dealt, { type: "call-truco", playerId: playerB, level: "truco" });
+    expect(mayOpen(called, playerB), "while it is pending, the caller may not").toBe(false);
+
+    const answered = apply(called, { type: "respond-truco", playerId: playerA, response: "quiero" });
+    expect(mayOpen(answered, playerB), "answered, and the floor is still theirs").toBe(true);
+  });
+});
+
+/**
+ * THE DECLARATION ROUND, ONE PLAYER AT A TIME.
+ *
+ * It used to be a single action that resolved the envido for everybody at
+ * once. Correct arithmetic, wrong shape: this is something players do out
+ * loud, in order, and collapsing it meant nobody could see who said what — or
+ * choose.
+ *
+ * TWO RULES GOVERN IT, and the second is the one this engine had wrong:
+ *
+ *   - ORDER: from the MANO around the table. "El primero en cantar será el
+ *     jugador que es 'mano'" (trucogame.com's reglamento) — deliberately not
+ *     from whoever called the envido.
+ *   - CONCEDING IS FOR THE TEAM: "en caso de estar jugando en parejas, al
+ *     decir 'son buenas' se le da por perdido el envido a TODO EL EQUIPO"
+ *     (es.wikipedia.org's Truco article). The engine used to treat it as a
+ *     per-player statement and carry the round on to the partner. It was
+ *     caught by a player asking the question the implementation could not
+ *     answer, and it is why the concession tests below exist at all.
+ */
+describe("the envido declaration round", () => {
+  function acceptedTeamEnvido(dealerSeat: number): MatchState {
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat });
+    const dealt = startHand(state, [
+      [{ suit: "copa", rank: 6 }, { suit: "basto", rank: 5 }, { suit: "espada", rank: 11 }], // seat 0: 6
+      [{ suit: "copa", rank: 10 }, { suit: "copa", rank: 11 }, { suit: "oro", rank: 3 }], //    seat 1: 20
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 2 }, { suit: "basto", rank: 4 }], // seat 2: 29
+      [{ suit: "oro", rank: 6 }, { suit: "oro", rank: 1 }, { suit: "basto", rank: 12 }], //     seat 3: 27
+    ]);
+    const manoSeat = dealt.hand!.manoSeat;
+    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
+    const answerer = dealt.players.find((player) => player.teamId !== mano.teamId)!;
+    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    return apply(called, { type: "respond-envido", playerId: answerer.id, response: "quiero" });
+  }
+
+  const whoMaySpeak = (state: MatchState): readonly PlayerId[] =>
+    state.players.filter((player) => getLegalActions(state, player.id).some((a) => a.type === "declare-envido")).map((player) => player.id);
+
+  it("only one player may speak at a time, and it starts with the mano", () => {
+    // dealerSeat 3 puts the mano on seat 0 (playerA).
+    const accepted = acceptedTeamEnvido(3);
+    expect(whoMaySpeak(accepted)).toEqual([playerA]);
+  });
+
+  it("offers exactly two things: say your tantos, or concede", () => {
+    const accepted = acceptedTeamEnvido(3);
+    expect(getLegalActions(accepted, playerA).filter((a) => a.type === "declare-envido")).toEqual([
+      { type: "declare-envido", playerId: playerA, declaration: "points" },
+      { type: "declare-envido", playerId: playerA, declaration: "sonBuenas" },
+    ]);
+  });
+
+  it("the floor moves to the next seat around the table, not to the caller's partner", () => {
+    const spoke = apply(acceptedTeamEnvido(3), { type: "declare-envido", playerId: playerA, declaration: "points" });
+
+    expect(spoke.hand?.envido.status, "one number does not settle a round").toBe("accepted");
+    expect(whoMaySpeak(spoke), "seat 1 is next in the rotation — an opponent, because teams alternate").toEqual([playerB]);
+  });
+
+  it("CONCEDING ENDS IT, AND THE WHOLE TEAM LOSES — even with a partner who never spoke", () => {
+    // THE CASE A PLAYER ASKED ABOUT, and the reason this rule was checked
+    // against sources instead of against the old implementation: playerA
+    // concedes while playerC (their partner, holding the table's best 29) has
+    // not had a turn. Per the rules that is the end of it, and team A loses.
+    const conceded = apply(acceptedTeamEnvido(3), { type: "declare-envido", playerId: playerA, declaration: "sonBuenas" });
+    const envido = conceded.hand!.envido as Extract<EnvidoState, { status: "revealed" }>;
+
+    expect(envido.status, "the round is over the moment somebody gives it up").toBe("revealed");
+    expect(envido.declarations, "nobody else got to speak").toHaveLength(1);
+    expect(envido.winningTeamId, "conceding hands it to the opponents").toBe(conceded.players.find((p) => p.id === playerB)!.teamId);
+    expect(whoMaySpeak(conceded), "and there is no round left to speak in").toEqual([]);
+  });
+
+  it("if nobody concedes, the round reaches every seat and the HIGHEST number wins", () => {
+    let state = acceptedTeamEnvido(3);
+    for (const speaker of [playerA, playerB, playerC, playerD]) {
+      state = apply(state, { type: "declare-envido", playerId: speaker, declaration: "points" });
+    }
+    const envido = state.hand!.envido as Extract<EnvidoState, { status: "revealed" }>;
+
+    expect(envido.declarations).toHaveLength(4);
+    // seat 2 (playerC) holds 29, the best at the table — and wins it even
+    // though seat 3 declared after them. "Last to speak" is not "best".
+    expect(envido.winningTeamId).toBe(state.players.find((p) => p.id === playerC)!.teamId);
+  });
+
+  it("a player may say a number they cannot win with — legal, and it keeps the round alive for their partner", () => {
+    // This is how a real player avoids conceding over their partner's head:
+    // seat 1 is behind after the mano speaks, but saying their 20 leaves the
+    // round open for seat 3.
+    let state = apply(acceptedTeamEnvido(3), { type: "declare-envido", playerId: playerA, declaration: "points" });
+    state = apply(state, { type: "declare-envido", playerId: playerB, declaration: "points" });
+
+    expect(state.hand?.envido.status).toBe("accepted");
+    expect(whoMaySpeak(state)).toEqual([playerC]);
+  });
+
+  it("nobody may speak out of turn, however sure they are", () => {
+    const accepted = acceptedTeamEnvido(3);
+    const result = applyAction(accepted, { type: "declare-envido", playerId: playerC, declaration: "points" });
+    expect(result.ok).toBe(false);
   });
 });

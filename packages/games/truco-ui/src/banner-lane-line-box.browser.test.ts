@@ -1,12 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createHeadToHeadMatch, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
-import type { DealInput, EnvidoCallLevel, PlayerId, SenaSignal, TeamId, TrucoCallLevel } from "@hexdev/truco-engine";
+import type { DealInput, PlayerId, SenaSignal, TeamId } from "@hexdev/truco-engine";
 import { TABLE_STYLE_ID } from "./table-styles.js";
 import { createMatchTableRenderer } from "./table.js";
-import { renderPendingCallBanner } from "./pending-call.js";
 import { renderHandOutcomeBanner } from "./hand-outcome.js";
 import { renderSenaNotice } from "./sena-notice.js";
-import { CALL_LABELS, SENA_LABELS } from "./strings.js";
+import { SENA_LABELS } from "./strings.js";
 
 /**
  * `table-zone-overlap.browser.test.ts` forbids the pending-call banner
@@ -122,41 +121,10 @@ type SeatMode = "1v1" | "2v2";
 const WIDTHS = [375, 700, 960, 1280] as const;
 const SEAT_MODES = ["1v1", "2v2"] as const;
 
-/** Read from the engine's own unions, not retyped: a level added to either
- * chain stops this file compiling until it is measured here too. The three
- * remaining `CALL_LABELS` entries (quiero, noQuiero, revealEnvido) are answers
- * and resolutions — `derivePendingCall` can never put one in this banner. */
-const TRUCO_LEVELS: readonly TrucoCallLevel[] = ["truco", "retruco", "valeCuatro"];
-const ENVIDO_LEVELS: readonly EnvidoCallLevel[] = ["envido", "envidoEnvido", "realEnvido", "faltaEnvido"];
-
-/**
- * The banner's reachable text, as pairs rather than a cross product.
- *
- * `waitingOnMe` and `callerLabel` are LOCKED TOGETHER by the engine, and a
- * cross product would measure two states no player can ever reach (and, at
- * "Cantó: Nosotros" + "Tu turno de responder", a taller worst case than the
- * real game has): `table.ts` derives `callerLabel` from `callingTeamId ===
- * view.self.teamId` and `waitingOnMe` from `isMyTurnToAnswer(legalActions)`,
- * and neither `getLegalTrucoActions` nor `getLegalEnvidoActions` ever offers
- * the CALLING team a respond action. So it is my turn to answer exactly when
- * they called it.
- */
-const TURNS = [
-  { callerLabel: "Ellos", waitingOnMe: true },
-  { callerLabel: "Nosotros", waitingOnMe: false },
-] as const;
-
 /** Each case carries its chain's own `kind`. Rendering-inert today —
  * `renderPendingCallBanner` never reads it — but a fixture that stamped every
  * envido level `"truco"` would hand a future kind-branching renderer a matrix
  * that silently measures the wrong branch. */
-const PENDING_CASES = [
-  ...TRUCO_LEVELS.map((level) => ({ kind: "truco" as const, level })),
-  ...ENVIDO_LEVELS.map((level) => ({ kind: "envido" as const, level })),
-].flatMap(({ kind, level }) =>
-  TURNS.map((turn) => ({ kind, label: `${CALL_LABELS[level]} / ${turn.callerLabel}`, levelLabel: CALL_LABELS[level], ...turn })),
-);
-
 /** The widest label the CLOSED señas vocabulary can produce — the same
  * worst-case reasoning, and the same signal, `table-zone-overlap` uses. */
 const WIDEST_SENA: SenaSignal = "asDeEspada";
@@ -196,7 +164,7 @@ afterEach(() => {
  * decoded image moves nothing this file measures — and 448 mounts each waiting
  * on `img.decode()` would buy that nothing at real cost.
  */
-function mountLane(width: number, mode: SeatMode, family: string): { pendingCall: HTMLElement; handOutcome: HTMLElement; senaNotice: HTMLElement } {
+function mountLane(width: number, mode: SeatMode, family: string): { handOutcome: HTMLElement; senaNotice: HTMLElement } {
   const container = document.createElement("div");
   container.style.width = `${width}px`;
   container.style.setProperty("--gx-font-family", family);
@@ -209,13 +177,19 @@ function mountLane(width: number, mode: SeatMode, family: string): { pendingCall
       : startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
   createMatchTableRenderer()(container, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
 
-  const pendingCall = container.querySelector<HTMLElement>(".hexdev-truco-pending-call");
+  // TWO occupants, not three. The pending-call banner used to live here and
+  // was the tallest of them, which is what sized this lane in the first
+  // place; the call is marked on the seat that made it now, so the lane
+  // carries only the two transient notices. The reservation itself is
+  // deliberately NOT retuned in the same breath -- a smaller lane is real
+  // height back for the cards, and that is a measurement job of its own
+  // rather than a number to guess while deleting something else.
   const handOutcome = container.querySelector<HTMLElement>(".hexdev-truco-hand-outcome");
   const senaNotice = container.querySelector<HTMLElement>(".hexdev-truco-sena-notice");
-  if (pendingCall === null || handOutcome === null || senaNotice === null) {
-    throw new Error("test setup: the banner slot did not mount all three of its occupants");
+  if (handOutcome === null || senaNotice === null) {
+    throw new Error("test setup: the banner slot did not mount both of its occupants");
   }
-  return { pendingCall, handOutcome, senaNotice };
+  return { handOutcome, senaNotice };
 }
 
 /** The lane this tier reserves, read off the felt rather than restated here —
@@ -323,37 +297,6 @@ describe("the banner lane costs the same height whatever font draws it", () => {
     for (const fontFace of loaded) document.fonts.delete(fontFace);
   });
 
-  it("the pending-call banner: one height per tier, seat count and call — over vertical metrics from far under the lane to far over it", () => {
-    const groups: { readonly what: string; readonly rows: readonly Reading[] }[] = [];
-    for (const width of WIDTHS) {
-      for (const mode of SEAT_MODES) {
-        for (const call of PENDING_CASES) {
-          const rows = SYNTHETIC_FACES.map((face) => {
-            const { pendingCall } = mountLane(width, mode, `'${face.name}'`);
-            renderPendingCallBanner(pendingCall, {
-              call: { kind: call.kind, levelLabel: call.levelLabel, callingTeamId: "banner-lane-caller:team" as TeamId },
-              callerLabel: call.callerLabel,
-              waitingOnMe: call.waitingOnMe,
-            });
-            return read(pendingCall, face.name);
-          });
-          for (const container of containers.splice(0)) container.remove();
-          groups.push({ what: `${width}px ${mode} "${call.label}"`, rows });
-        }
-      }
-    }
-
-    // Without this the whole test could pass while proving nothing: four faces
-    // that all happened to fit under the lane would agree perfectly and say
-    // nothing about the case that broke. At least one measured banner has to
-    // genuinely overflow the reservation on its own metrics, or there was no
-    // fence here at all.
-    const overflowing = groups.flatMap((group) => group.rows).filter((row) => row.natural > row.lane + ONE_LAYOUT_UNIT);
-    expect(overflowing.length, `no probe font overflows its own lane, so this test cannot detect the bug it exists for — ${describeRow(groups[0]!.rows)}`).toBeGreaterThan(0);
-
-    for (const group of groups) expectOneHeightWhateverTheMetrics(group.what, group.rows);
-  });
-
   it("the lane's other two occupants (seña notice, hand outcome) hold the same property — the same reservation, the same mechanism", () => {
     const groups: { readonly what: string; readonly rows: readonly Reading[] }[] = [];
     for (const width of WIDTHS) {
@@ -398,39 +341,4 @@ describe("the banner lane costs the same height whatever font draws it", () => {
     for (const group of groups) expectOneHeightWhateverTheMetrics(group.what, group.rows);
   });
 
-  /**
-   * The honest boundary of the fix above, asserted rather than described.
-   *
-   * A pinned leading fixes the height of each line box and nothing about how
-   * many there are, so this states in one place exactly what the two tests
-   * above do and do not cover: within one glyph-width family the banner's
-   * total is one number, and the ONLY way it can still move is a font that
-   * wraps the text differently. A future reader who breaks this test has
-   * either fixed the wrap axis too (delete it) or reintroduced a per-font
-   * height inside one wrap shape (the two tests above will be red as well).
-   */
-  it("what stays font-dependent, on purpose: only the LINE COUNT, never the line box", () => {
-    const perFace = SYNTHETIC_FACES.map((face) => {
-      const { pendingCall } = mountLane(700, "2v2", `'${face.name}'`);
-      renderPendingCallBanner(pendingCall, {
-        call: { kind: "truco", levelLabel: CALL_LABELS.valeCuatro, callingTeamId: "banner-lane-caller:team" as TeamId },
-        callerLabel: "Nosotros",
-        waitingOnMe: false,
-      });
-      const lines = [...pendingCall.children].map((child) => {
-        const range = document.createRange();
-        range.selectNodeContents(child);
-        return range.getClientRects().length;
-      });
-      return { face: face.name, lines: lines.join("/"), height: pendingCall.getBoundingClientRect().height };
-    });
-    for (const container of containers.splice(0)) container.remove();
-
-    // One wrap shape across all four faces, because they share one font file's
-    // advance widths — the isolation this matrix depends on.
-    expect(new Set(perFace.map((row) => row.lines)).size, `probe faces wrapped differently, so the matrix above is not isolating vertical metrics: ${JSON.stringify(perFace)}`).toBe(1);
-    // And therefore one height. Same claim as the first test, stated once
-    // against a case chosen for being the tallest reachable 2v2 pill.
-    expect(new Set(perFace.map((row) => row.height)).size, `one wrap shape must mean one height: ${JSON.stringify(perFace)}`).toBe(1);
-  });
 });

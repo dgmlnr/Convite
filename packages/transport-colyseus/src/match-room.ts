@@ -174,6 +174,13 @@ export class MatchRoom extends Room {
   private rng: RandomSource | undefined;
   private reconnectionWindowSeconds = DEFAULT_RECONNECTION_WINDOW_SECONDS;
   private takeoverTier: BotTier = DEFAULT_TAKEOVER_TIER;
+  /** The tier this room's own bots play at, kept because a consult has to be
+   * answered by the partner AT THE STRENGTH THEY ACTUALLY PLAY. Advice from a
+   * tier the partner is not is worse than no advice: it would recommend a
+   * move the partner was never going to make. Falls back to the takeover tier
+   * when the room seats no bots of its own, which is also the only case where
+   * a bot partner can appear later. */
+  private botTier: BotTier = DEFAULT_TAKEOVER_TIER;
   private turnTimeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
   private turnTimer: ReturnType<typeof setTimeout> | undefined;
   /**
@@ -230,6 +237,7 @@ export class MatchRoom extends Room {
     this.rng = options.rng;
     this.reconnectionWindowSeconds = options.reconnectionWindowSeconds ?? DEFAULT_RECONNECTION_WINDOW_SECONDS;
     this.takeoverTier = options.takeoverTier ?? DEFAULT_TAKEOVER_TIER;
+    this.botTier = options.botTier ?? this.takeoverTier;
     this.turnTimeoutSeconds = options.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
     if (options.botTier !== undefined) {
       // Unguessable on purpose: `/embed?p=` is client-suppliable (design
@@ -249,6 +257,16 @@ export class MatchRoom extends Room {
     }
     this.maxClients = module.metadata.seatCount - this.controllers.size;
     this.onMessage("action", (client, message: unknown) => this.handleAction(client, message));
+    // A CONSULT IS AN ORDINARY ACTION plus one private reply, which is why it
+    // arrives on a channel of its own rather than as a flag on "action". The
+    // room stays game-agnostic either way: it never inspects the payload, it
+    // only knows that a message on THIS channel is one whose sender is owed
+    // an answer. Everything else — whether the action is legal, what it
+    // costs, what the answer is — belongs to the module.
+    this.onMessage("consult", (client, message: unknown) => this.handleConsult(client, message));
+    this.onMessage("quit", (client) => {
+      this.handleQuit(client);
+    });
   }
 
   /**
@@ -319,7 +337,31 @@ export class MatchRoom extends Room {
       const seatAssignments: SeatAssignment[] = [...this.controllers.entries()].map(([seat, controller]) => ({ seat, playerId: controller.playerId }));
       this.matchState = module.createMatch(this.config, seatAssignments);
       this.broadcastViews();
-      await this.advance();
+      // NOT awaited, and that is the whole point of this line.
+      //
+      // `@colyseus/core@0.17.46` sends the JOIN_ROOM confirmation — the
+      // message that resolves the client's own `join()`/`create()` promise —
+      // only AFTER `await this.onJoin(...)` returns (src/Room.ts:1251 and
+      // :1293, read in the installed source). Awaiting the chain here
+      // therefore held the join open for the entire bot opening: measured at
+      // 12 SECONDS for a 2v2-vs-bots match, three bots at a real ~1s
+      // `withThinkingDelay` each through a whole envido/truco/retruco chain.
+      // The player sat on a loading message and was then dropped into a hand
+      // with nine calls already in its log, several of them their own
+      // partner's, with the stakes already at vale cuatro.
+      //
+      // The views were never lost — that same file queues messages sent
+      // during `onJoin` and flushes them once the client has joined
+      // (src/Room.ts:1694) — which is exactly why the hand arrived all at
+      // once instead of unfolding. The bots' thinking delay exists so a
+      // player can WATCH them think; awaiting it turned that into a wait.
+      //
+      // Safe for the same reason `handleAction`'s own fire-and-forget return
+      // is: `advance()` never rejects (see its doc comment), and the chain is
+      // `.catch()`-guarded, so nothing here can become an unhandled
+      // rejection. `onDispose` still returns `advanceChain`, so a room torn
+      // down mid-opening waits for it exactly as before.
+      void this.advance();
     }
   }
 
@@ -459,6 +501,38 @@ export class MatchRoom extends Room {
    * before any further play — no dedicated "resolve pending call" code path
    * exists, or needs to.
    */
+  /**
+   * A player who is LEAVING, as distinct from a player who DROPPED.
+   *
+   * `onLeave` gives every departure the same reconnection window, which is
+   * right for a dropped connection and wrong for a decision: the remaining
+   * players sit waiting out a window for someone who already walked away.
+   * This is the "quit affordance" that docstring names as missing, and the
+   * client sends it just before closing its own connection.
+   *
+   * The seat is taken over IMMEDIATELY, and that is also what makes the
+   * disconnect that follows harmless: `seatOfClient` only matches a
+   * controller still marked `kind: "human"`, so once the bot holds the seat
+   * the closing socket finds nothing in `onLeave` and returns before
+   * `allowReconnection` is ever reached. No "who quit" bookkeeping to keep
+   * in step with the controllers, and no second path through the window.
+   *
+   * Deliberately NOT a forfeit. Bot takeover is what this room already does
+   * for an absent human, and it is the outcome that costs the OTHER players
+   * least — a resignation would end their match too, on one person's
+   * decision. Whether truco should also offer a real resignation is a rules
+   * question for the module, not a transport one.
+   *
+   * Public for the same reason `handleAction` is: `@colyseus/testing` pulls
+   * a subdependency this workspace's supply-chain policy blocks, so the
+   * message handlers are driven directly in tests.
+   */
+  handleQuit(client: Client): void {
+    const seat = this.seatOfClient(client);
+    if (seat === undefined) return; // never seated, or already taken over
+    this.takeOverSeat(seat);
+  }
+
   private takeOverSeat(seat: number): void {
     const module = this.module;
     const controller = this.controllers.get(seat);
@@ -508,6 +582,44 @@ export class MatchRoom extends Room {
     // catches a handler's return value unless this room defines its own
     // `onUncaughtException`, which it deliberately does not.
     return this.advance();
+  }
+
+  /**
+   * Applies the action exactly as `handleAction` would — same authentication,
+   * same legality, same broadcast, same rejection messages — and then sends
+   * the ASKING CLIENT ALONE whatever the module has to say about it.
+   *
+   * Routed through `handleAction` rather than reimplementing its checks: a
+   * second copy of "is this really your seat" is a second place for that
+   * check to rot, and this one guards a message that spends a resource.
+   *
+   * The advice is never broadcast. What the other seats see is only the cost,
+   * which is ordinary public state — in truco the question spends a seña, and
+   * the counter moves for everyone.
+   */
+  async handleConsult(client: Client, action: unknown): Promise<void> {
+    const before = this.matchState;
+    await this.handleAction(client, action);
+    // Nothing changed: `handleAction` already told the client why, and asking
+    // the module about a request that was refused would be answering a
+    // question nobody was allowed to put.
+    if (this.matchState === before) return;
+
+    const registry = this.registry;
+    const gameId = this.gameId;
+    const controller = this.controllerFor(client);
+    if (registry === undefined || gameId === undefined || controller === undefined || this.matchState === undefined) return;
+
+    try {
+      const advice = await registry.getConsultAdvice(gameId, this.matchState, controller.playerId, this.botTier);
+      if (advice !== null) client.send("consult-advice", { advice });
+    } catch {
+      // A module that throws while forming an opinion must not take the room
+      // with it: the action has already been applied and broadcast, and the
+      // player simply gets no answer. Deliberately silent for the same reason
+      // `runAdvanceOnce` swallows: this is one client's question, not the
+      // match's integrity.
+    }
   }
 
   /**
@@ -705,12 +817,65 @@ export class MatchRoom extends Room {
     const registry = this.registry;
     const gameId = this.gameId;
     if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return undefined;
+    const humanIsOfferedTheSameDecision = this.someHumanCanTakePriorityAction();
     for (const controller of this.controllers.values()) {
       if (controller.kind !== "bot") continue;
       const legal = module.getLegalActions(this.matchState, controller.playerId);
-      if (legal.some((action) => !registry.isNonBlockingAction(gameId, action))) return controller;
+      const blocking = legal.filter((action) => !registry.isNonBlockingAction(gameId, action));
+      if (blocking.length === 0) continue;
+      // THE HUMAN GETS THE FIRST WORD. When this bot is offered a decision
+      // the game marks as human-priority AND a human seat is offered it too,
+      // the bot stands down — all of it, not just that one action. In truco
+      // that is answering a call: the engine offers the response to BOTH
+      // members of the answering team, so a bot partner used to win the race
+      // every time and its human teammate never decided anything.
+      //
+      // "HAS ONE", NOT "HAS ONLY ONES", and the difference is a real defect
+      // this started out with. A pending ENVIDO offers the answering side its
+      // two responses AND every higher call it could escalate to; a pending
+      // TRUCO offers only the two responses. Requiring every blocking action
+      // to be human-priority therefore held for truco and quietly failed for
+      // envido, where the escalations were enough to make the bot act — which
+      // is exactly how it was reported: "espera para mi respuesta de si
+      // quiero o no el truco pero no lo hace para el envido".
+      //
+      // It cannot starve a bot that has real work of its own, because there
+      // is none to have: `getLegalCardPlayActions` requires the hand's calls
+      // to be settled, so while anything is pending nobody is playing a card.
+      // A bot with a genuinely private move has no human-priority action at
+      // all and never reaches this line.
+      if (humanIsOfferedTheSameDecision && blocking.some((action) => registry.isHumanPriorityAction(gameId, action))) continue;
+      return controller;
     }
     return undefined;
+  }
+
+  /**
+   * Whether a HUMAN seat is currently being offered a decision the game
+   * marks as theirs first.
+   *
+   * Asked once per `findActingBot` rather than per bot: it is a property of
+   * the table, not of the bot being considered, and every bot in the same
+   * loop would otherwise recompute the same answer.
+   *
+   * This is deliberately about the KIND of decision and not about teams.
+   * `MatchRoom` has no team concept and must not grow one (the port keeps
+   * `SeatAssignment` team-free on purpose); it does not need one either,
+   * because a pending call is answerable by exactly one side at a time —
+   * so "a human is being offered this kind of decision" and "the human on
+   * the answering side is being offered it" are the same statement here.
+   */
+  private someHumanCanTakePriorityAction(): boolean {
+    const module = this.module;
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return false;
+    for (const controller of this.controllers.values()) {
+      if (controller.kind !== "human") continue;
+      const legal = module.getLegalActions(this.matchState, controller.playerId);
+      if (legal.some((action) => registry.isHumanPriorityAction(gameId, action))) return true;
+    }
+    return false;
   }
 
   /**

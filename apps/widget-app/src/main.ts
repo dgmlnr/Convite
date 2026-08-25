@@ -25,6 +25,19 @@ import { renderGameSelection } from "./game-selection.js";
 import { renderUnsupportedGame } from "./unsupported-game-view.js";
 
 /**
+ * How a player got out of a match — the one thing the server cannot infer
+ * from the socket closing.
+ *
+ * `"match-over"` is a finished match: nothing to announce, there is no seat
+ * left to hold. `"quit"` is a player walking away from a match still being
+ * played, and it has to be announced (`MatchConnection.quit`) or
+ * `MatchRoom.onLeave` reads it as a dropped connection and holds the seat
+ * for the full reconnection window — everyone else waiting out a timer for
+ * someone who already decided.
+ */
+type MatchDeparture = "match-over" | "quit";
+
+/**
  * The widget-app composition root — wires the pieces every other module in
  * this package already tests in isolation (`handshake.ts`, `theme.ts`,
  * `bootstrap-data.ts`, `match-flow.ts`, `game-selection.ts`, and
@@ -113,18 +126,28 @@ function main(): void {
    * gets its real table; anything else falls back to the smallest HONEST
    * proof the connection is live, never a broken blank screen.
    */
-  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onLeaveMatch: () => void): void {
+  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onDepart: (departure: MatchDeparture) => void): void {
     handshake.sendLayout("fullscreen");
     app!.replaceChildren();
+
+    const onLeaveMatch = (): void => {
+      onDepart("quit");
+    };
+    const onPlayAgain = (): void => {
+      onDepart("match-over");
+    };
 
     const entry = gameUiRegistry.get(gameId);
     if (entry === undefined) {
       // WCR-3/PR6-T12: a real match, a real live connection -- just no
       // renderer registered for this gameId in this build. The chrome-styled
       // navigable screen (unsupported-game-view.ts) replaces the former bare
-      // <p> dead end; onLeaveMatch already IS returnToSelection(connection)
-      // at every call site below, so this wires straight through rather than
-      // reimplementing any of its four steps.
+      // <p> dead end; both departures below route through
+      // returnToSelection(connection, ...) at every call site, so this wires
+      // straight through rather than reimplementing any of its four steps.
+      // A "quit": the connection IS live and holds a real seat, so walking
+      // away here owes the table the same announcement any other departure
+      // from a match in progress does.
       const view = renderUnsupportedGame(app!, { onBackToLobby: onLeaveMatch });
       let updates = 0;
       connection.onView(() => view.setUpdateCount(++updates));
@@ -132,7 +155,47 @@ function main(): void {
     }
 
     const render = entry.createRenderer();
-    connection.onView((payload) => render(app!, payload as GameUiPayload, (action) => connection.sendAction(action as ErasedAction), onLeaveMatch));
+    // THE CONSULT'S OWN LITTLE STATE, and it lives here rather than in the
+    // renderer because it is a property of the CONNECTION: the question goes
+    // out on its own channel and the answer comes back addressed to this
+    // client alone, never inside a view. The renderer is handed the result
+    // and stays a pure function of what it is given.
+    let consult: { advice: "quiero" | "no-quiero" | null; asking: boolean } = { advice: null, asking: false };
+    let latest: GameUiPayload | null = null;
+    const paint = (): void => {
+      if (latest === null) return;
+      render(app!, { ...latest, consult }, dispatch, onPlayAgain, onLeaveMatch);
+    };
+    const dispatch = (action: unknown): void => {
+      // Routed by TYPE, and this is the one place that can do it: the
+      // renderer hands back whatever the player pressed, and only the layer
+      // holding the connection knows that a question travels on a different
+      // channel from a move.
+      if ((action as { readonly type?: unknown }).type === "consult-partner") {
+        consult = { advice: null, asking: true };
+        connection.sendConsult(action as ErasedAction);
+        paint();
+        return;
+      }
+      connection.sendAction(action as ErasedAction);
+    };
+    connection.onConsultAdvice((advice) => {
+      // A rejected consult never produces one of these, so `asking` is
+      // cleared by the answer OR by the next view — whichever lands first.
+      consult = { advice: advice === "quiero" || advice === "no-quiero" ? advice : null, asking: false };
+      paint();
+    });
+    connection.onView((payload) => {
+      // A NEW VIEW ENDS THE CONVERSATION. Any view means the table moved —
+      // the call was answered, or the hand went on — and an opinion about a
+      // decision that is no longer open is worse than none. The exception is
+      // the view the consult itself produces (it spends a seña, so it
+      // broadcasts): that one arrives while the question is still in flight,
+      // and clearing on it would drop the answer before it landed.
+      if (!consult.asking) consult = { advice: null, asking: false };
+      latest = payload as GameUiPayload;
+      paint();
+    });
   }
 
   async function boot(): Promise<void> {
@@ -201,8 +264,14 @@ function main(): void {
     // redrawing the selection screen, and redraws it immediately with
     // whatever counts are already known — never a re-fetch, never a second
     // `/embed` round trip.
-    function returnToSelection(connection: MatchConnection<unknown>): void {
-      void connection.leave();
+    function returnToSelection(connection: MatchConnection<unknown>, departure: MatchDeparture = "match-over"): void {
+      // The distinction the server cannot infer. A match that ENDED needs
+      // nothing announced — there is no seat left to hold. A player who
+      // WALKS AWAY from a match still in progress does: without `quit()`,
+      // `MatchRoom.onLeave` treats them as a dropped connection and holds
+      // their seat for the whole reconnection window, so everyone else at
+      // the table waits ~30 seconds for someone who already decided.
+      void (departure === "quit" ? connection.quit() : connection.leave());
       // The match this session's own reload-resume would otherwise try to
       // rejoin is over (a real ending, or a deliberate leave) — leaving the
       // entry behind would only cost one doomed `reconnectMatch` attempt on
@@ -226,7 +295,7 @@ function main(): void {
                   void joinMatchFromReservation(client, pairing.reservation)
                     .then((connection) => {
                       persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });
-                      enterMatch(gameId, connection, () => returnToSelection(connection));
+                      enterMatch(gameId, connection, (departure) => returnToSelection(connection, departure));
                     })
                     .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
                 });
@@ -242,11 +311,11 @@ function main(): void {
         onPlayVsBot: (gameId, modality, tier) => {
           departureGate.markDeparted();
           const attempt = (): void => {
-            renderStatusMessage(app!, STRINGS.searchingPlayers);
+            renderStatusMessage(app!, STRINGS.preparingTable);
             void withFreshToken(renewToken, (token) => startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }))
               .then((connection) => {
                 persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });
-                enterMatch(gameId, connection, () => returnToSelection(connection));
+                enterMatch(gameId, connection, (departure) => returnToSelection(connection, departure));
               })
               .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
           };
@@ -274,7 +343,7 @@ function main(): void {
     if (resumed !== undefined && pendingSession !== undefined) {
       departureGate.markDeparted();
       persistMatchSession(storage, { gameId: pendingSession.gameId, reconnectionToken: resumed.reconnectionToken });
-      enterMatch(pendingSession.gameId as GameId, resumed, () => returnToSelection(resumed));
+      enterMatch(pendingSession.gameId as GameId, resumed, (departure) => returnToSelection(resumed, departure));
       return;
     }
     if (pendingSession !== undefined) clearPersistedMatchSession(storage);

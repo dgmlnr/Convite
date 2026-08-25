@@ -4,6 +4,7 @@ import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import type { Card, MatchConfig, MatchState } from "@hexdev/truco-engine";
 import { SYSTEM_ACTOR_ID, trucoModule } from "./index.js";
 import type { TrucoModuleAction } from "./index.js";
+import { DEFAULT_THINKING_DELAY_MS } from "@hexdev/truco-bot";
 
 const playerAId = "player-a" as PlayerId;
 const playerBId = "player-b" as PlayerId;
@@ -36,14 +37,18 @@ function terminalFixtureState(): MatchState {
   return { ...state, teams: state.teams.map((team) => ({ ...team, score: config.pointsToWin })) };
 }
 
-const legalAction: TrucoModuleAction = { type: "call-truco", playerId: playerAId, level: "truco" };
+/** playerB, not playerA, and that is the module's own geometry rather than a
+ * preference: `createMatch` leaves the dealer at seat 0, so the mano is seat
+ * 1 — and opening a call is taking the floor, which starts with the mano
+ * (truco-engine's `getLegalTrucoActions`). */
+const legalAction: TrucoModuleAction = { type: "call-truco", playerId: playerBId, level: "truco" };
 
 describeGameModule(
   trucoModule,
   {
     config,
     seats,
-    playerId: playerAId,
+    playerId: playerBId,
     reachableState: dealtFixtureState(),
     legalAction,
     terminalState: terminalFixtureState(),
@@ -82,21 +87,33 @@ describe("truco-module: createBot wires REAL tiers (PR9's placeholder is gone)",
     expect(chosen.type).toBe("play-card");
   });
 
-  it("wraps whichever tier it returns with the ~1s thinking delay (real setTimeout, proven with fake timers)", async () => {
+  it("wraps whichever tier it returns with the thinking delay (real setTimeout, proven with fake timers)", async () => {
     vi.useFakeTimers();
-    const state = dealtFixtureState();
-    const legal = trucoModule.getLegalActions(state, playerBId);
-    const view = trucoModule.getViewFor(state, playerBId);
-    const bot = trucoModule.createBot("easy");
-    let resolved = false;
-    void Promise.resolve(bot.chooseAction(view, legal, 50)).then(() => {
-      resolved = true;
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    expect(resolved).toBe(false);
-    await vi.advanceTimersByTimeAsync(600);
-    expect(resolved).toBe(true);
-    vi.useRealTimers();
+    try {
+      const state = dealtFixtureState();
+      const legal = trucoModule.getLegalActions(state, playerBId);
+      const view = trucoModule.getViewFor(state, playerBId);
+      const bot = trucoModule.createBot("easy");
+      let resolved = false;
+      void Promise.resolve(bot.chooseAction(view, legal, 50)).then(() => {
+        resolved = true;
+      });
+
+      // Driven from the CONSTANT, not from a copy of its value. This test
+      // used to hardcode 500/600 around a 1s delay, so raising that delay
+      // broke it — and then leaked fake timers into the next test, which
+      // failed as a five-second timeout that had nothing to do with its own
+      // subject. Expressed this way the assertion states the property (the
+      // wrapper waits out the delay) and survives any future tuning of it.
+      await vi.advanceTimersByTimeAsync(DEFAULT_THINKING_DELAY_MS - 100);
+      expect(resolved, "still waiting just before the delay elapses").toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(resolved, "resolved once it has").toBe(true);
+    } finally {
+      // In a `finally` for the same reason: a failed expectation above must
+      // not leave every later test running on frozen timers.
+      vi.useRealTimers();
+    }
   });
 
   it("the hard tier is wired too and still always returns a legal action", async () => {

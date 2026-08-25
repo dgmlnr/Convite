@@ -5,6 +5,7 @@ import { sampleHiddenHands } from "./determinize.js";
 import type { HiddenHands } from "./determinize.js";
 import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 import { chooseSenaEmission } from "./sena-emission.js";
+import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
 /** Number of determinizations sampled per decision — a tunable search
  * budget, same spirit as `budgetMs` on `BotStrategy.chooseAction`. Kept
@@ -159,8 +160,8 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
         return respondChoice(respondEnvido, teamWinRate(view.self.hand, rounds, envidoPoints) > 0.5);
       }
 
-      const reveal = legalActions.find((a) => a.type === "reveal-envido");
-      if (reveal !== undefined) return reveal;
+      const declaring = chooseEnvidoDeclaration(view, legalActions);
+      if (declaring !== undefined) return declaring;
 
       const wantsToCallTruco = legalActions.find((a) => a.type === "call-truco");
       if (wantsToCallTruco !== undefined && teamWinRate(view.self.hand, rounds, handPower) > 0.5) return wantsToCallTruco;

@@ -58,7 +58,7 @@ describe("derivePendingCall — a call hangs on the table until it is answered",
   });
 
   it("returns null once envido is only 'accepted' (quiero already answered it) — awaiting reveal is not a pending call", () => {
-    const hand = baseHand({ envido: { status: "accepted", calls: ["envido"], callingTeamId: CALLING_TEAM, acceptedValue: 2 } });
+    const hand = baseHand({ envido: { status: "accepted", calls: ["envido"], callingTeamId: CALLING_TEAM, acceptedValue: 2, declarations: [] } });
 
     expect(derivePendingCall(hand)).toBeNull();
   });

@@ -57,7 +57,11 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  * be unreachable from the running product; gating on team size here means no
  * separate feature flag is needed for señas specifically to stay inert in
  * 1v1 — a 1v1 team, by construction, always has exactly one player). */
-function hasTeammate(state: MatchState, player: Player): boolean {
+/** Exported for `consult.ts`, which spends the SAME per-hand budget and so
+ * has to ask the same two questions this file already answers: does this
+ * player have anybody to talk to, and have they said enough this hand. One
+ * owner for the quota, never a second copy of its arithmetic. */
+export function hasTeammate(state: MatchState, player: Player): boolean {
   return state.players.some((other) => other.id !== player.id && other.teamId === player.teamId);
 }
 
@@ -69,7 +73,7 @@ function hasTeammate(state: MatchState, player: Player): boolean {
  * `SenaEvent.seq` a substitute — it is the hand's highest ordinal across ALL
  * senders, so one player's own ordinal already counts everyone else's señas
  * too. Hence a real per-player count in `HandState`. */
-function senasSentBy(hand: HandState, playerId: PlayerId): number {
+export function senasSentBy(hand: HandState, playerId: PlayerId): number {
   return hand.senasSent.find((entry) => entry.playerId === playerId)?.count ?? 0;
 }
 

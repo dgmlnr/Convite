@@ -1,6 +1,7 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy } from "@hexdev/platform-contract";
+import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
 /**
  * Priority group for the easy tier's action choice — LOWER is preferred.
@@ -19,7 +20,7 @@ import type { BotStrategy } from "@hexdev/platform-contract";
  */
 function priority(action: Action): number {
   if (action.type === "respond-truco" || action.type === "respond-envido") return 0;
-  if (action.type === "reveal-envido") return 1;
+  if (action.type === "declare-envido") return 1;
   if (action.type === "play-card") return 2;
   if (action.type === "send-sena") return 4;
   return 3; // call-truco / call-envido
@@ -42,7 +43,7 @@ function blindAccept(legal: readonly Action[], type: "respond-truco" | "respond-
 
 export function createEasyBot(): BotStrategy<PlayerView, Action> {
   return {
-    chooseAction(_view, legalActions) {
+    chooseAction(view, legalActions) {
       if (legalActions.length === 0) {
         throw new Error("createEasyBot: no legal actions to choose from");
       }
@@ -50,6 +51,12 @@ export function createEasyBot(): BotStrategy<PlayerView, Action> {
       const group = legalActions.filter((action) => priority(action) === best);
 
       if (best === 0) return blindAccept(group, group[0]!.type as "respond-truco" | "respond-envido");
+      // Shared with the smarter tiers, deliberately: whether to concede a
+      // declaration round is arithmetic on numbers already said out loud, not
+      // a bluffing surface, and a beginner who hangs their partner out by
+      // conceding over their head is not "weak play" — it is a rules mistake
+      // no tier should make. See `chooseEnvidoDeclaration`'s own docblock.
+      if (best === 1) return chooseEnvidoDeclaration(view, group) ?? group[0]!;
       if (best === 2) return weakestCardPlay(group);
       return group[0]!;
     },

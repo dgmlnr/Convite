@@ -13,10 +13,10 @@ import {
   createStaticTenantRepository,
 } from "@hexdev/platform-core";
 import { connectRedis } from "@hexdev/platform-core/node";
-import type { JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
+import type { ConsultAdviceProvider, JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
-import { requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
+import { getConsultAdvice, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
 
 
@@ -69,12 +69,23 @@ const joinIpLimiter: RateLimiter =
 // and a 1v1 team has exactly one player by construction), included on both
 // entries for consistency rather than asymmetric registration.
 const isTrucoSenaNonBlocking = (action: unknown): boolean => typeof action === "object" && action !== null && (action as { type?: unknown }).type === "send-sena";
+// The human answers first. Truco offers a pending call's response to BOTH
+// members of the answering team, so a bot partner had it legal at the same
+// instant its human teammate did and always won the race — reported from real
+// 2v2 play. These two action types are the whole shared surface: opening a
+// call is not on the list, because a bot opening its own truco is its own
+// decision and not one it is taking away from anybody.
+const isTrucoResponseHumanFirst = (action: unknown): boolean => {
+  if (typeof action !== "object" || action === null) return false;
+  const type = (action as { type?: unknown }).type;
+  return type === "respond-truco" || type === "respond-envido";
+};
 const registry = createGameModuleRegistry([
-  { module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking },
+  { module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider },
   // The 2v2 module, additive registration (obs 2927/2925's own named gap):
   // same registry, same generic MatchRoom, a distinct gameId. Nothing above
   // this line changed for the 1v1 entry.
-  { module: trucoModule2v2, requestSystemAction: requestSystemAction2v2 as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking },
+  { module: trucoModule2v2, requestSystemAction: requestSystemAction2v2 as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider },
 ]);
 // The server is where entropy lives (design §4): the engine never
 // randomizes itself. A real CSPRNG, not `Math.random`.

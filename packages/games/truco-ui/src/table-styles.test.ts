@@ -34,14 +34,19 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
     expect(css).toContain("@container");
   });
 
-  it("never dims the pending-call banner or the turn badge with the CSS opacity property — both sit on the cloth, and opacity there tints toward the felt instead of dimming", () => {
+  it("never dims the turn badge or the seat-call chip with the CSS opacity property — both sit on the cloth, and opacity there tints toward the felt instead of dimming", () => {
+    // The pending-call banner used to be the first name in this test. It was
+    // the biggest gold surface on the felt and so the likeliest to be dimmed
+    // by accident; it is gone, and the seat-call chip inherited both the
+    // treatment and the exposure — it is the gold surface that sits on the
+    // cloth now, and it sits directly ON a seat's cards.
     const css = buildTableStylesheet();
-    const pendingCallBlock = css.match(/\.hexdev-truco-pending-call\s*\{[^}]*\}/)?.[0] ?? "";
     const turnBadgeBlock = css.match(/\.hexdev-truco-turn-badge\s*\{[^}]*\}/)?.[0] ?? "";
+    const seatCallBlock = css.match(/\.hexdev-truco-seat-call-chip\s*\{[^}]*\}/)?.[0] ?? "";
 
-    expect(pendingCallBlock).not.toMatch(/opacity\s*:/);
     expect(turnBadgeBlock).not.toMatch(/opacity\s*:/);
-    expect(css).toContain(".hexdev-truco-pending-call");
+    expect(seatCallBlock, "fence setup: the chip really does have a block of its own to check").not.toBe("");
+    expect(seatCallBlock).not.toMatch(/opacity\s*:/);
     expect(css).toContain(".hexdev-truco-turn-badge");
   });
 
@@ -260,7 +265,7 @@ function ruleBodyForExactSelector(css: string, exactSelector: string): string {
 
 // The exact 10 felt-mounted CHROME surfaces (tasks §7): every one of these
 // sits physically on top of the felt (a scoreboard panel, a call log, calls,
-// the pending-call banner, the turn badge, señas, the match-over overlay,
+// the seat-call chip, the turn badge, señas, the match-over overlay,
 // the hand-outcome chip) but is still CHROME by design §10's own hybrid
 // theming rule — a tenant's brand must reach it, unlike the felt/cards
 // beneath it. FU-1 adds the 10th: the open señas picker became its own
@@ -270,7 +275,7 @@ const CHROME_SURFACES_ON_FELT = [
   ".hexdev-truco-scoreboard-panel",
   ".hexdev-truco-call-log",
   ".hexdev-truco-call",
-  ".hexdev-truco-pending-call",
+  ".hexdev-truco-seat-call-chip",
   ".hexdev-truco-turn-badge",
   ".hexdev-truco-senas-toggle",
   ".hexdev-truco-senas-row",
