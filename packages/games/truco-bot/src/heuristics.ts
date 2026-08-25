@@ -18,6 +18,32 @@ export function envidoPoints(hand: readonly Card[]): number {
 }
 
 /**
+ * The three cards this viewer was DEALT. Everything about the envido is
+ * worth this, never `view.self.hand` on its own.
+ *
+ * `view.self.hand` shrinks as cards are played — right for the trick game,
+ * wrong for every envido question, and wrong in the direction that loses
+ * hands: the engine scores the dealt three (`dealtCardsFor`), so a bot
+ * reading the remainder is arguing against a number nobody else is using.
+ *
+ * ONE HELPER FOR ALL THREE CALLERS (the call threshold, the declaration
+ * choice, and the advice a partner gives) because they are the same question
+ * asked at three moments, and the moments are exactly the ones where a card
+ * may already be down. `currentTrickPlays` is enough to put them back for the
+ * same reason it is in the engine: an envido is legal only while the first
+ * trick is unresolved, so nothing has been swept out of it yet.
+ */
+export function dealtCardsOf(view: PlayerView): readonly Card[] {
+  const played = (view.hand?.currentTrickPlays ?? []).filter((play) => play.playerId === view.self.playerId).map((play) => play.card);
+  return played.length === 0 ? view.self.hand : [...view.self.hand, ...played];
+}
+
+/** `envidoPoints` over what the viewer was dealt — see `dealtCardsOf`. */
+export function dealtEnvidoPoints(view: PlayerView): number {
+  return calculateEnvidoPoints(dealtCardsOf(view));
+}
+
+/**
  * Scores playing `myCard` against an ALREADY-VISIBLE `opponentCard` (public
  * information — the opponent's card is exposed in `HandView.currentTrickPlays`
  * once played, unlike unplayed hand cards). No hidden-state guessing needed

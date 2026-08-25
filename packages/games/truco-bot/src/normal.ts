@@ -1,7 +1,7 @@
 import { cardPower } from "@hexdev/truco-engine";
 import type { Action, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
-import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
+import { dealtEnvidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 import { chooseSenaEmission } from "./sena-emission.js";
 import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
@@ -31,7 +31,7 @@ function respondTrucoChoice(view: PlayerView, group: readonly RespondTruco[]): A
 }
 
 function respondEnvidoChoice(view: PlayerView, group: readonly RespondEnvido[]): Action {
-  const accept = envidoPoints(view.self.hand) >= ACCEPT_ENVIDO_THRESHOLD;
+  const accept = dealtEnvidoPoints(view) >= ACCEPT_ENVIDO_THRESHOLD;
   return group.find((action) => action.response === (accept ? "quiero" : "no-quiero")) ?? group[0]!;
 }
 
@@ -97,7 +97,7 @@ export function createNormalBot(rng: RandomSource): BotStrategy<PlayerView, Acti
       if (wantsToCallTruco !== undefined && handPower(view.self.hand) >= AGGRESSIVE_TRUCO_THRESHOLD) return wantsToCallTruco;
 
       const wantsToCallEnvido = legalActions.find((a) => a.type === "call-envido");
-      if (wantsToCallEnvido !== undefined && envidoPoints(view.self.hand) >= AGGRESSIVE_ENVIDO_THRESHOLD) return wantsToCallEnvido;
+      if (wantsToCallEnvido !== undefined && dealtEnvidoPoints(view) >= AGGRESSIVE_ENVIDO_THRESHOLD) return wantsToCallEnvido;
 
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) return cardPlayChoice(view, cardPlays);

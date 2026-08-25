@@ -192,3 +192,47 @@ describe("asking, and being answered", () => {
     expect(advice(), "and no answer outstanding either").toBeNull();
   });
 });
+
+/**
+ * THE WINDOW THE PIE RULE OPENED.
+ *
+ * Only a pie may open an envido, which took the call away from two of the
+ * four seats — possibly the one holding the points. Señas name CARDS, never
+ * tantos, so a non-pie partner with 33 cannot say so and the team loses
+ * envidos it should win. The pie may ask instead, and this is the half the
+ * player actually touches: the control is driven purely by legality
+ * (`consult-control.ts` looks for the offer in `legalActions`), so what this
+ * fences is that the window really reaches the button rather than stopping at
+ * the engine.
+ */
+describe("asking before you open an envido", () => {
+  /** dealerSeat 0 seats the mano at 1, making SELF (seat 0) a pie — and the
+   * LAST to speak, so the other three play on the way to the floor. */
+  function floorAtSelf(): MatchState {
+    let state: MatchState = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2);
+    for (const seat of [OPPONENT, TEAMMATE, OPPONENT_2]) {
+      const card = getLegalActions(state, seat).find((action) => action.type === "play-card")!;
+      state = dispatchOrThrow(state, card);
+    }
+    return state;
+  }
+
+  it("offers it to the pie holding an uncalled envido, with nothing on the table", () => {
+    const state = floorAtSelf();
+    expect(state.hand?.truco.status, "fence setup: nothing is pending").toBe("none");
+    expect(state.hand?.envido.status, "fence setup: no envido either").toBe("none");
+
+    paint(state);
+    open();
+    expect(button(), "the pie has a real decision to ask about — whether to open it at all").not.toBeNull();
+  });
+
+  it("stops offering it once the pie plays its own card", () => {
+    const state = floorAtSelf();
+    const played = dispatchOrThrow(state, getLegalActions(state, SELF).find((action) => action.type === "play-card")!);
+
+    paint(played);
+    open();
+    expect(button(), "playing is how you give the call up, and the question goes with it").toBeNull();
+  });
+});
