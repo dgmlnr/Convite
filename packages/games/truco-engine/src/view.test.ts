@@ -212,6 +212,39 @@ describe("getViewFor — señas redaction property, for any reachable 2v2 state"
   });
 });
 
+/**
+ * Walks the floor to `playerId`, each seat ahead of them playing instead of
+ * speaking, then opens the envido there.
+ *
+ * 2v2 generators need this because only a PIE may open an envido
+ * (envido-opener.test.ts) and a pie is never the mano, so a reachable 2v2
+ * revealed state always has cards on the table. 1v1 keeps opening from the
+ * mano — with two seats everybody is a pie.
+ */
+function openEnvidoAs(state: MatchState, playerId: PlayerId): MatchState {
+  let current = state;
+  for (let guard = 0; guard <= state.players.length; guard += 1) {
+    if (getLegalActions(current, playerId).some((action) => action.type === "call-envido")) {
+      return apply(current, { type: "call-envido", playerId, level: "envido" });
+    }
+    const onTheClock = current.players.find((player) => player.seat === current.hand?.turnSeat);
+    const card = onTheClock === undefined ? undefined : getLegalActions(current, onTheClock.id).find((action) => action.type === "play-card");
+    if (card === undefined) break;
+    current = apply(current, card);
+  }
+  throw new Error(`the floor never reached ${playerId} with an envido to open`);
+}
+
+/**
+ * What a player was DEALT: what is left in hand plus whatever they already
+ * played. The envido is worth the three cards, not the remainder — see
+ * envido-points-source.test.ts.
+ */
+function dealtCardsOf(state: MatchState, playerId: PlayerId): readonly Card[] {
+  const player = state.players.find((candidate) => candidate.id === playerId)!;
+  const played = (state.hand?.currentTrickPlays ?? []).filter((play) => play.playerId === playerId).map((play) => play.card);
+  return [...player.hand, ...played];
+}
 function apply(state: MatchState, action: Action): MatchState {
   const result = applyAction(state, action);
   if (!result.ok) throw new Error(`expected legal action, got violation: ${result.violation}`);
@@ -353,8 +386,11 @@ const revealedTeamArb = fc
     const manoSeat = dealt.hand!.manoSeat;
     const mano = dealt.players.find((player) => player.seat === manoSeat)!;
     const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
-    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
-    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    // The mano's own team's pie: the seat two along from the mano.
+    const pie = dealt.players.find((player) => player.seat === (manoSeat + 2) % dealt.players.length)!;
+    const called = openEnvidoAs(dealt, pie.id);
+    const responder = called.players.find((player) => player.teamId !== pie.teamId) ?? opponent;
+    const accepted = apply(called, { type: "respond-envido", playerId: responder.id, response: "quiero" });
     return declareAll(accepted);
   });
 
@@ -428,7 +464,7 @@ describe("getViewFor — a legitimate points declaration keeps its EXACT value t
           return envido.declarations.every((entry) => {
             if (entry.declaration !== "points") return true; // covered by the redaction property above
             const declarer = state.players.find((player) => player.seat === entry.seat)!;
-            return entry.points === calculateEnvidoPoints(declarer.hand);
+            return entry.points === calculateEnvidoPoints(dealtCardsOf(state, declarer.id));
           });
         }),
       ),
@@ -454,11 +490,12 @@ describe("getViewFor — call log and trick plays are identical across every pla
       [{ suit: "oro", rank: 1 }, { suit: "oro", rank: 2 }, { suit: "oro", rank: 3 }],
       [{ suit: "copa", rank: 1 }, { suit: "copa", rank: 2 }, { suit: "copa", rank: 3 }],
     ]);
-    state = apply(state, { type: "call-envido", playerId: playerA, level: "envido" });
+    // playerC is the mano's team's pie, and only a pie may open an envido —
+    // so seats 0 and 1 play their first card on the way to the call, and the
+    // trick is finished by the two seats that had not played yet.
+    state = openEnvidoAs(state, playerC);
     state = apply(state, { type: "respond-envido", playerId: playerB, response: "quiero" });
     state = declareAll(state);
-    state = apply(state, { type: "play-card", playerId: playerA, card: { suit: "espada", rank: 1 } });
-    state = apply(state, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 1 } });
     state = apply(state, { type: "play-card", playerId: playerC, card: { suit: "oro", rank: 1 } });
     state = apply(state, { type: "play-card", playerId: playerD, card: { suit: "copa", rank: 1 } });
 

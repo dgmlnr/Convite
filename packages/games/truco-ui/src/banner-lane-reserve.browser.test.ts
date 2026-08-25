@@ -65,6 +65,19 @@ function commit(state: MatchState, action: Action): MatchState {
   return result.state;
 }
 
+/** Walks the floor one card at a time until `type` is on offer to somebody. */
+function walkUntilOffered(state: MatchState, type: Action["type"]): MatchState {
+  let current = state;
+  for (let guard = 0; guard <= EVERY_PLAYER.length; guard += 1) {
+    if (EVERY_PLAYER.some((player) => getLegalActions(current, player).some((action) => action.type === type))) return current;
+    const onTheClock = current.players.find((player) => player.seat === current.hand?.turnSeat);
+    const card = onTheClock === undefined ? undefined : getLegalActions(current, onTheClock.id).find((action) => action.type === "play-card");
+    if (card === undefined) break;
+    current = commit(current, card);
+  }
+  return current;
+}
+
 /** Whoever the engine currently offers this action to — seat order is not this file's subject. */
 function offered(state: MatchState, type: Action["type"], response?: "quiero" | "no-quiero"): Action {
   const action = EVERY_PLAYER.flatMap((player) => getLegalActions(state, player)).find(
@@ -122,8 +135,11 @@ function measureLane(width: number, seats: "1v1" | "2v2"): { readonly reserve: n
   }
 
   // An envido refused, then a truco refused, ends the hand at once: the
-  // end-of-hand banner is the lane's other occupant, at its wordiest.
-  let ended = commit(start, offered(start, "call-envido"));
+  // end-of-hand banner is the lane's other occupant, at its wordiest. In 2v2
+  // only a PIE may open an envido and a pie is never the mano, so the floor
+  // is walked until somebody is actually offered the call.
+  let ended = walkUntilOffered(start, "call-envido");
+  ended = commit(ended, offered(ended, "call-envido"));
   ended = commit(ended, offered(ended, "respond-envido", "no-quiero"));
   ended = commit(ended, offered(ended, "call-truco"));
   ended = commit(ended, offered(ended, "respond-truco", "no-quiero"));

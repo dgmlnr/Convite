@@ -205,6 +205,19 @@ function playNextCard(state: MatchState, a: PlayerId, b: PlayerId): MatchState {
  * players): exactly one of them has a legal play-card action at a time
  * (whoever `turnSeat` names), so checking every candidate and dispatching
  * the first hit is equivalent to tracking `turnSeat` directly. */
+
+/**
+ * Who, if anyone, is currently offered an envido to open.
+ *
+ * In 2v2 only a PIE may open one (envido-opener.test.ts) and a pie is never
+ * the mano, so this is empty at the top of the hand: seats have to play their
+ * way there first. `walkToAnEnvido` below is what these sequences use instead
+ * of calling one from a named seat.
+ */
+function whoMayOpenAnEnvido(state: MatchState, players: readonly PlayerId[]): PlayerId | undefined {
+  return players.find((player) => getLegalActions(state, player).some((action) => action.type === "call-envido"));
+}
+
 function playNextCardAmong(state: MatchState, players: readonly PlayerId[]): MatchState {
   for (const player of players) {
     const play = findPlayCard(state, player);
@@ -487,21 +500,30 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     let state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
     await recordRender(state); // baseline: dealt, nothing has happened yet
 
-    state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
+    const allFourSeats = [SELF, OPPONENT, TEAMMATE, OPPONENT_2] as const;
+
+    // Only a PIE may open an envido and a pie is never the mano, so the seats
+    // ahead of it play on the way to the call. That is the same "opponent hand
+    // shrinking seat by seat" case this test is about, just reached before the
+    // envido instead of after it — and every step of it is recorded.
+    let opener = whoMayOpenAnEnvido(state, allFourSeats);
+    while (opener === undefined) {
+      state = playNextCardAmong(state, allFourSeats);
+      await recordRender(state);
+      opener = whoMayOpenAnEnvido(state, allFourSeats);
+    }
+    state = dispatch(state, { type: "call-envido", playerId: opener, level: "envido" });
     await recordRender(state); // pending-call banner: "Envido"
 
-    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
+    const envidoAnswerer = allFourSeats.find((player) => getLegalActions(state, player).some((action) => action.type === "respond-envido"))!;
+    state = dispatch(state, { type: "respond-envido", playerId: envidoAnswerer, response: "quiero" });
     await recordRender(state); // banner clears — accepted, awaiting reveal
 
     state = declareAll(state);
     await recordRender(state); // envido revealed, still no banner
 
-    const allFourSeats = [SELF, OPPONENT, TEAMMATE, OPPONENT_2] as const;
-
-    // Trick 1: every one of the four seats plays a card in turn, one card at
-    // a time — the exact "opponent hand shrinking seat by seat" case named
-    // as a possible remaining fluctuation.
-    for (let play = 0; play < 4; play++) {
+    // Trick 1 finishes, however many seats it has left.
+    while (state.hand!.trickOutcomes.length === 0) {
       state = playNextCardAmong(state, allFourSeats);
       await recordRender(state);
     }
@@ -575,6 +597,8 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     );
     await recordRender(state); // baseline
 
+    // 1v1 keeps opening from the mano: with two seats, "the last two in play
+    // order" is everybody, so the pie rule is vacuously satisfied here.
     state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
     await recordRender(state);
     state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
@@ -637,13 +661,6 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     let state = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2_MAXIMAL);
     await recordRender(state); // baseline
 
-    state = dispatch(state, { type: "call-envido", playerId: SELF, level: "envido" });
-    await recordRender(state);
-    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT, response: "quiero" });
-    await recordRender(state);
-    state = declareAll(state);
-    await recordRender(state);
-
     const opening = openTruco(state);
     state = dispatch(state, { type: "call-truco", playerId: opening.caller, level: "truco" });
     await recordRender(state);
@@ -663,6 +680,18 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     await recordRender(state);
     state = dispatch(state, { type: "play-card", playerId: OPPONENT, card: DEAL_2V2_MAXIMAL[1]![0]! });
     await recordRender(state);
+
+    // THE ENVIDO LANDS HERE, two cards in, and that is the rule rather than a
+    // convenience: only a PIE may open one, a pie is never the mano, so the
+    // earliest a 2v2 envido can be opened is the third seat to speak —
+    // TEAMMATE, who has the floor now and has not played yet.
+    state = dispatch(state, { type: "call-envido", playerId: TEAMMATE, level: "envido" });
+    await recordRender(state);
+    state = dispatch(state, { type: "respond-envido", playerId: OPPONENT_2, response: "quiero" });
+    await recordRender(state);
+    state = declareAll(state);
+    await recordRender(state);
+
     state = dispatch(state, { type: "play-card", playerId: TEAMMATE, card: DEAL_2V2_MAXIMAL[2]![0]! });
     await recordRender(state);
     state = dispatch(state, { type: "play-card", playerId: OPPONENT_2, card: DEAL_2V2_MAXIMAL[3]![0]! });

@@ -34,6 +34,32 @@ function apply(state: MatchState, action: Action): MatchState {
   if (!result.ok) throw new Error(`expected legal action, got violation: ${result.violation}`);
   return result.state;
 }
+
+/**
+ * Walks the floor around to `playerId`, each seat ahead of them playing
+ * instead of speaking, and then opens the envido from that seat.
+ *
+ * In 2v2 an opener is NEVER the mano: only a pie may open (the house rule
+ * envido-opener.test.ts owns), and a pie is by definition the last seat of
+ * its team, so cards are always down before an envido can be opened. That is
+ * the shape of the rule, not an artefact of these fixtures — and it costs the
+ * numbers below nothing, because playing a card does not touch the hand
+ * envido points are read from.
+ */
+function openEnvidoAs(state: MatchState, playerId: PlayerId): MatchState {
+  let current = state;
+  for (let guard = 0; guard <= state.players.length; guard += 1) {
+    if (getLegalActions(current, playerId).some((action) => action.type === "call-envido")) {
+      return apply(current, { type: "call-envido", playerId, level: "envido" });
+    }
+    const onTheClock = current.players.find((player) => player.seat === current.hand?.turnSeat);
+    const card = onTheClock === undefined ? undefined : getLegalActions(current, onTheClock.id).find((action) => action.type === "play-card");
+    if (card === undefined) break;
+    current = apply(current, card);
+  }
+  throw new Error(`the floor never reached ${playerId} with an envido to open`);
+}
+
 /**
  * The whole declaration round, everybody saying their number.
  *
@@ -301,15 +327,18 @@ describe("applyAction — 2v2 envido: team value is the BEST among its members, 
   it("awards the reveal to the team whose STRONGER hand belongs to the non-calling teammate", () => {
     const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
     const dealt = startHand(state, [
-      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }], // playerA (team A): weak, envido 4
+      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }], // playerA (team A): strong, envido 33
       [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }], // playerB (team B): weak, envido 5
-      [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }], // playerC (team A): strong, envido 33
+      [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }], // playerC (team A): weak, envido 4
       [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }], // playerD (team B): moderate, envido 27
     ]);
 
-    // playerA (the WEAKER member of team A) opens and calls envido — the team's
-    // value must still be team A's BEST (playerC's 33), not the caller's own 4.
-    const pending = apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" });
+    // playerC (the WEAKER member of team A, and its pie) opens and calls
+    // envido — the team's value must still be team A's BEST (playerA's 33),
+    // not the caller's own 4. The strong hand sits on playerA rather than
+    // playerC because a pie is the only seat that may open at all, and a test
+    // whose caller holds the winning number proves nothing.
+    const pending = openEnvidoAs(dealt, playerC);
     const accepted = apply(pending, { type: "respond-envido", playerId: playerB, response: "quiero" });
     const revealed = declareAll(accepted);
 
@@ -329,10 +358,9 @@ describe("applyAction — 2v2 envido: team value is the BEST among its members, 
       [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }], // playerD (team B): weak
     ]);
 
-    const accepted = apply(
-      apply(dealt, { type: "call-envido", playerId: playerA, level: "envido" }),
-      { type: "respond-envido", playerId: playerD, response: "quiero" },
-    );
+    // playerC is team A's pie and its weak hand; team A still wins on
+    // playerA's 33 against team B's best, playerB's 27.
+    const accepted = apply(openEnvidoAs(dealt, playerC), { type: "respond-envido", playerId: playerD, response: "quiero" });
     const revealed = declareAll(accepted);
 
     const teamA = revealed.teams.find((t) => t.playerIds.includes(playerA))!;
@@ -504,10 +532,11 @@ const revealedTeamArb = fc
     const base = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat });
     const dealt = startHand(base, [cards.slice(0, 3), cards.slice(3, 6), cards.slice(6, 9), cards.slice(9, 12)]);
     const manoSeat = dealt.hand!.manoSeat;
-    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
-    const opponent = dealt.players.find((player) => player.teamId !== mano.teamId)!;
-    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
-    const accepted = apply(called, { type: "respond-envido", playerId: opponent.id, response: "quiero" });
+    // Only a pie opens an envido, and a pie is never the mano — so a
+    // REACHABLE 2v2 revealed state always has two cards on the table.
+    const pie = dealt.players.find((player) => player.seat === (manoSeat + 2) % dealt.players.length)!;
+    const opponent = dealt.players.find((player) => player.teamId !== pie.teamId)!;
+    const accepted = apply(openEnvidoAs(dealt, pie.id), { type: "respond-envido", playerId: opponent.id, response: "quiero" });
     return declareAll(accepted);
   });
 
@@ -555,11 +584,11 @@ describe("calculateEnvidoPoints", () => {
  * tests now refuse: one seat calls truco and then, with nobody having
  * answered, calls the envido on its own call.
  *
- * WHAT THIS DELIBERATELY DOES NOT CHANGE: with nothing on the table, EITHER
- * side may still open the envido during the first trick. `canOpenEnvido`'s
- * own docblock argues at length for that permissiveness (no call in this
- * engine is turn-gated), and the gate below bites only while a truco is
- * actually pending.
+ * TWO GATES STAND IN FRONT OF THIS ONE, and these tests read differently
+ * once you know them: only a PIE may open an envido at all (the house rule
+ * envido-opener.test.ts owns), and opening with nothing pending also needs
+ * the floor. This block is about the third, independent question — WHOSE
+ * REPLY it is — so its cases are chosen to hold the other two constant.
  */
 describe("who may interpose an envido over a pending truco", () => {
   function trucoCalledBy(caller: PlayerId): MatchState {
@@ -578,10 +607,12 @@ describe("who may interpose an envido over a pending truco", () => {
   const mayOpen = (state: MatchState, playerId: PlayerId): boolean =>
     getLegalActions(state, playerId).some((action) => action.type === "call-envido");
 
-  it("the answering team may — that is what the rule is for", () => {
+  it("the answering team's PIE may — that is what the rule is for", () => {
+    // dealerSeat 0 seats the mano at 1, so the pies are seats 3 and 0. Of the
+    // team that owes the answer (seats 0 and 2), that is playerA.
     const called = trucoCalledBy(playerB);
-    expect(mayOpen(called, playerA), "playerA owes the answer, so playerA may say envido instead").toBe(true);
-    expect(mayOpen(called, playerC), "and so may their partner").toBe(true);
+    expect(mayOpen(called, playerA), "playerA owes the answer and is that team's pie, so playerA may say envido instead").toBe(true);
+    expect(mayOpen(called, playerC), "their partner owes it too, but a non-pie never opens an envido").toBe(false);
   });
 
   it("the caller may not — they cannot reply to themselves", () => {
@@ -595,10 +626,11 @@ describe("who may interpose an envido over a pending truco", () => {
     expect(mayOpen(trucoCalledBy(playerB), playerD)).toBe(false);
   });
 
-  it("with no truco pending, OPENING follows the turn — the mano and nobody else", () => {
-    // dealerSeat 3 makes seat 0 (playerA) the mano, so playerA holds the
-    // floor and the other three are waiting their turn to speak. This is the
-    // half of the rule that is about taking the floor rather than answering.
+  it("with no truco pending, BOTH gates must clear — being a pie is not enough, nor is holding the floor", () => {
+    // dealerSeat 3 makes seat 0 (playerA) the mano, so the floor is playerA's
+    // and the pies are seats 2 and 3. Nobody satisfies both yet, which is the
+    // point: the two gates are independent, and at the top of a 2v2 hand they
+    // are held by different people.
     const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
     const dealt = startHand(state, [
       [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
@@ -607,13 +639,13 @@ describe("who may interpose an envido over a pending truco", () => {
       [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
     ]);
 
-    expect(mayOpen(dealt, playerA), "the mano speaks first").toBe(true);
-    for (const waiting of [playerB, playerC, playerD]) {
-      expect(mayOpen(dealt, waiting), "and nobody may jump ahead of a seat that has not spoken").toBe(false);
-    }
+    expect(mayOpen(dealt, playerA), "holds the floor, but the mano is never a pie").toBe(false);
+    expect(mayOpen(dealt, playerB), "neither gate").toBe(false);
+    expect(mayOpen(dealt, playerC), "a pie, but three seats from the floor").toBe(false);
+    expect(mayOpen(dealt, playerD), "a pie, but three seats from the floor").toBe(false);
   });
 
-  it("the floor moves down the play order as each seat plays", () => {
+  it("the floor moves down the play order until it reaches a pie", () => {
     const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
     const dealt = startHand(state, [
       [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
@@ -622,33 +654,37 @@ describe("who may interpose an envido over a pending truco", () => {
       [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
     ]);
 
-    // The mano plays instead of calling, which is how a seat passes on the
+    // Each seat plays instead of calling, which is how it passes on the
     // envido: playing your card is giving up your say for the hand.
-    const played = apply(dealt, { type: "play-card", playerId: playerA, card: { suit: "oro", rank: 4 } });
+    const one = apply(dealt, { type: "play-card", playerId: playerA, card: { suit: "oro", rank: 4 } });
+    expect(mayOpen(one, playerB), "the floor is theirs now, but they are not a pie").toBe(false);
 
-    expect(mayOpen(played, playerA), "you cannot call after your own card is down").toBe(false);
-    expect(mayOpen(played, playerB), "the next seat in order now holds the floor").toBe(true);
-    expect(mayOpen(played, playerC), "and the one after it still does not").toBe(false);
+    const two = apply(one, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 5 } });
+    expect(mayOpen(two, playerC), "a pie, and now the floor is theirs — this is the first seat that may open it").toBe(true);
+    expect(mayOpen(two, playerD), "the other pie, still waiting its turn").toBe(false);
   });
 
-  it("once the truco is ANSWERED the caller-block lifts, and the ordinary turn rule takes over", () => {
-    // dealerSeat 0 makes seat 1 (playerB) the mano, so the truco's own caller
-    // also holds the floor. That separation is the point: while the truco was
-    // pending playerB could not open the envido BECAUSE they had called it;
-    // once it is answered that reason is gone and only the turn remains — and
-    // the turn is theirs.
-    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 0 });
+  it("once the truco is ANSWERED the caller-block lifts, and the ordinary gates take over", () => {
+    // The truco's caller has to be a pie holding the floor for this to isolate
+    // anything, so the floor is walked to seat 2 (playerC, a pie) first. While
+    // the truco is pending playerC cannot open the envido BECAUSE their own
+    // team called it; once it is answered that reason is gone and the two
+    // ordinary gates — both theirs — are all that is left.
+    const state = createTeamMatch({ seatOrder: [playerA, playerB, playerC, playerD], pointsToWin: 30, dealerSeat: 3 });
     const dealt = startHand(state, [
       [{ suit: "oro", rank: 4 }, { suit: "basto", rank: 4 }, { suit: "copa", rank: 4 }],
       [{ suit: "basto", rank: 5 }, { suit: "copa", rank: 10 }, { suit: "oro", rank: 2 }],
       [{ suit: "espada", rank: 7 }, { suit: "espada", rank: 6 }, { suit: "oro", rank: 3 }],
       [{ suit: "basto", rank: 3 }, { suit: "basto", rank: 4 }, { suit: "oro", rank: 1 }],
     ]);
-    const called = apply(dealt, { type: "call-truco", playerId: playerB, level: "truco" });
-    expect(mayOpen(called, playerB), "while it is pending, the caller may not").toBe(false);
+    const one = apply(dealt, { type: "play-card", playerId: playerA, card: { suit: "oro", rank: 4 } });
+    const two = apply(one, { type: "play-card", playerId: playerB, card: { suit: "basto", rank: 5 } });
 
-    const answered = apply(called, { type: "respond-truco", playerId: playerA, response: "quiero" });
-    expect(mayOpen(answered, playerB), "answered, and the floor is still theirs").toBe(true);
+    const called = apply(two, { type: "call-truco", playerId: playerC, level: "truco" });
+    expect(mayOpen(called, playerC), "while it is pending, the caller may not").toBe(false);
+
+    const answered = apply(called, { type: "respond-truco", playerId: playerD, response: "quiero" });
+    expect(mayOpen(answered, playerC), "answered, and both gates are still theirs").toBe(true);
   });
 });
 
@@ -682,9 +718,13 @@ describe("the envido declaration round", () => {
       [{ suit: "oro", rank: 6 }, { suit: "oro", rank: 1 }, { suit: "basto", rank: 12 }], //     seat 3: 27
     ]);
     const manoSeat = dealt.hand!.manoSeat;
-    const mano = dealt.players.find((player) => player.seat === manoSeat)!;
-    const answerer = dealt.players.find((player) => player.teamId !== mano.teamId)!;
-    const called = apply(dealt, { type: "call-envido", playerId: mano.id, level: "envido" });
+    // The mano's own team's pie — the mano may not open an envido, only a pie
+    // may, so the two seats ahead of it play their first card getting there.
+    // The DECLARATION round still starts at the mano; that is a different
+    // order, and these tests are about it.
+    const pie = dealt.players.find((player) => player.seat === (manoSeat + 2) % dealt.players.length)!;
+    const answerer = dealt.players.find((player) => player.teamId !== pie.teamId)!;
+    const called = openEnvidoAs(dealt, pie.id);
     return apply(called, { type: "respond-envido", playerId: answerer.id, response: "quiero" });
   }
 
