@@ -80,12 +80,20 @@ const isTrucoResponseHumanFirst = (action: unknown): boolean => {
   const type = (action as { type?: unknown }).type;
   return type === "respond-truco" || type === "respond-envido";
 };
+// Asking your partner costs a seña (truco-engine's `consult.ts`), so a bot
+// that spends the action is OWED the answer — `MatchRoom` needs to be told
+// which action that is, because a bot's question comes back from
+// `chooseAction` as an ordinary action with no channel of its own. Only this
+// one type: a game that named more here would be handing bots information
+// they never paid for.
+const isTrucoPaidQuestion = (action: unknown): boolean =>
+  typeof action === "object" && action !== null && (action as { type?: unknown }).type === "consult-partner";
 const registry = createGameModuleRegistry([
-  { module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider },
+  { module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider, isPaidQuestion: isTrucoPaidQuestion },
   // The 2v2 module, additive registration (obs 2927/2925's own named gap):
   // same registry, same generic MatchRoom, a distinct gameId. Nothing above
   // this line changed for the 1v1 entry.
-  { module: trucoModule2v2, requestSystemAction: requestSystemAction2v2 as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider },
+  { module: trucoModule2v2, requestSystemAction: requestSystemAction2v2 as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider, isPaidQuestion: isTrucoPaidQuestion },
 ]);
 // The server is where entropy lives (design §4): the engine never
 // randomizes itself. A real CSPRNG, not `Math.random`.

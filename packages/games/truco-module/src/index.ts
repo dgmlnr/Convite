@@ -128,7 +128,7 @@ function createBot(tier: BotTier): BotStrategy<PlayerView, TrucoModuleAction> {
     SPOKEN_MOVES.has(action.type) ? SPOKEN_MOVE_DELAY_MS : DEFAULT_THINKING_DELAY_MS,
   );
   return {
-    chooseAction: (view, legalActions, budgetMs) => strategy.chooseAction(view, toEngineActions(legalActions), budgetMs),
+    chooseAction: (view, legalActions, budgetMs, answer) => strategy.chooseAction(view, toEngineActions(legalActions), budgetMs, answer),
   };
 }
 

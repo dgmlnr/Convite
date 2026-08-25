@@ -92,6 +92,25 @@ export type HumanPriorityActionClassifier = (action: unknown) => boolean;
  */
 export type ConsultAdviceProvider = (state: unknown, playerId: PlayerId, tier: BotTier) => Promise<JsonValue | null>;
 
+/**
+ * "Is this the action that BUYS an answer?" — the one thing a transport needs
+ * to know in order to hand a bot what it just paid for.
+ *
+ * A human asks over a channel of its own (`MatchRoom.handleConsult` is a
+ * distinct client message), so the room knows a question was asked because of
+ * WHERE it arrived. A bot has no channel: its question comes back from
+ * `chooseAction` as an ordinary action, indistinguishable from a card play
+ * unless the game says otherwise. This is the game saying otherwise.
+ *
+ * IT MUST BE ASKED, never assumed. Resolving advice after every bot action
+ * and handing it over would give a bot answers it never paid for — the exact
+ * cheat the whole `BotStrategy` shape exists to make unrepresentable. Fails
+ * closed to `false` for the same reason every classifier here does: a game
+ * that registers none has no paid questions, so no bot of its ever receives
+ * anything.
+ */
+export type PaidQuestionClassifier = (action: unknown) => boolean;
+
 /** Either a bare `GameModule` (no system-action factory — the common case
  * for a game whose players can always act) or a module paired with its
  * optional `requestSystemAction`/`isNonBlockingAction`. Both forms resolve
@@ -106,6 +125,7 @@ export type GameModuleRegistration =
       readonly isNonBlockingAction?: NonBlockingActionClassifier;
       readonly isHumanPriorityAction?: HumanPriorityActionClassifier;
       readonly getConsultAdvice?: ConsultAdviceProvider;
+      readonly isPaidQuestion?: PaidQuestionClassifier;
     };
 
 /**
@@ -134,6 +154,10 @@ export interface GameModuleRegistry {
    * provider, OR the game itself has no answer — all three fail closed the
    * same way, exactly like `getSystemAction` above. */
   getConsultAdvice(gameId: GameId, state: unknown, playerId: PlayerId, tier: BotTier): Promise<JsonValue | null>;
+  /** `false` (this action buys nothing, so a bot taking it is owed no answer)
+   * when nothing is registered for `gameId` OR the module supplied no
+   * classifier — the same fail-closed shape as the two above. */
+  isPaidQuestion(gameId: GameId, action: unknown): boolean;
 }
 
 // See the erasure note above: registering a `GameModule<TState,...>` for a
@@ -162,5 +186,6 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
     isNonBlockingAction: (gameId, action) => byId.get(gameId)?.isNonBlockingAction?.(action) ?? false,
     isHumanPriorityAction: (gameId, action) => byId.get(gameId)?.isHumanPriorityAction?.(action) ?? false,
     getConsultAdvice: async (gameId, state, playerId, tier) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier)) ?? null,
+    isPaidQuestion: (gameId, action) => byId.get(gameId)?.isPaidQuestion?.(action) ?? false,
   };
 }
