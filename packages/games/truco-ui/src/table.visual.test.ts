@@ -67,6 +67,17 @@ function dealtMatch(): MatchState {
   return withNonTrivialScore(startHand(base, FIXED_DEAL));
 }
 
+/** The same deal with the OPPONENT as mano, for the pending-call shot alone.
+ * Opening a call is taking the floor and the floor starts with the mano
+ * (truco-engine's `getLegalTrucoActions`), so a table where the rival's truco
+ * is WAITING ON the local player needs the rival seated as mano. Every other
+ * baseline here keeps `dealtMatch`'s own dealer, because they are about the
+ * local player holding the turn. */
+function dealtMatchOpponentMano(): MatchState {
+  const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 0 });
+  return withNonTrivialScore(startHand(base, FIXED_DEAL));
+}
+
 /** Containers this file has mounted, removed after EVERY test. Without this
  * cleanup, each test's table stays in the page and pushes the next test's
  * felt below the 414x896 viewport fold — the element screenshot then needs
@@ -219,7 +230,7 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
   // above (none of those three fixtures ever calls anything).
   it("a pending truco call: the banner is shown and the whole hand is locked until it is answered", async () => {
     const container = mountedContainer();
-    const called = applyAction(dealtMatch(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
+    const called = applyAction(dealtMatchOpponentMano(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
     if (!called.ok) throw new Error(`visual fixture setup: illegal action — ${called.violation}`);
     const view = getViewFor(called.state, SELF);
     const legalActions = getLegalActions(called.state, SELF);
