@@ -1,5 +1,5 @@
-import { calculateEnvidoPoints } from "@hexdev/truco-engine";
 import type { Action, PlayerView } from "@hexdev/truco-engine";
+import { dealtEnvidoPoints } from "./heuristics.js";
 
 type Declare = Extract<Action, { type: "declare-envido" }>;
 
@@ -40,7 +40,7 @@ export function chooseEnvidoDeclaration(view: PlayerView, legalActions: readonly
   const envido = view.hand?.envido;
   const declarations = envido !== undefined && envido.status === "accepted" ? envido.declarations : [];
 
-  const mine = calculateEnvidoPoints(view.self.hand);
+  const mine = dealtEnvidoPoints(view);
   const said = declarations.filter((entry) => entry.declaration === "points");
   const best = said.reduce<{ readonly points: number; readonly teamId: string } | null>(
     (leader, entry) => (leader === null || entry.points > leader.points ? { points: entry.points, teamId: entry.teamId } : leader),

@@ -185,3 +185,79 @@ describe("the reducer refuses what the legality says it should", () => {
     expect(asked.hand?.senas, "it is a question, not a claim — no signal is recorded").toEqual(called.hand?.senas);
   });
 });
+
+/**
+ * THE WINDOW THE PIE RULE OPENED, and the reason it had to be opened.
+ *
+ * Only a pie may open an envido (envido-opener.test.ts). That takes the call
+ * away from two of the four seats — and one of them may be the seat actually
+ * holding the points. A partner with 33 who is not a pie has no way to say
+ * so: señas name CARDS, not tantos, so "as de espada" is the closest they can
+ * come and it says nothing about an envido. The team loses envidos it should
+ * win, purely because the rule moved who is allowed to speak.
+ *
+ * So the pie may ASK. Same price as before — one seña, out of the same
+ * per-hand budget — and the same shape: a request, answered outside the
+ * engine, that the asker still acts on themselves.
+ *
+ * IT IS NOT A STANDING LICENCE, which is the objection this module's own
+ * docblock raises against a free consult. The window is exactly as wide as
+ * the right it accompanies: you may ask only while you actually hold an
+ * envido to open, which means you are a pie, the first trick is unresolved,
+ * the floor is yours, and you have not played. Everywhere else it is refused,
+ * and a non-pie is refused everywhere.
+ */
+describe("asking before you open an envido", () => {
+  it("a pie holding the call may ask, with nothing pending at all", () => {
+    let state = dealt2v2();
+    for (const seat of [east, south]) {
+      const card = getLegalActions(state, seat).find((action) => action.type === "play-card")!;
+      state = apply(state, card);
+    }
+    expect(getLegalActions(state, west).some((action) => action.type === "call-envido"), "fence setup: west is the pie on the clock").toBe(true);
+    expect(state.hand?.truco.status, "fence setup: nothing is pending").toBe("none");
+
+    expect(canConsult(state, west)).toBe(true);
+  });
+
+  it("a non-pie may not, however much they would like to", () => {
+    let state = dealt2v2();
+    for (const seat of [east, south]) {
+      const card = getLegalActions(state, seat).find((action) => action.type === "play-card")!;
+      state = apply(state, card);
+    }
+    // south is the seat AFTER the mano: never a pie, so it never holds an
+    // envido to ask about. This is the half that keeps the window from
+    // becoming the standing licence the module refuses.
+    expect(canConsult(state, south)).toBe(false);
+  });
+
+  it("not before the floor reaches them — holding the right is not the same as holding it now", () => {
+    const state = dealt2v2();
+    expect(getLegalActions(state, west).some((action) => action.type === "call-envido"), "fence setup: west is a pie but three seats away").toBe(false);
+    expect(canConsult(state, west)).toBe(false);
+  });
+
+  it("not once they have played their own card — that is how you give the call up", () => {
+    let state = dealt2v2();
+    for (const seat of [east, south]) {
+      const card = getLegalActions(state, seat).find((action) => action.type === "play-card")!;
+      state = apply(state, card);
+    }
+    const played = apply(state, getLegalActions(state, west).find((action) => action.type === "play-card")!);
+    expect(canConsult(played, west)).toBe(false);
+  });
+
+  it("costs the same seña, out of the same budget", () => {
+    let state = dealt2v2();
+    for (const seat of [east, south]) {
+      const card = getLegalActions(state, seat).find((action) => action.type === "play-card")!;
+      state = apply(state, card);
+    }
+    const before = getSenasRemaining(state, west);
+    const asked = apply(state, { type: "consult-partner", playerId: west });
+
+    expect(getSenasRemaining(asked, west), "asking and signalling spend the one budget").toBe(before - 1);
+    expect(getLegalActions(asked, west).some((action) => action.type === "call-envido"), "and the call itself is still theirs to make").toBe(true);
+  });
+});

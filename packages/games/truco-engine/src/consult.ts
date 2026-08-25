@@ -1,3 +1,4 @@
+import { getLegalEnvidoActions } from "./envido-chain.js";
 import type { PlayerId } from "./ids.js";
 import { getMatchWinner } from "./match.js";
 import type { HandState, MatchState, Player } from "./match.js";
@@ -56,13 +57,36 @@ function owesAnAnswer(hand: HandState, player: Player): boolean {
   return false;
 }
 
+/**
+ * THE OTHER THING WORTH ASKING ABOUT, and the reason it had to be added.
+ *
+ * Only a pie may open an envido (`envido-chain.ts`'s own gate). That takes
+ * the call away from two of the four seats — and one of them may be the seat
+ * actually holding the points. A partner with 33 who is not a pie has no way
+ * to say so: señas name CARDS, not tantos, so the closest they can come is
+ * "as de espada", which says nothing about an envido. The team loses envidos
+ * it should win, purely because the rule moved who is allowed to speak. So
+ * the pie may ask.
+ *
+ * NOT A STANDING LICENCE — the objection this module's docblock raises
+ * against a free consult still holds, and this window answers it by being
+ * exactly as wide as the right it accompanies. Asking `getLegalEnvidoActions`
+ * rather than re-deriving "am I a pie with the floor" is what keeps it that
+ * way: every condition on opening a call (pie, first trick unresolved, floor
+ * yours, own card not yet played) gates the question too, automatically and
+ * for as long as they keep gating the call.
+ */
+function holdsAnEnvidoToOpen(state: MatchState, playerId: PlayerId): boolean {
+  return getLegalEnvidoActions(state, playerId).some((action) => action.type === "call-envido");
+}
+
 export function getLegalConsultActions(state: MatchState, playerId: PlayerId): readonly ConsultPartnerAction[] {
   const hand = state.hand;
   if (hand === null || hand.outcome.decided) return [];
   if (getMatchWinner(state) !== null) return [];
   const player = findPlayer(state, playerId);
   if (player === undefined || !hasTeammate(state, player)) return [];
-  if (!owesAnAnswer(hand, player)) return [];
+  if (!owesAnAnswer(hand, player) && !holdsAnEnvidoToOpen(state, playerId)) return [];
   // The SAME question señas ask, through the same function — not a second
   // comparison against the same cap. If the budget is ever re-tuned, or ever
   // stops being a flat per-hand number, this follows without being told.

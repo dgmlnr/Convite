@@ -162,15 +162,49 @@ export async function getConsultAdvice(state: MatchState, playerId: PlayerId, ti
   const teammate = getViewFor(state, playerId).teammates[0];
   if (teammate === undefined) return null;
 
-  const theirResponses = engineGetLegalActions(state, teammate.playerId).filter((action) => CONSULT_RESPONSES.has(action.type));
-  if (theirResponses.length === 0) return null;
+  const asked = questionFor(state, playerId, teammate.playerId);
+  if (asked.length === 0) return null;
 
-  const chosen: EngineActionType = await createBotStrategy(tier, defaultRng).chooseAction(
-    getViewFor(state, teammate.playerId),
-    theirResponses,
-    CONSULT_BUDGET_MS,
-  );
+  const chosen: EngineActionType = await createBotStrategy(tier, defaultRng).chooseAction(getViewFor(state, teammate.playerId), asked, CONSULT_BUDGET_MS);
   return chosen.type === "respond-truco" || chosen.type === "respond-envido" ? chosen.response : null;
+}
+
+/**
+ * The two questions a partner can be asked, and which one this moment is.
+ *
+ * A CALL ON THE TABLE is the original: they answer from their REAL legal
+ * responses, which is what makes the advice honest rather than decorative —
+ * ask them and then ignore them, and you have ignored exactly the move they
+ * were about to make on their own.
+ *
+ * AN ENVIDO NOT CALLED YET is the window `consult.ts` opened for the pie, and
+ * it needs a different question because the partner has no move to describe:
+ * a non-pie calling an envido is precisely what the rule forbids, so there is
+ * nothing real to offer them. They are asked the equivalent they DO have
+ * judgement for — if this envido were on the table, would you want it? — as
+ * a synthetic quiero/no-quiero pair.
+ *
+ * NOT A SYNTHETIC `call-envido`, which reads closer to the literal question:
+ * the strategies fall back to "take whatever non-seña action is left" when
+ * nothing else fits, and a lone synthetic call IS that action, so the answer
+ * would have been yes every time from a code path that never weighed the
+ * hand. Both arms of a quiero/no-quiero pair are real answers, so it cannot
+ * degenerate that way.
+ *
+ * The accept threshold each tier applies is the lower bar, deliberately: the
+ * partner is not being asked to CALL it, only whether they would play it, and
+ * the pie combines that with its own hand.
+ */
+function questionFor(state: MatchState, askerId: PlayerId, teammateId: PlayerId): readonly EngineActionType[] {
+  const theirResponses = engineGetLegalActions(state, teammateId).filter((action) => CONSULT_RESPONSES.has(action.type));
+  if (theirResponses.length > 0) return theirResponses;
+
+  const askerHoldsAnEnvido = engineGetLegalActions(state, askerId).some((action) => action.type === "call-envido");
+  if (!askerHoldsAnEnvido) return [];
+  return [
+    { type: "respond-envido", playerId: teammateId, response: "quiero" },
+    { type: "respond-envido", playerId: teammateId, response: "no-quiero" },
+  ];
 }
 
 /** The same order of magnitude `MatchRoom` gives a bot for a real move. The

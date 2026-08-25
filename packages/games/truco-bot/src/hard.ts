@@ -3,7 +3,7 @@ import type { Action, Card, PlayerView } from "@hexdev/truco-engine";
 import type { BotStrategy, RandomSource } from "@hexdev/platform-contract";
 import { sampleHiddenHands } from "./determinize.js";
 import type { HiddenHands } from "./determinize.js";
-import { envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
+import { dealtCardsOf, envidoPoints, handPower, isTrickSecuredByTeam, scoreFollowingCardPlay, strongestOpposingPlay } from "./heuristics.js";
 import { chooseSenaEmission } from "./sena-emission.js";
 import { chooseEnvidoDeclaration } from "./declare-envido.js";
 
@@ -157,7 +157,7 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
 
       const respondEnvido = legalActions.filter((a): a is RespondEnvido => a.type === "respond-envido");
       if (respondEnvido.length > 0) {
-        return respondChoice(respondEnvido, teamWinRate(view.self.hand, rounds, envidoPoints) > 0.5);
+        return respondChoice(respondEnvido, teamWinRate(dealtCardsOf(view), rounds, envidoPoints) > 0.5);
       }
 
       const declaring = chooseEnvidoDeclaration(view, legalActions);
@@ -167,7 +167,7 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
       if (wantsToCallTruco !== undefined && teamWinRate(view.self.hand, rounds, handPower) > 0.5) return wantsToCallTruco;
 
       const wantsToCallEnvido = legalActions.find((a) => a.type === "call-envido");
-      if (wantsToCallEnvido !== undefined && teamWinRate(view.self.hand, rounds, envidoPoints) > 0.5) return wantsToCallEnvido;
+      if (wantsToCallEnvido !== undefined && teamWinRate(dealtCardsOf(view), rounds, envidoPoints) > 0.5) return wantsToCallEnvido;
 
       const cardPlays = legalActions.filter((a): a is PlayCard => a.type === "play-card");
       if (cardPlays.length > 0) {
