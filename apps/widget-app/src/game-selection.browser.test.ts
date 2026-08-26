@@ -630,6 +630,23 @@ describe("the hand is dealt once, not on every repaint", () => {
     expect(el.querySelector(".hexdev-chrome-fan--dealing"), "a presence broadcast re-dealt the hand").toBeNull();
   });
 
+  it("does not spend the greeting on a lobby that is still loading", () => {
+    // THE DEFECT THIS EXISTS FOR, and it is the one the first fix caused.
+    // `main.ts` renders this screen the moment the catalog arrives — with no
+    // presence yet, so every card reads "Cargando…" — and again when the
+    // counts land. "Once" meaning "on the first call" spent the whole
+    // greeting on the loading state, and the animation was reported as never
+    // playing at all. It was playing; nobody could see it.
+    const el = freshContainer();
+
+    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    expect(el.querySelector(".hexdev-chrome-loading"), "fence setup: this render is not a loading one").not.toBeNull();
+    expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the greeting was spent on a loading screen").toBeNull();
+
+    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the first playable render did not deal").not.toBeNull();
+  });
+
   it("deals again for a different container — the greeting belongs to a mount, not to the page", () => {
     const first = freshContainer();
     renderGameSelection(first, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
