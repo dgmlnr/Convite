@@ -388,9 +388,18 @@ export function buildTableStylesheet(): string {
  * so it grows with the rail at every tier and can never outgrow it. The calls
  * keep flex-basis zero, which is what lets them yield: they are a scroller,
  * and a scroller that gives up height loses nothing but a look-back. */
+/* THE RUN TAKES THE RAIL'S WIDTH. .hexdev-truco-scoreboard sits in a
+ * centred column, so it was shrink-to-fit: measured at 98px inside a 216px
+ * group inside a 240px rail, which capped every casita at 31px against a 52px
+ * ceiling that never got a chance to apply. Reported as the tantos still
+ * being small in a panel with room to spare -- and the panel really did have
+ * it: the casitas were being sized by a box nobody had told to stretch. */
+.hexdev-truco-side-rail .hexdev-truco-scoreboard,
+.hexdev-truco-side-rail .hexdev-truco-score-group,
+.hexdev-truco-side-rail .hexdev-truco-score-sticks { align-self: stretch; width: 100%; }
 .hexdev-truco-side-rail .hexdev-truco-score-sticks svg {
   width: calc((100% - 4px) / 3);
-  max-width: 52px;
+  max-width: 64px;
   height: auto;
 }
 .hexdev-truco-side-rail .hexdev-truco-team-label {

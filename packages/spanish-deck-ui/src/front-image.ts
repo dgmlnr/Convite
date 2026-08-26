@@ -2,7 +2,7 @@
 // (hand-drawn suit symbols composed into pips + court figures, see git
 // history for card-svg.ts/suit-symbols.ts/court-figures.ts/pip-layout.ts);
 // then real Heraclio Fournier 1878 scans, retouched
-// (`tools/process-fournier-deck.mjs`, still in the repo); and now
+// (by a build script removed with them); and now
 // Basquetteur's Spanish deck, rasterized from vector
 // (`tools/process-svg-deck.mjs`). The swap was for legibility at the sizes
 // the game actually draws — flat, high-contrast line art reads at 60px in a

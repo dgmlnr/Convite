@@ -14,7 +14,7 @@ type Declare = Extract<Action, { type: "declare-envido" }>;
  * rot rather than three difficulty levels.
  *
  * CONCEDING IS NOT PERSONAL. "Son buenas" gives the envido up for the WHOLE
- * TEAM (es.wikipedia.org's Truco article: "en caso de estar jugando en
+ * TEAM (a published rulebook: "en caso de estar jugando en
  * parejas, al decir 'son buenas' se le da por perdido el envido a todo el
  * equipo"), so a bot that conceded whenever it could not beat the running
  * best would routinely hang its partner out — the round order alternates

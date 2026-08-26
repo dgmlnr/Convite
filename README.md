@@ -41,9 +41,8 @@ adorno:
 ### Una regla de la casa, elegida a propósito
 
 **El envido lo abre el pie de cada equipo.** Tres reglamentos publicados se contradicen
-entre sí sobre esto: Wikipedia dice los pie, trucoargentino.com.ar dice los dos a la
-izquierda del repartidor —justo los otros dos— y el reglamento de juegosdesalon.com dice
-que cualquiera en su turno. Convite juega la primera, y el motor lo deja escrito junto al
+entre sí sobre esto: uno dice los pie, otro dice los dos a la izquierda del
+repartidor —justo los otros dos— y un tercero dice que cualquiera en su turno. Convite juega la primera, y el motor lo deja escrito junto al
 código para que nadie lo "corrija" contra el reglamento que le toque tener a mano.
 
 Esa regla le saca el canto a dos de los cuatro asientos, y uno de ellos puede ser el que

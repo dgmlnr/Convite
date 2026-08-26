@@ -67,3 +67,66 @@ describe("the CSS template literals stay closed", () => {
     },
   );
 });
+
+describe("no override overrides nothing", () => {
+  // WHAT THIS ACTUALLY CAUGHT, and it was not what I went looking for. I
+  // thought chrome-styles.ts held ~170 stray duplicated lines. It did not:
+  // they were inside a real @container (min-width: 1024px) block, written
+  // flush against the left margin, which is why they read as top-level copies
+  // at a glance. Seven of its eight rules were their base rule word for word,
+  // so the whole tier changed exactly one thing -- the content padding -- and
+  // spent a hundred and fifteen lines saying nothing.
+  //
+  // Dead weight is the small half. The real cost is DRIFT: an override that
+  // repeats its base wins on source order, so editing the base silently does
+  // nothing. That is exactly how it was found, mid-way through changing the
+  // lobby's deal animation.
+  it.each(STYLESHEETS.map((url) => [url.pathname.split("/").slice(-1)[0]!, url] as const))(
+    "%s: every nested rule differs from the base rule it shadows",
+    (file, url) => {
+      // The CSS BODY, not the file: depth is counted in braces, and the
+      // TypeScript function the literal lives in opens one of its own. A
+      // first version counted from the top of the file and every top-level
+      // rule came out one level deep, so nothing was ever recognised as a
+      // base rule and the fence passed on everything.
+      const source = cssBody(readFileSync(fileURLToPath(url), "utf8"));
+      const declarations = (body: string): string =>
+        body
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .split(";")
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .sort()
+          .join(";");
+
+      // Depth 1 is a rule at the stylesheet's own top level. Anything deeper
+      // is inside an @container or @media block.
+      const base = new Map<string, string>();
+      const pointless: string[] = [];
+      let depth = 0;
+      let selector: string | null = null;
+      let selectorDepth = 0;
+      let body = "";
+      for (const line of source.split("\n")) {
+        const opens = (line.match(/\{/g) ?? []).length;
+        const closes = (line.match(/\}/g) ?? []).length;
+        if (selector !== null && depth === selectorDepth) body += `${line}\n`;
+        if (opens > 0 && selector === null && /^\s*[.#][^{]*\{\s*$/.test(line)) {
+          selector = line.replace("{", "").trim();
+          selectorDepth = depth + 1;
+          body = "";
+        }
+        depth += opens - closes;
+        if (selector !== null && depth < selectorDepth) {
+          const key = selector;
+          const decls = declarations(body);
+          if (selectorDepth === 1) base.set(key, decls);
+          else if (base.get(key) === decls && decls.length > 0) pointless.push(key);
+          selector = null;
+        }
+      }
+
+      expect(pointless, `these nested rules repeat their base rule word for word, so they change nothing`).toEqual([]);
+    },
+  );
+});
