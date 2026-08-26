@@ -3,7 +3,7 @@ import { announce, createAnnouncer } from "./announcer.js";
 import { advanceHistory } from "./call-history.js";
 import type { CallHistory } from "./call-history.js";
 import { renderCallLog, scrollCallLogToNewest, speakerLabel } from "./call-log.js";
-import { dealerSeatOf, renderDeckMarker } from "./deck-marker.js";
+import { dealDurationMs, dealOrderFrom, dealerSeatOf, renderDeckMarker } from "./deck-marker.js";
 import { renderCalls } from "./calls.js";
 import { deriveEnvidoRevealEvent, describeEnvidoRevealNotice } from "./envido-reveal-notice.js";
 import type { EnvidoRevealEvent } from "./envido-reveal-notice.js";
@@ -19,11 +19,7 @@ import { renderPlayedCards } from "./played-cards.js";
 import { derivePendingCall, describePendingCall, isMyTurnToAnswer, respondingTeamId } from "./pending-call.js";
 import { renderScoreboardPanel } from "./scoreboard-panel.js";
 
-/** Every hand's calls, for as long as this mount lives. See the note where
- * it is filled, beside `advanceHistory`. A WeakMap on the container for the
- * same reason the lobby's selection is one: it belongs to the mount, and dies
- * with it. */
-const CALL_HISTORY = new WeakMap<HTMLElement, CallHistory>();
+
 
 /** Same one-per-mount id counter as senas.ts's own `senasRowSequence`: the
  * rail's tab needs an aria-controls target that is unique on a page that may
@@ -253,6 +249,25 @@ export function createMatchTableRenderer(
     readonly trick: HTMLElement;
     readonly matchOver: HTMLElement;
   } | null = null;
+
+  /* PER-MATCH, NOT PER-CONTAINER. Both of these used to live in a WeakMap
+   * keyed on the container element, which held in the tests and failed in the
+   * running widget: the host does not hand the same node back on every
+   * render, so every lookup missed and both were reborn empty each time. The
+   * symptom was a deal whose elapsed offset was 0ms forever -- it restarted
+   * on every broadcast and never ended.
+   *
+   * This closure is exactly the right lifetime for both: createMatchTableRenderer
+   * is called once per MATCH (game-ui-registry.ts), which is precisely how
+   * long a call record and a per-hand deal are supposed to last. */
+  let dealState: { readonly manoSeat: number; readonly startedAt: number } | null = null;
+  /* The deal's own end. Without it the dealing class -- and with it the block
+   * on playing -- sits there until the NEXT broadcast happens to arrive, which
+   * on a table of bots is their 2400ms thinking floor: measured as the cards
+   * staying locked for 2.4s after a 755ms deal. Cleared before it is ever
+   * re-armed, so re-renders during a deal cannot stack timers. */
+  let dealTimer: ReturnType<typeof setTimeout> | null = null;
+  let callHistory: CallHistory | undefined;
 
   const now = options?.now ?? Date.now;
   const turnClockTickMs = options?.turnClockTickMs ?? DEFAULT_TURN_CLOCK_TICK_MS;
@@ -560,6 +575,32 @@ export function createMatchTableRenderer(
     // yet.
     const dealerSeat = view.hand === null ? null : dealerSeatOf(view.hand.manoSeat, seatCount);
 
+    // THE DEAL, run before the hand is played rather than after it appears.
+    // Short on purpose: it happens before every hand, not once on arrival,
+    // and it has to finish well inside a bot's own thinking floor for "the
+    // deal blocks the start of the hand" to be true without the client
+    // holding the server back.
+    const manoSeat = view.hand?.manoSeat ?? null;
+    if (manoSeat !== null && dealState?.manoSeat !== manoSeat) {
+      dealState = { manoSeat, startedAt: now() };
+    }
+    const dealStartedAt = manoSeat === null ? undefined : dealState?.startedAt;
+    const dealElapsed = dealStartedAt === undefined ? undefined : now() - dealStartedAt;
+    const dealing = dealElapsed !== undefined && dealElapsed < dealDurationMs(seatCount);
+    const dealOrder = manoSeat === null ? [] : dealOrderFrom(manoSeat, seatCount);
+    if (dealTimer !== null) {
+      clearTimeout(dealTimer);
+      dealTimer = null;
+    }
+    if (dealing) {
+      felt.classList.add("hexdev-truco-table--dealing");
+      felt.style.setProperty("--elapsed", `${String(dealElapsed)}ms`);
+      dealTimer = setTimeout(() => {
+        dealTimer = null;
+        felt.classList.remove("hexdev-truco-table--dealing");
+      }, dealDurationMs(seatCount) - (dealElapsed ?? 0));
+    }
+
     for (const other of others) {
       const anchor = anchors.get(positions.get(other.seat) ?? "top")!;
       // 2v2 only (obs 2970/the apply prompt's own "must never work out who
@@ -578,6 +619,10 @@ export function createMatchTableRenderer(
       }
       const otherHand = anchor.appendChild(document.createElement("div"));
       renderOpponentHand(otherHand, other.cardsRemaining);
+      // Where this seat falls in the dealing round: the dealer serves the
+      // mano first and goes round from there, and the stylesheet turns that
+      // into each card's own delay.
+      otherHand.style.setProperty("--deal-seat", String(Math.max(0, dealOrder.indexOf(other.seat))));
       // INSIDE the hand's own box, not the seat's: the seat's box spans the
       // felt, so a deck pinned to its edge ends up an arm's length from the
       // cards it dealt. Beside the CARDS is what "a su derecha" means.
@@ -735,6 +780,7 @@ export function createMatchTableRenderer(
     }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
+    handRow.style.setProperty("--deal-seat", String(Math.max(0, dealOrder.indexOf(view.self.seat))));
     // The viewer deals too, one hand in four, and the deck goes beside their
     // cards exactly as it does beside anyone else's.
     if (view.self.seat === dealerSeat) renderDeckMarker(handRow.appendChild(document.createElement("div")));
@@ -774,8 +820,8 @@ export function createMatchTableRenderer(
       manoSeat: view.hand?.manoSeat ?? 0,
       envido: view.hand?.envido ?? ({ status: "none" } as const),
     };
-    const history = advanceHistory(CALL_HISTORY.get(container), liveRound);
-    CALL_HISTORY.set(container, history);
+    const history = advanceHistory(callHistory, liveRound);
+    callHistory = history;
 
     const callLogInput = {
       events: liveRound.events,

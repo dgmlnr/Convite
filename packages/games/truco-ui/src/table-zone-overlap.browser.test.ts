@@ -83,6 +83,19 @@ function mountedContainer(width: number): HTMLElement {
   return container;
 }
 
+/**
+ * Lands the deal before anything is measured.
+ *
+ * The table plays a short dealing animation on the first render of every hand
+ * -- every card translated and scaled for about half a second -- so a rect
+ * taken straight after render is the rect of a card still in the air. This
+ * suite is about the SETTLED table, so it settles it: the same distinction
+ * the animation itself draws, made explicit rather than waited out.
+ */
+function settleDeal(el: HTMLElement): void {
+  el.querySelector(".hexdev-truco-table--dealing")?.classList.remove("hexdev-truco-table--dealing");
+}
+
 async function waitForArt(el: HTMLElement): Promise<void> {
   const images = [...el.querySelectorAll("img")];
   await Promise.all(images.map((img) => img.decode()));
@@ -292,6 +305,7 @@ async function expectPartnerBacksOnOneRow(width: number): Promise<void> {
   const render = createMatchTableRenderer();
   const state = freshlyDealt2v2();
   render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+  settleDeal(el);
   await waitForArt(el);
 
   const topHand = el.querySelector('[data-position="top"] .hexdev-truco-opponent-hand');
@@ -339,6 +353,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     const render = createMatchTableRenderer();
     const state = mode === "1v1" ? selfTurnActiveAfterTrick1Win1v1() : selfTurnActiveAfterTrick1Win2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const actionBar = el.querySelector(".hexdev-truco-action-bar");
@@ -389,6 +404,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     const render = createMatchTableRenderer();
     const state = mode === "1v1" ? pendingTrucoAfterTrick1Headshot1v1() : pendingTrucoAfterTrick1Headshot2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const callLog = el.querySelector(".hexdev-truco-call-log");
@@ -413,6 +429,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
       const render = createMatchTableRenderer();
       const state = mode === "1v1" ? pendingTrucoAfterTrick1Headshot1v1() : pendingTrucoAfterTrick1Headshot2v2();
       render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+      settleDeal(el);
       await waitForArt(el);
 
       const callLog = el.querySelector(".hexdev-truco-call-log");
@@ -450,6 +467,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     const render = createMatchTableRenderer();
     const state = mode === "1v1" ? pendingTrucoAfterTrick1Headshot1v1() : pendingTrucoAfterTrick1Headshot2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const hands = [...el.querySelectorAll(".hexdev-truco-hand, .hexdev-truco-opponent-hand")];
@@ -542,6 +560,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     const render = createMatchTableRenderer();
     const state = selfTurnActiveAfterTrick1Win2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const popover = openSenaPicker(el);
@@ -575,6 +594,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
     const render = createMatchTableRenderer();
     const state = selfTurnActiveAfterTrick1Win2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const bar = el.querySelector(".hexdev-truco-action-bar");
@@ -644,6 +664,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
       const render = createMatchTableRenderer();
       const state = pendingTrucoAfterTrick1Headshot2v2();
       render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+      settleDeal(el);
       await waitForArt(el);
 
       const actionBar = el.querySelector(".hexdev-truco-action-bar");
@@ -708,6 +729,7 @@ describe.each(WIDTHS)("the turn ring does not paint onto the action bar — %ipx
     const render = createMatchTableRenderer();
     const state = selfTurnActiveAfterTrick1Win2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const hand = el.querySelector(".hexdev-truco-anchor--active .hexdev-truco-hand");
@@ -736,6 +758,7 @@ describe.each([375, 700] as const)("the drawer handle sits beside the play, not 
     const render = createMatchTableRenderer();
     const state = pendingTrucoAfterTrick1Headshot2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const tab = el.querySelector(".hexdev-truco-rail-tab");
@@ -777,6 +800,7 @@ describe.each(WIDTHS)("the rail never covers the way out — %ipx", (width) => {
     // a first version of it "failed at every width" on setup rather than on
     // the overlap it is about.
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, null, () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const rail = el.querySelector<HTMLElement>(".hexdev-truco-side-rail");
@@ -797,6 +821,7 @@ describe.each([960, 1280] as const)("the calls and the score share one rail — 
     const render = createMatchTableRenderer();
     const state = pendingTrucoAfterTrick1Headshot2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const callLog = el.querySelector(".hexdev-truco-call-log");
@@ -816,6 +841,7 @@ describe.each([960, 1280] as const)("the calls and the score share one rail — 
     const render = createMatchTableRenderer();
     const state = pendingTrucoAfterTrick1Headshot2v2();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
     await waitForArt(el);
 
     const table = el.querySelector(".hexdev-truco-table");

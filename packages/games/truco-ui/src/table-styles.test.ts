@@ -147,7 +147,14 @@ describe("buildTableStylesheet (design §10: hybrid theming by zone)", () => {
   // prefers-reduced-motion, not merely shortened.
   it("disables the playable card's hover/focus transition under prefers-reduced-motion (VDS-5)", () => {
     const css = buildTableStylesheet();
-    const reducedMotionBlock = css.match(/@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\}\s*\}/)?.[0] ?? "";
+    // EVERY reduced-motion block, not the first one. This used to read the
+    // first match and assert against it, which quietly made the fence depend
+    // on nothing else declaring one earlier in the file -- and the moment the
+    // deal animation did, it failed with the playable-card rule still exactly
+    // where it had always been. A fence that breaks on source order is
+    // reporting the order, not the contract.
+    const reducedMotionBlocks = [...css.matchAll(/@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\}\s*\}/g)].map((match) => match[0]);
+    const reducedMotionBlock = reducedMotionBlocks.join("\n");
     const ruleInsideMediaBlock = reducedMotionBlock.match(/\.hexdev-truco-card--playable\s*\{[^}]*\}/)?.[0] ?? "";
 
     expect(reducedMotionBlock.length, "expected an @media (prefers-reduced-motion: reduce) block to exist").toBeGreaterThan(0);

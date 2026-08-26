@@ -45,3 +45,30 @@ export function renderDeckMarker(host: HTMLElement): void {
   label.className = "hexdev-truco-visually-hidden";
   label.textContent = TABLE_STRINGS.dealtHere;
 }
+
+/** How long one card takes to land, and the step between cards. Exported and
+ * interpolated into the stylesheet so the code that TIMES the deal and the
+ * code that DRAWS it can never disagree about when it is over -- the same
+ * arrangement the lobby's own greeting uses. */
+export const DEAL_CARD_MS = 260;
+export const DEAL_STEP_MS = 45;
+
+/** The seats in dealing order, starting with the mano. The dealer serves the
+ * player on their left first, which is the mano, and goes round from there. */
+export function dealOrderFrom(manoSeat: number, seatCount: number): readonly number[] {
+  return Array.from({ length: seatCount }, (_, i) => (manoSeat + i) % seatCount);
+}
+
+/**
+ * How long the whole deal takes: every seat served three cards, one step
+ * apart, plus the last card's own flight.
+ *
+ * Deliberately SHORT. It runs before every hand, not once on arrival, and a
+ * flourish you sit through forty times a match stops being a flourish. It is
+ * also well under a bot's own 2400ms thinking floor (truco-bot's latency.ts),
+ * which is what makes "the deal blocks the start of the hand" true in
+ * practice without the client having to hold the server back.
+ */
+export function dealDurationMs(seatCount: number): number {
+  return (seatCount * 3 - 1) * DEAL_STEP_MS + DEAL_CARD_MS;
+}
