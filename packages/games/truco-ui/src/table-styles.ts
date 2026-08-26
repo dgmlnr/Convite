@@ -305,6 +305,12 @@ export function buildTableStylesheet(): string {
  * inside is a scroller, and a flex item's default min-height: auto refuses
  * to shrink below its content, which would push the tantos out of the rail
  * exactly when a long chain is the reason you opened it. */
+/* The width the felt sets aside on its right for the drawer's handle. Zero
+ * from 640 up, where the rail is a column in flow and the handle is hidden. */
+@container hexdev-truco-shell (width < 640px) {
+  .hexdev-truco-table { --hx-rail-handle-lane: 25px; }
+}
+
 .hexdev-truco-side-rail {
   position: absolute;
   /* ON THE SIDE EDGE, HALFWAY DOWN, and both halves of that are corrections
@@ -589,7 +595,18 @@ export function buildTableStylesheet(): string {
   grid-template-rows: auto 1fr auto var(--hx-band-action-total);
   grid-template-areas: "top" "center" "bottom" "actions";
   gap: var(--hx-felt-gap);
-  padding: var(--hx-felt-pad-block) var(--hx-felt-pad);
+  /* The right inset carries the drawer's handle lane on top of the felt's own
+   * padding. On the tiers where the rail is a drawer, that handle lives on
+   * the right edge -- and the right seat's cards ran the full height of it,
+   * so the handle was drawn ON the cards. Measured at 375px: 11px of overlap.
+   *
+   * A reserved lane rather than a cleverer position, because there is no
+   * clear stretch of that edge to move it to: the seat's cards occupy y128 to
+   * y343 of a 504px felt, the action bar the bottom 40. 25px of a 375px
+   * screen is a cheap price for never drawing a control over a card -- and
+   * far cheaper than the 84px strip the drawer itself gave back. Zero from
+   * 640 up, where the rail is a real column and there is no handle at all. */
+  padding: var(--hx-felt-pad-block) calc(var(--hx-felt-pad) + var(--hx-rail-handle-lane, 0px)) var(--hx-felt-pad-block) var(--hx-felt-pad);
   /* Felt palette (PR2, design §10/§3.7): a deterministic CSS vignette, not an
    * image asset — three layers, weave painted ABOVE the vignette (layer
    * order matters: the weaves are listed first, so they composite on top).
@@ -1255,6 +1272,37 @@ export function buildTableStylesheet(): string {
  * in and out by a pixel or two every single second, right next to the
  * player's own cards. Tabular figures pin every digit to one width, so the
  * pill's width changes only when the MINUTE digit drops a character. */
+/* A SIDE SEAT WEARS IT DOWN THE SIDE. Hanging centred above the seat is
+ * right for the two seats that have room above them; a side seat is already
+ * against the felt's edge, and half of a 125px badge has nowhere to go.
+ * Measured at 375px: 23px of it painted outside the cloth, and the reported
+ * screenshot read "RNO DEL RIVAL".
+ *
+ * Turned vertical it is about 24px wide instead of 125, and placed on the
+ * INNER side -- toward the middle of the table, never outward past the edge
+ * that caused this. It still hangs OUTSIDE the anchor's own box, which is
+ * what keeps it off the cards it points at: that was always the rule, and it
+ * survives the rotation.
+ *
+ * Same idea as the rail's own handle, and deliberately so: on this table a
+ * label that has to live against an edge runs along it. */
+.hexdev-truco-anchor[data-position="left"] .hexdev-truco-turn-badge,
+.hexdev-truco-anchor[data-position="right"] .hexdev-truco-turn-badge {
+  writing-mode: vertical-rl;
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.hexdev-truco-anchor[data-position="left"] .hexdev-truco-turn-badge {
+  left: 100%;
+  right: auto;
+}
+.hexdev-truco-anchor[data-position="right"] .hexdev-truco-turn-badge {
+  left: auto;
+  right: 100%;
+}
+
+
 .hexdev-truco-turn-clock {
   margin-left: 6px;
   font-variant-numeric: tabular-nums;
