@@ -457,6 +457,52 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
   });
 
+  it("waits out handEndPauseMs before dealing again, so the last card can be read", async () => {
+    // Reported from real play: "cuando se tira la ultima carta de la ronda no
+    // hay tiempo de verla, enseguida desaparece y se vuelve a repartir". The
+    // system action fired the instant no seat could act, so the winning card
+    // and the hand's own outcome went past in the same broadcast burst that
+    // replaced them.
+    //
+    // A short pause here, not the real 1800ms: what is under test is that the
+    // room WAITS, not how long the server chose.
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      { module: stuckModule, requestSystemAction: (state) => ((state as StuckState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG, handEndPauseMs: 60 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+
+    expect(seat0.sent, "the table dealt again in the same breath as the hand ending").toHaveLength(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(seat0.sent, "the next hand never arrived at all").toHaveLength(2);
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
+  });
+
+  it("deals immediately when no pause is configured — every test that plays a hand pays nothing", async () => {
+    // The control, and the reason the pause is an option rather than a
+    // constant: a suite that drives a match to its end would otherwise wait
+    // out a real server's beat on every hand.
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      { module: stuckModule, requestSystemAction: (state) => ((state as StuckState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+
+    expect(seat0.sent).toHaveLength(2);
+  });
+
   it("never advances a module with no requestSystemAction registered, even with zero legal actions", async () => {
     const auth = await createAuth();
     const registry = createGameModuleRegistry([stuckModule]); // bare module: no pairing

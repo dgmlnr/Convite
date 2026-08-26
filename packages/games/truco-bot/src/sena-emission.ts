@@ -76,11 +76,30 @@ export function chooseSenaEmission(
   legalActions: readonly Action[],
   rng: RandomSource,
   policy: SenaEmissionPolicy,
+  /**
+   * The card this bot is about to play, when it knows.
+   *
+   * A seña tells your partner what you HOLD. Flashing one about the card you
+   * then immediately play tells them nothing they were not about to see, and
+   * reads as nonsense at the table -- reported exactly that way: "cuando mi
+   * compañero va a tirar una carta a veces hace la seña de esa carta antes de
+   * tirarla... hace la seña de lo que esta ejecutando en ese momento".
+   *
+   * Excluded from the candidates rather than cancelling the emission: the
+   * point is to signal something the partner can still use, and a hand with
+   * three cards usually has another one worth naming.
+   *
+   * `undefined` when the caller cannot say -- see the hard tier, whose own
+   * choice is a simulation that cannot be run ahead of this gate without
+   * moving its random stream.
+   */
+  aboutToPlay?: Card,
 ): SendSenaAction | undefined {
   const senas = legalActions.filter((action): action is SendSenaAction => action.type === "send-sena");
   if (senas.length === 0) return undefined;
   if (senas.length === legalActions.length) return undefined;
-  const held = SENA_SIGNALS.find((signal) => view.self.hand.some((card) => signalForCard(card) === signal));
+  const keeping = aboutToPlay === undefined ? view.self.hand : view.self.hand.filter((card) => card.suit !== aboutToPlay.suit || card.rank !== aboutToPlay.rank);
+  const held = SENA_SIGNALS.find((signal) => keeping.some((card) => signalForCard(card) === signal));
   if (held === undefined) return undefined;
 
   if (rng() >= policy.emitRate) return undefined;

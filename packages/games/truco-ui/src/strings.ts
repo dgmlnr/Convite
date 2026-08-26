@@ -83,6 +83,14 @@ export const TABLE_STRINGS = {
    * ways to spend it live inside it — "un solo boton que ponga
    * 'Seña/Consulta' y al darle click muestre ambos botones". */
   senasToggle: (remaining: number): string => `Seña/Consulta (${remaining})`,
+  /* WHAT is being asked, not merely THAT something is. The same button is
+     legal in two different situations -- you owe an answer to a call, or you
+     are the pie who could open an envido -- and it used to read the same in
+     both. Reported: "soy pie de ronda pongo consultar al compañero pero no se
+     si le estoy consultando para cantar el envido o el truco". */
+  consultAboutTruco: "Consultar: ¿quiero el truco?",
+  consultAboutEnvido: "Consultar: ¿quiero el envido?",
+  consultAboutOpeningEnvido: "Consultar: ¿canto envido?",
   consultToggle: "Consultar al compañero",
   consultAsking: "Preguntando…",
   /* The declaration round. "Mis tantos" is the button; the LOG and the seat

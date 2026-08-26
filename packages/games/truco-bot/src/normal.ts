@@ -82,7 +82,13 @@ export function createNormalBot(rng: RandomSource): BotStrategy<PlayerView, Acti
       // arrives on the very next drive (the loop re-invokes after a
       // non-blocking action), quota-bounded as always. Termination is argued
       // once, in `chooseSenaEmission`'s own docstring.
-      const sena = chooseSenaEmission(view, legalActions, rng, { emitRate: SENA_EMIT_RATE, bluffRate: 0 });
+      // What this bot is about to play, worked out BEFORE the seña gate so it
+      // can be kept out of the signal. `cardPlayChoice` reads no randomness,
+      // so asking it early leaves every existing decision in this tier
+      // byte-identical.
+      const playsNow = legalActions.filter((a): a is PlayCard => a.type === "play-card");
+      const aboutToPlay = playsNow.length > 0 ? (cardPlayChoice(view, playsNow) as PlayCard).card : undefined;
+      const sena = chooseSenaEmission(view, legalActions, rng, { emitRate: SENA_EMIT_RATE, bluffRate: 0 }, aboutToPlay);
       if (sena !== undefined) return sena;
 
       const respondTruco = legalActions.filter((a): a is RespondTruco => a.type === "respond-truco");

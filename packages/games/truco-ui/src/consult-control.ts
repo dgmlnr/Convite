@@ -40,6 +40,27 @@ function adviceText(advice: "quiero" | "no-quiero"): string {
  * together. Two controls counting the same budget were tried twice and read
  * as two budgets both times.
  */
+/**
+ * WHAT this question is about, read off the same list that makes it legal.
+ *
+ * The button is offered in two unrelated situations -- owing an answer to a
+ * pending call, or being the pie who may open an envido -- and it used to say
+ * the same thing in both. Reported from real play: "soy pie de ronda pongo
+ * consultar al compañero pero no se si le estoy consultando para cantar el
+ * envido o el truco".
+ *
+ * DERIVED, not passed in. `legalActions` is what the engine already decided,
+ * so a label built from it cannot drift from what is actually pending -- and
+ * the order below is the order the game cares about: an unanswered call is
+ * owed NOW, an envido you could open is merely available.
+ */
+export function consultLabelFor(legalActions: readonly Action[]): string {
+  if (legalActions.some((action) => action.type === "respond-truco")) return TABLE_STRINGS.consultAboutTruco;
+  if (legalActions.some((action) => action.type === "respond-envido")) return TABLE_STRINGS.consultAboutEnvido;
+  if (legalActions.some((action) => action.type === "call-envido")) return TABLE_STRINGS.consultAboutOpeningEnvido;
+  return TABLE_STRINGS.consultToggle;
+}
+
 export function renderConsultOffer(
   container: HTMLElement,
   legalActions: readonly Action[],
@@ -53,7 +74,7 @@ export function renderConsultOffer(
   button.type = "button";
   button.className = "hexdev-truco-consult-toggle";
   button.dataset.action = "consult-partner";
-  button.textContent = props.asking ? TABLE_STRINGS.consultAsking : TABLE_STRINGS.consultToggle;
+  button.textContent = props.asking ? TABLE_STRINGS.consultAsking : consultLabelFor(legalActions);
   button.disabled = props.asking;
   button.addEventListener("click", () => {
     dispatch(offer);
