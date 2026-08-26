@@ -1013,6 +1013,104 @@ describe("createMatchTableRenderer — action bar overflow: 1v1's two-simultaneo
   });
 });
 
+describe("a rival's answer chip fits on the cloth too", () => {
+  // Reported from a phone: "cuando los rivales cantan por ejemplo 'No
+  // Quiero' el chip dorado se sale de la pantalla". Same shape as the turn
+  // badge before it -- the chip is centred ON the seat, and a side seat is
+  // 45px wide against a chip near 110, so half of it hangs over the felt's
+  // edge and off the screen.
+  const PARTNER_ID = "player-c" as PlayerId;
+  const RIVAL_2_ID = "player-d" as PlayerId;
+
+  const CALL: CallEvent = { kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" };
+  const answerFrom = (seat: 1 | 2 | 3): CallEvent => ({
+    kind: "truco-response",
+    playerId: seat === 1 ? OPPONENT : seat === 2 ? PARTNER_ID : RIVAL_2_ID,
+    teamId: seat === 2 ? MY_TEAM : OPPONENT_TEAM,
+    seat,
+    response: "no-quiero",
+  });
+
+  function withEvents(events: readonly CallEvent[]): PlayerView {
+    const base = baseView();
+    return baseView({
+      teammates: [{ playerId: PARTNER_ID, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: RIVAL_2_ID, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...base.hand!, callEvents: events },
+    });
+  }
+
+  // EVERY seat that can speak, at three phone widths. The first version of
+  // this fence tested one seat at one width and passed while a phone was
+  // cutting the chip in half: seat 1 sits at the RIGHT anchor in this
+  // fixture, and the reported screenshot was the LEFT one.
+  it.each([
+    [320, 1],
+    [320, 3],
+    [375, 1],
+    [375, 2],
+    [375, 3],
+    [414, 3],
+  ] as const)("2v2 at %ipx: seat %i's chip stays inside the felt", (width, seat) => {
+    const el = freshContainer();
+    el.style.width = `${String(width)}px`;
+    const render = createMatchTableRenderer();
+
+    // TWO renders, because the chip is a TRANSITION: deriveSeatCallEvent only
+    // speaks when the list it is handed is longer than the one before it, so
+    // a single render with both events already in it shows nothing at all.
+    render(el, withEvents([CALL]), [], () => {});
+    render(el, withEvents([CALL, answerFrom(seat)]), [], () => {});
+
+    const chip = el.querySelector(".hexdev-truco-seat-call-chip");
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (chip === null || felt === null) throw new Error("fence setup: no answer chip or no felt");
+    const c = chip.getBoundingClientRect();
+    const f = felt.getBoundingClientRect();
+
+    expect(c.width, "fence setup: the chip did not paint at all").toBeGreaterThan(0);
+    expect(c.left, `chip left ${c.left.toFixed(1)}px vs the felt's own left edge ${f.left.toFixed(1)}px`).toBeGreaterThanOrEqual(f.left - 0.5);
+    expect(c.right, `chip right ${c.right.toFixed(1)}px vs the felt's own right edge ${f.right.toFixed(1)}px`).toBeLessThanOrEqual(f.right + 0.5);
+  });
+});
+
+describe("the partner's cards are the same size as the rivals'", () => {
+  // Asked for, to buy room on a phone: "podrias hacer mas chicas las cartas
+  // del compañero para ganar espacio, las dejas del mismo tamaño que las de
+  // los rivales". The two side seats already drop to a smaller card at the
+  // narrow tier; the seat across the table was left out of that rule and kept
+  // the full-size back, which is the widest row on the felt.
+  it("2v2 at a phone width: the top seat's backs match a side seat's", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+    const base = baseView();
+    render(
+      el,
+      baseView({
+        teammates: [{ playerId: "player-c" as PlayerId, seat: 2, cardsRemaining: 3, lastSena: null }],
+        opponents: [
+          { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+          { playerId: "player-d" as PlayerId, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+        ],
+        hand: { ...base.hand! },
+      }),
+      [],
+      () => {},
+    );
+
+    const widthAt = (position: string): number => {
+      const card = el.querySelector(`.hexdev-truco-anchor[data-position="${position}"] .hexdev-truco-card-back`);
+      if (card === null) throw new Error(`fence setup: the ${position} seat rendered no card back`);
+      return card.getBoundingClientRect().width;
+    };
+
+    expect(widthAt("top"), `the partner's back is ${String(Math.round(widthAt("top")))}px against a rival's ${String(Math.round(widthAt("left")))}px`).toBeCloseTo(widthAt("left"), 0);
+  });
+});
+
 describe("the turn badge fits on the cloth it is drawn on", () => {
   // Reported from a 375px screenshot: the badge over the LEFT rival read
   // "RNO DEL RIVAL" — the first four letters were outside the felt. It hangs

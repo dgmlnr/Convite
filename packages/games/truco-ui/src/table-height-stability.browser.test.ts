@@ -414,7 +414,13 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * where the gap already exceeds the ring. Card size pays for it, which is why
  * it is the shortfall and not the whole reach. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 482.34375, "2v2": 504.34375 },
+  /* THE PARTNER'S CARDS JOIN THE RIVALS' SIZE: 2v2 at 375 drops 23px more.
+   *   375  2v2: 504.34375 -> 481.4375
+   * The seat across the table was the only one of the three back-only seats
+   * still drawing a full-size card, and it draws three of them in a row --
+   * so it was the tallest row on a phone's felt. 1v1 is untouched: it has no
+   * such seat. */
+  375: { "1v1": 482.34375, "2v2": 481.4375 },
   700: { "1v1": 649.96875, "2v2": 838.328125 },
   960: { "1v1": 771.375, "2v2": 873.328125 },
   1280: { "1v1": 860.59375, "2v2": 983.515625 },
