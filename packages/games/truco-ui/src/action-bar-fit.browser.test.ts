@@ -183,6 +183,101 @@ function openingTurnState(): MatchState {
   return state;
 }
 
+/**
+ * The widest the bar ever gets: a rival opened the envido, so the viewer owes
+ * an answer AND may escalate -- quiero, no quiero, envido envido, real
+ * envido, falta envido, five buttons at once. This is the state the
+ * horizontal scroller exists FOR, which is exactly why it has to behave.
+ */
+function envidoAnswerState(): MatchState {
+  // Dealer on seat 0 makes seat 1 mano, so the round runs 1, 2, 3, 0 -- and
+  // the last of each team to speak is its PIE, which here is seat 3 and the
+  // viewer on seat 0. Opening the envido belongs to the pie
+  // (envido-chain.ts), so seats 1 and 2 have to play before seat 3 can call
+  // it: a first version of this fixture had seat 1 call straight after the
+  // deal and the engine rejected it outright.
+  let state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2);
+  for (const seat of [1, 2]) {
+    const player = state.players[seat]!;
+    const play = getLegalActions(state, player.id).find((action) => action.type === "play-card");
+    if (play === undefined) throw new Error(`fixture: seat ${String(seat)} could not play`);
+    state = dispatch(state, play);
+  }
+  return dispatch(state, { type: "call-envido", playerId: OPPONENT_2, level: "envido" });
+}
+
+describe("the escalated bar scrolls without mangling itself", () => {
+  // Reported from a phone with a full envido chain on screen: the first
+  // button was cut on the LEFT ("uiero"), the last on the right, and three of
+  // the five had their labels broken across two lines. Two separate defects
+  // wearing one screenshot.
+  //
+  // The scroller itself is not the problem and is not being removed: it is
+  // the deliberate, documented valve for exactly this state. What a scroller
+  // may not do is squeeze its contents on the way, or park part of them
+  // somewhere the player cannot scroll to.
+  it.each(WIDTHS)("%ipx: no button is squeezed narrower than its own label", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = envidoAnswerState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const buttons = [...el.querySelectorAll<HTMLButtonElement>(".hexdev-truco-call")];
+    expect(buttons.length, "fence setup: the escalated state offers no call buttons").toBeGreaterThanOrEqual(4);
+
+    for (const button of buttons) {
+      // COUNTED IN LINE BOXES, which is the only thing that actually says
+      // "this label wrapped". Two earlier versions of this fence measured the
+      // wrong thing and both were wrong in an instructive way: comparing each
+      // button's HEIGHT against the shortest one's fired on the 4px the
+      // response buttons differ by on purpose, and comparing scrollWidth
+      // against clientWidth can never fire at all -- a label that wraps FITS,
+      // that is what wrapping is for.
+      //
+      // A Range over the button's own text reports one client rect per line
+      // box it occupies. Two rects, two lines.
+      const range = button.ownerDocument.createRange();
+      range.selectNodeContents(button);
+      expect(
+        range.getClientRects().length,
+        `"${button.textContent ?? ""}" is drawn across ${String(range.getClientRects().length)} lines in a ${String(Math.round(button.getBoundingClientRect().width))}px box`,
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it.each(WIDTHS)("%ipx: the first button can actually be reached", async (width) => {
+    // `justify-content: center` on a box that overflows pushes the start of
+    // the content off the left edge and out of the scroll range entirely —
+    // the player can never bring it back. That is what cut "quiero" into
+    // "uiero" and left no way to see the rest of it.
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = envidoAnswerState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
+    const row = el.querySelector<HTMLElement>(".hexdev-truco-calls-row");
+    if (bar === null || row === null) throw new Error("fence setup: action bar or calls row not rendered");
+    // BOTH, because the group is the real scroller and the tray around it can
+    // scroll too — zeroing only the tray leaves the row wherever it was and
+    // measures a scroll position no player is looking at.
+    // EVERY scroller in the tray, because the real one is neither of these
+    // two: each call GROUP scrolls on its own. Zeroing only the outer boxes
+    // measures a position no player is looking at, which is how a first
+    // version of this fence kept failing on a fix that was already in place.
+    for (const box of [bar, row, ...row.querySelectorAll<HTMLElement>(".hexdev-truco-calls-group")]) box.scrollLeft = 0;
+    const first = row.querySelector<HTMLElement>(".hexdev-truco-call");
+    if (first === null) throw new Error("fence setup: no call buttons");
+
+    expect(
+      first.getBoundingClientRect().left,
+      `scrolled fully left, "${first.textContent ?? ""}" still starts at ${String(Math.round(first.getBoundingClientRect().left))}px against its group at ${String(Math.round(first.parentElement!.getBoundingClientRect().left))}px`,
+    ).toBeGreaterThanOrEqual(first.parentElement!.getBoundingClientRect().left - 1);
+  });
+});
+
 describe("the ordinary opening bar fits without scrolling", () => {
   // Reported from a phone: "el boton de señas/consulta se corta un poquito a
   // la derecha". Measured at 375px: the band was 334px wide against 340px of
