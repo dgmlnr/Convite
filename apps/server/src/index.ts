@@ -140,6 +140,11 @@ const gameServer = createMatchServer({
   // — config.ts's own "no partial configuration" docstring.
   redis,
   publicAddress: config.publicAddress,
+  // A beat between the last card of a hand and the next deal. Without it the
+  // winning card and the hand's own outcome went past in the same broadcast
+  // burst that replaced them: "cuando se tira la ultima carta de la ronda no
+  // hay tiempo de verla, enseguida desaparece y se vuelve a repartir".
+  handEndPauseMs: 1800,
 });
 // `gameId` is deliberately absent here — the client supplies it at
 // createRoom time, same as `MatchRoom`'s own `defaultOptions` pattern.

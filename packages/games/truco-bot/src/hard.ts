@@ -139,7 +139,16 @@ export function createHardBot(rng: RandomSource, samples = DEFAULT_SAMPLES): Bot
       // seed replaying differently-but-equally-valid rounds — the same
       // expected-and-disclosed movement the partner draws below already
       // document. Termination is argued in `chooseSenaEmission` itself.
-      const sena = chooseSenaEmission(view, legalActions, rng, { emitRate: SENA_EMIT_RATE, bluffRate: SENA_BLUFF_RATE });
+      // NO SIGNAL ON A TURN THIS BOT IS ABOUT TO PLAY. The normal tier keeps
+      // the card it is about to play out of the signal instead, which is the
+      // better answer -- but it can afford it, because its card choice reads
+      // no randomness. This tier's does: `leadingCardPlayChoice` samples
+      // hidden hands, so running it ahead of this gate would move the random
+      // stream and change every decision downstream of it. Staying quiet on
+      // the turn it plays costs a few señas and never flashes one about a
+      // card it is in the act of throwing.
+      const aboutToPlayHere = legalActions.some((a) => a.type === "play-card");
+      const sena = aboutToPlayHere ? undefined : chooseSenaEmission(view, legalActions, rng, { emitRate: SENA_EMIT_RATE, bluffRate: SENA_BLUFF_RATE });
       if (sena !== undefined) return sena;
 
       // One round = one sampled hand per REAL opponent (1 in 1v1, up to 2 in

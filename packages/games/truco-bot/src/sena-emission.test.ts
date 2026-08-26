@@ -82,6 +82,12 @@ function viewWith(overrides: { hand: readonly Card[]; lastSena?: PlayerView["sel
 const senaActions: readonly Action[] = SENA_SIGNALS.map((signal) => ({ type: "send-sena", playerId: SELF, signal }));
 
 const playCard: Action = { type: "play-card", playerId: SELF, card: { suit: "copa", rank: 4 } };
+/** A pending call to answer. Some tiers stay quiet on the turn they are about
+ * to play a card -- a seña about the card you then throw tells your partner
+ * nothing -- so a fixture that wants to see a signal at all offers a decision
+ * that is not a card play. Flashing before answering is legitimate truco: the
+ * partner learns the hand before the quiero lands. */
+const answerPending: Action = { type: "respond-truco", playerId: SELF, response: "quiero" };
 
 /** Holds the as de espada (the strongest claimable card) AND a siete de oro —
  * the emission must claim the STRONGER of the two. The copa-4 is noise. */
@@ -136,7 +142,7 @@ describe("seña emission — normal tier", () => {
 describe("seña emission — hard tier", () => {
   it("signals honestly when the gate draw crosses and the bluff draw does not", () => {
     const bot = createHardBot(scriptedRng([0.5, 0.5])); // 0.5 < hard's emit rate; 0.5 >= the bluff rate
-    const action = bot.chooseAction(viewWith({ hand: SIGNALABLE_HAND }), [...senaActions, playCard], 50) as Action;
+    const action = bot.chooseAction(viewWith({ hand: SIGNALABLE_HAND }), [...senaActions, answerPending], 50) as Action;
     expect(action).toEqual({ type: "send-sena", playerId: SELF, signal: "asDeEspada" });
   });
 
@@ -144,7 +150,7 @@ describe("seña emission — hard tier", () => {
     // 0.5 opens the gate, 0.05 crosses the bluff rate, 0.99 indexes the LAST
     // vocabulary entry ("dos") — which this hand does not contain.
     const bot = createHardBot(scriptedRng([0.5, 0.05, 0.99]));
-    const action = bot.chooseAction(viewWith({ hand: SIGNALABLE_HAND }), [...senaActions, playCard], 50) as Action;
+    const action = bot.chooseAction(viewWith({ hand: SIGNALABLE_HAND }), [...senaActions, answerPending], 50) as Action;
     expect(action).toEqual({ type: "send-sena", playerId: SELF, signal: "dos" });
   });
 
@@ -275,5 +281,46 @@ describe("señas legality — engine cross-check the emission gate leans on", ()
   it("control: the same probe on a REAL 2v2 match offers señas to a seated player", () => {
     const state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 15 }), dealFor(4));
     expect(getLegalActions(state, SELF).some((action) => action.type === "send-sena")).toBe(true);
+  });
+});
+
+describe("a seña never announces the card the bot is in the act of playing", () => {
+  // Reported from real play: "cuando mi compañero va a tirar una carta a
+  // veces hace la seña de esa carta antes de tirarla cuando es su turno, eso
+  // no tiene sentido. Hace la seña de lo que esta ejecutando en ese momento".
+  //
+  // A seña tells your partner what you HOLD. About the card you then throw it
+  // tells them nothing they were not a second away from seeing.
+  const asDeEspada = { suit: "espada", rank: 1 } as const;
+  const sieteDeOro = { suit: "oro", rank: 7 } as const;
+
+  it("picks a card it is keeping when the one it would play is also signalable", () => {
+    const view = viewWith({ hand: [asDeEspada, sieteDeOro, { suit: "copa", rank: 4 }] });
+    const senas: readonly Action[] = SENA_SIGNALS.map((signal) => ({ type: "send-sena", playerId: SELF, signal }));
+
+    const action = chooseSenaEmission(view, [...senas, playCard], () => 0, { emitRate: 1, bluffRate: 0 }, asDeEspada);
+
+    expect(action, "the gate declined rather than naming the other card it holds").toBeDefined();
+    expect((action as { readonly signal: string }).signal, "it announced the card it is about to throw").not.toBe("asDeEspada");
+  });
+
+  it("says nothing at all when the only card worth naming is the one being played", () => {
+    // Better silent than nonsense: with nothing else signalable in hand there
+    // is no honest signal left to send.
+    const view = viewWith({ hand: [asDeEspada, { suit: "copa", rank: 4 }, { suit: "basto", rank: 5 }] });
+    const senas: readonly Action[] = SENA_SIGNALS.map((signal) => ({ type: "send-sena", playerId: SELF, signal }));
+
+    expect(chooseSenaEmission(view, [...senas, playCard], () => 0, { emitRate: 1, bluffRate: 0 }, asDeEspada)).toBeUndefined();
+  });
+
+  it("is unchanged when the caller cannot say what it is about to play", () => {
+    // The hard tier's own card choice is a simulation it cannot run ahead of
+    // this gate, so it passes nothing and this stays exactly as it was.
+    const view = viewWith({ hand: [asDeEspada, sieteDeOro, { suit: "copa", rank: 4 }] });
+    const senas: readonly Action[] = SENA_SIGNALS.map((signal) => ({ type: "send-sena", playerId: SELF, signal }));
+
+    const action = chooseSenaEmission(view, [...senas, playCard], () => 0, { emitRate: 1, bluffRate: 0 });
+
+    expect((action as { readonly signal: string }).signal).toBe("asDeEspada");
   });
 });

@@ -73,6 +73,10 @@ export interface MatchServerOptions {
    * per-instance hostname behind a WS-aware load balancer).
    */
   readonly publicAddress?: string;
+  /** See `MatchRoomCreateOptions.handEndPauseMs`. Set by the composition
+   * root; every test that builds a room directly leaves it unset and pays
+   * nothing. */
+  readonly handEndPauseMs?: number;
 }
 
 /**
@@ -105,7 +109,7 @@ export function createMatchServer(options: MatchServerOptions): Server {
   // runtime merges `merge({}, clientOptions, defaultOptions)` — THIS object
   // wins on collision, so a client can supply `gameId`/`config` but never
   // override `registry`/`auth`/`rng` (verified in `MatchMaker.handleCreateRoom`).
-  const defaultOptions = { registry: options.registry, auth: options.auth, rng: options.rng } as MatchRoomCreateOptions;
+  const defaultOptions = { registry: options.registry, auth: options.auth, rng: options.rng, handEndPauseMs: options.handEndPauseMs } as MatchRoomCreateOptions;
   gameServer.define(options.roomName ?? "match", MatchRoom, defaultOptions);
   return gameServer;
 }

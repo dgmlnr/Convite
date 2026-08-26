@@ -74,6 +74,21 @@ export interface MatchRoomCreateOptions {
   /** Reconnection window (spec: "Disconnect, Reconnection Window, and Bot
    * Takeover"; design open question resolved to 30s, obs 2919/2921). */
   readonly reconnectionWindowSeconds?: number;
+  /**
+   * How long the table sits still after a hand ends, before the next one is
+   * dealt.
+   *
+   * Reported from real play: "cuando se tira la ultima carta de la ronda no
+   * hay tiempo de verla, enseguida desaparece y se vuelve a repartir". There
+   * was no pause at all -- the moment no seat could act, the system action
+   * dealt again, so the winning card and the hand's own outcome went past in
+   * the same broadcast burst that replaced them.
+   *
+   * A room-level option rather than a constant because every test that plays
+   * a hand to its end would otherwise wait it out: the suites pass 0, and
+   * only a real server pays it.
+   */
+  readonly handEndPauseMs?: number;
   /** The tier a takeover bot uses once the window expires (obs 2919: decided
    * as "normal" — easy would hand the match to the remaining player, hard
    * would punish them for a network drop that was never their fault). */
@@ -190,6 +205,8 @@ export class MatchRoom extends Room {
    * a bot partner can appear later. */
   private botTier: BotTier = DEFAULT_TAKEOVER_TIER;
   private turnTimeoutSeconds = DEFAULT_TURN_TIMEOUT_SECONDS;
+  /** See `MatchRoomCreateOptions.handEndPauseMs`. */
+  private handEndPauseMs = 0;
   private turnTimer: ReturnType<typeof setTimeout> | undefined;
   /**
    * The absolute instant the seat currently on the clock runs out — computed
@@ -261,6 +278,7 @@ export class MatchRoom extends Room {
     this.registry = options.registry;
     this.gameId = options.gameId;
     this.rng = options.rng;
+    this.handEndPauseMs = options.handEndPauseMs ?? 0;
     this.reconnectionWindowSeconds = options.reconnectionWindowSeconds ?? DEFAULT_RECONNECTION_WINDOW_SECONDS;
     this.takeoverTier = options.takeoverTier ?? DEFAULT_TAKEOVER_TIER;
     this.botTier = options.botTier ?? this.takeoverTier;
@@ -811,6 +829,14 @@ export class MatchRoom extends Room {
         if (anySeatCanAct) return;
         const systemAction = registry.getSystemAction(gameId, this.matchState, rng);
         if (systemAction === null) return;
+        // THE TABLE SITS STILL FOR A MOMENT. Everything above this line
+        // happens the instant the last card lands; dealing again in the same
+        // breath is what made the winning card vanish before anyone could
+        // read it. The pause is here rather than on the client because the
+        // server is what decides when the next hand exists -- a client-side
+        // hold would just be showing a table that is already gone.
+        if (this.handEndPauseMs > 0) await new Promise((resolve) => setTimeout(resolve, this.handEndPauseMs));
+        if (this.matchState === undefined) return; // the room may have emptied while it waited
         const result = module.applyAction(this.matchState, systemAction);
         if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
         this.matchState = result.state;
