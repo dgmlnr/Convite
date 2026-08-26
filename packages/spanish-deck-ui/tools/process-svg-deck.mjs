@@ -29,11 +29,48 @@
 // with room to spare. A 658x1040 deck was built and measured at 2.2 MB: it
 // buys pixels nothing displays.
 //
-// NO RETOUCH RECIPE, unlike the Fournier script. That one carried real
-// editorial choices (levels, saturation, unsharp, crop) because it was
-// rescuing a photograph. This source is already flat art with its own
-// transparent rounded corners — every adjustment tested made it worse, so
-// the recipe is the honest one: rasterize, and stop.
+// ONE REPAIR, AND IT IS NOT AN EDITORIAL CHOICE. The Fournier script carried
+// real ones (levels, saturation, unsharp, crop) because it was rescuing a
+// photograph; this source is flat art and needs none of that. What it does
+// need is a background: 36 of the 40 cards ship with their face fill too
+// NARROW, so roughly the right third of the card is transparent in the SVG
+// itself — an upstream authoring bug, reproduced here at the source's own
+// natural size and with the aspect ratio left alone, so it is not an artefact
+// of these dimensions. On a green felt that band shows the table through the
+// card.
+//
+// THE FILL HAS TO BE THE GRADIENT, not a colour, and a flat fill was tried
+// first and rejected ON SIGHT: the face is not flat. It carries eight faint
+// vertical bands running #ececec at the left edge to #fcfcfc around x=180,
+// getting LIGHTER to the right — so any single colour poured into the gap
+// lands next to a band it does not match and draws a visible line. A mid-tone
+// (#f4f4f4) is worst of all: next to the #fcfcfc band it steps BACKWARDS, and
+// a backwards step reads as an edge.
+//
+// So the repair rebuilds the background the art meant to have. The bands rise
+// about 0.075 per pixel (240 at x=19 to 252 at x=180), which extrapolates to
+// white at roughly x=220 — hence a gradient over the first 220px and flat
+// white after it. Measured across the join on the worst card: 252, 253, 254,
+// 255. Monotonic, in the direction the bands were already going, no step.
+//
+// It is also why the gap's own starting x does not matter, and that matters:
+// it is NOT constant. It falls at x=211 on the as de espada and at x=46 on
+// the doce de oro, so parts of some faces are missing well inside the card,
+// not merely along the right edge. A gradient is right everywhere; a colour
+// could only ever be right in one place.
+//
+// PNG24 IS LOAD-BEARING. ImageMagick builds `gradient:` in the Gray
+// colorspace, and compositing a colour card onto a grayscale base silently
+// produces a GRAYSCALE CARD — which is exactly what the first working version
+// of this shipped, caught by looking at the output rather than by any
+// measurement of it. Forcing 24-bit truecolor on the background, and 32-bit
+// on the result, is what keeps the art in colour.
+//
+// CORNER_RADIUS is measured too: the face reaches the canvas edge by y=15 at
+// this width. Filling without putting the corners back would square them off.
+//
+// If upstream ever fixes the fill, this step becomes a no-op rather than a
+// distortion — it only ever touches pixels that are transparent.
 //
 // Requires on PATH: git (for `fetch`), rsvg-convert, ImageMagick's `magick`.
 // No new npm dependency, per this repo's own rule for tooling.
@@ -69,6 +106,12 @@ export const RANKS = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
  * all, never because a file changed shape underneath them. */
 const WIDTH = 329;
 const HEIGHT = 520;
+/** Measured off the source: the face reaches the canvas edge by y=15 at
+ * WIDTH=329, so the corner is ~4.6% of the width. Kept as a ratio so a change
+ * of dimensions cannot silently square the corners. */
+const CORNER_RADIUS = Math.round(WIDTH * 0.046);
+/** Where the face's own banding, extrapolated, reaches white — see above. */
+const GRADIENT_END = 220;
 
 function fetchUpstream(dir) {
   if (existsSync(dir)) throw new Error(`refusing to clone over an existing path: ${dir}`);
@@ -88,7 +131,29 @@ function build(dir) {
       // between them avoids a temp file and avoids asking either tool to do
       // the other's job badly.
       const png = execFileSync("rsvg-convert", ["-w", String(WIDTH), "-h", String(HEIGHT), "-f", "png", source], { maxBuffer: 64 * 1024 * 1024 });
-      execFileSync("magick", ["png:-", "-quality", "90", dest], { input: png });
+      execFileSync(
+        "magick",
+        [
+          // The background the art meant to have: the banding's own ramp, then
+          // white. Built rotated because `gradient:` runs top-to-bottom.
+          "(", "-size", `${String(HEIGHT)}x${String(GRADIENT_END)}`, "gradient:#ffffff-#ececec", "-rotate", "90", ")",
+          "(", "-size", `${String(WIDTH - GRADIENT_END)}x${String(HEIGHT)}`, "xc:white", ")",
+          "+append",
+          "-colorspace", "sRGB", "-type", "TrueColor",
+          // The card over it. Everything the SVG actually drew wins; only the
+          // upstream gaps take the background.
+          "png:-", "-compose", "Over", "-composite",
+          // Put the corners back — the composite above squared them off.
+          "(", "-size", `${String(WIDTH)}x${String(HEIGHT)}`, "xc:none",
+          "-fill", "white",
+          "-draw", `roundrectangle 0,0 ${String(WIDTH - 1)},${String(HEIGHT - 1)} ${String(CORNER_RADIUS)},${String(CORNER_RADIUS)}`,
+          "-alpha", "extract", ")",
+          "-compose", "CopyOpacity", "-composite",
+          "-quality", "90",
+          `webp:${dest}`,
+        ],
+        { input: png },
+      );
       written += 1;
     }
   }

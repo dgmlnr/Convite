@@ -209,9 +209,12 @@ la topología está probada y no solamente descrita.
 El arte de las cartas es de **Basquetteur**, publicado en Wikimedia Commons y distribuido
 como SVG por [spanish-playing-cards-svg](https://github.com/gjenkins20/spanish-playing-cards-svg).
 Está licenciado [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), y **se le
-hicieron cambios**: los vectores se rasterizaron a WebP de 329×520 para servirlos. Nada más
-—ni retoque, ni recorte, ni recolor—; la receta exacta está en
-`packages/spanish-deck-ui/tools/process-svg-deck.mjs`.
+hicieron cambios**, dos: los vectores se rasterizaron a WebP de 329×520 para servirlos, y se
+completó el fondo de la cara. En 36 de las 40 cartas el relleno del fondo no llega al borde
+y deja parte de la carta transparente —en el as de espada desde x=211 de 329—, así que sobre
+el felt se veía la mesa a través del naipe. Se rellena continuando el propio degradado de
+ocho bandas de la carta. Nada más: ni retoque, ni recorte, ni recolor. La receta exacta está
+en `packages/spanish-deck-ui/tools/process-svg-deck.mjs`.
 
 Acá la atribución no es cortesía: es un término de la licencia, y por eso vive en el
 código (`packages/spanish-deck-ui/src/about.ts`) con un cercado que verifica que los tres

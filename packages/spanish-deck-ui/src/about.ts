@@ -32,8 +32,11 @@ export interface DeckAttribution {
   /** The license text itself. Its own field so a surface cannot show the
    * credit while quietly omitting the link the license requires. */
   readonly licenseUrl: string;
-  /** What was done to the original. Required: see this file's docblock. */
-  readonly changes: string;
+  /** What was done to the original, one entry per change. Required, and a
+   * LIST rather than a sentence: there are two of them now, and the moment
+   * this became prose the fence below caught it — which is the whole point of
+   * keeping every field a fact a surface can render without editing. */
+  readonly changes: readonly string[];
 }
 
 export const DECK_ATTRIBUTION: DeckAttribution = {
@@ -41,5 +44,5 @@ export const DECK_ATTRIBUTION: DeckAttribution = {
   sourceUrl: "https://github.com/gjenkins20/spanish-playing-cards-svg",
   licenseName: "CC BY-SA 3.0",
   licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/",
-  changes: "rasterized from SVG to WebP at 329x520",
+  changes: ["rasterized to WebP at 329x520", "face background completed where the source left it transparent"],
 };

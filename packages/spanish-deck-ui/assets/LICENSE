@@ -16,9 +16,15 @@ License
   https://creativecommons.org/licenses/by-sa/3.0/
 
 Changes made
-  The source SVGs were rasterized to WebP at 329x520. Nothing else was
-  altered: no retouch, no recolour, no crop. The exact recipe is
-  ../tools/process-svg-deck.mjs.
+  1. The source SVGs were rasterized to WebP at 329x520.
+  2. The face background was completed. In 36 of the 40 source files the
+     face fill does not span the whole card, leaving part of it transparent
+     -- on the as de espada from x=211 of 329, on the doce de oro from x=46.
+     The missing area is filled with a continuation of the face's own
+     eight-band gradient, and the rounded corners are restored afterwards.
+
+  Nothing else was altered: no retouch, no recolour, no crop. The exact
+  recipe is ../tools/process-svg-deck.mjs.
 
 ShareAlike
   Because rasterizing is an adaptation, these WebP files are themselves
