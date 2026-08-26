@@ -31,6 +31,27 @@ export function translateConfigLabel(labelKey: string): string {
 
 export const STRINGS = {
   selectionTitle: "Elegí un juego",
+  /**
+   * The deck credit, and it is a LICENSE TERM rather than a nicety: the card
+   * artwork is CC BY-SA 3.0, which requires naming the author, linking the
+   * license, and saying that changes were made. Composed here from
+   * `DECK_ATTRIBUTION`'s facts (spanish-deck-ui's `about.ts`) rather than
+   * copied as a sentence, so this Spanish text cannot come to disagree with
+   * the English one about a legal term — there is only one set of facts and
+   * every surface builds its own wording from it.
+   */
+  aboutToggle: "Créditos y licencia",
+  aboutTitle: "Créditos",
+  aboutClose: "Cerrar",
+  /** CC BY-SA requires INDICATING that changes were made, not describing
+   * them — so the Spanish surface says so plainly and the exact description
+   * (`DECK_ATTRIBUTION.changes`, an English technical string) stays in
+   * `assets/LICENSE` for whoever redistributes. Embedding it here would have
+   * put an English sentence fragment inside a Spanish one for no gain the
+   * license asks for. */
+  aboutCredit: (author: string): string => `Arte de las cartas: ${author}. Se le hicieron cambios.`,
+  aboutLicense: (licenseName: string): string => `Licencia ${licenseName}`,
+  aboutSource: "Ver la fuente",
   loadingCatalog: "Cargando…",
   emptyCatalog: "Este sitio todavía no tiene juegos habilitados.",
   loadError: "No se pudo cargar el juego.",

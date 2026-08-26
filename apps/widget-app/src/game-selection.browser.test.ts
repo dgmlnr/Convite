@@ -390,3 +390,105 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     expect(new Set(groupNames).size, `repeated "Fácil" buttons under ${JSON.stringify(groupNames)}`).toBe(4);
   });
 });
+
+/**
+ * THE DECK CREDIT IS A LICENSE TERM, and this is the surface that satisfies it.
+ *
+ * The card artwork is CC BY-SA 3.0, which asks for three things: the author,
+ * a link to the license, and a statement that changes were made. A credit
+ * that lives only in a source constant is not GIVEN to the people who see
+ * the work — so `about.ts` fences the data and this fences that a player can
+ * actually reach all three.
+ *
+ * Each term gets its own test on purpose. A credit that quietly loses one of
+ * them still looks like a credit on screen, which is exactly why a single
+ * "renders the panel" assertion would be worth very little here.
+ */
+describe("the deck credit reaches the player", () => {
+  const about = (): HTMLDetailsElement | null => container.querySelector<HTMLDetailsElement>(".hexdev-about");
+  const openAbout = (): void => {
+    const details = about();
+    if (details === null) throw new Error("fence setup: the credit disclosure never rendered");
+    details.open = true;
+  };
+
+  it("offers a control with a real accessible name, not the letter it draws", () => {
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    const summary = container.querySelector<HTMLElement>(".hexdev-about-toggle");
+
+    expect(summary, "nothing credits the artwork at all").not.toBeNull();
+    // The glyph is an "i"; a screen reader announcing "i" tells nobody
+    // anything, so the accessible name has to be the real one.
+    expect(summary!.textContent?.trim()).toBe("i");
+    expect(summary!.getAttribute("aria-label")?.length ?? 0, "the control announces itself as the letter it draws").toBeGreaterThan(3);
+  });
+
+  it("names the author", () => {
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+
+    expect(container.querySelector(".hexdev-about-panel")?.textContent ?? "").toContain("Basquetteur");
+  });
+
+  it("links the license itself, and says which one it is", () => {
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+    const hrefs = [...container.querySelectorAll<HTMLAnchorElement>(".hexdev-about-links a")].map((a) => a.href);
+
+    expect(hrefs, `the panel links: ${hrefs.join(", ") || "nothing"}`).toContain("https://creativecommons.org/licenses/by-sa/3.0/");
+    expect(container.querySelector(".hexdev-about-panel")?.textContent ?? "").toContain("CC BY-SA 3.0");
+  });
+
+  it("states that changes were made", () => {
+    // The term easiest to drop, and the reason it is a required field on
+    // `DeckAttribution` rather than something a renderer may skip.
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+
+    expect((container.querySelector(".hexdev-about-panel")?.textContent ?? "").toLowerCase()).toContain("cambios");
+  });
+
+  it("never navigates the host page away from the game", () => {
+    // This widget is embedded in somebody else's site. A credit link that
+    // replaced the host page would be the most expensive footnote in the
+    // product.
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+
+    for (const anchor of container.querySelectorAll<HTMLAnchorElement>(".hexdev-about-links a")) {
+      expect(anchor.target).toBe("_blank");
+      expect(anchor.rel).toContain("noopener");
+    }
+  });
+
+  it("credits the same deck ONCE, though two games draw it", () => {
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY, TRUCO_2V2_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+
+    // Both truco entries declare the same artwork. Two identical credits
+    // stacked on one screen reads as a bug, not as diligence.
+    expect(container.querySelectorAll(".hexdev-about-credit")).toHaveLength(1);
+  });
+
+  it("stays open across a re-render — a live lobby repaints every few seconds", () => {
+    // THE DEFECT THIS EXISTS FOR. `renderGameSelection` wipes and rebuilds on
+    // every presence broadcast (that is why it captures and restores focus at
+    // all), so a panel the player had opened to READ would slam shut under
+    // them on a timer.
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+
+    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [] as readonly LobbyDisplayEntry[]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(about()?.open, "the credit closed itself while the player was reading it").toBe(true);
+  });
+
+  it("is reachable even when the tenant has no games enabled", () => {
+    // That screen still ships the deck art in the bundle, so it still owes
+    // the credit.
+    renderGameSelection(freshContainer(), [], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(about(), "the empty lobby drops the credit").not.toBeNull();
+  });
+});

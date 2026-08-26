@@ -389,6 +389,87 @@ p.hexdev-chrome-status,
 .hexdev-chrome-loading {
   line-height: var(--hx-leading);
 }
+
+/* THE DECK CREDIT (game-selection.ts's renderAbout). Not decoration: the card
+ * artwork is CC BY-SA 3.0, so this is the surface that satisfies the license's
+ * attribution term, and it has to stay legible and reachable rather than
+ * tucked away to a size nobody can hit.
+ *
+ * A NATIVE <details>, so the marker has to go: every engine draws its own
+ * triangle, in its own place, and none of them is the "i" this wants to be.
+ * Both selectors are needed -- WebKit only honours the pseudo-element form. */
+.hexdev-about {
+  margin-top: 24px;
+  align-self: flex-start;
+}
+
+.hexdev-about-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 28px, not the 44px touch target the play buttons use: this is a
+   * secondary, rarely-pressed affordance and a full-size button beside them
+   * reads as another way to start a game. Still comfortably above the 24px
+   * WCAG 2.2 minimum for a non-essential control. */
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--gx-color-on-surface, #1a1a1a);
+  opacity: 0.55;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  cursor: pointer;
+  list-style: none;
+  color: var(--gx-color-on-surface, #1a1a1a);
+  transition: opacity var(--hx-motion-fast) var(--hx-ease);
+}
+
+.hexdev-about-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.hexdev-about-toggle:hover,
+.hexdev-about-toggle:focus-visible,
+.hexdev-about[open] .hexdev-about-toggle {
+  opacity: 1;
+}
+
+.hexdev-about-panel {
+  margin-top: 10px;
+  /* Bounded so a credit never becomes a wall of text across a wide lobby;
+   * 46ch is the same order the body copy below already reads at. */
+  max-width: 46ch;
+  font-size: var(--hx-text-body-compact, 0.85rem);
+  line-height: var(--hx-leading);
+  color: var(--gx-color-on-surface, #1a1a1a);
+  opacity: 0.8;
+}
+
+.hexdev-about-title {
+  margin: 0 0 4px;
+  font-size: inherit;
+  font-weight: 700;
+  letter-spacing: var(--hx-tracking-label);
+  text-transform: uppercase;
+}
+
+.hexdev-about-credit {
+  margin: 0;
+}
+
+.hexdev-about-links {
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.hexdev-about-links a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
 `.trim();
 }
 

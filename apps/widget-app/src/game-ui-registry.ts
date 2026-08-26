@@ -1,6 +1,6 @@
 import type { GameId } from "@hexdev/platform-contract";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
-import { createMatchTableRenderer } from "@hexdev/truco-ui";
+import { DECK_ATTRIBUTION, createMatchTableRenderer } from "@hexdev/truco-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -29,8 +29,31 @@ export interface GameUiPayload {
   readonly consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean };
 }
 
+/**
+ * Something this widget must credit in order to ship it.
+ *
+ * GAME-AGNOSTIC ON PURPOSE, even though today every entry is the same deck.
+ * The shell has no business knowing that truco draws Spanish cards — that is
+ * exactly the knowledge `GameUiEntry` exists to keep on the game's side — so
+ * a game DECLARES what its rendering owes and the shell only knows how to
+ * display a credit. Structurally identical to spanish-deck-ui's
+ * `DeckAttribution` because CC BY-SA is what shapes both: author, a link to
+ * the license, and a statement that changes were made.
+ */
+export interface AssetCredit {
+  readonly author: string;
+  readonly sourceUrl: string;
+  readonly licenseName: string;
+  readonly licenseUrl: string;
+  readonly changes: string;
+}
+
 export interface GameUiEntry {
   readonly id: GameId;
+  /** What this game's rendering must credit. Optional: a game that draws
+   * nothing licensed owes nothing, and an empty list must not become a
+   * ceremony every future entry has to perform. */
+  readonly credits?: readonly AssetCredit[];
   /** A fresh renderer per match: `createMatchTableRenderer` closes over
    * small per-mount state (the trick-outcome banner) that must not leak
    * between two different matches sharing one widget session. `onPlayAgain`
@@ -83,7 +106,7 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
   };
 }
 
-const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer() };
+const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION] };
 
 /** The 2v2 game-ui entry — additive, registered under its own distinct
  * `gameId` (matching `truco-module`'s own `trucoModule2v2.id`), never a
@@ -91,7 +114,7 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRendere
  * successfully over the wire but fall back to the generic "connection is
  * live" placeholder (`main.ts`'s own `enterMatch` fallback) instead of the
  * real table — found running an actual 2v2 match end to end, not assumed. */
-const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer() };
+const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION] };
 
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
@@ -104,3 +127,24 @@ export function createGameUiRegistry(): GameUiRegistry {
   ]);
   return { get: (gameId) => byId.get(gameId) };
 }
+
+/**
+ * Every credit this widget owes, once each.
+ *
+ * DEDUPED BY LICENSE URL AND AUTHOR, which is what actually identifies an
+ * obligation: both truco entries draw the same deck, and two identical
+ * credits stacked on one screen reads as a bug rather than as diligence. The
+ * moment a second game ships its own art the list grows on its own.
+ *
+ * A CONSTANT AND NOT A REGISTRY METHOD, deliberately: the credit surface
+ * lives on the game-selection screen, which is rendered before any game is
+ * chosen and receives no registry. Threading one through that signature to
+ * reach a static fact would be a worse trade than exporting the fact.
+ */
+export const GAME_UI_CREDITS: readonly AssetCredit[] = (() => {
+  const seen = new Map<string, AssetCredit>();
+  for (const entry of [trucoEntry, trucoEntry2v2]) {
+    for (const credit of entry.credits ?? []) seen.set(`${credit.author}|${credit.licenseUrl}`, credit);
+  }
+  return [...seen.values()];
+})();

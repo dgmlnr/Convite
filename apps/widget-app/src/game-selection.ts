@@ -4,6 +4,7 @@ import { ensureChromeStyles } from "./chrome-styles.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
+import { GAME_UI_CREDITS } from "./game-ui-registry.js";
 
 export interface GameSelectionCallbacks {
   onPlayVsPerson(gameId: GameId, modality: ModalityConfig): void;
@@ -154,6 +155,81 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
  * delegated to `callbacks`, never performed here; the caller (`main.ts`)
  * owns what actually happens once a player picks something.
  */
+/**
+ * The deck credit, reachable by whoever is actually looking at the cards.
+ *
+ * NOT A NICETY. The card artwork is CC BY-SA 3.0 (spanish-deck-ui's
+ * `about.ts`), which requires crediting the author and linking the license.
+ * A credit that lives only in a source file is not given to the people who
+ * see the work — so it has to exist somewhere a player can reach, and this
+ * is the widget's one screen that is always reachable.
+ *
+ * `<details>` RATHER THAN A BUTTON AND A FLAG. Disclosure is exactly what
+ * this is, and the native element brings the keyboard behaviour, the
+ * `aria-expanded` bookkeeping and the Escape handling that a hand-rolled
+ * popover has to reimplement and usually half-implements. Its open state is
+ * also a single DOM attribute, which is what makes it survivable across the
+ * rebuild below — see `renderGameSelection`'s own note.
+ *
+ * THE LICENSE LINK IS ITS OWN ANCHOR, not a word inside the sentence: this
+ * is the term easiest to lose to a copy edit, and `DECK_ATTRIBUTION` splits
+ * the facts apart for the same reason.
+ */
+function renderAbout(open: boolean): HTMLElement | undefined {
+  if (GAME_UI_CREDITS.length === 0) return undefined;
+  const details = document.createElement("details");
+  details.className = "hexdev-about";
+  if (open) details.open = true;
+
+  const summary = document.createElement("summary");
+  summary.className = "hexdev-about-toggle";
+  // The visible glyph is an "i"; the accessible name is the real one. A
+  // screen reader announcing the letter "i" tells nobody anything.
+  summary.setAttribute("aria-label", STRINGS.aboutToggle);
+  summary.title = STRINGS.aboutToggle;
+  summary.textContent = "i";
+  details.appendChild(summary);
+
+  const panel = document.createElement("div");
+  panel.className = "hexdev-about-panel";
+  details.appendChild(panel);
+
+  const heading = document.createElement("h2");
+  heading.className = "hexdev-about-title";
+  heading.textContent = STRINGS.aboutTitle;
+  panel.appendChild(heading);
+
+  for (const attribution of GAME_UI_CREDITS) {
+    const credit = document.createElement("p");
+    credit.className = "hexdev-about-credit";
+    credit.textContent = STRINGS.aboutCredit(attribution.author);
+    panel.appendChild(credit);
+
+    const links = document.createElement("p");
+    links.className = "hexdev-about-links";
+    const source = document.createElement("a");
+    source.href = attribution.sourceUrl;
+    source.textContent = STRINGS.aboutSource;
+    const license = document.createElement("a");
+    license.href = attribution.licenseUrl;
+    license.textContent = STRINGS.aboutLicense(attribution.licenseName);
+    // The widget is embedded in somebody else's page; a credit link must
+    // never navigate the host away from the game it is embedded in.
+    for (const anchor of [source, license]) {
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      links.appendChild(anchor);
+    }
+    panel.appendChild(links);
+  }
+
+  return details;
+}
+
+function appendIfPresent(parent: HTMLElement, child: HTMLElement | undefined): void {
+  if (child !== undefined) parent.appendChild(child);
+}
+
 export function renderGameSelection(
   container: HTMLElement,
   catalog: readonly CatalogEntry[],
@@ -170,6 +246,11 @@ export function renderGameSelection(
   // presence state that can drift from what is actually on screen — and still
   // needs this restore path the moment the data really changes.
   const focusSnapshot = captureFocus(container);
+  // Captured for the same reason focus is, and it is the same defect: every
+  // live presence broadcast re-runs this whole function, so a credit panel
+  // the player had opened would slam shut every few seconds while they were
+  // reading it. One DOM attribute, read before the wipe and re-applied after.
+  const aboutWasOpen = container.querySelector<HTMLDetailsElement>(".hexdev-about")?.open ?? false;
   container.replaceChildren();
   container.className = "convite-chrome";
   // WCR-1: gates chrome-styles.ts's container-type declaration and the
@@ -198,6 +279,9 @@ export function renderGameSelection(
     empty.className = "hexdev-chrome-empty";
     empty.textContent = STRINGS.emptyCatalog;
     content.appendChild(empty);
+    // The credit belongs on the empty screen too: a tenant with no games
+    // enabled still ships the deck art in the bundle.
+    appendIfPresent(content, renderAbout(aboutWasOpen));
     restoreFocus(container, focusSnapshot);
     return;
   }
@@ -208,5 +292,6 @@ export function renderGameSelection(
   for (const entry of catalog) {
     games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks));
   }
+  appendIfPresent(content, renderAbout(aboutWasOpen));
   restoreFocus(container, focusSnapshot);
 }
