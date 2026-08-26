@@ -596,3 +596,46 @@ describe("the clipped-gold title is not amputated by its own line box", () => {
     expect(ratio, `line-height is ${ratio.toFixed(2)}x the font size — too tight for clipped text`).toBeGreaterThanOrEqual(1.15);
   });
 });
+
+/**
+ * THE HAND IS DEALT ONCE.
+ *
+ * The deal is a greeting: it says "you have arrived at a table", and it says
+ * it on arrival. But this screen wipes and rebuilds on every presence
+ * broadcast — every few seconds on a live lobby — so an animation class
+ * applied unconditionally re-ran the whole thing each time, and the cards
+ * kept being re-dealt under a player who was trying to read the screen.
+ *
+ * It shipped that way and was reported as "no me gusta el efecto", which is
+ * what a one-time flourish becomes when it is not one-time. The fix is a
+ * per-container WeakSet; this is the fence, because the failure is invisible
+ * in a single render and every test here does exactly one.
+ */
+describe("the hand is dealt once, not on every repaint", () => {
+  const PRESENCE = new Map<GameId, readonly LobbyDisplayEntry[]>([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]);
+
+  it("animates the first render", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the cards never arrive").not.toBeNull();
+  });
+
+  it("does NOT animate any render after it", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelector(".hexdev-chrome-fan"), "fence setup: the fan stopped rendering at all").not.toBeNull();
+    expect(el.querySelector(".hexdev-chrome-fan--dealing"), "a presence broadcast re-dealt the hand").toBeNull();
+  });
+
+  it("deals again for a different container — the greeting belongs to a mount, not to the page", () => {
+    const first = freshContainer();
+    renderGameSelection(first, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    const second = freshContainer();
+    renderGameSelection(second, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(second.querySelector(".hexdev-chrome-fan--dealing"), "a second widget on the page opened with no greeting").not.toBeNull();
+  });
+});
