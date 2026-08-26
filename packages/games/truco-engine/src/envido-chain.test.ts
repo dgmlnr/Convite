@@ -699,7 +699,7 @@ describe("who may interpose an envido over a pending truco", () => {
  * TWO RULES GOVERN IT, and the second is the one this engine had wrong:
  *
  *   - ORDER: from the MANO around the table. "El primero en cantar será el
- *     jugador que es 'mano'" (trucogame.com's reglamento) — deliberately not
+ *     jugador que es 'mano'", per published rule — deliberately not
  *     from whoever called the envido.
  *   - CONCEDING IS FOR THE TEAM: "en caso de estar jugando en parejas, al
  *     decir 'son buenas' se le da por perdido el envido a TODO EL EQUIPO"
