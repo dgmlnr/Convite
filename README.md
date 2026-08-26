@@ -228,7 +228,19 @@ dónde salían esos binarios, porque volver atrás es una opción real.
 
 ## Licencia
 
-Propietaria, **con una excepción**: los 40 archivos de
-`packages/spanish-deck-ui/assets/fronts/` son obra derivada y llevan sus propios términos
-(CC BY-SA 3.0). Están licenciados aparte en `packages/spanish-deck-ui/assets/LICENSE`, que
-es lo que corresponde a quien los redistribuya.
+[Apache-2.0](LICENSE). Podés usarlo, modificarlo y redistribuirlo, incluso comercialmente,
+con dos condiciones: **dar crédito** —conservando el archivo [`NOTICE`](NOTICE), que es donde
+la licencia pone esa obligación (§4d)— y dejar constancia de los cambios que le hagas.
+
+Se eligió Apache-2.0 y no MIT por la **concesión explícita de patentes**, que protege tanto a
+quien contribuye como a quien lo usa. Y no una licencia Creative Commons, aunque el mazo use
+una: **CC no está pensada para software** —lo dice la propia Creative Commons— porque no
+contempla código fuente ni patentes.
+
+**Con una excepción, y no es menor**: los 40 archivos de
+`packages/spanish-deck-ui/assets/fronts/` son obra derivada y llevan **CC BY-SA 3.0**, no
+Apache. Están licenciados aparte en `packages/spanish-deck-ui/assets/LICENSE`.
+
+El ShareAlike de esas imágenes **no alcanza al código**: obliga sobre adaptaciones *del
+arte*, y este software no es obra derivada de un naipe. Redistribuir el repo es honrar dos
+juegos de términos en paralelo, no uno contagiando al otro.
