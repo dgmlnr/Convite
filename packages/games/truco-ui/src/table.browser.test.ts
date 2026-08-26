@@ -1165,11 +1165,16 @@ describe("the deck sits beside the seat that dealt", () => {
     expect(decks[0]!.textContent, "the deck says nothing to a reader").toContain("pie");
   });
 
-  it("2v2: the deck never covers the cards of the seat it belongs to", () => {
+  it.each([320, 375, 414] as const)("2v2 at %ipx: the deck never covers the cards of the seat it belongs to", (width) => {
+    // Pinned widths, and the viewer's own seat (mano 1 puts the deck on seat
+    // 0). A first version measured one width at the harness's own default,
+    // where the hand is narrow enough to leave room beside it -- and passed
+    // while a phone was drawing the deck on top of the third card.
     const el = freshContainer();
+    el.style.width = `${String(width)}px`;
     const render = createMatchTableRenderer();
 
-    render(el, viewWithMano(0), [], () => {});
+    render(el, viewWithMano(1), [], () => {});
 
     const deck = el.querySelector(".hexdev-truco-deck")!.getBoundingClientRect();
     const anchor = el.querySelector(".hexdev-truco-deck")!.closest(".hexdev-truco-anchor")!;
