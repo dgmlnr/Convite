@@ -276,15 +276,23 @@ export function renderGameSelection(
   content.className = "hexdev-chrome-content";
   container.appendChild(content);
 
+  // Title and tagline are ONE block, not two siblings of the grid: they are
+  // centred together and the games are not, so they need a container of their
+  // own to be centred within. Purely presentational — the heading order the
+  // screen reader walks is unchanged.
+  const header = document.createElement("div");
+  header.className = "hexdev-chrome-header";
+  content.appendChild(header);
+
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";
   title.textContent = STRINGS.selectionTitle;
-  content.appendChild(title);
+  header.appendChild(title);
 
   const tagline = document.createElement("p");
   tagline.className = "hexdev-chrome-tagline";
   tagline.textContent = STRINGS.selectionTagline;
-  content.appendChild(tagline);
+  header.appendChild(tagline);
 
   if (catalog.length === 0) {
     const empty = document.createElement("p");
