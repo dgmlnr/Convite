@@ -1009,6 +1009,59 @@ export function buildTableStylesheet(): string {
 }
 
 .hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* THE DECK, beside the seat that dealt. A stack of three backs offset by a
+ * hair each, so it reads as a deck rather than as one more card in play --
+ * and at a fraction of a card's size, because it is a MARK about the seat and
+ * not something anybody plays. It sits in the seat's own flex row like the
+ * hand does, so it can never be drawn over the cards. */
+.hexdev-truco-deck {
+  /* OUT OF FLOW, BESIDE the seat -- never stacked with it. Three of the four
+   * anchors lay their contents out as a COLUMN, so a deck in the flex flow
+   * became another row and made the seat taller: measured as the 2v2 table
+   * failing its own per-tier height lock and overflowing a phone-sized
+   * window. It is a mark ABOUT a seat, so it costs that seat no layout at
+   * all, the same choice the turn badge makes for the same reason. */
+  position: absolute;
+  z-index: 2;
+  width: calc(var(--truco-card-width) * 0.42);
+  height: calc(var(--truco-card-width) * 0.42 * 336 / 220);
+}
+/* Its containing block is the HAND, so it lands beside the cards rather than
+ * at the far edge of a seat that spans the felt. Which side: away from the
+ * middle for the two seats laid out across, and toward the middle for the two
+ * laid out down -- so it never reaches past the felt's own edge. */
+.hexdev-truco-hand,
+.hexdev-truco-opponent-hand { position: relative; }
+.hexdev-truco-anchor[data-position="bottom"] .hexdev-truco-deck,
+.hexdev-truco-anchor[data-position="top"] .hexdev-truco-deck {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 10px;
+}
+.hexdev-truco-anchor[data-position="left"] .hexdev-truco-deck {
+  left: 100%;
+  bottom: 0;
+  margin-left: 8px;
+}
+.hexdev-truco-anchor[data-position="right"] .hexdev-truco-deck {
+  right: 100%;
+  bottom: 0;
+  margin-right: 8px;
+}
+.hexdev-truco-deck-card {
+  position: absolute;
+  inset: 0;
+  /* Each back three pixels down and across from the one under it. A first
+   * version used one and a half and read as a single card at this size --
+   * looked at, not measured. */
+  transform: translate(calc(var(--i) * 3px), calc(var(--i) * -3px));
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: var(--hx-lift-contact);
+}
+.hexdev-truco-deck-card svg { display: block; width: 100%; height: 100%; }
 /* THE ONE ROW THAT PAYS FOR THE RING. The ring is an outline plus a halo:
  * both paint outside the box and take no layout space at all, which is what
  * makes the air around the cards free. The cost is that nothing in the

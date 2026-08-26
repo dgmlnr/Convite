@@ -1013,6 +1013,73 @@ describe("createMatchTableRenderer — action bar overflow: 1v1's two-simultaneo
   });
 });
 
+describe("the deck sits beside the seat that dealt", () => {
+  // Asked for: "hacer el efecto de repartir cartas... y ponerle un mazo a su
+  // derecha para que quede indicado quien repartio y es pie". The deck is the
+  // visible half of a rule -- dealing is what makes that seat its team's pie,
+  // and being pie decides who may open the envido.
+  function viewWithMano(manoSeat: number): PlayerView {
+    const base = baseView();
+    return baseView({
+      teammates: [{ playerId: "player-c" as PlayerId, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: "player-d" as PlayerId, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...base.hand!, manoSeat },
+    });
+  }
+
+  it.each([
+    [0, 3],
+    [1, 0],
+    [2, 1],
+    [3, 2],
+  ])("2v2: mano on seat %i puts the deck on seat %i", (manoSeat, dealerSeat) => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, viewWithMano(manoSeat), [], () => {});
+
+    const decks = [...el.querySelectorAll(".hexdev-truco-deck")];
+    expect(decks, "the deck is on more than one seat, or on none").toHaveLength(1);
+    const anchor = decks[0]!.closest(".hexdev-truco-anchor");
+    expect(anchor, "the deck did not land on a seat at all").not.toBeNull();
+    const seats = [...el.querySelectorAll(".hexdev-truco-anchor")];
+    expect(seats.indexOf(anchor as Element) >= 0, "fence setup: the deck's anchor is not one of the seats").toBe(true);
+    expect(anchor!.querySelector(".hexdev-truco-deck"), `the deck belongs to seat ${String(dealerSeat)}`).not.toBeNull();
+    expect(decks[0]!.textContent, "the deck says nothing to a reader").toContain("pie");
+  });
+
+  it("2v2: the deck never covers the cards of the seat it belongs to", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, viewWithMano(0), [], () => {});
+
+    const deck = el.querySelector(".hexdev-truco-deck")!.getBoundingClientRect();
+    const anchor = el.querySelector(".hexdev-truco-deck")!.closest(".hexdev-truco-anchor")!;
+    const hand = anchor.querySelector(".hexdev-truco-opponent-hand, .hexdev-truco-hand");
+    if (hand === null) throw new Error("fence setup: the dealer's seat rendered no hand");
+    const cards = hand.getBoundingClientRect();
+    const overlaps =
+      deck.left < cards.right - 0.5 && cards.left < deck.right - 0.5 && deck.top < cards.bottom - 0.5 && cards.top < deck.bottom - 0.5;
+
+    expect(overlaps, `deck ${JSON.stringify(deck)} vs cards ${JSON.stringify(cards)}`).toBe(false);
+  });
+
+  it("2v2: no deck before the hand is dealt", () => {
+    // Nothing has been dealt, so nothing dealt it: a deck on the table
+    // between hands would be claiming a fact that is not true yet.
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, baseView({ hand: null, self: { ...baseView().self, hand: [] } }), [], () => {});
+
+    expect(el.querySelectorAll(".hexdev-truco-deck")).toHaveLength(0);
+  });
+});
+
 describe("a rival's answer chip fits on the cloth too", () => {
   // Reported from a phone: "cuando los rivales cantan por ejemplo 'No
   // Quiero' el chip dorado se sale de la pantalla". Same shape as the turn

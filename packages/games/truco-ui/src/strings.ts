@@ -33,6 +33,11 @@ export const TABLE_STRINGS = {
      behind a word that does not mention it. */
   railTab: "Tantos y cantos",
   railTabClose: "Cerrar tantos y cantos",
+  /* Spoken on the seat the deck sits beside. Says both halves on purpose:
+     dealing is what MAKES that seat its team's pie, and the pie is who may
+     open the envido -- a mark that only said "reparte" would leave a reader
+     to work the rule out. */
+  dealtHere: "Reparte y es pie",
   malas: "Malas",
   buenas: "Buenas",
   us: "Nosotros",

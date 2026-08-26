@@ -3,6 +3,7 @@ import { announce, createAnnouncer } from "./announcer.js";
 import { advanceHistory } from "./call-history.js";
 import type { CallHistory } from "./call-history.js";
 import { renderCallLog, scrollCallLogToNewest, speakerLabel } from "./call-log.js";
+import { dealerSeatOf, renderDeckMarker } from "./deck-marker.js";
 import { renderCalls } from "./calls.js";
 import { deriveEnvidoRevealEvent, describeEnvidoRevealNotice } from "./envido-reveal-notice.js";
 import type { EnvidoRevealEvent } from "./envido-reveal-notice.js";
@@ -549,6 +550,16 @@ export function createMatchTableRenderer(
     const anchors = new Map<TableAnchor, HTMLElement>();
     for (const anchor of ANCHOR_ORDER) anchors.set(anchor, anchorShell(anchor));
 
+    // THE DECK GOES BESIDE THE SEAT THAT DEALT, which is the seat before the
+    // mano -- and dealing is what makes that seat its team's PIE, which is
+    // who may open the envido. Without it a player watching the option appear
+    // and disappear has no way to see the rule behind it.
+    //
+    // Only while a hand is actually in play: between hands nothing has been
+    // dealt, so a deck on the cloth would be claiming a fact that is not true
+    // yet.
+    const dealerSeat = view.hand === null ? null : dealerSeatOf(view.hand.manoSeat, seatCount);
+
     for (const other of others) {
       const anchor = anchors.get(positions.get(other.seat) ?? "top")!;
       // 2v2 only (obs 2970/the apply prompt's own "must never work out who
@@ -565,7 +576,12 @@ export function createMatchTableRenderer(
         label.className = "hexdev-truco-relation-label";
         label.textContent = other.relation === "partner" ? TABLE_STRINGS.partner : TABLE_STRINGS.opponent;
       }
-      renderOpponentHand(anchor.appendChild(document.createElement("div")), other.cardsRemaining);
+      const otherHand = anchor.appendChild(document.createElement("div"));
+      renderOpponentHand(otherHand, other.cardsRemaining);
+      // INSIDE the hand's own box, not the seat's: the seat's box spans the
+      // felt, so a deck pinned to its edge ends up an arm's length from the
+      // cards it dealt. Beside the CARDS is what "a su derecha" means.
+      if (other.seat === dealerSeat) renderDeckMarker(otherHand.appendChild(document.createElement("div")));
       // No seña chip here, deliberately. A partner's claim used to hang on
       // this anchor for the rest of the hand; it is a MOMENT now, announced
       // once in the banner lane and gone (see `renderSenaNotice` above). The
@@ -719,6 +735,9 @@ export function createMatchTableRenderer(
     }
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
+    // The viewer deals too, one hand in four, and the deck goes beside their
+    // cards exactly as it does beside anyone else's.
+    if (view.self.seat === dealerSeat) renderDeckMarker(handRow.appendChild(document.createElement("div")));
 
     const center = document.createElement("div");
     center.className = "hexdev-truco-center";
