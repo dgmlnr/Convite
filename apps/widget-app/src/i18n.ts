@@ -32,6 +32,14 @@ export function translateConfigLabel(labelKey: string): string {
 export const STRINGS = {
   selectionTitle: "Elegí un juego",
   /**
+   * The one line on this screen that is not an instruction: everything else
+   * tells the player what to DO, this says what the place is. It also states
+   * two real facts rather than a slogan — the widget mounts without an
+   * install and plays without an account, which is what a player arriving
+   * from somebody else's site is actually wondering.
+   */
+  selectionTagline: "Sentate a jugar: sin instalar nada, sin crear cuenta.",
+  /**
    * The deck credit, and it is a LICENSE TERM rather than a nicety: the card
    * artwork is CC BY-SA 3.0, which requires naming the author, linking the
    * license, and saying that changes were made. Composed here from

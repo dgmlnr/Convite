@@ -351,14 +351,36 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     expect(modalityHeadings.map((heading) => heading.textContent)).toEqual(["Puntos para ganar: 15", "Puntos para ganar: 30"]);
   });
 
-  it("paints that heading exactly like the paragraph it replaced — same size, weight and margin", () => {
+  it("lets no heading UA default through — every one of them is set on purpose", () => {
+    // WHAT THIS PROTECTS, and it is not the exact values. When this line
+    // became a real <h3> for WCAG 1.3.1, the risk was the browser's own
+    // heading defaults leaking in: bold, 1.17em, and block margins nobody
+    // asked for. The original wording of this test froze the paint to match
+    // the <p> it replaced, which caught that — and also froze the design.
+    //
+    // It is now a LABEL by deliberate choice (small, letterspaced, uppercase,
+    // secondary): "Puntos para ganar: 15" is a section marker that repeats
+    // once per modality, and set as a sentence it was read instead of
+    // scanned. So the assertion moved to the invariant that actually mattered:
+    // nothing here is a UA default. Every property a heading would otherwise
+    // contribute is named by the stylesheet.
     const el = renderTwoModalities();
 
     const heading = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality-title")!);
-    const paragraph = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality p:not(.hexdev-modality-count)")!);
-    expect(heading.fontSize).toBe(paragraph.fontSize);
-    expect(heading.fontWeight).toBe(paragraph.fontWeight);
-    expect([heading.marginTop, heading.marginBottom]).toEqual(["0px", "0px"]);
+    // The chrome root's own size, NOT a sibling's: a sibling is something this
+    // design may restyle tomorrow, and a fence anchored to one drifts with it.
+    // (It already did — this compared against the bot cue, which then became a
+    // label too, and the assertion started measuring two equals.)
+    const base = Number.parseFloat(getComputedStyle(el).fontSize);
+
+    expect([heading.marginTop, heading.marginBottom], "a heading's block margins reached the page").toEqual(["0px", "0px"]);
+    // 1.17em is the UA default for h3 — the size must come from a token,
+    // whatever that token currently is, never from the browser's idea of a
+    // heading. Smaller than the body size is the shape a marker has and the
+    // shape a UA heading never has.
+    expect(Number.parseFloat(heading.fontSize), "the UA's heading size reached the page").toBeLessThan(base);
+    expect(heading.textTransform, "styled as a marker, not as a sentence").toBe("uppercase");
+    expect(Number.parseFloat(heading.letterSpacing)).toBeGreaterThan(0);
   });
 
   it("names each modality as a group, so three repeated tier labels are three distinguishable controls", () => {
