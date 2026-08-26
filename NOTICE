@@ -1,0 +1,34 @@
+Convite
+Copyright 2026 Diego Molinari
+
+Licensed under the Apache License, Version 2.0 (the "License"); see the
+LICENSE file in the root of this repository, or
+http://www.apache.org/licenses/LICENSE-2.0
+
+This NOTICE file is not decoration: section 4(d) of the License requires
+anyone who redistributes this work, or a derivative of it, to carry these
+notices along. It is where the attribution actually lives.
+
+================================================================================
+THIRD-PARTY ASSETS — DIFFERENT TERMS
+================================================================================
+
+The 40 card-front images in packages/spanish-deck-ui/assets/fronts/ are NOT
+covered by the Apache License above. They are a derivative of artwork by
+Basquetteur (Wikimedia Commons), distributed as SVG by
+https://github.com/gjenkins20/spanish-playing-cards-svg, and are licensed
+under Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0):
+
+    https://creativecommons.org/licenses/by-sa/3.0/
+
+Changes were made to them: the vectors were rasterized to WebP at 329x520,
+and the face background was completed where the source left it transparent.
+The full statement, and the exact recipe, are in
+packages/spanish-deck-ui/assets/LICENSE and
+packages/spanish-deck-ui/tools/process-svg-deck.mjs.
+
+THE SHAREALIKE ON THOSE FILES DOES NOT REACH THE CODE. ShareAlike binds
+adaptations OF THE ARTWORK; this software is not a derivative of a playing
+card. Redistributing this repository means honouring two sets of terms side
+by side — Apache-2.0 for the code, CC BY-SA 3.0 for those 40 images — not
+one infecting the other.
