@@ -4,7 +4,7 @@ import { consultLabelFor } from "./consult-control.js";
 import { TABLE_STRINGS } from "./strings.js";
 
 const ME = "yo" as PlayerId;
-const consult: Action = { type: "consult-partner", playerId: ME };
+const consult: Action = { type: "consult-partner", playerId: ME, about: "pending-call" };
 const respondTruco: Action = { type: "respond-truco", playerId: ME, response: "quiero" };
 const respondEnvido: Action = { type: "respond-envido", playerId: ME, response: "quiero" };
 const callEnvido: Action = { type: "call-envido", playerId: ME, level: "envido" };

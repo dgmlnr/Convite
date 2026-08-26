@@ -174,7 +174,7 @@ describe("asking, and being answered", () => {
     // the same breath as the answer arrives. Losing the reply there would
     // charge a player for nothing.
     let state = pendingTruco();
-    for (let asked = 0; asked < 3; asked += 1) state = dispatchOrThrow(state, { type: "consult-partner", playerId: SELF });
+    for (let asked = 0; asked < 3; asked += 1) state = dispatchOrThrow(state, { type: "consult-partner", playerId: SELF, about: "pending-call" });
     paint(state, { advice: "quiero", asking: false });
     open();
 
@@ -184,7 +184,7 @@ describe("asking, and being answered", () => {
 
   it("shows nothing at all when there is no offer and no answer", () => {
     let state = pendingTruco();
-    for (let asked = 0; asked < 3; asked += 1) state = dispatchOrThrow(state, { type: "consult-partner", playerId: SELF });
+    for (let asked = 0; asked < 3; asked += 1) state = dispatchOrThrow(state, { type: "consult-partner", playerId: SELF, about: "pending-call" });
     paint(state);
     open();
 

@@ -90,7 +90,16 @@ export type HumanPriorityActionClassifier = (action: unknown) => boolean;
  * to that suspenders, and it is why an unregistered game answers null rather
  * than throwing.
  */
-export type ConsultAdviceProvider = (state: unknown, playerId: PlayerId, tier: BotTier) => Promise<JsonValue | null>;
+export type ConsultAdviceProvider = (
+  state: unknown,
+  playerId: PlayerId,
+  tier: BotTier,
+  /** WHAT was asked, carried on the question the player actually sent. A game
+   * whose consult opens more than one window needs it: inferring the subject
+   * from the state can only ever pick one when two are open at once. Optional
+   * so a game with a single window never has to name it. */
+  about?: string,
+) => Promise<JsonValue | null>;
 
 /**
  * "Is this the action that BUYS an answer?" — the one thing a transport needs
@@ -153,7 +162,7 @@ export interface GameModuleRegistry {
   /** `null` when nothing is registered for `gameId`, OR the module supplied no
    * provider, OR the game itself has no answer — all three fail closed the
    * same way, exactly like `getSystemAction` above. */
-  getConsultAdvice(gameId: GameId, state: unknown, playerId: PlayerId, tier: BotTier): Promise<JsonValue | null>;
+  getConsultAdvice(gameId: GameId, state: unknown, playerId: PlayerId, tier: BotTier, about?: string): Promise<JsonValue | null>;
   /** `false` (this action buys nothing, so a bot taking it is owed no answer)
    * when nothing is registered for `gameId` OR the module supplied no
    * classifier — the same fail-closed shape as the two above. */
@@ -185,7 +194,7 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
     getSystemAction: (gameId, state, rng) => byId.get(gameId)?.requestSystemAction?.(state, rng) ?? null,
     isNonBlockingAction: (gameId, action) => byId.get(gameId)?.isNonBlockingAction?.(action) ?? false,
     isHumanPriorityAction: (gameId, action) => byId.get(gameId)?.isHumanPriorityAction?.(action) ?? false,
-    getConsultAdvice: async (gameId, state, playerId, tier) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier)) ?? null,
+    getConsultAdvice: async (gameId, state, playerId, tier, about) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier, about)) ?? null,
     isPaidQuestion: (gameId, action) => byId.get(gameId)?.isPaidQuestion?.(action) ?? false,
   };
 }

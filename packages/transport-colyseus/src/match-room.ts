@@ -181,6 +181,14 @@ function actorOf(action: unknown): PlayerId | undefined {
  */
 /** An erased action's own `type`, if it has one. The transport never knows a
  * game's action shape -- it only ever compares like with like. */
+/** The `about` a game's own question carries, when it carries one. Opaque to
+ * the transport: it only ever hands it back to the game that issued it. */
+function subjectOf(action: unknown): string | undefined {
+  if (typeof action !== "object" || action === null) return undefined;
+  const about = (action as { about?: unknown }).about;
+  return typeof about === "string" ? about : undefined;
+}
+
 function typeOf(action: unknown): string | undefined {
   if (typeof action !== "object" || action === null) return undefined;
   const type = (action as { type?: unknown }).type;
@@ -662,7 +670,10 @@ export class MatchRoom extends Room {
     const controller = this.controllerFor(client);
     if (registry === undefined || gameId === undefined || controller === undefined || this.matchState === undefined) return;
 
-    const advice = await this.adviceFor(controller.playerId);
+    // The subject travels on the question the player actually sent. Read off
+    // the action rather than re-derived, because re-deriving is exactly what
+    // could only ever pick one of two open windows.
+    const advice = await this.adviceFor(controller.playerId, subjectOf(action));
     if (advice !== null) client.send("consult-advice", { advice });
   }
 
@@ -680,12 +691,12 @@ export class MatchRoom extends Room {
    * answer. Deliberately silent for the same reason `runAdvanceOnce` swallows
    * — this is one seat's question, not the match's integrity.
    */
-  private async adviceFor(playerId: PlayerId): Promise<JsonValue | null> {
+  private async adviceFor(playerId: PlayerId, about?: string): Promise<JsonValue | null> {
     const registry = this.registry;
     const gameId = this.gameId;
     if (registry === undefined || gameId === undefined || this.matchState === undefined) return null;
     try {
-      return await registry.getConsultAdvice(gameId, this.matchState, playerId, this.botTier);
+      return await registry.getConsultAdvice(gameId, this.matchState, playerId, this.botTier, about);
     } catch {
       return null;
     }
@@ -816,7 +827,7 @@ export class MatchRoom extends Room {
             // GAME calls a paid question — handing advice over after any bot
             // move would give a bot what it never paid for.
             if (registry.isPaidQuestion(gameId, action)) {
-              this.boughtAnswers.set(actingBot.playerId, await this.adviceFor(actingBot.playerId));
+              this.boughtAnswers.set(actingBot.playerId, await this.adviceFor(actingBot.playerId, subjectOf(action)));
             } else {
               this.boughtAnswers.delete(actingBot.playerId);
             }

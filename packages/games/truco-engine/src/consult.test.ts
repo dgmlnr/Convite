@@ -127,14 +127,14 @@ describe("one budget, spent from either side", () => {
     const called = apply(dealt2v2(), { type: "call-truco", playerId: east, level: "truco" });
     const before = getSenasRemaining(called, north);
 
-    const asked = apply(called, { type: "consult-partner", playerId: north });
+    const asked = apply(called, { type: "consult-partner", playerId: north, about: "pending-call" });
 
     expect(getSenasRemaining(asked, north), "the question came out of the same allowance a signal would have").toBe(before - 1);
   });
 
   it("and it spends only the ASKER's — a partner's allowance is their own", () => {
     const called = apply(dealt2v2(), { type: "call-truco", playerId: east, level: "truco" });
-    const asked = apply(called, { type: "consult-partner", playerId: north });
+    const asked = apply(called, { type: "consult-partner", playerId: north, about: "pending-call" });
 
     expect(getSenasRemaining(asked, south)).toBe(MAX_SENAS_PER_HAND);
   });
@@ -153,7 +153,7 @@ describe("one budget, spent from either side", () => {
   it("and asking first leaves fewer signals — the same budget, read from the other end", () => {
     let state = apply(dealt2v2(), { type: "call-truco", playerId: east, level: "truco" });
     for (let asked = 0; asked < MAX_SENAS_PER_HAND; asked += 1) {
-      state = apply(state, { type: "consult-partner", playerId: north });
+      state = apply(state, { type: "consult-partner", playerId: north, about: "pending-call" });
     }
 
     expect(getSenasRemaining(state, north)).toBe(0);
@@ -166,19 +166,19 @@ describe("one budget, spent from either side", () => {
 
 describe("the reducer refuses what the legality says it should", () => {
   it("rejects a consult with no call open", () => {
-    const result = applyAction(dealt2v2(), { type: "consult-partner", playerId: north });
+    const result = applyAction(dealt2v2(), { type: "consult-partner", playerId: north, about: "pending-call" });
     expect(result.ok).toBe(false);
   });
 
   it("rejects a consult from the calling team", () => {
     const called = apply(dealt2v2(), { type: "call-truco", playerId: east, level: "truco" });
-    const result = applyAction(called, { type: "consult-partner", playerId: east });
+    const result = applyAction(called, { type: "consult-partner", playerId: east, about: "pending-call" });
     expect(result.ok).toBe(false);
   });
 
   it("leaves everything except the asker's own count untouched", () => {
     const called = apply(dealt2v2(), { type: "call-truco", playerId: east, level: "truco" });
-    const asked = apply(called, { type: "consult-partner", playerId: north });
+    const asked = apply(called, { type: "consult-partner", playerId: north, about: "pending-call" });
 
     expect(asked.teams, "asking is not a move; it scores nothing").toEqual(called.teams);
     expect(asked.hand?.truco, "and it does not answer the call either").toEqual(called.hand?.truco);
@@ -255,9 +255,40 @@ describe("asking before you open an envido", () => {
       state = apply(state, card);
     }
     const before = getSenasRemaining(state, west);
-    const asked = apply(state, { type: "consult-partner", playerId: west });
+    // The PIE window, not a pending call: west owes nobody an answer here,
+    // they are simply the seat that may open an envido.
+    const asked = apply(state, { type: "consult-partner", playerId: west, about: "envido" });
 
     expect(getSenasRemaining(asked, west), "asking and signalling spend the one budget").toBe(before - 1);
     expect(getLegalActions(asked, west).some((action) => action.type === "call-envido"), "and the call itself is still theirs to make").toBe(true);
+  });
+});
+
+describe("both questions are on offer when both windows are open", () => {
+  // Reported from real play: "me canta truco la mano, pero en las consultas
+  // no puedo consultar para saber si canto el envido esta primero o doy
+  // respuesta directa al truco".
+  //
+  // "El envido está primero" is precisely the moment both are open: a call
+  // sits on the table awaiting an answer, and the same player may put an
+  // envido on it instead. One subject-less action could only ever ask one of
+  // them, and which one was decided for the player rather than by them.
+  it("offers one consult per subject, each its own question", () => {
+    // East and south play, which brings the floor to west -- the pie, who has
+    // not played and therefore still holds the envido. South then calls a
+    // truco, so west owes an answer AND may put an envido on it first.
+    let state = dealt2v2();
+    for (const seat of [east, south]) {
+      state = apply(state, getLegalActions(state, seat).find((action) => action.type === "play-card")!);
+    }
+    state = apply(state, { type: "call-truco", playerId: west, level: "truco" });
+
+    const answering = getLegalActions(state, north);
+    expect(answering.some((action) => action.type === "respond-truco"), "fence setup: nobody owes an answer here").toBe(true);
+    expect(answering.some((action) => action.type === "call-envido"), "fence setup: the envido is not open to them").toBe(true);
+
+    const consults = answering.filter((action) => action.type === "consult-partner");
+
+    expect(consults.map((action) => (action as { readonly about: string }).about).sort()).toEqual(["envido", "pending-call"]);
   });
 });

@@ -158,11 +158,11 @@ function createBot(tier: BotTier): BotStrategy<PlayerView, TrucoModuleAction> {
  */
 const CONSULT_RESPONSES: ReadonlySet<string> = new Set(["respond-truco", "respond-envido"]);
 
-export async function getConsultAdvice(state: MatchState, playerId: PlayerId, tier: BotTier): Promise<JsonValue | null> {
+export async function getConsultAdvice(state: MatchState, playerId: PlayerId, tier: BotTier, about?: string): Promise<JsonValue | null> {
   const teammate = getViewFor(state, playerId).teammates[0];
   if (teammate === undefined) return null;
 
-  const asked = questionFor(state, playerId, teammate.playerId);
+  const asked = questionFor(state, playerId, teammate.playerId, about);
   if (asked.length === 0) return null;
 
   const chosen: EngineActionType = await createBotStrategy(tier, defaultRng).chooseAction(getViewFor(state, teammate.playerId), asked, CONSULT_BUDGET_MS);
@@ -195,9 +195,17 @@ export async function getConsultAdvice(state: MatchState, playerId: PlayerId, ti
  * partner is not being asked to CALL it, only whether they would play it, and
  * the pie combines that with its own hand.
  */
-function questionFor(state: MatchState, askerId: PlayerId, teammateId: PlayerId): readonly EngineActionType[] {
-  const theirResponses = engineGetLegalActions(state, teammateId).filter((action) => CONSULT_RESPONSES.has(action.type));
+function questionFor(state: MatchState, askerId: PlayerId, teammateId: PlayerId, about?: string): readonly EngineActionType[] {
+  // THE SUBJECT COMES FROM THE ASKER, not from whichever window happens to be
+  // open. Both can be open at the same instant -- "el envido está primero" is
+  // exactly that -- and inferring meant the call on the table always won, so
+  // a player who wanted to ask about the envido could not. Reported that way.
+  // `undefined` keeps the old inference, for any caller that has no subject
+  // to give.
+  const wantsTheCall = about === undefined || about === "pending-call";
+  const theirResponses = wantsTheCall ? engineGetLegalActions(state, teammateId).filter((action) => CONSULT_RESPONSES.has(action.type)) : [];
   if (theirResponses.length > 0) return theirResponses;
+  if (about === "pending-call") return [];
 
   const askerHoldsAnEnvido = engineGetLegalActions(state, askerId).some((action) => action.type === "call-envido");
   if (!askerHoldsAnEnvido) return [];
