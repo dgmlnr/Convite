@@ -99,9 +99,15 @@ const WIDTHS = [320, 375] as const;
  * extreme: two ghost casitas and the shortest possible sticks row, which is
  * where a text box has the best chance of becoming the row's tallest item.
  */
+/* THE COUNT IS THE SAME AT EVERY SCORE NOW, which is the point of it. The
+ * tally draws every piece the match can ever hold from the first render and
+ * strikes them as they are won, so a 30-point board is twelve casitas at 0-0
+ * and twelve at 28-27. That is also what makes this suite's real subject --
+ * the panel costing one fixed height -- easier to hold rather than harder:
+ * the picture no longer changes size as the match runs. */
 const SCORES = [
-  { label: "worst case (28-27, 12 casitas)", scores: [28, 27] as const, casitas: 12 },
-  { label: "opening score (0-0, a ghost casita per group)", scores: [0, 0] as const, casitas: 4 },
+  { label: "worst case (28-27)", scores: [28, 27] as const, casitas: 12 },
+  { label: "opening score (0-0, the whole tally waiting)", scores: [0, 0] as const, casitas: 12 },
 ] as const;
 
 const containers: HTMLElement[] = [];

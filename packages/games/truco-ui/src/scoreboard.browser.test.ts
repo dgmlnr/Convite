@@ -15,19 +15,86 @@ function freshContainer(): HTMLElement {
   return container;
 }
 
+/**
+ * THE WHOLE TALLY IS ON THE TABLE FROM THE START, ghosted, and fills in.
+ * Asked for directly: "la totalidad de fosforos semi transparentes deberia
+ * ser la cantidad de tantos para ganar, si es partida de 15 se muestran
+ * siempre los 15 y se van coloreando con los tantos ganados."
+ *
+ * It is how a real tanteador reads: the matches for the whole match are laid
+ * out and get lit as points are won, so a glance says how far there is to go
+ * as much as how far you have come. Before this, a group drew only the
+ * casitas its own points needed, so a scoreboard at 2-0 showed one casita and
+ * said nothing about the fifteen or thirty it was climbing toward.
+ */
+describe("the tanteador shows the whole match, not just what has been scored", () => {
+  const lit = (el: HTMLElement): number => el.querySelectorAll('[data-lit="true"]').length;
+  const ghost = (el: HTMLElement): number => el.querySelectorAll('[data-lit="false"]').length;
+
+  it.each([15, 30] as const)("draws exactly %i pieces across both runs, whatever the score", (target) => {
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 0, target });
+
+    expect(lit(el) + ghost(el), `a ${String(target)}-point match must lay out ${String(target)} matches`).toBe(target);
+  });
+
+  it("lights one piece per point and leaves the rest ghosted", () => {
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 7, target: 15 });
+
+    expect(lit(el), "the lit pieces do not add up to the score").toBe(7);
+    expect(ghost(el), "the remaining pieces are not left waiting").toBe(8);
+  });
+
+  it("keeps the total fixed as the score climbs — the tally never grows a piece", () => {
+    // The point of a fixed tally: the panel does not change size or shape as
+    // the match runs, so nothing under it moves.
+    const before = freshContainer();
+    renderScoreboard(before, { score: 1, target: 30 });
+    const after = freshContainer();
+    renderScoreboard(after, { score: 22, target: 30 });
+
+    expect(lit(before) + ghost(before)).toBe(30);
+    expect(lit(after) + ghost(after)).toBe(30);
+    expect(lit(after)).toBe(22);
+  });
+
+  it("splits the pieces the way the score itself is split", () => {
+    // malas first, buenas after: a 15-point match is 7 and 8, and the runs
+    // have to hold exactly that much or the second half would start in the
+    // wrong place.
+    const el = freshContainer();
+
+    renderScoreboard(el, { score: 0, target: 15 });
+
+    const runs = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-score-sticks")];
+    expect(runs, "fence setup: the two runs did not render").toHaveLength(2);
+    expect(runs[0]!.querySelectorAll("[data-lit]"), "the malas run is not seven long").toHaveLength(7);
+    expect(runs[1]!.querySelectorAll("[data-lit]"), "the buenas run is not eight long").toHaveLength(8);
+  });
+});
+
 describe("renderCasita — the matchstick 'casita' (approved prototype geometry, ported not redesigned)", () => {
-  it("draws exactly `points` matchstick groups, up to 5 (4 sides + 1 diagonal)", () => {
+  it("lights exactly `points` of its five pieces and leaves the rest waiting", () => {
+    // A casita is always a whole casita now: the five pieces are drawn from
+    // the start and struck as they are won. It used to draw only as many
+    // pieces as it had points, so a tally said nothing about what was left.
     const el = freshContainer();
     el.innerHTML = renderCasita(3, 64);
 
-    expect(el.querySelectorAll("svg > g > g")).toHaveLength(3);
+    expect(el.querySelectorAll("svg > g > g"), "a casita is five pieces whatever it holds").toHaveLength(5);
+    expect(el.querySelectorAll('[data-lit="true"]')).toHaveLength(3);
+    expect(el.querySelectorAll('[data-lit="false"]')).toHaveLength(2);
   });
 
-  it("draws all 5 pieces (the square plus its corner-to-corner diagonal) at 5 points", () => {
+  it("draws all 5 pieces (the square plus its corner-to-corner diagonal) at 5 points, every one of them lit", () => {
     const el = freshContainer();
     el.innerHTML = renderCasita(5, 64);
 
     expect(el.querySelectorAll("svg > g > g")).toHaveLength(5);
+    expect(el.querySelectorAll('[data-lit="true"]')).toHaveLength(5);
   });
 
   it("the stick stretches with size, but the head ellipse radii never change — scaling the whole match must not deform the head", () => {
@@ -107,15 +174,19 @@ describe("renderGhostCasita — zero has to look intentional, not empty", () => 
     expect(el.querySelectorAll("rect, ellipse")[0]!.getAttribute("fill")).toBe("var(--truco-match-ghost-wood)");
   });
 
-  it("renderScoreboard falls back to the ghost casita for a group with zero points, instead of rendering nothing", () => {
+  it("draws a zero-point group as its whole run, unlit — not as one lonely empty square", () => {
+    // "Zero has to look intentional, not empty" is the older half of this,
+    // and it still holds. What changed is how much of it is drawn: the run a
+    // group can ever fill, all of it, waiting.
     const el = freshContainer();
 
     renderScoreboard(el, { score: 0, target: 30 });
 
     const malas = el.querySelector<HTMLElement>('[data-score-group="malas"]')!;
     const buenas = el.querySelector<HTMLElement>('[data-score-group="buenas"]')!;
-    expect(malas.querySelector("svg")?.dataset.ghostCasita).toBe("true");
-    expect(buenas.querySelector("svg")?.dataset.ghostCasita).toBe("true");
+    expect(malas.querySelectorAll('[data-lit="false"]'), "the malas run is not the fifteen it can hold").toHaveLength(15);
+    expect(buenas.querySelectorAll('[data-lit="false"]'), "the buenas run is not the fifteen it can hold").toHaveLength(15);
+    expect(el.querySelectorAll('[data-lit="true"]'), "a scoreless board lit something").toHaveLength(0);
   });
 });
 
@@ -129,15 +200,20 @@ describe("renderScoreboard — split into malas y buenas", () => {
     expect(groups.map((g) => g.dataset.scoreGroup)).toEqual(["malas", "buenas"]);
   });
 
-  it("renders one casita per 5 points within each group (20/30 -> 3 malas casitas, 1 buenas casita)", () => {
+  it("renders one casita per 5 SLOTS in each group, and the score decides how many are lit (20/30)", () => {
+    // Both runs are three casitas at 30 points whatever the score: 15 malas
+    // slots and 15 buenas slots. At 20-30 the malas run is full and the
+    // buenas run has five of its fifteen struck.
     const el = freshContainer();
 
     renderScoreboard(el, { score: 20, target: 30 });
 
     const malas = el.querySelector<HTMLElement>('[data-score-group="malas"]')!;
     const buenas = el.querySelector<HTMLElement>('[data-score-group="buenas"]')!;
-    expect(malas.querySelectorAll("svg")).toHaveLength(3); // 15 malas points = 3 casitas of 5
-    expect(buenas.querySelectorAll("svg")).toHaveLength(1); // 5 buenas points = 1 casita
+    expect(malas.querySelectorAll("svg")).toHaveLength(3);
+    expect(buenas.querySelectorAll("svg"), "the buenas run shrank to what it holds").toHaveLength(3);
+    expect(malas.querySelectorAll('[data-lit="true"]')).toHaveLength(15);
+    expect(buenas.querySelectorAll('[data-lit="true"]')).toHaveLength(5);
   });
 });
 

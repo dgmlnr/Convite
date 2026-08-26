@@ -345,7 +345,30 @@ export function buildTableStylesheet(): string {
   width: min(64vw, 260px);
 }
 .hexdev-truco-side-rail[data-open="false"] > .hexdev-truco-rail-body { display: none; }
-.hexdev-truco-rail-body > .hexdev-truco-scoreboard-panel { flex: 0 0 auto; }
+/* SHRINKABLE, and scrolling before it pushes. The tally draws every piece the
+ * match can ever hold now -- twelve casitas at 30 points, against four
+ * before -- so on a short window (a phone held sideways is 390px tall) it is
+ * genuinely taller than the rail. flex: 0 0 auto made that overflow the
+ * window and grow the table with it, and both are things this table's own
+ * fences forbid outright. It gives way instead, and the run inside scrolls. */
+.hexdev-truco-rail-body > .hexdev-truco-scoreboard-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.hexdev-truco-scoreboard-panel .hexdev-truco-scoreboard { min-height: 0; overflow: auto; }
+/* THREE TO A ROW, whatever the rail is wide. A group holds up to three
+ * casitas now (fifteen points at five apiece), and at the rail's natural
+ * casita size the third one wrapped to a second line -- which doubled the
+ * scoreboard's height and, through it, the whole table's: measured at 88px
+ * of variance at 700px, against a table whose height is locked per tier.
+ * A third of the run each, minus the two gaps between them, keeps a group
+ * exactly one row tall at every rail width. */
+.hexdev-truco-side-rail .hexdev-truco-score-sticks svg {
+  width: calc((100% - 4px) / 3);
+  max-width: 34px;
+  height: auto;
+}
 
 /* The tab. Deliberately quiet: it is a way in, not a call to action, and it
  * sits on the cloth where the loudest thing must always be the cards. */
