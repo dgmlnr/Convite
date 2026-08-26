@@ -748,6 +748,15 @@ describe.each([375, 700] as const)("the drawer handle sits beside the play, not 
       if (cards.width === 0) continue;
       expect(overlaps(handle, cards), `handle ${JSON.stringify(handle)} vs cards ${JSON.stringify(cards)}`).toBe(false);
     }
+
+    // The action bar too, and that is not thoroughness for its own sake: the
+    // bar takes the handle's reserved lane BACK (table-styles.ts explains
+    // why), and the only thing that makes that safe is these two never
+    // meeting. Argued in a comment, proven here.
+    const bar = el.querySelector(".hexdev-truco-action-bar");
+    if (bar !== null) {
+      expect(overlaps(handle, bar.getBoundingClientRect()), `handle ${JSON.stringify(handle)} vs action bar ${JSON.stringify(bar.getBoundingClientRect())}`).toBe(false);
+    }
   });
 });
 

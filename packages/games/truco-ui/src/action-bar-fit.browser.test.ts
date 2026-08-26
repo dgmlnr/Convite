@@ -161,6 +161,59 @@ describe.each(WIDTHS)("action band FIT with an unanswered call — %ipx", (width
   });
 });
 
+/**
+ * The bar at its ORDINARY widest: the viewer is on turn, nothing has been
+ * called, and all three of Truco, Envido and the señas control are offered.
+ *
+ * Dealer on seat 0 makes seat 1 mano, which puts the viewer (seat 0) last in
+ * the round -- and the last of a team to speak is its PIE, which is who may
+ * open the envido (envido-chain.ts). Three plays hand the turn to them. A
+ * fixture that simply dealt and stopped offers no Envido at all, and the
+ * two-button bar it produces fits everywhere, which is exactly how a first
+ * version of this fence passed while a phone was cutting a button off.
+ */
+function openingTurnState(): MatchState {
+  let state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2);
+  for (const seat of [1, 2, 3]) {
+    const player = state.players[seat]!;
+    const play = getLegalActions(state, player.id).find((action) => action.type === "play-card");
+    if (play === undefined) throw new Error(`fixture: seat ${String(seat)} could not play`);
+    state = dispatch(state, play);
+  }
+  return state;
+}
+
+describe("the ordinary opening bar fits without scrolling", () => {
+  // Reported from a phone: "el boton de señas/consulta se corta un poquito a
+  // la derecha". Measured at 375px: the band was 334px wide against 340px of
+  // buttons -- six pixels over, and mine. The felt had just started reserving
+  // a 25px lane on its right for the drawer's handle, and the action bar sits
+  // inside that padding like every other row.
+  //
+  // NOT "the bar never scrolls", which would contradict a deliberate,
+  // documented decision: horizontal scrolling inside a group is the valve for
+  // a fully escalated envido chain, and a player can find it. What this
+  // fences is the ORDINARY state -- three buttons, nothing called yet, the
+  // thing on screen for most of a hand -- fitting the band it is given.
+  it.each(WIDTHS)("%ipx: Truco, Envido and señas all fit the band with nothing scrolled away", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = openingTurnState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const bar = el.querySelector(".hexdev-truco-action-bar");
+    if (bar === null) throw new Error("fence setup: action bar not rendered");
+    const labels = [...bar.querySelectorAll("button")].map((x) => x.textContent ?? "");
+    expect(labels.length, `fence setup: the bar must carry the ordinary three, got ${labels.join(" | ")}`).toBeGreaterThanOrEqual(3);
+
+    expect(
+      bar.scrollWidth - bar.clientWidth,
+      `${String(width)}px: ${String(bar.scrollWidth)}px of buttons in a ${String(bar.clientWidth)}px band`,
+    ).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("every legal call button is actually visible inside the band, not merely non-overflowing", () => {
   it.each(WIDTHS)("%ipx: no call button's box falls outside the band's own box", async (width) => {
     const el = mountedContainer(width);
