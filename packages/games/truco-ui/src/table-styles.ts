@@ -713,8 +713,16 @@ export function buildTableStylesheet(): string {
  * lives in THAT block instead of this tier: the inequality inverted here and
  * only here. */
 @container hexdev-truco-shell (width < 640px) {
+  /* THE SEAT ACROSS THE TABLE JOINS THE TWO AT THE SIDES. It was left out of
+   * this rule and kept the full-size back -- and being a horizontal row of
+   * three, it was the widest thing on a phone's felt. Asked for directly:
+   * "podrias hacer mas chicas las cartas del compañero para ganar espacio,
+   * las dejas del mismo tamaño que las de los rivales". Nobody reads a card
+   * back, so the three seats that only ever show backs can share one size and
+   * give the width back to the hand that IS read. */
   .hexdev-truco-table[data-seat-count="4"] [data-position="left"],
-  .hexdev-truco-table[data-seat-count="4"] [data-position="right"] {
+  .hexdev-truco-table[data-seat-count="4"] [data-position="right"],
+  .hexdev-truco-table[data-seat-count="4"] [data-position="top"] {
     --truco-card-width: 45px;
   }
 }
@@ -1258,6 +1266,28 @@ export function buildTableStylesheet(): string {
   align-items: center;
   gap: 6px;
 }
+/* A SIDE SEAT'S CHIP GROWS INWARD. Centred on its seat is right for the two
+ * seats with room either side of them; a side seat is 45px wide against a
+ * chip near 110, and against the felt's own edge -- so half of it hung off
+ * the screen. Measured at 320/375/414px on the left anchor: the chip started
+ * at -24.9, -20.7 and -17.8px. Reported from real play, on "No quiero".
+ *
+ * Pinned to the seat's inner edge instead of its centre, so it opens toward
+ * the middle of the table -- the same correction the turn badge took, for the
+ * same reason. Nothing about which seat it belongs to changes: it still sits
+ * on that seat's own box. */
+.hexdev-truco-anchor[data-position="left"] .hexdev-truco-seat-call {
+  left: 0;
+  transform: translateY(-50%);
+  align-items: flex-start;
+}
+.hexdev-truco-anchor[data-position="right"] .hexdev-truco-seat-call {
+  left: auto;
+  right: 0;
+  transform: translateY(-50%);
+  align-items: flex-end;
+}
+
 .hexdev-truco-seat-call:empty { display: none; }
 .hexdev-truco-seat-call-chip {
   display: block;
