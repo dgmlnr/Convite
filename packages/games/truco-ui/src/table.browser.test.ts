@@ -1013,6 +1013,120 @@ describe("createMatchTableRenderer — action bar overflow: 1v1's two-simultaneo
   });
 });
 
+describe("the hand is dealt before it is played", () => {
+  // "hacer el efecto de repartir cartas antes de cada mano simulando que
+  // reparte el pie", and then: "claramente en el juego: la animacion bloquea
+  // el inicio del juego". Both halves are fenced here — that it runs once per
+  // HAND rather than once per render, and that nothing can be played through
+  // it.
+  function freshHand(manoSeat: number): PlayerView {
+    const base = baseView();
+    return baseView({
+      teammates: [{ playerId: "player-c" as PlayerId, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: "player-d" as PlayerId, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...base.hand!, manoSeat, callEvents: [], currentTrickPlays: [], resolvedTrickPlays: [] },
+    });
+  }
+
+  it("deals on the first render of a hand", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, freshHand(0), [], () => {});
+
+    expect(el.querySelector(".hexdev-truco-table--dealing"), "the hand arrived already laid out").not.toBeNull();
+  });
+
+  it("keeps dealing through the repaint that lands mid-deal, resuming rather than restarting", () => {
+    // The lesson the lobby's own greeting cost: a broadcast lands every
+    // second or two, this whole subtree is rebuilt, and a CSS animation on a
+    // rebuilt node restarts at zero. What is stored is WHEN the deal began,
+    // and each repaint publishes how long ago that was.
+    vi.useFakeTimers();
+    try {
+      const el = freshContainer();
+      const render = createMatchTableRenderer();
+      render(el, freshHand(0), [], () => {});
+      vi.advanceTimersByTime(120);
+      render(el, freshHand(0), [], () => {});
+
+      const felt = el.querySelector<HTMLElement>(".hexdev-truco-table--dealing");
+      expect(felt, "a repaint mid-deal threw the deal away").not.toBeNull();
+      expect(felt?.style.getPropertyValue("--elapsed").trim(), "the rebuilt hand deals itself again from the first card").toBe("120ms");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops once the deal has landed, and does not deal again for the same hand", () => {
+    vi.useFakeTimers();
+    try {
+      const el = freshContainer();
+      const render = createMatchTableRenderer();
+      render(el, freshHand(0), [], () => {});
+      vi.advanceTimersByTime(2000);
+      render(el, freshHand(0), [], () => {});
+
+      expect(el.querySelector(".hexdev-truco-table--dealing"), "the table keeps dealing the same hand over and over").toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops dealing on its own, without waiting for the next broadcast", () => {
+    // The block on playing lifts when the CARDS land, not when the server
+    // next says something. Measured before this timer existed: a 755ms deal
+    // left the hand locked for 2.4 seconds, because the next render on a
+    // table of bots is their own thinking floor.
+    vi.useFakeTimers();
+    try {
+      const el = freshContainer();
+      const render = createMatchTableRenderer();
+      render(el, freshHand(0), [], () => {});
+      expect(el.querySelector(".hexdev-truco-table--dealing"), "fence setup: it never started dealing").not.toBeNull();
+
+      vi.advanceTimersByTime(1200);
+
+      expect(el.querySelector(".hexdev-truco-table--dealing"), "the deal waits for a broadcast to end").toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("deals again for the NEXT hand", () => {
+    // The mano moves on by one seat every hand, which is what tells one hand
+    // from the next without the view numbering them.
+    vi.useFakeTimers();
+    try {
+      const el = freshContainer();
+      const render = createMatchTableRenderer();
+      render(el, freshHand(0), [], () => {});
+      vi.advanceTimersByTime(2000);
+      render(el, freshHand(1), [], () => {});
+
+      expect(el.querySelector(".hexdev-truco-table--dealing"), "the next hand was already laid out").not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("nothing can be played while the cards are still in the air", () => {
+    // The half that was asked for by name. A card clicked mid-deal would be
+    // played from a hand the player has not seen yet.
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, freshHand(0), [], () => {});
+
+    const card = el.querySelector(".hexdev-truco-hand .hexdev-truco-card");
+    if (card === null) throw new Error("fence setup: the viewer's hand rendered no cards");
+    expect(getComputedStyle(card).pointerEvents, "a card can be played through the deal").toBe("none");
+  });
+});
+
 describe("the deck sits beside the seat that dealt", () => {
   // Asked for: "hacer el efecto de repartir cartas... y ponerle un mazo a su
   // derecha para que quede indicado quien repartio y es pie". The deck is the

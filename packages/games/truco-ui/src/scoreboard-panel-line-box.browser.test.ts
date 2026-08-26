@@ -183,7 +183,13 @@ interface Reading {
 }
 
 function read(panel: HTMLElement, face: string): Reading {
-  const height = panel.getBoundingClientRect().height;
+  // MEASURED AS CONTENT, not as a box. The panel's BOX height comes from the
+  // rail it sits in now (a flex basis of zero, so the rail decides), which
+  // makes it the same under every probe font by construction -- and left this
+  // suite measuring a constant, which its own guard below caught and said so.
+  // What the suite was always about is the height the panel's CONTENT asks
+  // for, and that still moves with whatever font draws the labels.
+  const height = panel.scrollHeight;
 
   const captions = [...panel.querySelectorAll<HTMLElement>(".hexdev-truco-score-label")];
   const labels = [...panel.querySelectorAll<HTMLElement>(".hexdev-truco-team-label")];
@@ -191,7 +197,7 @@ function read(panel: HTMLElement, face: string): Reading {
     caption.style.cssText = "writing-mode: vertical-rl; transform: rotate(180deg); position: static; width: auto; height: auto; margin: 0; overflow: visible; clip-path: none; white-space: normal;";
   }
   for (const label of labels) label.style.cssText = "line-height: normal; white-space: normal;";
-  const natural = panel.getBoundingClientRect().height;
+  const natural = panel.scrollHeight;
   for (const node of [...captions, ...labels]) node.style.cssText = "";
 
   return { face, height, natural };

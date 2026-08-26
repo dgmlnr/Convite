@@ -1,6 +1,8 @@
 import { DECK_THEME_DEFAULTS } from "@hexdev/spanish-deck-ui";
 import { MATCHSTICK_THEME_DEFAULTS } from "./scoreboard.js";
 
+import { DEAL_CARD_MS, DEAL_STEP_MS } from "./deck-marker.js";
+
 export const TABLE_STYLE_ID = "hexdev-truco-table-styles";
 
 function cssDeclarations(defaults: Readonly<Record<string, string>>): string {
@@ -357,24 +359,54 @@ export function buildTableStylesheet(): string {
  * genuinely taller than the rail. flex: 0 0 auto made that overflow the
  * window and grow the table with it, and both are things this table's own
  * fences forbid outright. It gives way instead, and the run inside scrolls. */
+/* BOTH CHILDREN ON A FLEX-BASIS OF ZERO, and the zero is doing the same work
+ * twice over. It gives each a height that comes from the RAIL rather than
+ * from what it holds -- the fixed boxes that were asked for -- and it keeps
+ * either of them from setting the rail's own height, which in a flex row is
+ * what decides the whole TABLE's. That second half is not theory: making the
+ * tantos bigger, with basis auto, put the table's height back at the mercy of
+ * whatever font drew the labels.
+ *
+ * Roughly three to two, calls over tantos: the calls are the half that grows
+ * without limit, and both scroll rather than lose anything. */
+.hexdev-truco-rail-body > .hexdev-truco-call-log { flex: 3 1 0; min-height: 0; }
 .hexdev-truco-rail-body > .hexdev-truco-scoreboard-panel {
-  flex: 0 1 auto;
+  flex: 2 1 0;
   min-height: 0;
   overflow: hidden;
+  /* Centred in whatever share it gets, so a short score does not hang from
+   * the top of a tall box. */
+  justify-content: center;
 }
-.hexdev-truco-scoreboard-panel .hexdev-truco-scoreboard { min-height: 0; overflow: auto; }
-/* THREE TO A ROW, whatever the rail is wide. A group holds up to three
- * casitas now (fifteen points at five apiece), and at the rail's natural
- * casita size the third one wrapped to a second line -- which doubled the
- * scoreboard's height and, through it, the whole table's: measured at 88px
- * of variance at 700px, against a table whose height is locked per tier.
- * A third of the run each, minus the two gaps between them, keeps a group
- * exactly one row tall at every rail width. */
+/* THE TANTOS GET THE ROOM THEY NEED, and the calls get the rest. A rail is
+ * mostly empty for most of a hand, and the half of it a player actually reads
+ * at a glance -- the score -- was the half drawn smallest: reported as
+ * "podria ser un poco mas grande y aprovechar mejor el espacio para que sea
+ * mas legible".
+ *
+ * The score's size is bounded by the RAIL's width rather than by a literal,
+ * so it grows with the rail at every tier and can never outgrow it. The calls
+ * keep flex-basis zero, which is what lets them yield: they are a scroller,
+ * and a scroller that gives up height loses nothing but a look-back. */
 .hexdev-truco-side-rail .hexdev-truco-score-sticks svg {
   width: calc((100% - 4px) / 3);
-  max-width: 34px;
+  max-width: 52px;
   height: auto;
 }
+.hexdev-truco-side-rail .hexdev-truco-team-label {
+  font-size: var(--hx-text-title);
+  letter-spacing: var(--hx-tracking-label);
+}
+.hexdev-truco-side-rail .hexdev-truco-score-label { font-size: var(--hx-text-meta); opacity: 1; color: var(--hx-felt-ink-soft); }
+.hexdev-truco-side-rail .hexdev-truco-scoreboard-group { gap: 4px; }
+.hexdev-truco-side-rail .hexdev-truco-score-group { gap: 3px; }
+.hexdev-truco-scoreboard-panel .hexdev-truco-scoreboard { min-height: 0; overflow: auto; }
+/* THREE TO A ROW is what the rule above's own width calculation buys, and it
+ * is load-bearing rather than tidy: a group holds up to three casitas
+ * (fifteen points at five apiece), and at the casita's natural size the third
+ * wrapped to a second line -- which doubled the scoreboard's height and,
+ * through it, the whole table's. Measured at 88px of variance at 700px,
+ * against a table whose height is locked per tier. */
 
 /* The tab. Deliberately quiet: it is a way in, not a call to action, and it
  * sits on the cloth where the loudest thing must always be the cards. */
@@ -1009,6 +1041,48 @@ export function buildTableStylesheet(): string {
 }
 
 .hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* THE DEAL. Every card arrives from the deck's own corner of the table,
+ * seat by seat from the mano, three each -- which is how a hand is actually
+ * served. Numbers interpolated from deck-marker.ts so the code that times the
+ * deal and this rule can never disagree about when it is over.
+ *
+ * MINUS how long ago it began. Every broadcast rebuilds this subtree, and a
+ * CSS animation on a rebuilt node restarts at zero -- so a deal that merely
+ * kept its class would stutter back to the first card once a second. A
+ * negative delay starts an animation partway through, which is what lets a
+ * repaint land mid-deal and change nothing. Learned the hard way on the
+ * lobby's own greeting; the same shape here on purpose. */
+@keyframes hexdev-deal-card {
+  from {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.82) rotate(-6deg);
+  }
+}
+.hexdev-truco-table--dealing .hexdev-truco-card {
+  animation: hexdev-deal-card ${DEAL_CARD_MS}ms var(--hx-ease) backwards;
+  animation-delay: calc((var(--deal-seat, 0) * 3 + var(--deal-i, 0)) * ${DEAL_STEP_MS}ms - var(--elapsed, 0ms));
+}
+/* Which of the three a card is, without the renderers having to say so. */
+.hexdev-truco-hand > .hexdev-truco-card:nth-child(1),
+.hexdev-truco-opponent-hand > .hexdev-truco-card:nth-child(1) { --deal-i: 0; }
+.hexdev-truco-hand > .hexdev-truco-card:nth-child(2),
+.hexdev-truco-opponent-hand > .hexdev-truco-card:nth-child(2) { --deal-i: 1; }
+.hexdev-truco-hand > .hexdev-truco-card:nth-child(3),
+.hexdev-truco-opponent-hand > .hexdev-truco-card:nth-child(3) { --deal-i: 2; }
+
+/* NOTHING IS PLAYED THROUGH THE DEAL, which is the half that was asked for by
+ * name. A card clicked while it is still in the air would be played from a
+ * hand the player has not seen yet, and a call answered before the cards land
+ * is a decision taken blind. */
+.hexdev-truco-table--dealing .hexdev-truco-hand .hexdev-truco-card,
+.hexdev-truco-table--dealing .hexdev-truco-action-bar {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hexdev-truco-table--dealing .hexdev-truco-card { animation: none; }
+}
 
 /* THE DECK, beside the seat that dealt. A stack of three backs offset by a
  * hair each, so it reads as a deck rather than as one more card in play --

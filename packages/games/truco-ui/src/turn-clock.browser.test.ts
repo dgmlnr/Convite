@@ -19,6 +19,19 @@ import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
+/**
+ * Lands the deal before anything is measured.
+ *
+ * The table plays a short dealing animation on the first render of every hand
+ * -- every card translated and scaled for about half a second -- so a rect
+ * taken straight after render is the rect of a card still in the air. This
+ * suite is about the SETTLED table, so it settles it: the same distinction
+ * the animation itself draws, made explicit rather than waited out.
+ */
+function settleDeal(el: HTMLElement): void {
+  el.querySelector(".hexdev-truco-table--dealing")?.classList.remove("hexdev-truco-table--dealing");
+}
+
 const SELF = "player-a" as PlayerId;
 const OPPONENT = "player-b" as PlayerId;
 const MY_TEAM = "player-a:team" as TeamId;
@@ -90,6 +103,8 @@ describe("turn countdown — one clock, on the seat that owes the move, visible 
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
 
+    settleDeal(el);
+
     const badge = el.querySelector<HTMLElement>('[data-position="bottom"] .hexdev-truco-turn-badge')!;
     const clock = badge.querySelector<HTMLElement>(".hexdev-truco-turn-clock");
     expect(clock).not.toBeNull();
@@ -105,6 +120,8 @@ describe("turn countdown — one clock, on the seat that owes the move, visible 
 
     render(el, baseView({ hand: { ...baseView().hand!, turnSeat: 1 } }), [], () => {}, undefined, T0 + 45_000);
 
+    settleDeal(el);
+
     expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-clock')).toBeNull();
     expect(el.querySelector<HTMLElement>('[data-position="top"] .hexdev-truco-turn-clock')!.textContent).toBe("0:45");
   });
@@ -115,6 +132,8 @@ describe("turn countdown — one clock, on the seat that owes the move, visible 
     const render = clockedRenderer(() => now);
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+    settleDeal(el);
     expect(clockOf(el)!.textContent).toBe("1:00");
 
     now = T0 + 13_000;
@@ -132,6 +151,8 @@ describe("turn countdown — one clock, on the seat that owes the move, visible 
     const render = clockedRenderer(() => now);
 
     render(el, baseView(), [], () => {}, undefined, T0 + 2_000);
+
+    settleDeal(el);
     now = T0 + 9_000;
     await sleep(40);
 
@@ -144,6 +165,8 @@ describe("turn countdown — one clock, on the seat that owes the move, visible 
 
     render(el, baseView(), [], () => {});
 
+    settleDeal(el);
+
     expect(clockOf(el)).toBeNull();
     expect(el.querySelector<HTMLElement>(".hexdev-truco-turn-badge")!.textContent).toBe("Tu turno");
   });
@@ -154,9 +177,13 @@ describe("turn countdown — one clock, on the seat that owes the move, visible 
     const render = clockedRenderer(() => now);
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+    settleDeal(el);
     expect(clockOf(el)).not.toBeNull();
 
     render(el, baseView(), [], () => {}, undefined, null);
+
+    settleDeal(el);
     expect(clockOf(el)).toBeNull();
 
     // And the interval that was driving it is genuinely gone, not merely
@@ -173,6 +200,8 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
     const render = clockedRenderer(() => T0);
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+    settleDeal(el);
 
     const clock = clockOf(el)!;
     expect(clock.getAttribute("aria-hidden")).toBe("true");
@@ -193,6 +222,8 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
     const render = clockedRenderer(() => now);
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+    settleDeal(el);
 
     const announcers = [...el.querySelectorAll<HTMLElement>("[data-announces]")];
     // hand-outcome, partner-sena, envido-reveal, turn, turn-clock,
@@ -236,6 +267,8 @@ describe("turn countdown — it must not move a single fenced pixel", () => {
       const render = clockedRenderer(() => T0);
 
       render(el, baseView(), [], () => {});
+
+      settleDeal(el);
       const withoutClock = {
         shell: el.getBoundingClientRect().height,
         felt: el.querySelector<HTMLElement>(".hexdev-truco-table")!.getBoundingClientRect().height,
@@ -244,6 +277,8 @@ describe("turn countdown — it must not move a single fenced pixel", () => {
       };
 
       render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+      settleDeal(el);
       const withClock = {
         shell: el.getBoundingClientRect().height,
         felt: el.querySelector<HTMLElement>(".hexdev-truco-table")!.getBoundingClientRect().height,
@@ -268,6 +303,8 @@ describe("turn countdown — it must not move a single fenced pixel", () => {
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
 
+    settleDeal(el);
+
     const anchor = el.querySelector<HTMLElement>('[data-position="bottom"]')!.getBoundingClientRect();
     const badge = el.querySelector<HTMLElement>(".hexdev-truco-turn-badge")!.getBoundingClientRect();
     expect(Math.abs((badge.left + badge.right) / 2 - (anchor.left + anchor.right) / 2)).toBeLessThan(0.5);
@@ -278,6 +315,8 @@ describe("turn countdown — it must not move a single fenced pixel", () => {
     const render = clockedRenderer(() => T0);
 
     render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+
+    settleDeal(el);
 
     const badge = el.querySelector<HTMLElement>(".hexdev-truco-turn-badge")!.getBoundingClientRect();
     const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar")!.getBoundingClientRect();
@@ -311,6 +350,7 @@ describe("the turn badge clears the cards it belongs to", () => {
       const el = freshContainer(`${width}px`);
       const render = clockedRenderer(() => T0);
       render(el, baseView(), [], () => {}, undefined, T0 + 60_000);
+      settleDeal(el);
 
       const badge = el.querySelector<HTMLElement>(".hexdev-truco-turn-badge");
       if (badge === null) throw new Error("fence setup: no turn badge rendered");

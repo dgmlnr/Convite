@@ -101,6 +101,19 @@ function dispatch(state: MatchState, action: Action): MatchState {
   return result.state;
 }
 
+/**
+ * Lands the deal before anything is measured.
+ *
+ * The table plays a short dealing animation on the first render of every hand
+ * -- every card translated and scaled for about half a second -- so a rect
+ * taken straight after render is the rect of a card still in the air. This
+ * suite is about the SETTLED table, so it settles it: the same distinction
+ * the animation itself draws, made explicit rather than waited out.
+ */
+function settleDeal(el: HTMLElement): void {
+  el.querySelector(".hexdev-truco-table--dealing")?.classList.remove("hexdev-truco-table--dealing");
+}
+
 async function waitForArt(el: HTMLElement): Promise<void> {
   const images = [...el.querySelectorAll("img")];
   await Promise.all(images.map((img) => img.decode()));
@@ -138,6 +151,8 @@ describe("createMatchTableRenderer — every card renders at its own whole heigh
     const legal = getLegalActions(called, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     expectEveryCardWhole(container.querySelector(".hexdev-truco-hand")!, "own hand, truco pending");
@@ -155,6 +170,8 @@ describe("createMatchTableRenderer — every card renders at its own whole heigh
     const legal = getLegalActions(state, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
     expectEveryCardWhole(container.querySelector(".hexdev-truco-hand")!, "own hand, resting");
 
@@ -178,6 +195,8 @@ describe("createMatchTableRenderer — every card renders at its own whole heigh
     const legal = getLegalActions(played, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     expectEveryCardWhole(container.querySelector(".hexdev-truco-trick")!, "trick area, a card in play");
@@ -195,6 +214,8 @@ describe("createMatchTableRenderer — every card renders at its own whole heigh
     const legal = getLegalActions(state, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     expectEveryCardWhole(container.querySelector('[data-position="left"]')!, "2v2 left opponent hand");
@@ -274,6 +295,8 @@ describe("createMatchTableRenderer — a squeezed container overflows its own sh
     const legal = getLegalActions(called, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
@@ -290,6 +313,8 @@ describe("createMatchTableRenderer — a squeezed container overflows its own sh
     const legal = getLegalActions(played, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
@@ -305,6 +330,8 @@ describe("createMatchTableRenderer — a squeezed container overflows its own sh
     const legal = getLegalActions(state, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     const felt = container.querySelector<HTMLElement>(".hexdev-truco-table")!;
@@ -351,6 +378,8 @@ describe("createMatchTableRenderer — hover/focus elevation never changes a car
     const legal = getLegalActions(dealt, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     const card = container.querySelector<HTMLElement>(".hexdev-truco-card--playable");
@@ -386,6 +415,8 @@ describe("createMatchTableRenderer — hover/focus elevation never changes a car
     const legal = getLegalActions(dealt, SELF);
 
     createMatchTableRenderer()(container, view, legal, () => {});
+
+    settleDeal(container);
     await waitForArt(container);
 
     const card = container.querySelector<HTMLElement>(".hexdev-truco-card--playable");
