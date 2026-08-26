@@ -109,6 +109,14 @@ export const TABLE_STRINGS = {
   // `partner`/`opponent` above are reused for the top anchor (1v1 vs 2v2);
   // these two cover the 2v2-only side anchors.
   callLogTitle: "Cantos",
+  /* The line that closes a finished hand in the log. The panel keeps every
+     hand now, so without a divider the calls of three different hands read
+     as one very confusing chain. */
+  callLogRoundEnd: "Fin de la mano",
+  /* Shown before anyone has said a word. The panel used to disappear when it
+     had nothing in it, which made the whole rail jump the moment the first
+     canto landed -- and got reported as the history never showing up at all. */
+  callLogEmpty: "Todavía no hubo cantos",
   /** The transient reveal notice's own heading. Deliberately NOT reusing
    * `tantosTitle` ("Tantos"): that one names the standing record in the side
    * panel, this one names a moment that just happened, and a player reading

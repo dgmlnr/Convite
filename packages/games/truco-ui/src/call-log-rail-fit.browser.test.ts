@@ -115,46 +115,44 @@ async function panelAt(width: number, count: "one" | "many"): Promise<{ panel: H
   return { panel, felt, rail, entries: container.querySelectorAll(".hexdev-truco-call-log-entry").length };
 }
 
-/** The height the panel may never exceed. It used to be the panel's own
- * `max-height` — two cards tall, a number that measured how much of the PLAY
- * the panel was allowed to cover. The panel does not sit on the play any
- * more: it shares a rail with the tantos, and the rail is what bounds it. */
-function boundOf(rail: HTMLElement): number {
-  return rail.getBoundingClientRect().height;
-}
 
-describe("at 1280px the panel is a rail: it sizes to its content, and the cap owns only the long case", () => {
-  it("one entry gets a panel the size of one entry, not the size of the rail", async () => {
-    const { panel, rail, entries } = await panelAt(1280, "one");
-    expect(entries, "fence setup: exactly one call is on the record").toBe(1);
-
-    const height = panel.getBoundingClientRect().height;
-    const bound = boundOf(rail);
-    expect(bound, "fence setup: the rail is a real number of pixels tall").toBeGreaterThan(0);
-
-    // The bug, stated as the measurement that would catch it again: a
-    // stretched panel fills its whole column no matter how little it holds.
-    // It is worth restating for the rail, because the rail is a flex column
-    // and a flex item's default is to stretch across it — the same trap the
-    // grid version fell into, with a different property name on it.
-    expect(height, `a single entry must not fill the ${String(Math.round(bound))}px rail`).toBeLessThan(bound * 0.6);
-    // And "sizes to content" is stronger than "is small": no slack inside.
-    expect(Math.abs(height - panel.scrollHeight), "the panel is exactly as tall as what it holds").toBeLessThanOrEqual(1);
-  });
-
-  it("more entries make it taller, and it still never passes the cap", async () => {
+describe("at 1280px the panel is a fixed box: the same size whatever it holds", () => {
+  // THE REPLACED CONTRACT, and why. This block used to assert the opposite --
+  // that the panel sized itself to its content, so one entry got a
+  // one-entry-tall box. That was right while the panel held only the hand
+  // being played and hid itself between hands: a full-height box with one
+  // line in it looked like a floating slab.
+  //
+  // The panel is the record of the whole match now, and it never hides. Both
+  // of those make a box that resizes itself the problem rather than the fix:
+  // it grew every time somebody called, which moved the tantos underneath it,
+  // and it vanished between hands, which moved the whole rail. Asked for
+  // directly, looking at it: "puede mantener el alto siempre que podamos".
+  //
+  // It also stopped being only a matter of taste. In a flex ROW the line's
+  // cross size is the tallest item's own content height, so a rail that grew
+  // with its content made the whole TABLE taller -- measured at 65px of
+  // difference between two probe fonts at 700px, against a table whose height
+  // is locked per tier on purpose.
+  it("one entry gets the same box as a long chain", async () => {
     const one = (await panelAt(1280, "one")).panel.getBoundingClientRect().height;
     container.remove();
     document.getElementById("hexdev-truco-table-styles")?.remove();
 
-    const { panel, rail, entries } = await panelAt(1280, "many");
+    const { panel, entries } = await panelAt(1280, "many");
     expect(entries, "fence setup: the longer chain really does record more").toBeGreaterThan(1);
 
-    const many = panel.getBoundingClientRect().height;
-    expect(many, "a longer record needs a taller panel").toBeGreaterThan(one);
-    // The tantos live under this panel now, so overflowing the rail does not
-    // merely look wrong — it pushes the score out of the rail entirely.
-    expect(many, "but never taller than the rail that also has to hold the tantos").toBeLessThanOrEqual(boundOf(rail) + 1);
+    expect(panel.getBoundingClientRect().height, `a one-entry panel was ${one}px and a full one is a different size`).toBeCloseTo(one, 0);
+  });
+
+  it("a long chain scrolls inside that box instead of growing it", async () => {
+    // Which is what makes the fixed height honest rather than a way of
+    // hiding half the record.
+    const { panel } = await panelAt(1280, "many");
+    const list = panel.querySelector<HTMLElement>(".hexdev-truco-call-log-list");
+    if (list === null) throw new Error("fence setup: the panel rendered no list");
+
+    expect(getComputedStyle(list).overflowY, "the list cannot be read back past its own bottom edge").toMatch(/auto|scroll/);
   });
 
   it("the panel fills the rail it was given, instead of 58% of it", async () => {

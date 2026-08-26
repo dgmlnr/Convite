@@ -36,12 +36,70 @@ const POSITIONS_2V2: ReadonlyMap<number, TableAnchor> = new Map([
 const ENVIDO_NONE: EnvidoState = { status: "none" };
 
 describe("renderCallLog (spec: 'Call-Log Panel With Bounded Footprint')", () => {
-  it("renders nothing when there are no events yet — the caller relies on :empty { display: none }", () => {
+  it("still draws the panel when nobody has called yet, and says so", () => {
+    // THE REPLACED CONTRACT. This used to render NOTHING and lean on
+    // `:empty { display: none }` to hide the box. That is what made the panel
+    // appear out of nowhere the moment somebody called and vanish again
+    // between hands — the whole rail moved under it, and the history was
+    // reported as never showing up at all. A panel that is always the same
+    // box in the same place is the point; an empty one says it is empty.
     const el = freshHost();
 
     renderCallLog(el, { events: [], envido: ENVIDO_NONE, manoSeat: 0, selfSeat: 0, positions: POSITIONS_1V1 });
 
-    expect(el.children).toHaveLength(0);
+    expect(el.querySelector(".hexdev-truco-call-log-title"), "the panel lost its heading when empty").not.toBeNull();
+    expect(el.querySelector(".hexdev-truco-call-log-empty")?.textContent, "an empty panel says nothing about being empty").toBe("Todavía no hubo cantos");
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry"), "an empty panel invented entries").toHaveLength(0);
+  });
+
+  it("keeps a finished hand's calls, closed with an end-of-hand mark", () => {
+    // The panel is the record of the MATCH now, not of the hand: between
+    // hands the live list is empty, and everything said so far still has to
+    // be readable. The mark is what keeps three hands of calls from reading
+    // as one very confusing chain.
+    const el = freshHost();
+    const past: readonly CallEvent[] = [
+      { kind: "truco-call", playerId: "p0" as PlayerId, teamId: TEAM_A, seat: 0, level: "truco" },
+      { kind: "truco-response", playerId: "p1" as PlayerId, teamId: TEAM_B, seat: 1, response: "quiero" },
+    ];
+
+    renderCallLog(el, {
+      events: [],
+      envido: ENVIDO_NONE,
+      manoSeat: 1,
+      selfSeat: 0,
+      positions: POSITIONS_1V1,
+      history: [{ events: past, manoSeat: 0, envido: ENVIDO_NONE }],
+    });
+
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry"), "the finished hand's calls were dropped").toHaveLength(2);
+    expect(el.querySelector(".hexdev-truco-call-log-round-end")?.textContent, "nothing marks where the hand ended").toBe("Fin de la mano");
+  });
+
+  it("marks every finished hand and never the one being played", () => {
+    const el = freshHost();
+    const call = (seat: number): CallEvent => ({ kind: "truco-call", playerId: `p${String(seat)}` as PlayerId, teamId: seat === 0 ? TEAM_A : TEAM_B, seat, level: "truco" });
+
+    renderCallLog(el, {
+      events: [call(0)],
+      envido: ENVIDO_NONE,
+      manoSeat: 0,
+      selfSeat: 0,
+      positions: POSITIONS_1V1,
+      history: [
+        { events: [call(0)], manoSeat: 0, envido: ENVIDO_NONE },
+        { events: [call(1)], manoSeat: 1, envido: ENVIDO_NONE },
+      ],
+    });
+
+    // Two finished hands, two marks. A third would mean the live hand had
+    // been closed off while it is still being played.
+    expect(el.querySelectorAll(".hexdev-truco-call-log-round-end"), "the hand in play was marked as finished").toHaveLength(2);
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry")).toHaveLength(3);
+    // Oldest first, live hand last: the panel scrolls to its newest entry, so
+    // the order has to be the order it happened in.
+    const marks = [...el.querySelectorAll(".hexdev-truco-call-log-list > *")].map((node) => node.className);
+    expect(marks[marks.length - 1], "the live hand is not at the bottom").toBe("hexdev-truco-call-log-entry");
   });
 
   it("lists events in EXACTLY the order given, each with the call's Spanish label (reusing CALL_LABELS)", () => {
