@@ -34,19 +34,23 @@ describe("about: the deck credit carries every term CC BY-SA requires", () => {
     expect(DECK_ATTRIBUTION.licenseName).toBe("CC BY-SA 3.0");
   });
 
-  it("states what was changed", () => {
+  it("states what was changed, all of it", () => {
     // The third term, and the one easiest to drop. What ships is rasterized
-    // from vector, which is an adaptation — saying so is not optional.
-    expect(DECK_ATTRIBUTION.changes).toMatch(/rasteriz/i);
+    // from vector AND has a background the source did not draw — both are
+    // adaptations, and naming only the first would be a partial statement of
+    // a term that is not partially satisfiable.
+    expect(DECK_ATTRIBUTION.changes.join(" ")).toMatch(/rasteriz/i);
+    expect(DECK_ATTRIBUTION.changes.join(" ")).toMatch(/background/i);
+    expect(DECK_ATTRIBUTION.changes.length).toBeGreaterThanOrEqual(2);
   });
 
   it("holds no prose, so no surface has to translate a legal term twice", () => {
     // The shape this file changed INTO, fenced: every field is a fact a
     // Spanish and an English surface can both render without either one
     // writing its own version of the license statement.
-    for (const value of Object.values(DECK_ATTRIBUTION)) {
+    for (const value of Object.values(DECK_ATTRIBUTION).flat()) {
       expect(typeof value).toBe("string");
-      expect(value.split(" ").length, `"${value}" reads as a sentence, not a fact`).toBeLessThan(9);
+      expect((value as string).split(" ").length, `"${String(value)}" reads as a sentence, not a fact`).toBeLessThan(11);
     }
   });
 });

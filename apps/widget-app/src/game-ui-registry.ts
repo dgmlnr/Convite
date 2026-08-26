@@ -45,7 +45,7 @@ export interface AssetCredit {
   readonly sourceUrl: string;
   readonly licenseName: string;
   readonly licenseUrl: string;
-  readonly changes: string;
+  readonly changes: readonly string[];
 }
 
 export interface GameUiEntry {
