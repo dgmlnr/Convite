@@ -2620,7 +2620,7 @@ export function buildTableStylesheet(): string {
  *
  *   --truco-card-tier      the width tier stops being the ceiling. 170px is
  *                          the ARTWORK's own limit, not a taste: the deck is
- *                          520px tall (tools/process-fournier-deck.mjs's
+ *                          520px tall (tools/process-svg-deck.mjs's
  *                          own resize-to-520), and 170 * 336/220 = 260, exactly
  *                          what a 2x display can draw 1:1. Past this the
  *                          assets must be re-exported before the layout may

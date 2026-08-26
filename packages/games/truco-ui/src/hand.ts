@@ -16,7 +16,7 @@ function isPlayable(card: Card, legalActions: readonly Action[]): boolean {
 }
 
 /**
- * Renders the LOCAL player's own hand with the real Fournier 1878 art
+ * Renders the LOCAL player's own hand with the real card art
  * (`@hexdev/spanish-deck-ui`). A playable card is a real `<button>` — it
  * genuinely invites a tap; an unplayable one is a plain element with no click
  * handler at all, so it never looks tappable and never reacts to a tap (spec:

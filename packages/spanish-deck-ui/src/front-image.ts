@@ -1,17 +1,21 @@
-// The front artwork source changed from generated SVG (hand-drawn suit
-// symbols composed into pips + court figures, see git history for
-// card-svg.ts/suit-symbols.ts/court-figures.ts/pip-layout.ts) to real
-// Heraclio Fournier 1878 scans, retouched and shipped as WebP files under
-// `assets/fronts/`. This module resolves art, it no longer draws it — see
-// `tools/process-fournier-deck.mjs` for the exact retouch recipe and
-// `about.ts` for the attribution text this source change calls for.
+// The front artwork has been three things. It started as generated SVG
+// (hand-drawn suit symbols composed into pips + court figures, see git
+// history for card-svg.ts/suit-symbols.ts/court-figures.ts/pip-layout.ts);
+// then real Heraclio Fournier 1878 scans, retouched
+// (`tools/process-fournier-deck.mjs`, still in the repo); and now
+// Basquetteur's Spanish deck, rasterized from vector
+// (`tools/process-svg-deck.mjs`). The swap was for legibility at the sizes
+// the game actually draws — flat, high-contrast line art reads at 60px in a
+// way a photographed 1878 card does not. See `about.ts` for the credit,
+// which the current artwork's license REQUIRES rather than merely invites.
 //
-// A direct consequence: fronts are no longer CSS-themeable (a raster
-// photograph can't respond to a `--deck-suit-*` custom property). This is
-// intentional, not a regression — the front keeps ITS OWN fixed identity
-// across every tenant, while the back (still hand-drawn SVG, see
-// card-back.ts) remains the tenant-themeable surface, per the "hybrid
-// theming by zone" decision (obs 2955).
+// This module resolves art, it does not draw it, and that has not changed
+// across any of the three: fronts are not CSS-themeable, because a shipped
+// raster cannot respond to a `--deck-suit-*` custom property. Intentional,
+// not a regression — the front keeps ITS OWN fixed identity across every
+// tenant, while the back (still hand-drawn SVG, see card-back.ts) remains
+// the tenant-themeable surface, per the "hybrid theming by zone" decision
+// (obs 2955).
 import { cardId, type Card, type Rank, type Suit } from "./card.js";
 import { CARD_HEIGHT, CARD_WIDTH } from "./geometry.js";
 
