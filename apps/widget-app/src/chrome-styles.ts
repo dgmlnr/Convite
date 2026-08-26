@@ -332,7 +332,7 @@ export function buildChromeStylesheet(): string {
   }
 }
 
-.hexdev-chrome-fan-card {
+.hexdev-chrome-fan--dealing .hexdev-chrome-fan-card {
   animation: hexdev-deal 460ms var(--hx-ease) backwards;
   animation-delay: calc(var(--i) * 55ms);
 }
@@ -341,7 +341,7 @@ export function buildChromeStylesheet(): string {
  * cards flying in is the exact motion that hurts. They get the same fan,
  * already dealt. */
 @media (prefers-reduced-motion: reduce) {
-  .hexdev-chrome-fan-card { animation: none; }
+  .hexdev-chrome-fan--dealing .hexdev-chrome-fan-card { animation: none; }
 }
 
 /* The instruction under the name: gold, small, letterspaced. It is the same
@@ -502,7 +502,7 @@ export function buildChromeStylesheet(): string {
   }
 }
 
-.hexdev-chrome-fan-card {
+.hexdev-chrome-fan--dealing .hexdev-chrome-fan-card {
   animation: hexdev-deal 460ms var(--hx-ease) backwards;
   animation-delay: calc(var(--i) * 55ms);
 }
@@ -511,7 +511,7 @@ export function buildChromeStylesheet(): string {
  * cards flying in is the exact motion that hurts. They get the same fan,
  * already dealt. */
 @media (prefers-reduced-motion: reduce) {
-  .hexdev-chrome-fan-card { animation: none; }
+  .hexdev-chrome-fan--dealing .hexdev-chrome-fan-card { animation: none; }
 }
 
 /* The instruction under the name: gold, small, letterspaced. It is the same
@@ -729,6 +729,8 @@ export function buildChromeStylesheet(): string {
 .hexdev-modality {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   gap: 10px;
   padding: 14px;
   border-radius: var(--gx-radius, 10px);
@@ -821,7 +823,7 @@ export function buildChromeStylesheet(): string {
   color: var(--hx-felt-ink-soft);
 }
 
-.hexdev-bot-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.hexdev-bot-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 
 .convite-chrome button {
   min-height: 42px;

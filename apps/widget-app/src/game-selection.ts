@@ -148,6 +148,22 @@ function renderModality(
  */
 const SELECTION = new WeakMap<HTMLElement, Map<string, string>>();
 
+/**
+ * Containers whose hand has already been dealt.
+ *
+ * THE DEAL IS A GREETING, NOT A STATE. It says "you have arrived at a table",
+ * once. But `renderGameSelection` wipes and rebuilds on every presence
+ * broadcast, so a class applied unconditionally re-ran the whole animation
+ * every few seconds — the cards kept being re-dealt under the player while
+ * they were reading the screen. Reported as exactly that: an effect nobody
+ * asked to see twice.
+ *
+ * A WeakSet and not a flag on the element, for the same reason the selection
+ * is a WeakMap: it belongs to the container, survives the wipe that clears
+ * the DOM, and dies with it.
+ */
+const DEALT = new WeakSet<HTMLElement>();
+
 function selectionFor(container: HTMLElement): Map<string, string> {
   const existing = SELECTION.get(container);
   if (existing !== undefined) return existing;
@@ -410,7 +426,11 @@ export function renderGameSelection(
   // a lobby and not a hole.
   if (GAME_UI_HERO.length > 0) {
     const fan = document.createElement("div");
-    fan.className = "hexdev-chrome-fan";
+    // The animation class only the FIRST time this container renders — see
+    // DEALT above. Every later repaint builds the same fan, already dealt.
+    const dealing = !DEALT.has(container);
+    DEALT.add(container);
+    fan.className = dealing ? "hexdev-chrome-fan hexdev-chrome-fan--dealing" : "hexdev-chrome-fan";
     fan.setAttribute("aria-hidden", "true");
     for (const [index, src] of GAME_UI_HERO.entries()) {
       const card = document.createElement("img");
