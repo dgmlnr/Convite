@@ -27,9 +27,20 @@ import { getSenasRemaining, hasTeammate, senasSentBy } from "./senas.js";
  * this action increments. A `hand.consult` field would be a second place for
  * the same fact to live and drift.
  */
+/** WHAT the question is about. The two windows a consult opens are unrelated
+ * decisions -- answering a call that is on the table, and deciding whether to
+ * put an envido on it -- and they can be open at the same instant: "el envido
+ * está primero" is exactly that moment. One subject-less action could only
+ * ever ask one of them, and the player had no way to say which. Reported from
+ * real play: "me canta truco la mano, pero en las consultas no puedo
+ * consultar para saber si canto el envido esta primero o doy respuesta
+ * directa al truco". */
+export type ConsultSubject = "pending-call" | "envido";
+
 export interface ConsultPartnerAction {
   readonly type: "consult-partner";
   readonly playerId: PlayerId;
+  readonly about: ConsultSubject;
 }
 
 export type ApplyConsultResult =
@@ -86,12 +97,17 @@ export function getLegalConsultActions(state: MatchState, playerId: PlayerId): r
   if (getMatchWinner(state) !== null) return [];
   const player = findPlayer(state, playerId);
   if (player === undefined || !hasTeammate(state, player)) return [];
-  if (!owesAnAnswer(hand, player) && !holdsAnEnvidoToOpen(state, playerId)) return [];
+  // ONE PER SUBJECT, and both when both are open. Each costs its own seña:
+  // they are two questions, and asking the second is spending again.
+  const subjects: ConsultSubject[] = [];
+  if (owesAnAnswer(hand, player)) subjects.push("pending-call");
+  if (holdsAnEnvidoToOpen(state, playerId)) subjects.push("envido");
+  if (subjects.length === 0) return [];
   // The SAME question señas ask, through the same function — not a second
   // comparison against the same cap. If the budget is ever re-tuned, or ever
   // stops being a flat per-hand number, this follows without being told.
   if (getSenasRemaining(state, playerId) <= 0) return [];
-  return [{ type: "consult-partner", playerId }];
+  return subjects.map((about) => ({ type: "consult-partner", playerId, about }));
 }
 
 /**
@@ -100,7 +116,10 @@ export function getLegalConsultActions(state: MatchState, playerId: PlayerId): r
  * and reaches only the asker.
  */
 export function applyConsultAction(state: MatchState, action: ConsultPartnerAction): ApplyConsultResult {
-  if (getLegalConsultActions(state, action.playerId).length === 0) {
+  // Matched by SUBJECT, not merely by "some consult is legal": asking about
+  // an envido you may not open is a different request from answering a call,
+  // and the engine is the only thing that can tell them apart.
+  if (!getLegalConsultActions(state, action.playerId).some((legal) => legal.about === action.about)) {
     return { ok: false, violation: `illegal consult-partner action: ${JSON.stringify(action)}` };
   }
   const hand = state.hand!;

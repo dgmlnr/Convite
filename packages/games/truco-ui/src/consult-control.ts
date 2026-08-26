@@ -54,7 +54,8 @@ function adviceText(advice: "quiero" | "no-quiero"): string {
  * the order below is the order the game cares about: an unanswered call is
  * owed NOW, an envido you could open is merely available.
  */
-export function consultLabelFor(legalActions: readonly Action[]): string {
+export function consultLabelFor(legalActions: readonly Action[], about?: string): string {
+  if (about === "envido") return TABLE_STRINGS.consultAboutOpeningEnvido;
   if (legalActions.some((action) => action.type === "respond-truco")) return TABLE_STRINGS.consultAboutTruco;
   if (legalActions.some((action) => action.type === "respond-envido")) return TABLE_STRINGS.consultAboutEnvido;
   if (legalActions.some((action) => action.type === "call-envido")) return TABLE_STRINGS.consultAboutOpeningEnvido;
@@ -67,18 +68,27 @@ export function renderConsultOffer(
   dispatch: (action: Action) => void,
   props: ConsultControlProps,
 ): void {
-  const offer = legalActions.find((action) => action.type === "consult-partner");
-  if (offer === undefined) return;
+  // ONE BUTTON PER QUESTION. Both windows can be open at the same instant --
+  // a call on the table you owe an answer to, and an envido you could put on
+  // it first -- and a single button could only ever ask one of them. Reported
+  // from real play: "me canta truco la mano, pero en las consultas no puedo
+  // consultar para saber si canto el envido esta primero o doy respuesta
+  // directa al truco". Each costs its own seña, because each is a question.
+  const offers = legalActions.filter((action) => action.type === "consult-partner");
+  if (offers.length === 0) return;
 
-  const button = container.appendChild(document.createElement("button"));
-  button.type = "button";
-  button.className = "hexdev-truco-consult-toggle";
-  button.dataset.action = "consult-partner";
-  button.textContent = props.asking ? TABLE_STRINGS.consultAsking : consultLabelFor(legalActions);
-  button.disabled = props.asking;
-  button.addEventListener("click", () => {
-    dispatch(offer);
-  });
+  for (const offer of offers) {
+    const button = container.appendChild(document.createElement("button"));
+    button.type = "button";
+    button.className = "hexdev-truco-consult-toggle";
+    button.dataset.action = "consult-partner";
+    button.dataset.about = (offer as { readonly about?: string }).about ?? "";
+    button.textContent = props.asking ? TABLE_STRINGS.consultAsking : consultLabelFor(legalActions, (offer as { readonly about?: string }).about);
+    button.disabled = props.asking;
+    button.addEventListener("click", () => {
+      dispatch(offer);
+    });
+  }
 }
 
 /**
