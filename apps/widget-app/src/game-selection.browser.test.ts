@@ -342,13 +342,40 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
   }
 
   it("makes the modality line a real heading, one level below the game name that owns it", () => {
+    // ONE heading now, not one per modality: the card shows the SELECTED
+    // modality and offers the rest as a picker above it. The heading is still
+    // an H3 under the card's H2 (WCAG 1.3.1) — it names the block of controls
+    // under it, and that block is now singular.
     const el = renderTwoModalities();
 
     const gameHeading = el.querySelector<HTMLElement>(".hexdev-game-card h2");
     const modalityHeadings = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-title")];
     expect(gameHeading?.textContent).toBe("Truco Argentino");
-    expect(modalityHeadings.map((heading) => heading.tagName)).toEqual(["H3", "H3"]);
-    expect(modalityHeadings.map((heading) => heading.textContent)).toEqual(["Puntos para ganar: 15", "Puntos para ganar: 30"]);
+    expect(modalityHeadings.map((heading) => heading.tagName)).toEqual(["H3"]);
+    expect(modalityHeadings[0]?.textContent).toBe("Puntos para ganar: 15");
+  });
+
+  it("offers the other modalities as a picker, with exactly one pressed", () => {
+    const el = renderTwoModalities();
+
+    const options = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-option")];
+    expect(options.map((option) => option.textContent)).toEqual(["Puntos para ganar: 15", "Puntos para ganar: 30"]);
+    expect(options.filter((option) => option.getAttribute("aria-pressed") === "true")).toHaveLength(1);
+  });
+
+  it("switches what the card shows when another modality is picked, and remembers it across a repaint", () => {
+    // THE DEFECT THIS GUARDS. The lobby wipes and rebuilds on every presence
+    // broadcast, so a selection held in the DOM would be undone every few
+    // seconds — and one read back OFF the DOM would read the value the click
+    // was replacing and never take at all. Both were live at some point while
+    // this was being written.
+    const el = renderTwoModalities();
+
+    el.querySelectorAll<HTMLElement>(".hexdev-modality-option")[1]!.click();
+    expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent).toBe("Puntos para ganar: 30");
+
+    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent, "a presence broadcast undid the player's choice").toBe("Puntos para ganar: 30");
   });
 
   it("lets no heading UA default through — every one of them is set on purpose", () => {
@@ -364,7 +391,12 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     // scanned. So the assertion moved to the invariant that actually mattered:
     // nothing here is a UA default. Every property a heading would otherwise
     // contribute is named by the stylesheet.
-    const el = renderTwoModalities();
+    // A card with ONE modality, deliberately: with two there is a picker
+    // above, the heading becomes screen-reader-only, and its paint is then a
+    // statement about a clip rect rather than about typography. The invariant
+    // — no UA heading default reaches the page — is about the VISIBLE one.
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const heading = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality-title")!);
     // The chrome root's own size, NOT a sibling's: a sibling is something this
@@ -383,15 +415,12 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     expect(Number.parseFloat(heading.letterSpacing)).toBeGreaterThan(0);
   });
 
-  it("names each modality as a group, so three repeated tier labels are three distinguishable controls", () => {
+  it("names the tier board as a group, so its repeated labels stay distinguishable", () => {
     const el = renderTwoModalities();
 
     const groups = [...el.querySelectorAll<HTMLElement>(".hexdev-modality")];
-    expect(groups.map((group) => group.getAttribute("role"))).toEqual(["group", "group"]);
-    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
-      "Truco Argentino, Puntos para ganar: 15",
-      "Truco Argentino, Puntos para ganar: 30",
-    ]);
+    expect(groups.map((group) => group.getAttribute("role"))).toEqual(["group"]);
+    expect(groups[0]?.getAttribute("aria-label")).toBe("Truco Argentino, Puntos para ganar: 15");
   });
 
   it("gives every repeated tier button a distinct group name — the whole point, asserted end to end", () => {
@@ -403,13 +432,15 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
 
     renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
-    // Twelve buttons, four distinct names among them, and every one of the
-    // four boards is separately reachable by name — including across games,
-    // which a per-game-card grouping alone would not have given.
+    // The repetition SHRANK but did not vanish, which is the point of keeping
+    // this test rather than deleting it with the layout that caused it. One
+    // tier board per game instead of one per modality means two "Fácil"
+    // buttons on this screen instead of four — and two still need telling
+    // apart, because a screen reader hears the same word twice either way.
     const easyButtons = [...el.querySelectorAll<HTMLElement>('button[data-tier="easy"]')];
-    expect(easyButtons).toHaveLength(4);
+    expect(easyButtons).toHaveLength(2);
     const groupNames = easyButtons.map((button) => button.closest(".hexdev-modality")?.getAttribute("aria-label"));
-    expect(new Set(groupNames).size, `repeated "Fácil" buttons under ${JSON.stringify(groupNames)}`).toBe(4);
+    expect(new Set(groupNames).size, `repeated "Fácil" buttons under ${JSON.stringify(groupNames)}`).toBe(2);
   });
 });
 
@@ -512,5 +543,56 @@ describe("the deck credit reaches the player", () => {
     renderGameSelection(freshContainer(), [], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(about(), "the empty lobby drops the credit").not.toBeNull();
+  });
+});
+
+/**
+ * GOLD TYPE HAS TO FIT ITS OWN BOX.
+ *
+ * `background-clip: text` paints the gradient into the element's BACKGROUND
+ * BOX and uses the glyphs as a mask. Anything sticking out of that box gets no
+ * paint — so a line box shorter than the font silently amputates every
+ * descender and every accent. Not clipped by an overflow, which is what makes
+ * it hard to find: unpainted.
+ *
+ * IT SHIPPED, and it was reported by somebody LOOKING at the screen after
+ * every test in this repo passed — because every computed value was correct.
+ * The line-height was what it was set to, the colour was right, the filter was
+ * right, and the tail of every g and j was gone.
+ *
+ * This is the proxy that can be automated: the element's own box has to be at
+ * least as tall as the line it renders. It cannot see ink, so it will not
+ * catch a font with unusually deep descenders — but it catches the whole class
+ * of "somebody tightened the leading on clipped text", which is what happened.
+ */
+describe("the clipped-gold title is not amputated by its own line box", () => {
+  it("gives the title a box at least as tall as the text inside it", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const title = el.querySelector<HTMLElement>(".hexdev-chrome-title")!;
+    const style = getComputedStyle(title);
+    expect(style.backgroundClip === "text" || style.webkitBackgroundClip === "text", "fence setup: this title is no longer clipped gold").toBe(true);
+
+    const range = document.createRange();
+    range.selectNodeContents(title);
+
+    expect(
+      title.getBoundingClientRect().height,
+      "the title's box is shorter than its own text, so background-clip is cutting the descenders off",
+    ).toBeGreaterThanOrEqual(range.getBoundingClientRect().height);
+  });
+
+  it("keeps a line-height that can hold a serif's accents and descenders", () => {
+    // The same defect stated as the number somebody would actually change.
+    // 1.15 is the floor: below it a Georgia-class face runs out of box before
+    // it runs out of glyph.
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const style = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-chrome-title")!);
+    const ratio = Number.parseFloat(style.lineHeight) / Number.parseFloat(style.fontSize);
+
+    expect(ratio, `line-height is ${ratio.toFixed(2)}x the font size — too tight for clipped text`).toBeGreaterThanOrEqual(1.15);
   });
 });

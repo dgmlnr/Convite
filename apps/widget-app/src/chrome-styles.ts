@@ -344,6 +344,20 @@ export function buildChromeStylesheet(): string {
   .hexdev-chrome-fan-card { animation: none; }
 }
 
+/* The instruction under the name: gold, small, letterspaced. It is the same
+ * marker language the modality labels use, which is deliberate — it tells the
+ * player that what follows is a choice, and it does it in the voice this
+ * screen already uses for "a choice starts here". */
+.hexdev-chrome-instruction {
+  margin: 10px 0 0;
+  font-size: var(--hx-text-meta);
+  font-weight: 700;
+  letter-spacing: var(--hx-tracking-label);
+  text-transform: uppercase;
+  color: var(--hx-gold);
+  text-shadow: var(--hx-ink-shadow);
+}
+
 .hexdev-chrome-header .hexdev-chrome-tagline {
   margin-inline: auto;
 }
@@ -500,6 +514,20 @@ export function buildChromeStylesheet(): string {
   .hexdev-chrome-fan-card { animation: none; }
 }
 
+/* The instruction under the name: gold, small, letterspaced. It is the same
+ * marker language the modality labels use, which is deliberate — it tells the
+ * player that what follows is a choice, and it does it in the voice this
+ * screen already uses for "a choice starts here". */
+.hexdev-chrome-instruction {
+  margin: 10px 0 0;
+  font-size: var(--hx-text-meta);
+  font-weight: 700;
+  letter-spacing: var(--hx-tracking-label);
+  text-transform: uppercase;
+  color: var(--hx-gold);
+  text-shadow: var(--hx-ink-shadow);
+}
+
 .hexdev-chrome-header .hexdev-chrome-tagline {
   margin-inline: auto;
 }
@@ -540,7 +568,20 @@ export function buildChromeStylesheet(): string {
   font-size: var(--hx-text-display-hero);
   font-weight: 800;
   letter-spacing: var(--hx-tracking-hero);
-  line-height: 1.05;
+  /* 1.22 AND NOT the 1.05 a display line wants, and the reason is the gold
+   * below, not the leading.
+   *
+   * background-clip: text paints the gradient into the element's BACKGROUND
+   * BOX and uses the glyphs as a mask. Anything that sticks out of that box
+   * receives no paint at all — so at 1.05 the box was 34px, Georgia at 32px
+   * needs about 37px between its accents and its descenders, and the tail of
+   * every g and j and the accent on the Í were simply cut off. Not clipped by
+   * an overflow: unpainted.
+   *
+   * Reported from looking at the screen, and no test in this repo could have
+   * caught it: every computed value was correct. The fence below is the
+   * proxy — it refuses a line box too short to hold the font. */
+  line-height: 1.22;
   /* GOLD, AND CLIPPED TO THE GLYPHS, because a flat fill at this size reads as
    * a heading and a gradient reads as an object — the difference between
    * type that is set and type that is MADE. Light at the top, deep at the
@@ -637,6 +678,54 @@ export function buildChromeStylesheet(): string {
   text-shadow: var(--hx-ink-shadow);
 }
 
+/* A SEGMENTED SELECTOR, and the segments have to look like one control with
+ * a chosen part — not like three more buttons on a screen that already has
+ * plenty. So it is a single inset trough with the pressed segment lifted out
+ * of it: the depth vocabulary already in use, saying "this one" instead of a
+ * colour saying it. The chosen segment is the only one that gets gold.
+ */
+.hexdev-modality-picker {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--gx-radius, var(--hx-radius-pill));
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.convite-chrome .hexdev-modality-option {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--gx-radius, var(--hx-radius-pill));
+  background: transparent;
+  box-shadow: none;
+  color: var(--hx-felt-ink-soft);
+  font-size: var(--hx-text-meta);
+  font-weight: 700;
+  letter-spacing: var(--hx-tracking-label);
+  text-transform: uppercase;
+}
+
+.convite-chrome .hexdev-modality-option[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: var(--hx-lift-edge), var(--hx-lift-contact);
+  color: var(--hx-gold);
+  transform: none;
+}
+
+/* One line saying what the format is, under its name. --hx-text-body and the
+ * soft ink: it is the only prose on the card and it should read like prose,
+ * not like another label. */
+.hexdev-game-blurb {
+  margin: -4px 0 2px;
+  font-size: var(--hx-text-body);
+  line-height: var(--hx-leading);
+  color: var(--hx-felt-ink-soft);
+  text-shadow: var(--hx-ink-shadow);
+}
+
 .hexdev-modality {
   display: flex;
   flex-direction: column;
@@ -664,6 +753,30 @@ export function buildChromeStylesheet(): string {
  * it stops being read and starts being scanned, which is what a marker is
  * for. The words are untouched: they come from the platform's own labelKey
  * (game-selection.ts's describeModality), and that genericity is deliberate. */
+/* VISUALLY GONE, STRUCTURALLY THERE, and only when something else already
+ * says it. With a picker above, this heading printed the selected modality a
+ * second line under the segment that is already lit — the player reads the
+ * same words twice and learns nothing the second time.
+ *
+ * It stays in the DOM because it is the accessible heading for the block of
+ * controls under it (WCAG 1.3.1) and the group's name is built from it. The
+ * clip-rect idiom rather than display:none for exactly that reason: hidden
+ * from the page, present for a screen reader.
+ *
+ * Only when a picker is there. A game with ONE modality has no picker, so
+ * nothing else names the block and the heading is the only label — which is
+ * why this is a sibling selector and not a blanket rule. */
+.hexdev-modality-picker + .hexdev-modality .hexdev-modality-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .hexdev-modality-title {
   margin: 0;
   font-size: var(--hx-text-label);

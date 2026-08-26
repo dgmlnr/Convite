@@ -30,7 +30,10 @@ export function translateConfigLabel(labelKey: string): string {
 }
 
 export const STRINGS = {
-  selectionTitle: "Elegí un juego",
+  /** The instruction, now that the game's own name carries the screen. It
+   * stopped being the title and became the line that says what to do — which
+   * is what it always was, printed at the size of a heading. */
+  selectionTitle: "Elegí cómo jugar",
   /**
    * The one line on this screen that is not an instruction: everything else
    * tells the player what to DO, this says what the place is. It also states
@@ -70,6 +73,20 @@ export const STRINGS = {
   // is the order a player already reads the card in.
   modalityGroup: (gameName: string, description: string): string => `${gameName}, ${description}`,
   playVsPerson: "Jugar contra otra persona",
+  /**
+   * What a format IS, in one line, keyed off the only fact the platform
+   * actually gives us about it: how many seats it has. Not a description the
+   * game wrote — `seatCount` is `GameMetadata`, so this stays true for any
+   * future game with two or four players.
+   *
+   * The lobby used to make the player infer this from a name ("Truco
+   * Argentino 2v2") and a points number. A line that says "en parejas, con un
+   * compañero" is the difference between choosing and guessing.
+   */
+  formatDescription: (seatCount: number): string | undefined =>
+    seatCount === 2 ? "Vos contra un rival." : seatCount === 4 ? "En parejas: vos y un compañero contra dos." : undefined,
+  /** The label over the modality selector — what the buttons under it choose. */
+  modalityLegend: "Modo",
   playVsBot: "Jugar contra la máquina",
   botEasy: "Fácil",
   botNormal: "Normal",
