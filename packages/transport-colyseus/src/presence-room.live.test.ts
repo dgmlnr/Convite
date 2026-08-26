@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ColyseusTestServer } from "@colyseus/testing";
-import { Room } from "colyseus";
+import { Room } from "@colyseus/core";
 import type { GameId, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
   createGameModuleRegistry,

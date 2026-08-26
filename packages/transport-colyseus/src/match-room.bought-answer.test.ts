@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Client } from "colyseus";
+import type { Client } from "@colyseus/core";
 import type { ApplyResult, GameModule, JsonValue, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
   createGameModuleRegistry,

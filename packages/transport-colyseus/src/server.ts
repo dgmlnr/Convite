@@ -1,4 +1,5 @@
-import { Server, WebSocketTransport } from "colyseus";
+import { Server } from "@colyseus/core";
+import { WebSocketTransport } from "@colyseus/ws-transport";
 import type { Server as HttpServer } from "node:http";
 import type { Redis } from "ioredis";
 import { RedisDriver } from "@colyseus/redis-driver";

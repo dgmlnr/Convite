@@ -1,4 +1,4 @@
-import { CloseCode, Room, ServerError, type AuthContext, type Client } from "colyseus";
+import { CloseCode, Room, ServerError, type AuthContext, type Client } from "@colyseus/core";
 import type { BotStrategy, BotTier, GameId, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenVerifier, TenantRepository } from "@hexdev/platform-core";
 
@@ -560,12 +560,20 @@ export class MatchRoom extends Room {
   }
 
   /**
-   * Public rather than private: `@colyseus/testing`, the official
-   * integration-test harness, pulls in a git-hosted exotic subdependency
-   * (`@colyseus/uwebsockets-transport` -> `uWebSockets.js`) blocked by this
-   * workspace's pnpm supply-chain policy (`blockExoticSubdeps`). This
-   * method is invoked directly in tests instead of over a live WebSocket
-   * transport — same behavior, no framing/socket layer to fake.
+   * Public rather than private, so the unit tests can drive a room without a
+   * live WebSocket transport — same behavior, no framing/socket layer to
+   * fake.
+   *
+   * IT USED TO BE FORCED, and the reason is gone: this package depended on
+   * the `colyseus` umbrella, which pulled a git-hosted exotic subdependency
+   * (`@colyseus/uwebsockets-transport` -> `uWebSockets.js`, 114 MB of
+   * prebuilt native binaries with no integrity hash) that the workspace's
+   * pnpm supply-chain policy blocks. Depending on `@colyseus/core` and
+   * `@colyseus/ws-transport` directly removed it — along with
+   * `@colyseus/auth`, `playground` and `monitor`, none of which this server
+   * uses. `@colyseus/testing` is available again; these tests stay on the
+   * direct call because it is the smaller, faster thing to assert against,
+   * not because anything forbids the harness.
    */
   handleAction(client: Client, action: unknown): Promise<void> | void {
     const module = this.module;
