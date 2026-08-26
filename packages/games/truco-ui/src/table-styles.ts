@@ -255,6 +255,13 @@ export function buildTableStylesheet(): string {
  * the inner shell-layout element beneath it is the actual flex row/column
  * that the container query below switches. */
 .hexdev-truco-table-shell {
+  /* THE LANE THE WAY OUT LIVES IN. .hexdev-truco-leave is absolute in this
+   * box's own top-right corner, and the rail is at the right too -- so the
+   * rail covered it, at every width this repo tests, reported from live play
+   * as "el registro de cantos me tapa el boton salir". Reserved once here
+   * rather than guessed at twice: the drawer starts below this line and the
+   * column pads down past it, both reading the same number. */
+  --hx-leave-lane: 44px;
   container-type: inline-size;
   container-name: hexdev-truco-shell;
   position: relative;
@@ -265,6 +272,12 @@ export function buildTableStylesheet(): string {
   font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 .hexdev-truco-shell-layout {
+  /* The drawer's containing block. Without this the rail resolves against the
+   * SHELL, which in fullscreen is the whole viewport -- so on a tall phone the
+   * handle centred itself against 844px of shell while the table only occupied
+   * the top 504px, and drifted off the cloth onto the empty room below it.
+   * Against the layout it tracks the table, which is the thing it opens. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -274,6 +287,90 @@ export function buildTableStylesheet(): string {
   box-sizing: border-box;
 }
 .hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; }
+
+/* THE SIDE RAIL: one place for the calls and the tantos, in two shapes.
+ *
+ * ON A PHONE it is a DRAWER: out of flow, pinned to the felt's top corner,
+ * shut until its tab is tapped. Out of flow is the load-bearing part -- a
+ * rail in flow at 375px grows as the call chain does and shrinks the felt to
+ * match, which is exactly what table-height-stability.browser.test.ts is
+ * there to forbid. Neither of these two things has to be on screen while a
+ * card is being chosen, so on the screen with the least room neither is.
+ *
+ * FROM 640 UP it is a COLUMN beside the felt, always open, tab hidden. There
+ * is room for it there, and a tanteador off to one side is what a real table
+ * looks like.
+ *
+ * min-height: 0 is load-bearing in both shapes, not defensive: the log
+ * inside is a scroller, and a flex item's default min-height: auto refuses
+ * to shrink below its content, which would push the tantos out of the rail
+ * exactly when a long chain is the reason you opened it. */
+.hexdev-truco-side-rail {
+  position: absolute;
+  /* ON THE SIDE EDGE, HALFWAY DOWN, and both halves of that are corrections
+   * to a first version pinned to the top-right corner. The corner already
+   * belongs to the way out (.hexdev-truco-leave), and a horizontal pill put
+   * there ran straight under it -- measured on a 390px phone, the tab and the
+   * Salir button overlapped. It also floated in the band above the cloth
+   * rather than on it, because this box is positioned against the SHELL and
+   * the felt does not start at the shell top on every tier. Anchored to the
+   * middle of the right edge, it is beside the play at every tier and can
+   * collide with nothing. */
+  right: 0;
+  top: var(--hx-leave-lane);
+  bottom: 8px;
+  z-index: 6;
+  display: flex;
+  flex-direction: row-reverse;
+  /* Centred inside the band rather than pinned to its top: the handle should
+   * sit halfway down the edge, which is where a hand reaches for it. */
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  /* The drawer floats over the cloth, so everything it does not actually
+   * cover must stay reachable underneath it. */
+  pointer-events: none;
+}
+.hexdev-truco-side-rail > * { pointer-events: auto; }
+
+.hexdev-truco-rail-body {
+  align-self: center;
+  max-height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  width: min(64vw, 260px);
+}
+.hexdev-truco-side-rail[data-open="false"] > .hexdev-truco-rail-body { display: none; }
+.hexdev-truco-rail-body > .hexdev-truco-scoreboard-panel { flex: 0 0 auto; }
+
+/* The tab. Deliberately quiet: it is a way in, not a call to action, and it
+ * sits on the cloth where the loudest thing must always be the cards. */
+.hexdev-truco-rail-tab {
+  flex: 0 0 auto;
+  /* A HANDLE ON THE EDGE, which is what a drawer has. Vertical text keeps it
+   * about 26px wide, so the thing it covers of the cloth is a sliver rather
+   * than a banner. */
+  writing-mode: vertical-rl;
+  align-self: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-right: 0;
+  border-radius: var(--gx-radius, 10px) 0 0 var(--gx-radius, 10px);
+  padding: 12px 5px;
+  font: inherit;
+  font-size: var(--hx-text-label);
+  font-weight: 700;
+  letter-spacing: var(--hx-tracking-label);
+  text-transform: uppercase;
+  color: var(--gx-color-on-surface, var(--hx-felt-ink));
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: var(--hx-lift-contact);
+  cursor: pointer;
+}
+
 
 /* Stable window height (apply prompt, round 5): min-height alone cannot
  * protect this box's own essential content from squeeze-induced clipping,
@@ -312,6 +409,11 @@ export function buildTableStylesheet(): string {
    * what lets that cap exist at all: a custom property cannot be defined in
    * terms of itself, so min(the tier, the fit) needs the tier to still
    * have a name of its own after the @container blocks below have spoken. */
+  /* HOW FAR THE TURN RING PAINTS OUTSIDE THE HAND: outline-offset plus the
+   * outline itself, matched by the halo's own spread. Declared here so the
+   * one row that has to leave space for it can read the same number the ring
+   * is drawn with, instead of a literal copied beside it. */
+  --hx-ring-reach: 13px;
   --truco-card-tier: 60px;
   --truco-card-width: var(--truco-card-tier);
   /* --hx-felt-gap / --hx-felt-pad (PR3, tasks §3.8): the per-tier scalar
@@ -667,25 +769,16 @@ export function buildTableStylesheet(): string {
   .hexdev-truco-table {
     --hx-felt-gap: 16px;
     --hx-felt-pad: 24px;
-    /* PR4 (tasks §8/§3.8, D-4/blessed refinement 2 — tasks §1 item 2/§2.1):
-     * the call-log rail becomes a real column track at wide/ultra —
-     * clamp(min, preferred%, max), never a bare percentage, so it neither
-     * collapses on a container that is only barely wide enough nor runs away
-     * on an extremely wide one. Declared HERE (on .hexdev-truco-table, inside
-     * this @container block), never on :root — design-token-parity.test.ts
-     * only scans :root/.convite-chrome, and a felt-only layout
-     * constant with no chrome-side twin has no reason to risk tripping that
-     * guard (same discipline as --hx-felt-gap/--hx-felt-pad above). */
-    --hx-log-rail: clamp(200px, 22%, 280px);
     /* --hx-play-max (tasks §3.8): an INLINE-axis cap only — see its own
      * consumer below — never enters a height-fence formula. Derived from
      * --truco-card-width via calc(), so it automatically tracks whichever
      * tier's card size is in effect on THIS specific element: a custom
      * property's var() reference resolves against the element's own final
      * cascaded value at used-value time, not the value in effect where
-     * --hx-play-max itself happened to be declared — so, unlike
-     * --hx-log-rail just above (a fixed clamp(), not derived from anything),
-     * no separate ultra-tier redeclaration is needed for this one. */
+     * --hx-play-max itself happened to be declared — so, unlike a fixed
+     * clamp() derived from nothing, no separate ultra-tier redeclaration is
+     * needed for this one. (The retired --hx-log-rail was that other kind,
+     * and did need one at every tier that changed it.) */
     --hx-play-max: calc(var(--truco-card-width) * 7);
     /* PR5-T3/T5 (tasks §3.8/§9): wide-tier strip height. Same note as the
      * ultra block below: this lane still tiers by width, the banner's no
@@ -705,45 +798,19 @@ export function buildTableStylesheet(): string {
    * parentage). PR5 adds the 4th "log actions" row now that the actions row
    * itself exists — grid STRUCTURE otherwise matches the compact/medium base
    * rules above, with "log" prepended to every row. */
-  .hexdev-truco-table {
-    grid-template-columns: var(--hx-log-rail) minmax(0, 1fr);
-    grid-template-areas: "log top" "log center" "log bottom" "log actions";
-  }
-  .hexdev-truco-table[data-seat-count="4"] {
-    grid-template-columns: var(--hx-log-rail) minmax(72px, 16%) minmax(0, 1fr) minmax(72px, 16%);
-    grid-template-areas:
-      "log top     top     top"
-      "log left    center  right"
-      "log bottom  bottom  bottom"
-      "log actions actions actions";
-  }
-  /* FU-1: from wide up the felt grows a log-rail COLUMN, and the popover's
-   * containing block is the whole felt — so the compact/medium inset would
-   * stretch it across the rail and centre its six signals well to the left of
-   * the toggle they belong to. Re-inset to where the "actions" area actually
-   * starts: the felt's own padding, plus the rail track, plus the one grid
-   * gap between them. 2v2 only in practice (1v1 mounts no picker at all), so
-   * the 1v1 play-column cap right below never interacts with this.
-   *
-   * DISCLOSED IMPRECISION: --hx-log-rail is a clamp() whose middle term is a
-   * percentage, and a percentage resolves against the grid's CONTENT box
-   * inside grid-template-columns but against the containing block's PADDING
-   * box here — bases that differ by exactly 2 x --hx-felt-pad. It cannot
-   * matter at any tier this table is tested at (the clamp's own 200px/240px
-   * minimum wins on both bases until the felt itself passes ~909px/~1200px of
-   * content, which the scoreboard rail keeps it well short of), and where it
-   * ever did the popover would sit a bounded ~11-13px off its ideal left
-   * edge — never clipped, since the right edge and the felt's own clip box
-   * are unaffected.
-   *
-   * The descendant selector is load-bearing, not decoration: unlike the
-   * medium-tier overrides above (attribute+class, so specificity alone
-   * decides), this rule's own base counterpart is a BARE class declared LATER
-   * in this file, which would win on source order at equal specificity —
-   * measured, not assumed: a first draft written as a bare
-   * .hexdev-truco-senas-row here had no effect at all at 960px or 1280px.
-   * Class+class beats it outright, whatever the order. */
-  .hexdev-truco-table .hexdev-truco-senas-row { left: calc(var(--hx-felt-pad) + var(--hx-log-rail) + var(--hx-felt-gap)); }
+  /* NO LOG COLUMN. The call log moved into the side rail it now shares with
+   * the scoreboard (table.ts's own hexdev-truco-side-rail), so the felt
+   * keeps its whole width at every tier and the wide/ultra grid is the same
+   * shape as the compact/medium one above. What used to be a
+   * --hx-log-rail-wide track on the left is play area now. */
+  /* The señas popover needs no inset of its own any more: it is positioned
+   * against the felt, and the felt no longer has a rail track in front of the
+   * actions area. .hexdev-truco-senas-row's own base rule -- left and right
+   * at --hx-felt-pad -- is the correct answer at every tier again. The
+   * override that used to live here added the log rail's width to that left
+   * edge, and carried a documented imprecision about --hx-log-rail being a
+   * percentage clamp resolved against two different boxes. Both are gone with
+   * the rail. */
   /* PR4-T6 (tasks §8), joined PR5-T6 (tasks §9): 1v1 only — cap and centre
    * the play column (now including the action bar) so a very wide felt does
    * not stretch a 3-card hand across the whole track. */
@@ -758,11 +825,6 @@ export function buildTableStylesheet(): string {
   .hexdev-truco-table {
     --hx-felt-gap: 24px;
     --hx-felt-pad: 32px;
-    /* Ultra's own rail width — a distinct clamp(), not derived from
-     * --truco-card-width, so (unlike --hx-play-max, declared once at wide
-     * above and left alone here) it DOES need its own redeclaration at every
-     * tier that changes it. */
-    --hx-log-rail: clamp(240px, 20%, 320px);
     /* PR5-T3/T5 (tasks §3.8/§9): ultra-tier strip height. --hx-band-banner
      * is deliberately absent from this block and from every other tier —
      * it splits by seat count only, see its own comment on the felt. */
@@ -802,10 +864,35 @@ export function buildTableStylesheet(): string {
  * table's tanteador sitting off to one side. */
 @container hexdev-truco-shell (min-width: 640px) {
   .hexdev-truco-shell-layout { flex-direction: row; align-items: stretch; }
-  .hexdev-truco-scoreboard-panel {
+  /* THE COLUMN SHAPE: in flow, always open, no way in needed -- the drawer
+   * the base rule builds for a phone, unfolded. The width lives on the rail
+   * and not on the scoreboard inside it: the two things it stacks must line
+   * up on one edge, and a width on either child would only ever describe one
+   * of them. */
+  .hexdev-truco-side-rail {
+    position: static;
+    flex-direction: column;
+    padding-top: var(--hx-leave-lane);
     order: 0;
     flex: 0 0 auto;
     width: 168px;
+    max-height: none;
+    align-items: stretch;
+    pointer-events: auto;
+  }
+  .hexdev-truco-rail-tab { display: none; }
+  /* A drawer a player shut on a phone must not stay shut when the same widget
+   * is wide enough to have no drawer at all. */
+  .hexdev-truco-side-rail[data-open="false"] > .hexdev-truco-rail-body { display: flex; }
+  /* align-self back to stretch, undoing the drawer's centring. In the drawer
+   * the rail is a ROW, so centring puts the panel halfway down the edge; in
+   * the column it works across instead and shrank the panel to its content
+   * width -- 99.8px inside a 240px rail, which is the exact shape of the "58%
+   * of it" bug the fence below already existed for. Same property, opposite
+   * axis, second time in this file: worth naming rather than just fixing. */
+  .hexdev-truco-rail-body { width: auto; flex: 1 1 auto; align-self: stretch; max-height: none; }
+  .hexdev-truco-scoreboard-panel {
+    flex: 0 0 auto;
     flex-direction: column;
     justify-content: flex-start;
   }
@@ -817,15 +904,37 @@ export function buildTableStylesheet(): string {
  * above always won at every width, even >=900px. Moving them here, AFTER the
  * 168px base rule, is what actually lets 900/1280 win. */
 @container hexdev-truco-shell (min-width: 900px) {
-  /* PR4-T7 (tasks §8): scoreboard rail width bump — a SHELL-level change. */
-  .hexdev-truco-scoreboard-panel { width: 200px; }
+  /* PR4-T7 (tasks §8): rail width bump — a SHELL-level change. */
+  .hexdev-truco-side-rail { width: 200px; }
+  /* NO BOTTOM PIN, and that is a correction made by looking. A first version
+   * pinned the tantos to the foot of the rail -- "calls at the top, tantos at
+   * the bottom" taken literally, and a real tanteador does sit off to one
+   * side. On a 1440px screen with no calls yet it read as stranded: a small
+   * panel alone at the bottom of a tall empty column. The same build at 820px,
+   * where the pin does not apply, stacked both at the top and looked right.
+   * They stack from the top at every tier now. The tantos still sit under the
+   * calls, which is the order that was actually asked for. */
 }
 @container hexdev-truco-shell (min-width: 1280px) {
   /* PR4-T7: ultra's own scoreboard rail width. */
-  .hexdev-truco-scoreboard-panel { width: 240px; }
+  .hexdev-truco-side-rail { width: 240px; }
 }
 
 .hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
+/* THE ONE ROW THAT PAYS FOR THE RING. The ring is an outline plus a halo:
+ * both paint outside the box and take no layout space at all, which is what
+ * makes the air around the cards free. The cost is that nothing in the
+ * layout knows the ring is there -- so the action bar, one grid row below,
+ * sat under it. Measured: the ring reaches 13px past the hand and the grid
+ * gap is 8px at compact, so 5px of gold was drawn over the buttons.
+ * Reported looking at it: "el recuadro dorado de las cartas del jugador se
+ * solapa con los botones."
+ *
+ * Only the shortfall, and only where there is one: at the wide tiers the
+ * grid gap is already 16px and 24px, so this resolves to zero and costs no
+ * card height at all. Reserved whether or not it is the player's turn, so
+ * the table does not jump every time the turn comes round. */
+.hexdev-truco-hand { margin-bottom: max(0px, calc(var(--hx-ring-reach) - var(--hx-felt-gap))); }
 /* flex-wrap (debt: the repo owner's own screenshot — the partner's three card
  * backs wrapped to 2 + 1 at the top of a 375px felt).
  *
@@ -906,11 +1015,11 @@ export function buildTableStylesheet(): string {
 .hexdev-truco-anchor--active .hexdev-truco-hand,
 .hexdev-truco-anchor--active .hexdev-truco-opponent-hand {
   outline: 3px solid var(--gx-color-accent, var(--hx-gold));
-  outline-offset: 10px;
+  outline-offset: calc(var(--hx-ring-reach) - 3px);
   border-radius: var(--gx-radius, 12px);
   /* The glow tracks the offset: 10 of air + 3 of ring = 13, so it still
    * reads as a halo AROUND the ring rather than a second line inside it. */
-  box-shadow: 0 0 0 13px rgba(255, 209, 102, 0.28), var(--hx-elev-3);
+  box-shadow: 0 0 0 var(--hx-ring-reach) rgba(255, 209, 102, 0.28), var(--hx-elev-3);
 }
 .hexdev-truco-turn-badge {
   position: absolute;
@@ -2339,12 +2448,22 @@ export function buildTableStylesheet(): string {
  * "unchanged"). */
 .hexdev-truco-call-log:empty { display: none; }
 .hexdev-truco-call-log {
-  grid-area: center;
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  max-width: 58%;
-  max-height: calc(var(--truco-card-width) * 336 / 220 * 2);
+  /* IN THE RAIL, NOT ON THE CLOTH. This used to be an absolutely positioned
+   * felt child pinned to the bottom-left of the center grid area, floating
+   * over the play. It is a rail item now at every tier, which is what lets
+   * the felt keep its whole width -- and, on a phone, stops a call chain from
+   * covering the cards it is describing.
+   *
+   * NO HEIGHT CAP OF ITS OWN ANY MORE. It used to be two cards tall
+   * (calc(--truco-card-width * 336 / 220 * 2)) -- a number that measured how
+   * much of the PLAY the panel was allowed to cover, which is not a question
+   * anyone can ask about a panel that no longer sits on the play. The rail is
+   * the cap now: the log shrinks inside it (flex: 0 1 auto below) and its own
+   * list scrolls, which is what keeps a long chain from pushing the tantos
+   * out of the rail. --truco-card-width would not even resolve here -- it is
+   * declared on the felt, and the rail is the felt's sibling. */
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -2377,8 +2496,6 @@ export function buildTableStylesheet(): string {
  * elevation) stays exactly as declared there at every tier (design §9.5). */
 @container hexdev-truco-shell (min-width: 900px) {
   .hexdev-truco-call-log {
-    grid-area: log;
-    position: static;
     /* TWO INHERITED CAPS THAT STOPPED MEANING ANYTHING HERE. Both come from
      * the base rule, written for a log that FLOATED over the felt, where
      * covering as little of the table as possible was the whole point. In a
@@ -2401,8 +2518,17 @@ export function buildTableStylesheet(): string {
      *
      * Scoped to this tier on purpose: below 900px the log still floats over
      * the felt, where both caps are still doing the job they were written
-     * for. Same boundary this block already draws for grid-area/position. */
-    align-self: start;
+     * for. Same boundary this block already draws for position.
+     *
+     * TRANSLATED WHEN THE LOG MOVED INTO THE SIDE RAIL: this used to read
+     * align-self: start, which gave back the HEIGHT because the log was a
+     * grid item and align-self there works down the block axis. In the rail
+     * it is a flex item in a column, where that same property works ACROSS
+     * the column and would have taken the width instead -- the very thing the
+     * paragraph above says the rail is the log's to fill. flex: 0 0 auto is
+     * the column-flex way to say the same sentence: height from the content,
+     * full width by default -- and shrinking, so a long chain scrolls inside
+     * the rail instead of pushing the tantos out of it. */
     max-width: 100%;
   }
 }
@@ -2847,17 +2973,23 @@ export function buildTableStylesheet(): string {
  * a one-way ratchet on somebody else's page. Fenced in both directions by
  * table-viewport-fit.browser.test.ts.
  *
- * justify-content centres the content in the leftover space instead of
- * hanging it from the top edge. The layout child keeps its own content
- * height — a height of 100% against a parent whose own height is still auto
- * resolves to auto — so nothing here stretches the felt, and the cap fences
- * above would fail loudly if it did. */
+ * HANGS FROM THE TOP, and that is a correction. This used to be
+ * justify-content: center, which put the leftover space above the table as
+ * well as below it -- on a phone that was 172px of empty cloth over the
+ * partner's seat before anything was even dealt. Reported looking at it:
+ * "me gustaria que la alineacion de la mesa sea en el top y no abajo, no me
+ * gusta el espacio que queda ahi arriba." The room the table sits in still
+ * reads as room; it is all underneath now, where a table's own edge is.
+ *
+ * The layout child keeps its own content height — a height of 100% against a
+ * parent whose own height is still auto resolves to auto — so nothing here
+ * stretches the felt, and the cap fences above would fail loudly if it did. */
 :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table-shell {
   min-height: 100dvh;
   background: var(--truco-cloth-deep);
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
 }
 `.trim();
 }

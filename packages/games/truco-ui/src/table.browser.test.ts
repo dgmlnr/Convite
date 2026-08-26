@@ -826,7 +826,7 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
   // gets that area as its containing block" rule (table-styles.ts's own
   // .hexdev-truco-call-log rule: grid-area: center; position: absolute; left:
   // 0; bottom: 0), not by DOM nesting under .hexdev-truco-center anymore.
-  it("mounts renderCallLog as a direct child of the felt (.hexdev-truco-table), positioned into the center grid area at compact — fed from view.hand.callEvents and labelled by the same seat geometry the piles use", () => {
+  it("mounts renderCallLog inside the side rail, never on the cloth — fed from view.hand.callEvents and labelled by the same seat geometry the piles use", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
@@ -834,23 +834,24 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
     render(el, baseView({ hand: { ...baseView().hand!, callEvents: events } }), [], () => {});
 
     const felt = el.querySelector(".hexdev-truco-table")!;
-    const center = felt.querySelector(".hexdev-truco-center")!;
-    const panel = felt.querySelector(":scope > .hexdev-truco-call-log");
-    expect(panel, "renderCallLog must mount as a DIRECT child of .hexdev-truco-table").not.toBeNull();
-    expect(panel!.parentElement).toBe(felt);
+    const rail = el.querySelector(".hexdev-truco-side-rail")!;
+    const body = rail.querySelector(".hexdev-truco-rail-body")!;
+    const panel = body.querySelector(":scope > .hexdev-truco-call-log");
+    expect(panel, "renderCallLog must mount inside the side rail's body").not.toBeNull();
+    expect(panel!.parentElement).toBe(body);
     // The replaced contract, asserted explicitly so a regression back to the
-    // old mount point is caught here, not just by the positive assertion above.
-    expect(center.querySelector(".hexdev-truco-call-log"), "the log must NOT be nested inside .hexdev-truco-center anymore").toBeNull();
+    // old mount point is caught here, not just by the positive assertion
+    // above. The log was a felt child, laid over the centre of the cloth; the
+    // calls share a rail with the tantos now, and the column that frees is
+    // play area.
+    expect(felt.querySelector(".hexdev-truco-call-log"), "the log must NOT be mounted on the cloth anymore").toBeNull();
 
-    // "Positioned into the center grid area at compact": the panel's own
-    // absolutely-positioned rect must coincide with .hexdev-truco-center's own
-    // rect at the edges its CSS anchors to (left/bottom) — the same rect the
-    // log occupied when it was still a DOM child of .hexdev-truco-center,
-    // reproduced now purely through the grid-area containing-block mechanism.
-    const centerRect = center.getBoundingClientRect();
-    const panelRect = panel!.getBoundingClientRect();
-    expect(Math.abs(panelRect.left - centerRect.left), `panel left ${panelRect.left} vs center left ${centerRect.left}`).toBeLessThan(0.5);
-    expect(Math.abs(panelRect.bottom - centerRect.bottom), `panel bottom ${panelRect.bottom} vs center bottom ${centerRect.bottom}`).toBeLessThan(0.5);
+    // What replaced "positioned into the center grid area at compact". The log
+    // used to be pinned to the bottom-left of .hexdev-truco-center through the
+    // grid-area containing-block mechanism, laid over the play. It is behind
+    // the rail's tab now, and the contract worth asserting is the one that
+    // mattered all along: it takes nothing from the felt.
+    expect(rail.getAttribute("data-open"), "a fresh table opens with the drawer shut").toBe("false");
 
     const entries = panel!.querySelectorAll(".hexdev-truco-call-log-entry");
     expect(entries).toHaveLength(1);
@@ -893,7 +894,7 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
   // gap directly: a real container-query width (per this suite's own
   // established mountedContainer pattern elsewhere), a computed-style check,
   // and a real geometry check against .hexdev-truco-center.
-  it("PR4 correction: at wide (960px), the log panel is really in flow — position: static, and its rect never overlaps .hexdev-truco-center's rect", () => {
+  it("at wide (960px) the log panel is really in flow — position: static, and its rect never overlaps .hexdev-truco-center's rect", () => {
     const el = freshContainer();
     el.style.width = "960px";
     const render = createMatchTableRenderer();
@@ -903,7 +904,7 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
 
     const felt = el.querySelector(".hexdev-truco-table")!;
     const center = felt.querySelector(".hexdev-truco-center")!;
-    const panel = felt.querySelector(":scope > .hexdev-truco-call-log")!;
+    const panel = el.querySelector(".hexdev-truco-rail-body > .hexdev-truco-call-log")!;
 
     expect(getComputedStyle(panel).position, "the panel must be a real in-flow box at wide, not floating over the felt").toBe("static");
 
@@ -998,6 +999,53 @@ describe("createMatchTableRenderer — action bar overflow: 1v1's two-simultaneo
       actionBar.scrollTop = actionBar.scrollHeight;
       expect(actionBar.scrollTop).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("the turn badge names the seat it is sitting on", () => {
+  // Reported from a screenshot of a live 2v2: the badge hanging over the
+  // PARTNER's own seat read "Turno del rival". The text only ever knew
+  // self/not-self, so every seat that was not the viewer's was a rival —
+  // including the one player at the table who is on their side, on a screen
+  // whose whole design exists to make that pairing obvious at a glance.
+  /** A 2v2 view whose turn belongs to the partner (seat 2) or to a rival
+   * (seat 1). Its own fixture rather than the `teamView` further up, which
+   * lives inside another describe's scope. */
+  const PARTNER_ID = "player-c" as PlayerId;
+  const RIVAL_2_ID = "player-d" as PlayerId;
+
+  function teamViewWithActive(relation: "partner" | "opponent"): PlayerView {
+    const base = baseView();
+    return baseView({
+      teammates: [{ playerId: PARTNER_ID, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: RIVAL_2_ID, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...base.hand!, turnSeat: relation === "partner" ? 2 : 1 },
+    });
+  }
+
+  it("2v2: says the partner's turn over the partner's seat, never the rival's", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamViewWithActive("partner"), [], () => {});
+
+    const badge = el.querySelector(".hexdev-truco-turn-badge");
+    expect(badge, "fence setup: no turn badge was mounted at all").not.toBeNull();
+    expect(badge!.textContent, "the partner is being called a rival on their own seat").toContain("compañero");
+  });
+
+  it("2v2: still says the rival's turn over a rival's seat", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, teamViewWithActive("opponent"), [], () => {});
+
+    const badge = el.querySelector(".hexdev-truco-turn-badge");
+    expect(badge, "fence setup: no turn badge was mounted at all").not.toBeNull();
+    expect(badge!.textContent, "a rival stopped being called a rival").toContain("rival");
   });
 });
 
@@ -1096,9 +1144,22 @@ describe("createMatchTableRenderer — keyboard focus survives every server broa
         },
       });
     render(el, withEvents(), [], () => {});
+    // This harness renders at a phone width, where the rail is a drawer that
+    // opens shut — so the log is display: none until someone opens it, and a
+    // display: none list cannot take focus at all. Opened the way a player
+    // would: by pressing the tab. That is also the only honest way to reach
+    // the state this fence is about, since scrolling a log you cannot see is
+    // not a thing anyone does.
+    el.querySelector<HTMLElement>(".hexdev-truco-rail-tab")!.click();
     el.querySelector<HTMLElement>(".hexdev-truco-call-log-list")!.focus();
 
     render(el, withEvents(), [], () => {});
+
+    // The drawer itself must survive the broadcast for the focus restore to
+    // have anywhere to land — a drawer that slammed shut every few seconds
+    // would take the focused scroller down with it, which is the same defect
+    // this describe block exists for, one level up.
+    expect(el.querySelector(".hexdev-truco-side-rail")?.getAttribute("data-open"), "the broadcast shut the drawer the player had opened").toBe("true");
 
     const focused = document.activeElement as HTMLElement;
     expect(focused.className).toBe("hexdev-truco-call-log-list");

@@ -103,19 +103,37 @@ describe("action-bar button system (debt: the señas toggle is a member of it, n
 // table-height-stability.browser.test.ts). A non-empty child keeps the
 // `:empty { display: none }` rule from suppressing the computed values below.
 describe("call-log panel height contract (T-11: the panel must never grow the felt)", () => {
-  it("is position: absolute, with a fixed px max-height derived from --truco-card-width — never vh, never content-driven", () => {
+  it("shrinks inside the rail rather than growing it — never content-driven", () => {
+    // WHAT THIS USED TO SAY, and why it no longer can. The contract was
+    // `position: absolute` plus a max-height of two cards
+    // (calc(--truco-card-width * 336 / 220 * 2)): the panel floated over the
+    // cloth, so it needed a hard ceiling on how much of the PLAY it could
+    // cover. It does not sit on the play any more — it shares a rail with the
+    // tantos — and --truco-card-width would not even resolve there, being
+    // declared on the felt, which is the rail's sibling.
+    //
+    // The height contract survives, expressed against what actually bounds it
+    // now: a flex item that may shrink below its content (flex-shrink plus
+    // min-height: 0) scrolls inside the rail instead of pushing the score out
+    // of the bottom of it. Nothing here is content-driven, which is the part
+    // T-11 always cared about.
     ensureTableStyles(document);
+    const rail = document.createElement("div");
+    rail.className = "hexdev-truco-side-rail";
+    const body = document.createElement("div");
+    body.className = "hexdev-truco-rail-body";
     const panel = document.createElement("div");
     panel.className = "hexdev-truco-call-log";
-    panel.style.setProperty("--truco-card-width", "60px");
     panel.appendChild(document.createElement("p"));
-    document.body.appendChild(panel);
+    body.appendChild(panel);
+    rail.appendChild(body);
+    document.body.appendChild(rail);
 
     const computed = getComputedStyle(panel);
-    expect(computed.position).toBe("absolute");
-    expect(computed.maxHeight).toMatch(/^\d+(\.\d+)?px$/); // a resolved length, not "none"/a percentage/a raw calc()
-    expect(computed.maxHeight).not.toBe("none");
+    expect(computed.position, "the panel is placed by the rail, never laid over the cloth").toBe("static");
+    expect(computed.flexShrink, "a panel that cannot shrink pushes the tantos out of the rail").not.toBe("0");
+    expect(computed.minHeight, "min-height: auto would refuse to shrink below the content, whatever flex-shrink says").toBe("0px");
 
-    panel.remove();
+    rail.remove();
   });
 });

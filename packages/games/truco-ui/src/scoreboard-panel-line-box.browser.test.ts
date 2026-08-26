@@ -145,6 +145,17 @@ function mountPanel(width: number, family: string, scores: readonly [number, num
   const state = { ...base, teams: base.teams.map((team, index) => ({ ...team, score: scores[index] ?? 0 })) };
   createMatchTableRenderer()(container, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
 
+  // The panel lives in the side rail, and on this tier the rail is a DRAWER
+  // that opens shut — so a measurement taken as rendered would be taken on
+  // `display: none` and come back 0 for every probe font. The suite's own
+  // guard caught exactly that ("every probe font asks this panel for the same
+  // height, so this test cannot detect the bug it exists for"), which is what
+  // a guard is for. Opened here, deliberately: what is under test is the
+  // panel's line box, not whether the drawer starts open.
+  const rail = container.querySelector<HTMLElement>(".hexdev-truco-side-rail");
+  if (rail === null) throw new Error("test setup: the side rail did not mount");
+  rail.dataset.open = "true";
+
   const panel = container.querySelector<HTMLElement>(".hexdev-truco-scoreboard-panel");
   if (panel === null) throw new Error("test setup: the scoreboard panel did not mount");
   return panel;

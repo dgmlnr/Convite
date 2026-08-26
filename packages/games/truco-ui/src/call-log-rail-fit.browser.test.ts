@@ -99,7 +99,7 @@ function withCalls(count: "one" | "many"): MatchState {
   return dispatch(state, { type: "respond-truco", playerId: OPPONENT, response: "quiero" });
 }
 
-async function panelAt(width: number, count: "one" | "many"): Promise<{ panel: HTMLElement; felt: HTMLElement; entries: number }> {
+async function panelAt(width: number, count: "one" | "many"): Promise<{ panel: HTMLElement; felt: HTMLElement; rail: HTMLElement; entries: number }> {
   container = document.createElement("div");
   container.style.width = `${String(width)}px`;
   document.body.appendChild(container);
@@ -110,28 +110,34 @@ async function panelAt(width: number, count: "one" | "many"): Promise<{ panel: H
 
   const panel = container.querySelector<HTMLElement>(".hexdev-truco-call-log");
   const felt = container.querySelector<HTMLElement>(".hexdev-truco-table");
-  if (panel === null || felt === null) throw new Error("fence setup: the table renders a felt and a call-log panel");
-  return { panel, felt, entries: container.querySelectorAll(".hexdev-truco-call-log-entry").length };
+  const rail = container.querySelector<HTMLElement>(".hexdev-truco-side-rail");
+  if (panel === null || felt === null || rail === null) throw new Error("fence setup: the table renders a felt, a side rail and a call-log panel");
+  return { panel, felt, rail, entries: container.querySelectorAll(".hexdev-truco-call-log-entry").length };
 }
 
-/** The cap the panel may never exceed, read from the panel rather than
- * recomputed here — the two-card formula is the stylesheet's to own. */
-function capOf(panel: HTMLElement): number {
-  return Number.parseFloat(getComputedStyle(panel).maxHeight);
+/** The height the panel may never exceed. It used to be the panel's own
+ * `max-height` — two cards tall, a number that measured how much of the PLAY
+ * the panel was allowed to cover. The panel does not sit on the play any
+ * more: it shares a rail with the tantos, and the rail is what bounds it. */
+function boundOf(rail: HTMLElement): number {
+  return rail.getBoundingClientRect().height;
 }
 
 describe("at 1280px the panel is a rail: it sizes to its content, and the cap owns only the long case", () => {
-  it("one entry gets a panel the size of one entry, not the size of the cap", async () => {
-    const { panel, entries } = await panelAt(1280, "one");
+  it("one entry gets a panel the size of one entry, not the size of the rail", async () => {
+    const { panel, rail, entries } = await panelAt(1280, "one");
     expect(entries, "fence setup: exactly one call is on the record").toBe(1);
 
     const height = panel.getBoundingClientRect().height;
-    const cap = capOf(panel);
-    expect(cap, "fence setup: the cap is a real number of pixels").toBeGreaterThan(0);
+    const bound = boundOf(rail);
+    expect(bound, "fence setup: the rail is a real number of pixels tall").toBeGreaterThan(0);
 
     // The bug, stated as the measurement that would catch it again: a
-    // stretched panel sits AT the cap no matter how little it holds.
-    expect(height, `a single entry must not fill the ${String(Math.round(cap))}px cap`).toBeLessThan(cap * 0.6);
+    // stretched panel fills its whole column no matter how little it holds.
+    // It is worth restating for the rail, because the rail is a flex column
+    // and a flex item's default is to stretch across it — the same trap the
+    // grid version fell into, with a different property name on it.
+    expect(height, `a single entry must not fill the ${String(Math.round(bound))}px rail`).toBeLessThan(bound * 0.6);
     // And "sizes to content" is stronger than "is small": no slack inside.
     expect(Math.abs(height - panel.scrollHeight), "the panel is exactly as tall as what it holds").toBeLessThanOrEqual(1);
   });
@@ -141,28 +147,43 @@ describe("at 1280px the panel is a rail: it sizes to its content, and the cap ow
     container.remove();
     document.getElementById("hexdev-truco-table-styles")?.remove();
 
-    const { panel, entries } = await panelAt(1280, "many");
+    const { panel, rail, entries } = await panelAt(1280, "many");
     expect(entries, "fence setup: the longer chain really does record more").toBeGreaterThan(1);
 
     const many = panel.getBoundingClientRect().height;
     expect(many, "a longer record needs a taller panel").toBeGreaterThan(one);
-    expect(many, "but never taller than the cap the stylesheet sets").toBeLessThanOrEqual(capOf(panel) + 1);
+    // The tantos live under this panel now, so overflowing the rail does not
+    // merely look wrong — it pushes the score out of the rail entirely.
+    expect(many, "but never taller than the rail that also has to hold the tantos").toBeLessThanOrEqual(boundOf(rail) + 1);
   });
 
   it("the panel fills the rail it was given, instead of 58% of it", async () => {
-    const { panel, felt } = await panelAt(1280, "many");
+    const { panel, rail } = await panelAt(1280, "many");
 
-    // The rail is the felt grid's own first track — asked for, not assumed,
-    // so this keeps holding if the rail's own clamp() is ever retuned.
-    const rail = Number.parseFloat(getComputedStyle(felt).gridTemplateColumns.split(" ")[0] ?? "0");
-    expect(rail, "fence setup: at this tier the felt really does open a log column").toBeGreaterThan(100);
-    expect(panel.getBoundingClientRect().width, `the panel spans its ${String(Math.round(rail))}px rail`).toBeGreaterThan(rail * 0.95);
+    // Measured off the rail element itself rather than off a grid track: the
+    // rail is the felt's SIBLING now, not a column inside it, so the felt's
+    // grid has nothing left to say about how wide the log is.
+    const width = rail.getBoundingClientRect().width;
+    expect(width, "fence setup: the rail really is a column at this tier").toBeGreaterThan(100);
+    expect(panel.getBoundingClientRect().width, `the panel spans its ${String(Math.round(width))}px rail`).toBeGreaterThan(width * 0.95);
   });
 });
 
-describe("below the rail tier nothing moved: the log still floats over the felt", () => {
-  it("700px: the panel is still out of flow, where both inherited caps still earn their keep", async () => {
-    const { panel } = await panelAt(700, "many");
-    expect(getComputedStyle(panel).position, "the floating log is untouched by a rail-only fix").toBe("absolute");
+describe("the log stopped floating over the felt at every tier, not just the widest", () => {
+  it("700px: the panel is in flow in the rail, and covers no part of the felt", async () => {
+    // This fence used to assert the opposite — that below 900px the log was
+    // still `position: absolute`, floating over the centre of the cloth. That
+    // was true, and it was the thing worth removing: on the narrower tiers
+    // the felt is smallest, so a panel laid over its centre covered the most.
+    // The log lives in the rail at every tier now, which is what lets this
+    // assertion be about the cards instead of about a CSS property.
+    const { panel, felt } = await panelAt(700, "many");
+    expect(getComputedStyle(panel).position, "the log is placed by the rail, not laid over the cloth").toBe("static");
+
+    const log = panel.getBoundingClientRect();
+    const cloth = felt.getBoundingClientRect();
+    expect(log.width, "fence setup: an empty log is display: none, which would make this vacuous").toBeGreaterThan(0);
+    // Same 0.5px epsilon the zone-overlap suite uses.
+    expect(log.left, `log left ${log.left}px vs the felt's own right edge ${cloth.right}px`).toBeGreaterThanOrEqual(cloth.right - 0.5);
   });
 });

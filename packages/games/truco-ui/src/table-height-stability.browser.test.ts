@@ -387,9 +387,35 @@ const WIDTHS = [375, 700, 960, 1280] as const;
  * reaching. Note that what this file actually fences -- the height never
  * MOVING across a played hand -- stayed green throughout: expectStableHeights
  * passed, and only this pinned constant went stale. */
+/* ONE RAIL: 375px drops another 84px, and both other tiers are untouched.
+ *   375  1v1: 561.34375 -> 477.34375   375  2v2: 583.34375 -> 499.34375
+ * The scoreboard used to be an in-flow strip stacked above the felt on a
+ * phone, and the call log floated over the centre of the cloth. They share
+ * one rail now, and on this tier that rail is a DRAWER: out of flow behind a
+ * tab, so the strip's 84px go back to the table. Exactly 84 in both seat
+ * counts, because it is the same strip in both.
+ *
+ * Out of flow is also what keeps this file's real fence green. In flow, a
+ * rail holding the call log GROWS as the chain does -- which is the height
+ * moving across a played hand, the one thing here forbids. Measured before
+ * the drawer: this suite failed at 375px on exactly those steps.
+ *
+ * 700/960/1280 needed no update at all: from 640 up the rail was already a
+ * fixed-width column of the shell's own height, so moving the log into it
+ * changes what the column holds and never how tall anything is. */
+/* THE TURN RING'S OWN LANE: +5px at 375, +1px at 700, nothing above.
+ *   375  1v1: 477.34375 -> 482.34375   375  2v2: 499.34375 -> 504.34375
+ *   700  1v1: 648.96875 -> 649.96875   700  2v2: 837.328125 -> 838.328125
+ * The active-turn ring is an outline plus a halo, both painted outside the
+ * hand and taking no layout space -- so the action bar one grid row below sat
+ * under 5px of gold at compact. The hand now reserves whatever the grid gap
+ * does not already cover (--hx-ring-reach minus --hx-felt-gap), which is 5px
+ * where the gap is 8 and 1px where it is 12, and exactly zero from wide up
+ * where the gap already exceeds the ring. Card size pays for it, which is why
+ * it is the shortfall and not the whole reach. */
 const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1": number; readonly "2v2": number }> = {
-  375: { "1v1": 561.34375, "2v2": 583.34375 },
-  700: { "1v1": 648.96875, "2v2": 837.328125 },
+  375: { "1v1": 482.34375, "2v2": 504.34375 },
+  700: { "1v1": 649.96875, "2v2": 838.328125 },
   960: { "1v1": 771.375, "2v2": 873.328125 },
   1280: { "1v1": 860.59375, "2v2": 983.515625 },
 };
