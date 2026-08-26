@@ -75,9 +75,10 @@ export function ensureMatchstickDefs(doc: Document): void {
  * independent of `length`. Scaling the whole matchstick uniformly would
  * deform the head into an egg shape at large sizes; this is exactly the bug
  * the approved prototype's own comment calls out. */
-function matchstick(x: number, y: number, length: number, rotationDeg: number): string {
+function matchstick(x: number, y: number, length: number, rotationDeg: number, marked = false): string {
   const stickLength = length - HEAD_RX;
-  return `<g transform="translate(${x} ${y}) rotate(${rotationDeg})">
+  const mark = marked ? ` data-lit="true"` : "";
+  return `<g${mark} transform="translate(${x} ${y}) rotate(${rotationDeg})">
     <rect x="0" y="${-STICK_THICKNESS / 2}" width="${stickLength}" height="${STICK_THICKNESS}" rx="${STICK_THICKNESS / 2}" fill="url(#hexdev-truco-wood)"/>
     <rect x="1.2" y="${-STICK_THICKNESS / 2 + 0.42}" width="${Math.max(0, stickLength - 2.6)}" height="0.6" rx="0.3" fill="#fff" opacity="0.44"/>
     <ellipse cx="${stickLength}" cy="0" rx="${HEAD_RX}" ry="${HEAD_RY}" fill="url(#hexdev-truco-head)"/>
@@ -93,6 +94,29 @@ function matchstick(x: number, y: number, length: number, rotationDeg: number): 
  * square never fully seals shut.
  */
 export function renderCasita(points: 0 | 1 | 2 | 3 | 4 | 5, size: number): string {
+  return renderCasitaTally(points, 5, size);
+}
+
+/**
+ * A casita with `slots` pieces in it, of which the first `lit` are struck and
+ * the rest are still waiting.
+ *
+ * THE PIECES A GROUP CAN EVER HOLD ARE ALL DRAWN, from the first render.
+ * That is what a tanteador on a real table looks like: the matches for the
+ * whole match are laid out, and a glance says how far there is to go as much
+ * as how far you have come. Before this, a run drew only the casitas its own
+ * points needed, so a scoreboard at 2-0 showed one casita and said nothing
+ * about the fifteen or thirty it was climbing toward.
+ *
+ * `slots` is not always five, and that is the reason this exists rather than
+ * "a lit casita beside some ghost casitas": a 15-point match splits 7 and 8,
+ * so a run ends on a casita holding two or three pieces. Drawing a full ghost
+ * square there would promise five points that group cannot hold.
+ *
+ * `data-lit` marks each piece, which is what lets a test count the tally
+ * without reading SVG geometry.
+ */
+export function renderCasitaTally(lit: number, slots: number, size: number): string {
   const margin = HEAD_RX + 4;
   const box = size + margin * 2;
   const side = size - AIR * 2;
@@ -100,16 +124,22 @@ export function renderCasita(points: 0 | 1 | 2 | 3 | 4 | 5, size: number): strin
   const diagonal = diagonalFull - AIR * 2;
   const diagonalOffset = AIR / Math.SQRT2;
 
-  const pieces = [
-    () => matchstick(margin + AIR, margin, side, 0),
-    () => matchstick(margin + size, margin + AIR, side, 90),
-    () => matchstick(margin + size - AIR, margin + size, side, 180),
-    () => matchstick(margin, margin + size - AIR, side, 270),
-    () => matchstick(margin + diagonalOffset, margin + diagonalOffset, diagonal, 45),
+  const geometry: readonly [number, number, number, number][] = [
+    [margin + AIR, margin, side, 0],
+    [margin + size, margin + AIR, side, 90],
+    [margin + size - AIR, margin + size, side, 180],
+    [margin, margin + size - AIR, side, 270],
+    [margin + diagonalOffset, margin + diagonalOffset, diagonal, 45],
   ];
 
-  const drawn = pieces.slice(0, points).map((piece) => piece()).join("");
-  return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}"><g filter="url(#hexdev-truco-stick-shadow)">${drawn}</g></svg>`;
+  const drawn = geometry
+    .slice(0, Math.max(0, Math.min(5, slots)))
+    .map(([x, y, length, rotation], index) =>
+      index < lit ? matchstick(x, y, length, rotation, true) : ghostMatchstick(x, y, length, rotation),
+    )
+    .join("");
+  const anyLit = lit > 0 ? ` filter="url(#hexdev-truco-stick-shadow)"` : "";
+  return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}"><g${anyLit}>${drawn}</g></svg>`;
 }
 
 /** A single ghost matchstick: same geometry as `matchstick`, but filled with
@@ -117,7 +147,7 @@ export function renderCasita(points: 0 | 1 | 2 | 3 | 4 | 5, size: number): strin
  * `opacity` property, so it never blends toward whatever sits behind it. */
 function ghostMatchstick(x: number, y: number, length: number, rotationDeg: number): string {
   const stickLength = length - HEAD_RX;
-  return `<g transform="translate(${x} ${y}) rotate(${rotationDeg})">
+  return `<g data-lit="false" transform="translate(${x} ${y}) rotate(${rotationDeg})">
     <rect x="0" y="${-STICK_THICKNESS / 2}" width="${stickLength}" height="${STICK_THICKNESS}" rx="${STICK_THICKNESS / 2}" fill="var(--truco-match-ghost-wood)"/>
     <ellipse cx="${stickLength}" cy="0" rx="${HEAD_RX}" ry="${HEAD_RY}" fill="var(--truco-match-ghost-head)"/>
   </g>`;
@@ -150,18 +180,23 @@ export function renderGhostCasita(size: number): string {
   return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}" data-ghost-casita="true"><g>${pieces}</g></svg>`;
 }
 
-/** A run of casitas representing `count` points, 5 per casita — mirrors the
- * approved prototype's own `tanteador()`. Falls back to a single ghost
- * casita for a zero-point group instead of rendering nothing at all. */
-function renderMatchstickRun(count: number, size: number): string {
-  if (count === 0) return renderGhostCasita(size);
-  const casitaCount = Math.ceil(count / 5);
-  let remaining = count;
+/**
+ * A run holding `capacity` pieces, 5 per casita, of which `count` are struck.
+ *
+ * The capacity is what this group can EVER hold -- half the target for malas,
+ * the rest for buenas -- not what it holds now. The last casita of a run is
+ * therefore often partial: a 15-point match splits 7 and 8, so its runs end
+ * on casitas of two and three.
+ */
+function renderMatchstickRun(count: number, capacity: number, size: number): string {
+  let remainingLit = count;
+  let remainingSlots = capacity;
   let html = "";
-  for (let i = 0; i < casitaCount; i += 1) {
-    const points = Math.max(0, Math.min(5, remaining)) as 0 | 1 | 2 | 3 | 4 | 5;
-    html += renderCasita(points, size);
-    remaining -= 5;
+  while (remainingSlots > 0) {
+    const slots = Math.min(5, remainingSlots);
+    html += renderCasitaTally(Math.max(0, Math.min(slots, remainingLit)), slots, size);
+    remainingLit -= slots;
+    remainingSlots -= slots;
   }
   return html;
 }
@@ -206,9 +241,16 @@ export function renderScoreboard(container: HTMLElement, options: ScoreboardOpti
   total.textContent = TABLE_STRINGS.scoreTotal(options.score);
   container.appendChild(total);
 
-  for (const [key, count, label] of [
-    ["malas", malas, TABLE_STRINGS.malas],
-    ["buenas", buenas, TABLE_STRINGS.buenas],
+  // How many pieces each run can ever hold, which is the same split the SCORE
+  // uses -- malas is the first half of the target and buenas is the rest. The
+  // two have to agree exactly, or the second half of the tally would start in
+  // the wrong place.
+  const malasCapacity = Math.floor(options.target / 2);
+  const buenasCapacity = options.target - malasCapacity;
+
+  for (const [key, count, capacity, label] of [
+    ["malas", malas, malasCapacity, TABLE_STRINGS.malas],
+    ["buenas", buenas, buenasCapacity, TABLE_STRINGS.buenas],
   ] as const) {
     const group = document.createElement("div");
     group.className = "hexdev-truco-score-group";
@@ -241,7 +283,7 @@ export function renderScoreboard(container: HTMLElement, options: ScoreboardOpti
     // the hidden total above — left exposed, a reader would wade through raw
     // SVG geometry that says nothing (the exact 1.1.1 failure being fixed).
     sticks.setAttribute("aria-hidden", "true");
-    sticks.innerHTML = renderMatchstickRun(count, size);
+    sticks.innerHTML = renderMatchstickRun(count, capacity, size);
     group.appendChild(sticks);
 
     container.appendChild(group);
