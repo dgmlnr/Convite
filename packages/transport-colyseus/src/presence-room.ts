@@ -1,4 +1,4 @@
-import { Room, matchMaker, type Client } from "colyseus";
+import { Room, matchMaker, type Client } from "@colyseus/core";
 import type { BotTier, GameId } from "@hexdev/platform-contract";
 import type { GameModuleRegistry, MatchmakingPool, ModalityConfig, PresenceSweeper, SeatGroup } from "@hexdev/platform-core";
 import { createPresenceSweeper, deriveModalities, modalityKey } from "@hexdev/platform-core";
