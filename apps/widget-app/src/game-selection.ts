@@ -155,9 +155,17 @@ const SELECTION = new WeakMap<HTMLElement, Map<string, string>>();
  * once. But `renderGameSelection` wipes and rebuilds on every presence
  * broadcast, so a class applied unconditionally re-ran the whole animation
  * every few seconds — the cards kept being re-dealt under the player while
- * they were reading the screen. Reported as exactly that: an effect nobody
- * asked to see twice.
+ * they were reading the screen.
  *
+ * AND "ONCE" IS NOT "ON THE FIRST CALL", which is what the first fix said and
+ * why the animation then never played at all. `main.ts` renders this screen
+ * as soon as the catalog arrives — before any presence, so every game card
+ * reads "Cargando…" — and again a moment later when the counts land. Spending
+ * the greeting on the first of those spends it on a loading state: either the
+ * player never sees it, or they see it before there is anything to greet them
+ * with.
+ *
+ * So the greeting belongs to the first render the player can actually USE.
  * A WeakSet and not a flag on the element, for the same reason the selection
  * is a WeakMap: it belongs to the container, survives the wipe that clears
  * the DOM, and dies with it.
@@ -426,10 +434,13 @@ export function renderGameSelection(
   // a lobby and not a hole.
   if (GAME_UI_HERO.length > 0) {
     const fan = document.createElement("div");
-    // The animation class only the FIRST time this container renders — see
-    // DEALT above. Every later repaint builds the same fan, already dealt.
-    const dealing = !DEALT.has(container);
-    DEALT.add(container);
+    // The animation class on the first render this container can be PLAYED
+    // with — see DEALT above. A lobby still waiting for its counts is not an
+    // arrival, so it does not consume the greeting; every repaint after the
+    // real one builds the same fan, already dealt.
+    const playable = catalog.some((game) => (presenceByGame.get(game.id)?.length ?? 0) > 0);
+    const dealing = playable && !DEALT.has(container);
+    if (playable) DEALT.add(container);
     fan.className = dealing ? "hexdev-chrome-fan hexdev-chrome-fan--dealing" : "hexdev-chrome-fan";
     fan.setAttribute("aria-hidden", "true");
     for (const [index, src] of GAME_UI_HERO.entries()) {
