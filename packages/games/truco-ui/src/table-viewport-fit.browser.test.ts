@@ -137,6 +137,14 @@ const WINDOWS = [
   { w: 1440, h: 810, label: "16:9 desktop" },
   { w: 1024, h: 640, label: "small laptop" },
   { w: 844, h: 390, label: "phone, landscape" },
+  /* PORTRAIT PHONES, and their absence was a real hole. Every window above is
+   * wider than it is tall, so the height fit never had to hold on the one
+   * shape where height is the scarce axis -- and while the per-tier card size
+   * capped the fit from above, nothing here could tell. The moment fullscreen
+   * started sizing cards from the window itself, a 390x844 phone overflowed
+   * by 68px. A list of five landscape windows is a list of one shape. */
+  { w: 390, h: 844, label: "phone, portrait" },
+  { w: 360, h: 780, label: "small phone, portrait" },
 ] as const;
 
 describe.each(WINDOWS)("the widget fits its own window — $w x $h ($label)", ({ w, h }) => {
@@ -163,7 +171,32 @@ describe.each(WINDOWS)("the widget fits its own window — $w x $h ($label)", ({
     expect(felt.scrollHeight, `${seats} felt rows overflowing the felt itself at ${String(h)}px`).toBeLessThanOrEqual(felt.clientHeight + 1);
   });
 
-  it("the player's own hand is fully inside the window, not merely the shell", async () => {
+  it("the deck marker is fully inside the felt", async () => {
+    // Found by looking at a portrait phone once the cards started sizing
+    // themselves from the window: the deck is a fraction of a CARD, so it
+    // grew with them, and it hangs off the side of the hand it belongs to --
+    // straight past the felt's edge and off the screen.
+    const el = await mountedFullscreen(w, h);
+    // dealerSeat 3 makes seat 0 -- the VIEWER -- the mano, which puts the deck
+    // on the seat before them; dealerSeat 0 puts it on the viewer's own seat,
+    // at the bottom, which is the case the report came from and the one a
+    // first version of this fence missed entirely.
+    const state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2);
+    createMatchTableRenderer()(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const deck = el.querySelector(".hexdev-truco-deck");
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (deck === null || felt === null) throw new Error("fence setup: no deck or no felt");
+    const d = deck.getBoundingClientRect();
+    const f = felt.getBoundingClientRect();
+
+    expect(d.width, "fence setup: the deck did not paint").toBeGreaterThan(0);
+    expect(d.right, `deck right ${d.right.toFixed(0)}px vs the felt's own right edge ${f.right.toFixed(0)}px`).toBeLessThanOrEqual(f.right + 0.5);
+    expect(d.left, `deck left ${d.left.toFixed(0)}px vs the felt's own left edge ${f.left.toFixed(0)}px`).toBeGreaterThanOrEqual(f.left - 0.5);
+  });
+
+    it("the player's own hand is fully inside the window, not merely the shell", async () => {
     const el = await mountedFullscreen(w, h);
     renderMatch(el, "1v1");
     await waitForArt(el);

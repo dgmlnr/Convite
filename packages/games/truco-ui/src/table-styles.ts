@@ -1116,12 +1116,29 @@ export function buildTableStylesheet(): string {
  * laid out down -- so it never reaches past the felt's own edge. */
 .hexdev-truco-hand,
 .hexdev-truco-opponent-hand { position: relative; }
-.hexdev-truco-anchor[data-position="bottom"] .hexdev-truco-deck,
+/* THE TWO SEATS LAID OUT ACROSS keep the deck at the outer end of their hand,
+ * just clear of it -- above for the seat at the bottom, below for the one at
+ * the top, both of which face empty cloth.
+ *
+ * Beside the cards is where it wants to be and where it started. Two
+ * measurements moved it. First, the deck is a fraction of a CARD, so once
+ * fullscreen began sizing cards from the window it grew with them and walked
+ * 10px off the felt at 390x844. Then, pinned to the hand's own right edge
+ * instead, it landed ON the third card -- because at that width there are
+ * five pixels between the hand and the rail's handle lane, and no amount of
+ * anchoring invents room that is not there. Clear of the row is the only
+ * direction with space in it. */
+.hexdev-truco-anchor[data-position="bottom"] .hexdev-truco-deck {
+  left: auto;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+}
 .hexdev-truco-anchor[data-position="top"] .hexdev-truco-deck {
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: 10px;
+  left: auto;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
 }
 .hexdev-truco-anchor[data-position="left"] .hexdev-truco-deck {
   left: 100%;
@@ -3136,8 +3153,23 @@ export function buildTableStylesheet(): string {
    * side seats and the relation label the 1v1 felt never renders (see
    * relation-label-line-box.browser.test.ts). 34px keeps ~4px of headroom
    * for the 2v2 case rather than sitting on the boundary. */
+  /* THE TIER IS NOT A CEILING HERE ANY MORE, and dropping it is the whole
+   * point of this block. Fullscreen OWNS the window, so the honest size for a
+   * card is the largest one the window can actually hold -- and on a tall
+   * phone the tier was well under that: measured at 390x844, the height
+   * allowed a 119px card and the tier held it at 60, leaving 363px of the
+   * screen empty under a small table.
+   *
+   * Nothing changes where the window was already the binding constraint: at
+   * 1440x900 the fit computes 119px against a 170px tier, so the fit was
+   * already winning and still is. And nothing changes INLINE, where this rule
+   * does not apply at all -- a widget embedded in someone's article does not
+   * own the viewport and has no business sizing itself from it.
+   *
+   * The remaining cap is a plain ceiling for very tall windows, so a card
+   * cannot grow past the point where a hand stops fitting across. */
   --truco-card-width: min(
-    var(--truco-card-tier),
+    132px,
     calc(
       (100dvh - var(--hx-band-banner) - var(--hx-band-action-total) - var(--hx-felt-gap) * 3 - var(--hx-felt-pad-block) * 2 - var(--hx-fit-residual)) * 220 / 336 /
         var(--hx-fit-rows)
@@ -3146,6 +3178,25 @@ export function buildTableStylesheet(): string {
 }
 :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table[data-seat-count="4"] {
   --hx-fit-residual: 34px;
+}
+
+/* A PORTRAIT PHONE NEEDS A BIGGER RESIDUAL, and finding that out is what the
+ * portrait windows in table-viewport-fit.browser.test.ts are for.
+ *
+ * The residual is the real content the row model does not account for. It was
+ * measured on landscape windows only -- every window that suite drove was
+ * wider than it was tall -- and while the per-tier card size capped the fit
+ * from above, an under-declared residual could never show. The moment
+ * fullscreen started sizing cards from the window itself, a 390x844 phone
+ * overflowed: 41px in 1v1, and more in 2v2, which has the side seats and the
+ * relation labels on top.
+ *
+ * Scoped by WIDTH rather than by orientation because that is what the shell
+ * can query, and it lands in the right place: a landscape phone is 844px wide
+ * and keeps the values above, which its own window has always fitted. */
+@container hexdev-truco-shell (width < 640px) {
+  :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table { --hx-fit-residual: 76px; }
+  :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table[data-seat-count="4"] { --hx-fit-residual: 110px; }
 }
 
 /* A DESKTOP WINDOW SPENDS ITS HEIGHT ON THE CARDS.
