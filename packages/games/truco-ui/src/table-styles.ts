@@ -891,7 +891,19 @@ export function buildTableStylesheet(): string {
    * justify-content did the centring. In row direction that same stretch
    * governs the vertical axis instead, so without this the pair would pack
    * against the left edge of a 955px track. */
-  [data-seat-count="4"] .hexdev-truco-action-bar { flex-direction: row; justify-content: center; gap: var(--hx-space-xl); }
+  /* CENTRED BY AUTO MARGINS, NOT BY justify-content, and the difference is
+   * whether the player can reach the first button at all. justify-content:
+   * center on a box that OVERFLOWS pushes the start of the content past the
+   * left edge and out of the scroll range entirely -- there is no scroll
+   * position that brings it back. That is what cut "Quiero" down to "uiero"
+   * in the reported screenshot, with no way to see the rest.
+   *
+   * Auto margins absorb the free space exactly the same way when there is
+   * any, and collapse to zero when there is none -- so the row centres while
+   * it fits and starts at the scroll origin the moment it does not. */
+  [data-seat-count="4"] .hexdev-truco-action-bar { flex-direction: row; justify-content: flex-start; gap: var(--hx-space-xl); }
+  [data-seat-count="4"] .hexdev-truco-action-bar > :first-child { margin-inline-start: auto; }
+  [data-seat-count="4"] .hexdev-truco-action-bar > :last-child { margin-inline-end: auto; }
   .hexdev-truco-table[data-seat-count="4"] { --hx-band-action-total: var(--hx-band-action); }
 }
 
@@ -1920,7 +1932,20 @@ export function buildTableStylesheet(): string {
  * the opening cluster remain visibly two clusters. What changes is only that
  * both are reachable at a glance, which for a decision taken on a turn clock
  * is the whole point of showing them. */
-.hexdev-truco-calls-row { display: flex; flex-direction: row; gap: var(--hx-space-xs, 12px); align-items: center; justify-content: center; align-self: stretch; min-width: 0; max-width: 100%; }
+/* CENTRED BY AUTO MARGINS, NOT BY justify-content, and the difference is
+ * whether the first button can be reached at all. THIS row is the real
+ * horizontal scroller -- the tray around it only holds the two groups -- and
+ * justify-content: center on a box that OVERFLOWS pushes the start of its
+ * content past the left edge and out of the scroll range entirely: there is
+ * no scroll position that brings it back. That is what cut "Quiero" down to
+ * "uiero" in the reported screenshot, with no way to see the rest of it.
+ *
+ * Auto margins absorb the free space exactly the same way while there is
+ * any, and collapse to zero when there is none -- so the row still centres
+ * whenever it fits, and starts at the scroll origin the moment it does not. */
+.hexdev-truco-calls-row { display: flex; flex-direction: row; gap: var(--hx-space-xs, 12px); align-items: center; justify-content: flex-start; align-self: stretch; min-width: 0; max-width: 100%; flex: 0 0 auto; }
+.hexdev-truco-calls-row > :first-child { margin-inline-start: auto; }
+.hexdev-truco-calls-row > :last-child { margin-inline-end: auto; }
 /* Change 4: answering a pending call reads as a different decision from
  * opening or escalating one — response buttons take the accent treatment
  * (matches the pending-call banner's own "mine" state), opening/escalation
@@ -1936,8 +1961,39 @@ export function buildTableStylesheet(): string {
 /* Same styled bar as the log list: this group is a real horizontal scroller
  * whenever a full envido escalation is legal, and the platform default over
  * the recessed lane looked like a scratch on the felt. */
-.hexdev-truco-calls-group { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; justify-content: center; min-height: 40px; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--hx-scroll-thumb) transparent; }
+/* CENTRED BY AUTO MARGINS, NOT BY justify-content. Each GROUP is its own
+ * horizontal scroller -- measured at 375px with a full envido escalation, the
+ * response group held 136px of buttons in 111px and the opening group 247 in
+ * 232 -- and justify-content: center on a box that overflows pushes the start
+ * of its content past the left edge and out of the scroll range entirely:
+ * there is no scroll position that brings it back. That is what cut "Quiero"
+ * down to "uiero" in the reported screenshot, with no way to reach the rest.
+ *
+ * Auto margins absorb the free space the same way while there is any and
+ * collapse to zero when there is none, so a group still centres whenever it
+ * fits and starts at its scroll origin the moment it does not. */
+.hexdev-truco-calls-group { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; justify-content: flex-start; min-height: 40px; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--hx-scroll-thumb) transparent; }
+.hexdev-truco-calls-group > :first-child { margin-inline-start: auto; }
+.hexdev-truco-calls-group > :last-child { margin-inline-end: auto; }
+/* A CALL BUTTON KEEPS ITS OWN WIDTH. The band is a horizontal scroller by
+ * design -- the valve for a fully escalated envido chain -- and a flex item's
+ * default is to shrink before its container overflows, so the buttons were
+ * being squeezed narrower than their labels instead. Measured at 375px with
+ * five buttons on screen: three of them broke across two lines, and the
+ * reported screenshot read "Envido / envido", "Real / envido", "No / quiero".
+ * A button that cannot fit its own name is worse than one you have to scroll
+ * to. */
 .hexdev-truco-call {
+  /* A CALL BUTTON KEEPS ITS OWN WIDTH. The group around it is a horizontal
+   * scroller by design -- the valve for a fully escalated envido chain -- but
+   * a flex item's default is to SHRINK before its container overflows, so the
+   * buttons were being squeezed narrower than their labels and wrapping them
+   * instead of ever reaching that scroller. Measured at 375px with five
+   * buttons legal at once: "Envido envido", "Real envido" and "No quiero"
+   * each drawn across two lines, which is what the reported screenshot shows.
+   * A button that cannot fit its own name is worse than one you scroll to. */
+  flex: 0 0 auto;
+  white-space: nowrap;
   min-height: 40px;
   padding: 6px 16px;
   border: none;
