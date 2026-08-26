@@ -723,6 +723,34 @@ describe.each(WIDTHS)("the turn ring does not paint onto the action bar — %ipx
   });
 });
 
+describe.each([375, 700] as const)("the drawer handle sits beside the play, not on it — %ipx", (width) => {
+  // Seen in a mobile screenshot: the vertical tab overlapped the right
+  // rival's card backs. It is a small sliver of a handle, but a handle drawn
+  // on top of a card is a handle that hides information — and the cards are
+  // the one thing on this screen that may never be covered.
+  //
+  // Only the tiers where the rail IS a drawer: from 640 up the tab is
+  // display: none and there is nothing to collide with.
+  it("2v2: .hexdev-truco-rail-tab never overlaps a seat's cards", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoAfterTrick1Headshot2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const tab = el.querySelector(".hexdev-truco-rail-tab");
+    if (tab === null) throw new Error("test setup: the drawer handle did not render");
+    const handle = tab.getBoundingClientRect();
+    if (handle.width === 0) return; // no drawer at this tier: nothing to prove
+
+    for (const hand of el.querySelectorAll(".hexdev-truco-opponent-hand, .hexdev-truco-hand")) {
+      const cards = hand.getBoundingClientRect();
+      if (cards.width === 0) continue;
+      expect(overlaps(handle, cards), `handle ${JSON.stringify(handle)} vs cards ${JSON.stringify(cards)}`).toBe(false);
+    }
+  });
+});
+
 describe.each(WIDTHS)("the rail never covers the way out — %ipx", (width) => {
   // Reported from live play at desktop: "el registro de cantos me tapa el
   // boton salir". True, and mine — the log used to float over the centre of

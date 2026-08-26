@@ -1013,6 +1013,80 @@ describe("createMatchTableRenderer — action bar overflow: 1v1's two-simultaneo
   });
 });
 
+describe("the turn badge fits on the cloth it is drawn on", () => {
+  // Reported from a 375px screenshot: the badge over the LEFT rival read
+  // "RNO DEL RIVAL" — the first four letters were outside the felt. It hangs
+  // centred over its seat, and a side seat is already against the edge, so
+  // half of a 125px badge has nowhere to go. The badge is not the thing that
+  // has to change size; the direction it runs in is.
+  const PARTNER_ID = "player-c" as PlayerId;
+  const RIVAL_2_ID = "player-d" as PlayerId;
+
+  function sideRivalActive(): PlayerView {
+    const base = baseView();
+    return baseView({
+      teammates: [{ playerId: PARTNER_ID, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: RIVAL_2_ID, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...base.hand!, turnSeat: 1 },
+    });
+  }
+
+  it("2v2: a side seat's badge stays inside the felt, not half off its edge", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, sideRivalActive(), [], () => {});
+
+    const badge = el.querySelector(".hexdev-truco-turn-badge");
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (badge === null || felt === null) throw new Error("fence setup: no badge or no felt");
+    const b = badge.getBoundingClientRect();
+    const f = felt.getBoundingClientRect();
+
+    expect(b.width, "fence setup: the badge did not paint at all").toBeGreaterThan(0);
+    // Same 0.5px epsilon the zone-overlap suite uses.
+    expect(b.left, `badge left ${b.left.toFixed(1)}px vs the felt's own left edge ${f.left.toFixed(1)}px`).toBeGreaterThanOrEqual(f.left - 0.5);
+    expect(b.right, `badge right ${b.right.toFixed(1)}px vs the felt's own right edge ${f.right.toFixed(1)}px`).toBeLessThanOrEqual(f.right + 0.5);
+  });
+
+  it("2v2: a side seat's badge runs down the seat rather than across it", () => {
+    // Asked for by name: "el chip de turno del rival puede estar en el
+    // lateral con palabras verticales y no en la parte de arriba con
+    // palabras horizontales". Asserted as SHAPE rather than as a CSS
+    // property: what was asked for is a badge that reads downward, and a box
+    // taller than it is wide is the observable form of that.
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, sideRivalActive(), [], () => {});
+
+    const badge = el.querySelector(".hexdev-truco-turn-badge")!.getBoundingClientRect();
+    expect(badge.height, `the badge is ${badge.width.toFixed(0)}x${badge.height.toFixed(0)}, still running across`).toBeGreaterThan(badge.width);
+  });
+
+  it("2v2: a side seat's badge never covers the cards it points at", () => {
+    // The other half of why it moves rather than shrinks: hanging it over the
+    // seat is what kept it off the cards, and that has to keep holding when
+    // it runs down the side instead.
+    const el = freshContainer();
+    const render = createMatchTableRenderer();
+
+    render(el, sideRivalActive(), [], () => {});
+
+    const badge = el.querySelector(".hexdev-truco-turn-badge")!.getBoundingClientRect();
+    const hand = el.querySelector(".hexdev-truco-anchor--active .hexdev-truco-opponent-hand");
+    if (hand === null) throw new Error("fence setup: the active side seat rendered no hand");
+    const cards = hand.getBoundingClientRect();
+    const overlaps =
+      badge.left < cards.right - 0.5 && cards.left < badge.right - 0.5 && badge.top < cards.bottom - 0.5 && cards.top < badge.bottom - 0.5;
+
+    expect(overlaps, `badge ${JSON.stringify(badge)} vs cards ${JSON.stringify(cards)}`).toBe(false);
+  });
+});
+
 describe("the turn badge names the seat it is sitting on", () => {
   // Reported from a screenshot of a live 2v2: the badge hanging over the
   // PARTNER's own seat read "Turno del rival". The text only ever knew
