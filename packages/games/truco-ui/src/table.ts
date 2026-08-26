@@ -15,6 +15,11 @@ import { renderOpponentHand } from "./opponent-hand.js";
 import { renderPlayedCards } from "./played-cards.js";
 import { derivePendingCall, describePendingCall, isMyTurnToAnswer, respondingTeamId } from "./pending-call.js";
 import { renderScoreboardPanel } from "./scoreboard-panel.js";
+
+/** Same one-per-mount id counter as senas.ts's own `senasRowSequence`: the
+ * rail's tab needs an aria-controls target that is unique on a page that may
+ * embed more than one table. */
+let railBodySequence = 0;
 import { derivePendingCallMarks, deriveSeatCallEvent, renderSeatCallNotice } from "./seat-call-notice.js";
 import type { SeatCallEvent } from "./seat-call-notice.js";
 import { ensureMatchstickDefs } from "./scoreboard.js";
@@ -464,9 +469,18 @@ export function createMatchTableRenderer(
       ? view.self.seat
       : (others.find((other) => isAnchorActive(other.seat, other.teamId))?.seat ?? null);
 
-    const turnBadgeText = (forSelf: boolean): string => {
-      if (pendingCall !== null) return forSelf ? TABLE_STRINGS.yourTurnToAnswer : TABLE_STRINGS.waitingOnOpponent;
-      return forSelf ? TABLE_STRINGS.yourTurn : TABLE_STRINGS.opponentTurn;
+    // THE BADGE NAMES WHO, and until this it only ever knew self from
+    // not-self — so on a 2v2 table the one player on your side wore a badge
+    // that called them a rival. Reported from a screenshot of live play, on
+    // the seat directly opposite. A screen whose whole job is making the
+    // pairing obvious at a glance cannot call the partner the other thing.
+    const turnBadgeText = (relation: "self" | "partner" | "opponent"): string => {
+      if (pendingCall !== null) {
+        if (relation === "self") return TABLE_STRINGS.yourTurnToAnswer;
+        return relation === "partner" ? TABLE_STRINGS.waitingOnPartner : TABLE_STRINGS.waitingOnOpponent;
+      }
+      if (relation === "self") return TABLE_STRINGS.yourTurn;
+      return relation === "partner" ? TABLE_STRINGS.partnerTurn : TABLE_STRINGS.opponentTurn;
     };
 
     // ONE clock for the whole table, on the one badge that already names the
@@ -480,6 +494,20 @@ export function createMatchTableRenderer(
     // and every visual baseline — byte-identical.
     mountedTurnDeadline = turnDeadline ?? null;
     const remainingMs = mountedTurnDeadline === null ? null : mountedTurnDeadline - now();
+
+    // READ BEFORE THE WIPE BELOW, which is the whole point: this subtree is
+    // rebuilt on every broadcast, so a drawer a player had opened would slam
+    // shut every few seconds while they were reading it — and take the focus
+    // they had inside it with it. Same discipline the lobby uses for its
+    // credit panel's own `open`.
+    //
+    // The body's id is carried across for a second reason:
+    // focus-continuity.ts rebuilds the path to the focused element out of its
+    // ANCESTORS, and an aria-controls target that changed every render would
+    // leave the tab pointing at nothing. Minted once per mount.
+    const previousRail = container.querySelector(".hexdev-truco-side-rail");
+    const railWasOpen = previousRail?.getAttribute("data-open") === "true";
+    const railBodyId = previousRail?.querySelector(".hexdev-truco-rail-body")?.id ?? `hexdev-truco-rail-body-${String(++railBodySequence)}`;
 
     // Was `container.replaceChildren()`. The announcers are the ONE thing on
     // this table that must not be rebuilt, and `replaceChildren` removes every
@@ -537,14 +565,14 @@ export function createMatchTableRenderer(
       // how many cards they hold, and whether they owe the next move.
       if (other.seat === seatOnTheClock) {
         anchor.classList.add("hexdev-truco-anchor--active");
-        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(false), remainingMs) ?? mountedTurnClockEl;
+        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(other.relation), remainingMs) ?? mountedTurnClockEl;
       }
     }
 
     const bottom = anchors.get("bottom")!;
     if (view.self.seat === seatOnTheClock) {
       bottom.classList.add("hexdev-truco-anchor--active");
-      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText(true), remainingMs) ?? mountedTurnClockEl;
+      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText("self"), remainingMs) ?? mountedTurnClockEl;
     }
     // Re-armed on every render, because the node it drives is rebuilt on every
     // render like everything else on this table. Cleared outright when there
@@ -977,22 +1005,75 @@ export function createMatchTableRenderer(
     // document, so its append order relative to `callLog` is not
     // load-bearing.
     felt.appendChild(actionBar);
-    // MUST attach here, as a felt child (not inside `center`) — see the
-    // construction-order comment further below on `scrollCallLogToNewest`:
-    // that call is only safe once `callLog` is attached all the way up to
-    // `container`, and this append is the first link in that chain.
-    felt.appendChild(callLog);
 
-    // The scoreboard is chrome, mounted as a SIBLING of the felt, never a
-    // child of it (design §10, obs 2955: "the scoreboard is chrome, so it
-    // may take the tenant's brand; the cloth keeps truco's identity") — a
-    // real, separate home for the tanteador, not loose text floating on
-    // green (spec: Change 2).
+    // ONE RAIL, NOT TWO. Desktop used to flank the play with a vertical
+    // column on each side: the call-log rail on the left and the scoreboard
+    // rail on the right. Measured on a 1580px shell, that was 520px of chrome
+    // around 979px of table, and both columns were mostly empty — the
+    // scoreboard held about 300px of content in a 693px column. The cards,
+    // which are the thing anyone is actually looking at, got what was left.
+    //
+    // They share one rail now, calls above and score below, and the column
+    // that frees goes to the felt. Which is also why the call log stopped
+    // being a felt child: it is chrome, it always was, and it was only living
+    // on the cloth because that is where its grid area happened to be.
+    //
+    // The scoreboard is chrome for the same reason (design §10, obs 2955:
+    // "the scoreboard is chrome, so it may take the tenant's brand; the cloth
+    // keeps truco's identity") — a real, separate home for the tanteador, not
+    // loose text floating on green (spec: Change 2).
     const panel = document.createElement("div");
     renderScoreboardPanel(panel, { teams: view.teams, selfTeamId: view.self.teamId, target: view.config.pointsToWin });
 
+    // ON A PHONE THE RAIL IS A DRAWER, and that is not decoration. A rail
+    // fixed in flow at 375px grows as the calls accumulate, and the felt
+    // above it shrinks to match — which breaks the stable-window-height
+    // contract table-height-stability.browser.test.ts exists to hold, and
+    // costs card space on the screen that has the least of it. Out of flow
+    // behind a tab, it costs the felt nothing and is one tap away.
+    //
+    // The open state is read back off the DOM before this rebuild rather than
+    // held in a closure, for the same reason the lobby reads its credit
+    // panel's `open` before wiping: this whole subtree is rebuilt on every
+    // broadcast, so a drawer a player had opened would slam shut every few
+    // seconds while they were reading it.
+
+    const rail = document.createElement("div");
+    rail.className = "hexdev-truco-side-rail";
+    rail.dataset.open = String(railWasOpen);
+
+    const railBody = document.createElement("div");
+    railBody.className = "hexdev-truco-rail-body";
+    railBody.id = railBodyId;
+
+    // WCAG 4.1.2: aria-expanded promises a revealable region and aria-controls
+    // names it, so the two are set together here and can never dangle.
+    const railTab = document.createElement("button");
+    railTab.type = "button";
+    railTab.className = "hexdev-truco-rail-tab";
+    railTab.setAttribute("aria-expanded", String(railWasOpen));
+    railTab.setAttribute("aria-controls", railBody.id);
+    railTab.textContent = TABLE_STRINGS.railTab;
+    railTab.addEventListener("click", () => {
+      const open = rail.dataset.open !== "true";
+      rail.dataset.open = String(open);
+      railTab.setAttribute("aria-expanded", String(open));
+      railTab.textContent = open ? TABLE_STRINGS.railTabClose : TABLE_STRINGS.railTab;
+    });
+    if (railWasOpen) railTab.textContent = TABLE_STRINGS.railTabClose;
+
+    // Order is the layout: calls on top, tantos underneath. MUST attach the
+    // log here rather than later — see the construction-order comment further
+    // below on `scrollCallLogToNewest`: that call is only safe once `callLog`
+    // is attached all the way up to `container`, and this append is the first
+    // link in that chain.
+    railBody.appendChild(callLog);
+    railBody.appendChild(panel);
+    rail.appendChild(railTab);
+    rail.appendChild(railBody);
+
     layout.appendChild(felt);
-    layout.appendChild(panel);
+    layout.appendChild(rail);
     container.appendChild(layout);
 
     // The way out, mounted as a SIBLING of `layout` and positioned absolutely

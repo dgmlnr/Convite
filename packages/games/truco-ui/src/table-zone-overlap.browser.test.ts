@@ -639,7 +639,7 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
   // column track at all, so the base inset is the CORRECT answer there and a
   // 375/700px case would assert the opposite of the rule under test.
   if (width >= 900) {
-    it("2v2: the open señas popover starts where the actions area starts, clear of the call-log rail (wide + ultra only)", async () => {
+    it("2v2: the open señas popover starts where the actions area starts, and stops before the rail (wide + ultra only)", async () => {
       const el = mountedContainer(width);
       const render = createMatchTableRenderer();
       const state = pendingTrucoAfterTrick1Headshot2v2();
@@ -660,9 +660,143 @@ describe.each(WIDTHS)("zero-overlap: reserved zones never collide (tasks §7/§9
         Math.abs(popoverRect.left - actionBarRect.left),
         `popover left ${popoverRect.left}px vs the actions area's own left edge ${actionBarRect.left}px`,
       ).toBeLessThan(0.5);
-      expect(popoverRect.left, `popover left ${popoverRect.left}px vs call log right ${callLogRect.right}px`).toBeGreaterThanOrEqual(callLogRect.right - 0.5);
+      // The clearance flipped sides with the rail. This used to read
+      // `popover.left >= callLog.right`, because the log was a column on the
+      // LEFT and the popover had to start after it; the popover even carried
+      // an inset of its own that copied the rail's width. The log lives in the
+      // rail on the right now, the inset is gone, and the thing worth proving
+      // is the same one it always was: these two never collide.
+      expect(popoverRect.right, `popover right ${popoverRect.right}px vs call log left ${callLogRect.left}px`).toBeLessThanOrEqual(callLogRect.left + 0.5);
     });
   }
+});
+
+/**
+ * ONE RAIL, NOT TWO. Desktop used to spend a vertical column on each side of
+ * the play: the call-log rail on the left (`--hx-log-rail`, clamp(200px, 22%,
+ * 280px)) and the scoreboard rail on the right (240px at ultra). Measured on
+ * a 1580px shell that is 280 + 240 = 520px of chrome flanking 979px of table
+ * — a third of the width — and BOTH rails were mostly empty: the scoreboard
+ * held about 300px of content in 693px of column.
+ *
+ * They are one rail now, calls above and score below, and the column that
+ * frees goes to the cards. These two fences own that: the first that the two
+ * really share a band, the second that the play actually took the space
+ * rather than the felt just growing padding.
+ */
+/** How far the active-turn ring paints OUTSIDE the hand it surrounds:
+ * outline-offset, plus the outline itself, plus the halo's spread. Read off
+ * the element rather than pinned here, so retuning the ring in the stylesheet
+ * cannot leave this fence measuring a number nobody uses any more. */
+function ringReachOf(hand: Element): number {
+  const style = getComputedStyle(hand);
+  const offset = Number.parseFloat(style.outlineOffset) || 0;
+  const width = Number.parseFloat(style.outlineWidth) || 0;
+  const spread = Number.parseFloat(style.boxShadow.match(/0px 0px 0px ([\d.]+)px/)?.[1] ?? "0");
+  return Math.max(offset + width, spread);
+}
+
+describe.each(WIDTHS)("the turn ring does not paint onto the action bar — %ipx", (width) => {
+  // Reported from a screenshot of live play: "el recuadro dorado de las
+  // cartas del jugador se solapa con los botones". The ring is an OUTLINE
+  // plus a halo, both of which paint outside the box and take no layout space
+  // at all — deliberately, so the air around the cards costs no card size.
+  // The cost of that is exactly this: nothing in the layout knows the ring is
+  // there, so the row below can sit right under it.
+  it("2v2: the ring around the player's own hand clears .hexdev-truco-action-bar", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = selfTurnActiveAfterTrick1Win2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const hand = el.querySelector(".hexdev-truco-anchor--active .hexdev-truco-hand");
+    const actionBar = el.querySelector(".hexdev-truco-action-bar");
+    if (hand === null || actionBar === null) throw new Error("test setup: no active own hand or no action bar — is it really the viewer's turn?");
+
+    const reach = ringReachOf(hand);
+    expect(reach, "fence setup: the ring paints nothing outside the hand, so this cannot detect anything").toBeGreaterThan(0);
+    const painted = hand.getBoundingClientRect().bottom + reach;
+    const bar = actionBar.getBoundingClientRect();
+
+    expect(painted, `the ring reaches ${painted.toFixed(1)}px, the action bar starts at ${bar.top.toFixed(1)}px`).toBeLessThanOrEqual(bar.top + 0.5);
+  });
+});
+
+describe.each(WIDTHS)("the rail never covers the way out — %ipx", (width) => {
+  // Reported from live play at desktop: "el registro de cantos me tapa el
+  // boton salir". True, and mine — the log used to float over the centre of
+  // the cloth, and moving it into the rail put it exactly where the leave
+  // control already sat. Every width this suite tests, because the report
+  // came with the right question attached: "no se si ocurra tambien en alguna
+  // otra resolucion y en mobile".
+  it("2v2: .hexdev-truco-call-log never overlaps .hexdev-truco-leave", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoAfterTrick1Headshot2v2();
+    // The SIXTH argument is what mounts .hexdev-truco-leave at all -- the
+    // fifth is turnDeadline. Without an onLeaveMatch there is no way out on
+    // the table and this fence would pass by measuring nothing, which is how
+    // a first version of it "failed at every width" on setup rather than on
+    // the overlap it is about.
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, null, () => {});
+    await waitForArt(el);
+
+    const rail = el.querySelector<HTMLElement>(".hexdev-truco-side-rail");
+    if (rail !== null) rail.dataset.open = "true";
+    const callLog = el.querySelector(".hexdev-truco-call-log");
+    const leave = el.querySelector(".hexdev-truco-leave");
+    if (callLog === null || leave === null) throw new Error(`test setup: callLog=${String(callLog !== null)} leave=${String(leave !== null)}`);
+
+    const log = callLog.getBoundingClientRect();
+    expect(log.width, "sanity: an empty call log is display: none, which would make this vacuous").toBeGreaterThan(0);
+    expect(overlaps(log, leave.getBoundingClientRect()), `call log ${JSON.stringify(log)} vs leave ${JSON.stringify(leave.getBoundingClientRect())}`).toBe(false);
+  });
+});
+
+describe.each([960, 1280] as const)("the calls and the score share one rail — %ipx", (width) => {
+  it("2v2: the call log sits in the scoreboard's own column, not in a rail of its own", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoAfterTrick1Headshot2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const callLog = el.querySelector(".hexdev-truco-call-log");
+    const scoreboard = el.querySelector(".hexdev-truco-scoreboard-panel");
+    if (callLog === null || scoreboard === null) throw new Error("test setup: call log or scoreboard not rendered — is there really a call chain?");
+    const log = callLog.getBoundingClientRect();
+    const score = scoreboard.getBoundingClientRect();
+
+    expect(log.width, "sanity: an empty call log is display: none, which would make this vacuous").toBeGreaterThan(0);
+    // Same 0.5px epsilon as `overlaps`/`contains`.
+    expect(log.left, `call log left ${log.left}px vs the rail's own left edge ${score.left}px`).toBeGreaterThanOrEqual(score.left - 0.5);
+    expect(log.right, `call log right ${log.right}px vs the rail's own right edge ${score.right}px`).toBeLessThanOrEqual(score.right + 0.5);
+  });
+
+  it("2v2: the play takes the width the freed rail gives back", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoAfterTrick1Headshot2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const table = el.querySelector(".hexdev-truco-table");
+    if (table === null) throw new Error("test setup: the felt did not render");
+    const felt = table.getBoundingClientRect();
+    // The widest anchor is the one spanning the full play width (the partner's
+    // row at the top). Picked by measurement rather than by a selector,
+    // because which seat that is depends on the seat count.
+    const widest = [...el.querySelectorAll(".hexdev-truco-anchor")]
+      .map((a) => a.getBoundingClientRect())
+      .reduce((a, b) => (b.width > a.width ? b : a));
+
+    // With the log rail still in place this was 979/1308 = 0.75.
+    expect(
+      widest.width / felt.width,
+      `the play spans ${widest.width.toFixed(0)}px of a ${felt.width.toFixed(0)}px felt — a rail's worth of it is still going somewhere else`,
+    ).toBeGreaterThan(0.9);
+  });
 });
 
 /** The same partner-row fence as inside the loop above, at the two widths the

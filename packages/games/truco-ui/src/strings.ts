@@ -22,6 +22,17 @@ export const CALL_LABELS = {
 export const TABLE_STRINGS = {
   yourTurn: "Tu turno",
   opponentTurn: "Turno del rival",
+  /* A partner is not a rival, and a badge that calls them one on a table
+     whose whole point is that you two are a team reads as a bug to the
+     player. Reported from a screenshot: the badge over the partner's own
+     seat said "Turno del rival". */
+  partnerTurn: "Turno del compañero",
+  waitingOnPartner: "Esperando al compañero",
+  /* The tab that opens the rail on a phone. It names both halves because it
+     opens both: a tab that said only "Tantos" would hide the call history
+     behind a word that does not mention it. */
+  railTab: "Tantos y cantos",
+  railTabClose: "Cerrar tantos y cantos",
   malas: "Malas",
   buenas: "Buenas",
   us: "Nosotros",
