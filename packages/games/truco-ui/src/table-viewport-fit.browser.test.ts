@@ -171,7 +171,38 @@ describe.each(WINDOWS)("the widget fits its own window — $w x $h ($label)", ({
     expect(felt.scrollHeight, `${seats} felt rows overflowing the felt itself at ${String(h)}px`).toBeLessThanOrEqual(felt.clientHeight + 1);
   });
 
-  it("the deck marker is fully inside the felt", async () => {
+  it("the way out can actually be clicked", async () => {
+    // Reported from real play: "el boton de salir no actua cuando le hago
+    // click". Not covered, not disabled -- INTERCEPTED. The rail's own box
+    // spans the whole right column including the corner the leave control
+    // sits in, it carries a higher z-index, and it had been given the pointer
+    // events back. Nothing looked wrong, which is why no rectangle fence
+    // could have caught it: the two never overlap to the eye.
+    //
+    // It lives in THIS suite and not with the other rail fences because only
+    // this one drives a real viewport: elementFromPoint answers in viewport
+    // coordinates, and a harness that mounts a 1280px container inside a
+    // 414px window is asking about a point nobody can see.
+    const el = await mountedFullscreen(w, h);
+    // The SIXTH argument mounts .hexdev-truco-leave at all: without an
+    // onLeaveMatch there is no way out on the table, and this fence would
+    // pass by measuring nothing.
+    const state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
+    createMatchTableRenderer()(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, null, () => {});
+    await waitForArt(el);
+
+    const button = el.querySelector<HTMLElement>(".hexdev-truco-leave button");
+    if (button === null) throw new Error("fence setup: the leave control rendered no button");
+    const box = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2));
+
+    expect(
+      hit !== null && (hit === button || button.contains(hit)),
+      `the click at the button's own centre lands on ${hit === null ? "nothing" : `${hit.tagName}.${String(hit.className)}`}`,
+    ).toBe(true);
+  });
+
+    it("the deck marker is fully inside the felt", async () => {
     // Found by looking at a portrait phone once the cards started sizing
     // themselves from the window: the deck is a fraction of a CARD, so it
     // grew with them, and it hangs off the side of the hand it belongs to --
