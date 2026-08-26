@@ -997,7 +997,16 @@ export function buildTableStylesheet(): string {
     min-height: 0;
     align-items: stretch;
     overflow: hidden;
-    pointer-events: auto;
+    /* NO pointer-events: auto HERE, and the omission is the fix. The rail's
+     * box spans the whole right column -- including the corner the way out
+     * sits in, which is absolutely positioned against the shell with a lower
+     * z-index than this. Given the events back, the rail sat in front of it
+     * and ate every click: reported as "el boton de salir no actua cuando le
+     * hago click", and invisible to any fence comparing rectangles, because
+     * the two never overlap to the eye.
+     *
+     * The base rule keeps the events off the rail and hands them to its
+     * CHILDREN, which is all that was ever needed. */
   }
 
   .hexdev-truco-rail-tab { display: none; }
