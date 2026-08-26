@@ -1,3 +1,12 @@
+// The cards this game offers the shell as a front-door image, in the order
+// they should be laid out. Declared HERE rather than chosen by the lobby for
+// the same reason the deck credit is: the shell is game-agnostic and has no
+// business knowing that truco is played with a Spanish deck, let alone which
+// four cards of it are worth showing. A game says what represents it.
+//
+// These four are the three matas plus the seven of gold — the cards a player
+// recognises before they read anything, which is the entire job of a hero.
+export { HERO_CARDS } from "./hero-cards.js";
 // The credit for the artwork this UI draws with, re-exported so the widget
 // shell can show it without depending on the deck package itself. Not a
 // convenience: the card art is CC BY-SA 3.0, so crediting it is a license

@@ -4,7 +4,7 @@ import { ensureChromeStyles } from "./chrome-styles.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
-import { GAME_UI_CREDITS } from "./game-ui-registry.js";
+import { GAME_UI_CREDITS, GAME_UI_HERO } from "./game-ui-registry.js";
 
 export interface GameSelectionCallbacks {
   onPlayVsPerson(gameId: GameId, modality: ModalityConfig): void;
@@ -283,6 +283,36 @@ export function renderGameSelection(
   const header = document.createElement("div");
   header.className = "hexdev-chrome-header";
   content.appendChild(header);
+
+  // The hand of cards above the title. PURELY DECORATIVE and marked as such:
+  // it repeats nothing a screen reader needs and names nothing a player must
+  // act on, so it is hidden from the accessibility tree rather than given
+  // four alt texts that would be read out before the heading.
+  //
+  // Rendered only if a registered game offered one (game-ui-registry.ts's
+  // GAME_UI_HERO). A platform with no art gets a lobby with no hero, which is
+  // a lobby and not a hole.
+  if (GAME_UI_HERO.length > 0) {
+    const fan = document.createElement("div");
+    fan.className = "hexdev-chrome-fan";
+    fan.setAttribute("aria-hidden", "true");
+    for (const [index, src] of GAME_UI_HERO.entries()) {
+      const card = document.createElement("img");
+      card.className = "hexdev-chrome-fan-card";
+      card.src = src;
+      card.alt = "";
+      // NOT lazy, and that is the correction to an earlier version of this.
+      // The hand is the first thing on the screen; deferring an image that is
+      // already in the viewport buys nothing and costs a visible pop-in as it
+      // arrives late. `decoding="async"` is the part that actually helps —
+      // it keeps decode off the critical path without delaying the fetch.
+      card.decoding = "async";
+      card.style.setProperty("--i", String(index));
+      fan.appendChild(card);
+    }
+    fan.style.setProperty("--n", String(GAME_UI_HERO.length));
+    header.appendChild(fan);
+  }
 
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";

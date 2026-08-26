@@ -1,6 +1,6 @@
 import type { GameId } from "@hexdev/platform-contract";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
-import { DECK_ATTRIBUTION, createMatchTableRenderer } from "@hexdev/truco-ui";
+import { DECK_ATTRIBUTION, HERO_CARDS, createMatchTableRenderer } from "@hexdev/truco-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -54,6 +54,12 @@ export interface GameUiEntry {
    * nothing licensed owes nothing, and an empty list must not become a
    * ceremony every future entry has to perform. */
   readonly credits?: readonly AssetCredit[];
+  /** Image urls this game offers the front door, in the order to lay them
+   * out. Same seam and same reason as `credits`: the shell is game-agnostic,
+   * so a game says what represents it and the shell only knows how to show
+   * it. Optional — a game with nothing to show gets a lobby with no hero,
+   * which is a lobby and not a hole. */
+  readonly hero?: readonly string[];
   /** A fresh renderer per match: `createMatchTableRenderer` closes over
    * small per-mount state (the trick-outcome banner) that must not leak
    * between two different matches sharing one widget session. `onPlayAgain`
@@ -106,7 +112,7 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
   };
 }
 
-const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION] };
+const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS };
 
 /** The 2v2 game-ui entry — additive, registered under its own distinct
  * `gameId` (matching `truco-module`'s own `trucoModule2v2.id`), never a
@@ -114,7 +120,7 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRendere
  * successfully over the wire but fall back to the generic "connection is
  * live" placeholder (`main.ts`'s own `enterMatch` fallback) instead of the
  * real table — found running an actual 2v2 match end to end, not assumed. */
-const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION] };
+const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS };
 
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
@@ -141,6 +147,15 @@ export function createGameUiRegistry(): GameUiRegistry {
  * chosen and receives no registry. Threading one through that signature to
  * reach a static fact would be a worse trade than exporting the fact.
  */
+/**
+ * The front door's images: the first registered game that offers any.
+ *
+ * FIRST, not merged. Two games' hero art side by side is a catalogue, and a
+ * catalogue is what the grid below the header already is — the hero's job is
+ * to say what KIND of place this is, once, before anybody reads a word.
+ */
+export const GAME_UI_HERO: readonly string[] = [trucoEntry, trucoEntry2v2].find((entry) => (entry.hero ?? []).length > 0)?.hero ?? [];
+
 export const GAME_UI_CREDITS: readonly AssetCredit[] = (() => {
   const seen = new Map<string, AssetCredit>();
   for (const entry of [trucoEntry, trucoEntry2v2]) {

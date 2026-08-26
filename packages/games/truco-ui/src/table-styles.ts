@@ -37,7 +37,8 @@ export function buildTableStylesheet(): string {
 :root {
   ${cssDeclarations(DECK_THEME_DEFAULTS)}
   ${cssDeclarations(MATCHSTICK_THEME_DEFAULTS)}
-  --truco-table-cloth: #123f2f;
+  /* Aliases of the shared cloth above — one source, two surfaces. */
+  --truco-table-cloth: var(--hx-cloth);
   /* --hx-* private token layer (design token-parity, VDS-1): spacing,
    * radii, elevation, type, motion, and private colour, identical to
    * chrome-styles.ts's own .convite-chrome block below (proved by
@@ -103,10 +104,56 @@ export function buildTableStylesheet(): string {
    * --hx-felt-ink is the light-on-dark counterpart the felt needs; the chrome
    * cannot go on reading --gx-color-on-surface, which a tenant sets for THEIR
    * background and not for ours. */
-  --hx-felt-base: #1d3b30;
+  /* THE CLOTH, promoted to the shared layer (PR-EST3). It lived as
+   * --truco-table-cloth and friends, which the chrome is forbidden to read —
+   * correctly: a lobby that reaches into a game's tokens stops being a lobby
+   * for any other game. So the values move up here, the truco tokens below
+   * become aliases of them, and both surfaces are lit by ONE cloth instead of
+   * two that drift.
+   *
+   * That is the whole reason the lobby and the table now look like the same
+   * room. The first version of the felt lobby reinvented these numbers a
+   * shade off, which is exactly how two surfaces end up almost matching. */
+  --hx-cloth-lit: #1d6a4d;
+  --hx-cloth: #123f2f;
+  --hx-cloth-deep: #0d3325;
+  /* DEPTH IS ALWAYS TWO SHADOWS, never one, and that is the single technique
+   * that separates a drawn rectangle from an object on a table: a tight
+   * CONTACT shadow that says where the thing touches, and a wide AMBIENT one
+   * that says how far above the surface it floats. One shadow can do either
+   * job and never both — a soft blur alone reads as fog, a hard one as a
+   * sticker.
+   *
+   * --hx-lift-edge is the third member: a hairline of light along the top,
+   * which is what a real edge catches from a light source above. Every raised
+   * surface in this product gets all three. */
+  --hx-lift-contact: 0 3px 6px rgba(0, 0, 0, 0.4);
+  --hx-lift-ambient: 0 14px 34px rgba(0, 0, 0, 0.48);
+  --hx-lift-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  /* The room's own edges: a gold filet and two deep inset washes. This is
+   * what makes a flat felt read as a TABLE — the light falls in the middle
+   * and the corners recede. Huge blurs on purpose (120px), because a vignette
+   * that you can see the edge of is a border. */
+  --hx-room: inset 0 0 0 2px rgba(232, 200, 119, 0.18), inset 0 0 120px rgba(0, 0, 0, 0.5), inset 0 0 44px rgba(0, 0, 0, 0.4);
+  /* Copy sitting directly on cloth. One pixel, barely there: it is not a
+   * shadow you should notice, it is what stops light text vibrating against a
+   * mid-dark texture. */
+  --hx-ink-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  /* The letterpress under the display type: a hard offset in the cloth's own
+   * deepest tone, so the glyphs look pressed INTO the felt rather than laid
+   * on it, then two softer casts to lift them off again. Applied as
+   * drop-shadow rather than text-shadow because the title is gold clipped to
+   * its glyphs, and only drop-shadow follows an alpha mask. */
+  --hx-emboss: drop-shadow(0 2px 0 #0a2418) drop-shadow(0 4px 1px rgba(0, 0, 0, 0.45)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.5));
   --hx-felt-tint: 14%;
   --hx-felt-ink: #f4efe4;
-  --hx-felt-ink-soft: #cdd8cf;
+  /* #d8e2da and not the #cdd8cf this wanted to be. Measured against the
+   * LIGHTEST point of the felt — the centre, where light text is most at risk
+   * — the softer tone lands at 4.45:1, and 1.4.3 asks for 4.5. Four
+   * hundredths, and it is still a fail: the line is the line, and "almost"
+   * is how quiet copy ends up illegible one small step at a time. This tone
+   * clears at 4.91:1 and reads no louder. */
+  --hx-felt-ink-soft: #d8e2da;
   /* Consumed on the CHROME side (chrome-styles.ts's body-copy rule reads
    * this leading token for status-card/lobby paragraphs, FU-5); no felt
    * rule reads it, and this declaration stays anyway for cross-stylesheet
@@ -181,8 +228,8 @@ export function buildTableStylesheet(): string {
    * unused, keeps THIS PR a true zero-paint slice -- changing
    * --truco-table-cloth's value itself would repaint the felt before this
    * PR's own "tokens declared, never consumed" claim holds. */
-  --truco-cloth-lit: #1d6a4d;
-  --truco-cloth-deep: #0d3325;
+  --truco-cloth-lit: var(--hx-cloth-lit);
+  --truco-cloth-deep: var(--hx-cloth-deep);
   --truco-cloth-lane: rgba(0,0,0,.18);
   /* Scrollbar thumb, for every scroller inside the felt that keeps a VISIBLE
    * bar. A fixed felt token and never --gx-*: these bars sit on the cloth and
@@ -2815,7 +2862,7 @@ export function buildTableStylesheet(): string {
 `.trim();
 }
 
-/** Idempotent injection into `<head>` — safe to call on every render. */
+/** Idempotent injection into <head> — safe to call on every render. */
 export function ensureTableStyles(doc: Document): void {
   if (doc.getElementById(TABLE_STYLE_ID) !== null) return;
   const style = doc.createElement("style");
