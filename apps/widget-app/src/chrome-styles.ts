@@ -58,6 +58,23 @@ export function buildChromeStylesheet(): string {
   --hx-text-meta: 0.75rem;
   --hx-text-label: 0.7rem;
   --hx-tracking-label: 0.08em;
+  /* PR-EST: the lobby had no display size at all — its title computed to
+   * 21.6px, which is why the screen read as a form and not as a front door.
+   * Fluid so one token covers a phone and a desktop, and the ceiling is
+   * deliberate: 48px is large enough to carry the screen, small enough that a
+   * tenant's own page still frames it. Tracking goes NEGATIVE because that is
+   * what large type wants — the label tracking below is its mirror image. */
+  --hx-text-display-hero: clamp(1.75rem, 4.5vw, 3rem);
+  --hx-tracking-hero: -0.02em;
+  /* One step between --hx-text-title and the hero: the game's own name. It was
+   * sharing --hx-text-title with everything else, so nothing on the card
+   * announced what the card WAS. */
+  --hx-text-heading: 1.35rem;
+  /* A serif stack, used ONLY where the tenant supplied no font of their own
+   * (chrome-styles.ts's title rule). Character without a network request: the
+   * widget loads inside somebody else's page and has no business adding a font
+   * fetch they never asked for. */
+  --hx-font-display: Georgia, "Times New Roman", "Noto Serif", serif;
   /* Consumed by the chrome body-copy rule at the end of this stylesheet
    * (status-card paragraphs, lobby modality paragraphs, empty/loading
    * messages -- FU-5). The felt side declares the same leading token but
@@ -144,7 +161,12 @@ export function buildChromeStylesheet(): string {
 /* WCR-2 (lobby wide grid, PR6-T2): flex column by default (narrow/medium --
  * one card per row reads better than a cramped 2-up grid at those widths),
  * a real grid once the container has room. */
+/* PR-EST: the games grid was flush against the title. A front door needs the
+ * heading and the choices to read as two things, and the gap is what does it —
+ * --hx-space-xl, one step above the gap BETWEEN cards, so the hierarchy is in
+ * the spacing and not only in the type. */
 .hexdev-chrome-games {
+  margin-top: var(--hx-space-lg);
   display: flex;
   flex-direction: column;
   gap: var(--hx-space-lg);
@@ -154,6 +176,10 @@ export function buildChromeStylesheet(): string {
   .hexdev-chrome-games {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    /* PR-EST: cards size to their own content instead of stretching to the
+     * tallest sibling. A game with one modality was being given the height of
+     * a game with two, and the empty half read as something failing to load. */
+    align-items: start;
     gap: var(--hx-space-lg);
   }
 }
@@ -171,11 +197,39 @@ export function buildChromeStylesheet(): string {
 }
 
 /* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-display-compact. */
+/* THE FRONT DOOR, and it used to read as a form label. At
+ * --hx-text-display-compact this computed to 21.6px — the same order as the
+ * body copy under it — so nothing on the screen said "this is where you
+ * arrive". Size is the whole fix; none of the rest of this rule would matter
+ * without it.
+ *
+ * THE SERIF IS A FALLBACK, NEVER AN OVERRIDE. "var(--gx-font-family, ...)"
+ * means a tenant that named a font keeps it, exactly as everywhere else in
+ * this stylesheet — the display stack only lands when they named none, where
+ * the alternative was system-ui at 48px, which is a heading in a vacuum. It
+ * is a system stack on purpose: this widget mounts inside somebody else's
+ * page and has no business adding a font request they never asked for. */
 .hexdev-chrome-title {
   margin: 0;
-  font-size: var(--hx-text-display-compact);
+  font-family: var(--gx-font-family, var(--hx-font-display));
+  font-size: var(--hx-text-display-hero);
   font-weight: 800;
+  letter-spacing: var(--hx-tracking-hero);
+  line-height: 1.05;
   color: var(--gx-color-on-surface, #1a1a1a);
+}
+
+/* One line under the title, and it earns its place by being the only thing on
+ * this screen that is not an instruction. Everything else here tells the
+ * player what to do; this says what the place IS. Kept to --hx-text-body and
+ * 70% so it reads as a breath rather than as a second heading — the moment it
+ * competes with the title, both lose. */
+.hexdev-chrome-tagline {
+  margin: 6px 0 0;
+  font-size: var(--hx-text-body);
+  line-height: var(--hx-leading);
+  color: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 70%, transparent);
+  max-width: 46ch;
 }
 
 /* WCR-3 (status/error card, PR6-T4): a centered card, not the former
@@ -226,10 +280,16 @@ export function buildChromeStylesheet(): string {
   box-shadow: var(--hx-elev-1), var(--hx-relief);
 }
 /* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-title. */
+/* The game's own name, one step up (PR-EST). It shared --hx-text-title with
+ * the modality lines under it, so a card announced itself in the same voice it
+ * used for its options — every line on the card weighed the same and the eye
+ * had nowhere to land first. */
 .hexdev-game-card h2 {
   margin: 0;
-  font-size: var(--hx-text-title);
+  font-family: var(--gx-font-family, var(--hx-font-display));
+  font-size: var(--hx-text-heading);
   font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--gx-color-on-surface, #1a1a1a);
 }
 
@@ -253,10 +313,47 @@ export function buildChromeStylesheet(): string {
  * whole reason a structural fix like this repaints if left alone. Every
  * property a heading would otherwise contribute is named here, and the
  * --hx-leading list below adds the last one. */
-.hexdev-modality-title { margin: 0; font-size: inherit; font-weight: inherit; }
+/* B14 above explains why every inherited property is named here. PR-EST adds
+ * the reason the SIZE changed: "Puntos para ganar: 15" is a section marker,
+ * not a sentence, and it appears once per modality — three times on a lobby
+ * with two games. Set as a label (small, letterspaced, uppercase, secondary)
+ * it stops being read and starts being scanned, which is what a marker is
+ * for. The words are untouched: they come from the platform's own labelKey
+ * (game-selection.ts's describeModality), and that genericity is deliberate. */
+.hexdev-modality-title {
+  margin: 0;
+  font-size: var(--hx-text-label);
+  font-weight: 700;
+  letter-spacing: var(--hx-tracking-label);
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 65%, transparent);
+}
 .hexdev-modality-count {
   font-weight: 700;
   color: var(--gx-color-primary, #2f6f4f);
+}
+
+/* The cue over a row of controls, and it is deliberately a DIFFERENT REGISTER
+ * from .hexdev-modality-title above it. Both were uppercase markers for one
+ * revision and the result was two of them stacked with nothing between —
+ * hierarchy flattened again, just in small caps this time. So the section gets
+ * the marker and the row gets a caption: quiet, sentence case, no tracking.
+ * Two labels only read as two things if they are not the same kind of label.
+ *
+ * Kept rather than deleted, though three buttons under it already say
+ * Fácil/Normal/Difícil: it is what tells somebody on a screen reader what
+ * those three difficulties are FOR. */
+.hexdev-modality-cue {
+  font-size: var(--hx-text-meta);
+  font-weight: 500;
+  /* 65%, NOT the 55% this wanted to be. Measured against the real stack it
+   * sits on (--gx-color-on-surface at 5% over the card, which is
+   * --gx-color-primary at 6% over the surface), 55% computes to 3.69:1 at
+   * 12px — under WCAG 1.4.3's 4.5:1, and 12px is not large text by any
+   * reading of it. 65% is the first step that clears, at 5.03:1.
+   *
+   * "Quiet" is a design intention with a floor, and the floor wins. */
+  color: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 65%, transparent);
 }
 
 .hexdev-bot-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -275,9 +372,22 @@ export function buildChromeStylesheet(): string {
   border-color: var(--gx-color-primary, #2f6f4f);
   color: var(--gx-color-on-surface, #1a1a1a);
 }
+/* PR-EST: "brightness()" on a TRANSPARENT background changes nothing that can
+ * be seen — the default button here has no fill, so the old rule brightened a
+ * border and called it feedback. A tint does show, and it is built from the
+ * tenant's own primary so it cannot fight a palette this stylesheet has never
+ * met. The filter stays for the filled prominent state below, where it was
+ * the half that always worked. */
 .convite-chrome button:hover,
 .convite-chrome button:focus-visible {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--gx-color-primary, #2f6f4f) 12%, transparent);
+  filter: brightness(1.04);
+}
+.convite-chrome button:active {
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .convite-chrome button:active { transform: none; }
 }
 
 /* An OWNED focus indicator (WCAG 2.4.7) — the chrome half of the rule

@@ -71,6 +71,23 @@ export function buildTableStylesheet(): string {
   --hx-text-meta: 0.75rem;
   --hx-text-label: 0.7rem;
   --hx-tracking-label: 0.08em;
+  /* PR-EST: the lobby had no display size at all — its title computed to
+   * 21.6px, which is why the screen read as a form and not as a front door.
+   * Fluid so one token covers a phone and a desktop, and the ceiling is
+   * deliberate: 48px is large enough to carry the screen, small enough that a
+   * tenant's own page still frames it. Tracking goes NEGATIVE because that is
+   * what large type wants — the label tracking below is its mirror image. */
+  --hx-text-display-hero: clamp(1.75rem, 4.5vw, 3rem);
+  --hx-tracking-hero: -0.02em;
+  /* One step between --hx-text-title and the hero: the game's own name. It was
+   * sharing --hx-text-title with everything else, so nothing on the card
+   * announced what the card WAS. */
+  --hx-text-heading: 1.35rem;
+  /* A serif stack, used ONLY where the tenant supplied no font of their own
+   * (chrome-styles.ts's title rule). Character without a network request: the
+   * widget loads inside somebody else's page and has no business adding a font
+   * fetch they never asked for. */
+  --hx-font-display: Georgia, "Times New Roman", "Noto Serif", serif;
   /* Consumed on the CHROME side (chrome-styles.ts's body-copy rule reads
    * this leading token for status-card/lobby paragraphs, FU-5); no felt
    * rule reads it, and this declaration stays anyway for cross-stylesheet

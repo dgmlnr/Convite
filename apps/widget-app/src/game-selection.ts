@@ -92,6 +92,13 @@ function renderModality(
   wrapper.appendChild(heading);
 
   const botLabel = document.createElement("p");
+  // A LABEL, not a line of prose (PR-EST). "Jugar contra la máquina" sits
+  // directly above three buttons that already say Fácil/Normal/Difícil, so at
+  // body size it was a sentence explaining the obvious — and it repeats once
+  // per modality, three times on a two-game lobby. Styled as a marker it is
+  // scanned instead of read. The words are untouched: they are the same
+  // string the button path uses.
+  botLabel.className = "hexdev-modality-cue";
   botLabel.textContent = STRINGS.playVsBot;
 
   const personSection = document.createElement("div");
@@ -273,6 +280,11 @@ export function renderGameSelection(
   title.className = "hexdev-chrome-title";
   title.textContent = STRINGS.selectionTitle;
   content.appendChild(title);
+
+  const tagline = document.createElement("p");
+  tagline.className = "hexdev-chrome-tagline";
+  tagline.textContent = STRINGS.selectionTagline;
+  content.appendChild(tagline);
 
   if (catalog.length === 0) {
     const empty = document.createElement("p");

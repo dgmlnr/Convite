@@ -55,6 +55,10 @@ const EXPECTED_HX_TOKEN_NAMES = [
   "--hx-text-meta",
   "--hx-text-label",
   "--hx-tracking-label",
+  "--hx-text-display-hero",
+  "--hx-tracking-hero",
+  "--hx-text-heading",
+  "--hx-font-display",
   "--hx-leading",
   // motion (§3.5)
   "--hx-motion-fast",

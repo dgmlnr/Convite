@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { renderErrorWithRetry, renderStatusMessage } from "./status-view.js";
 import { renderUnsupportedGame } from "./unsupported-game-view.js";
+import { renderGameSelection } from "./game-selection.js";
+import type { GameId } from "@hexdev/platform-contract";
+import type { CatalogEntry } from "./bootstrap-data.js";
+import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 
 /**
  * Text legibility on the chrome's own coloured surfaces.
@@ -52,11 +56,35 @@ function contrastRatio(a: readonly [number, number, number], b: readonly [number
   return (lighter! + 0.05) / (darker! + 0.05);
 }
 
-/** getComputedStyle always serialises a resolved colour as rgb()/rgba(). */
-function parseRgb(colour: string): readonly [number, number, number] {
-  const channels = colour.match(/\d+(\.\d+)?/g);
-  if (channels === null || channels.length < 3) throw new Error(`unparseable computed colour: ${colour}`);
-  return [Number(channels[0]), Number(channels[1]), Number(channels[2])];
+/**
+ * A computed colour as [r, g, b, a], with r/g/b on 0-255.
+ *
+ * TWO SERIALISATIONS, and assuming one of them was this file's real bug.
+ * `getComputedStyle` returns "rgb(240, 245, 242)" for an ordinary colour —
+ * but for anything built with `color-mix()` Chromium returns
+ * "color(srgb 0.951059 0.966118 0.958588 / 0.05)": the SAME numbers on a 0-1
+ * scale, in a different function. Reading those floats as 0-255 turns every
+ * mixed colour into near-black, so text and backdrop both came out black and
+ * the ratio came out 1:1 — a number that looks like a catastrophic failure
+ * and is actually a broken ruler.
+ *
+ * It went unnoticed because until the lobby's quiet copy arrived, everything
+ * this suite measured was a plain rgb() colour. The first `color-mix` element
+ * it was ever pointed at is the one that exposed it.
+ */
+function parseColour(colour: string): readonly [number, number, number, number] {
+  const parts = colour.match(/-?\d*\.?\d+(e-?\d+)?/gi);
+  if (parts === null || parts.length < 3) throw new Error(`unparseable computed colour: ${colour}`);
+  const scale = colour.startsWith("color(") ? 255 : 1;
+  const [r, g, b] = [Number(parts[0]) * scale, Number(parts[1]) * scale, Number(parts[2]) * scale];
+  return [r, g, b, parts.length >= 4 ? Number(parts[3]) : 1];
+}
+
+/** `over` composited onto `under` at `alpha` — the colour an eye actually
+ * receives, which is what 1.4.3 is a statement about. */
+function composite(over: readonly [number, number, number, number], under: readonly [number, number, number]): readonly [number, number, number] {
+  const alpha = over[3];
+  return [0, 1, 2].map((i) => over[i]! * alpha + under[i]! * (1 - alpha)) as unknown as readonly [number, number, number];
 }
 
 /** The colour a player actually sees BEHIND this element: its own background
@@ -64,16 +92,27 @@ function parseRgb(colour: string): readonly [number, number, number] {
  * button (every chrome button is) shows its card's fill, not the page's --
  * comparing against its own "background" would compare text to nothing. */
 function paintedBackgroundOf(el: HTMLElement): readonly [number, number, number] {
+  // Collected outward first, then composited inward: a SEMI-transparent fill
+  // does not hide what is behind it, it tints it. The modality block is
+  // exactly that (--gx-color-on-surface at 5%), so stopping at the first
+  // non-transparent layer would take a 5% wash for an opaque surface.
+  const stack: (readonly [number, number, number, number])[] = [];
   for (let node: HTMLElement | null = el; node !== null; node = node.parentElement) {
-    const background = getComputedStyle(node).backgroundColor;
-    const isTransparent = background === "transparent" || background === "rgba(0, 0, 0, 0)";
-    if (!isTransparent) return parseRgb(background);
+    const layer = parseColour(getComputedStyle(node).backgroundColor);
+    if (layer[3] === 0) continue;
+    stack.push(layer);
+    if (layer[3] === 1) break;
   }
-  throw new Error("no painted background anywhere up the ancestor chain");
+  const opaque = stack.pop();
+  if (opaque === undefined) throw new Error("no painted background anywhere up the ancestor chain");
+  let resolved: readonly [number, number, number] = [opaque[0], opaque[1], opaque[2]];
+  for (const layer of [...stack].reverse()) resolved = composite(layer, resolved);
+  return resolved;
 }
 
 function ratioFor(el: HTMLElement): number {
-  return contrastRatio(parseRgb(getComputedStyle(el).color), paintedBackgroundOf(el));
+  const backdrop = paintedBackgroundOf(el);
+  return contrastRatio(composite(parseColour(getComputedStyle(el).color), backdrop), backdrop);
 }
 
 describe("chrome text stays legible on the card's own coloured surface (WCAG 2.1 AA, 1.4.3)", () => {
@@ -113,5 +152,54 @@ describe("chrome text stays legible on the card's own coloured surface (WCAG 2.1
     const card = el.querySelector<HTMLElement>("p.hexdev-chrome-status");
     expect(card).not.toBeNull();
     expect(ratioFor(card!), "status card copy vs the card").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+});
+
+/**
+ * THE LOBBY'S QUIET TEXT, which is exactly the text that stops being legible.
+ *
+ * The hierarchy pass gave this screen three levels of secondary copy — a
+ * tagline, a section marker, a caption over the difficulty row — and each is
+ * dimmed with `color-mix(... N%, transparent)` because "quiet" is the whole
+ * point of them. N is where legibility goes to die, silently: it is a design
+ * dial, it looks fine to whoever turns it, and nothing in this suite watched
+ * the lobby at all.
+ *
+ * IT ALREADY BIT. The caption shipped at 55%, which computes to 3.69:1 at
+ * 12px — under 1.4.3's 4.5:1, and 12px is not large text under any reading.
+ * It was caught by hand, and a hand check does not survive the next person who
+ * wants the caption a little softer. This is that check, kept.
+ */
+describe("the lobby's secondary copy stays legible however quiet the design wants it", () => {
+  const TRUCO: CatalogEntry = {
+    id: "truco-argentino" as GameId,
+    displayNameKey: "games.truco.name",
+    seatCount: 2,
+    configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
+  };
+
+  // Presence data is not optional here: without it the card renders a
+  // "Cargando…" placeholder and the modality copy this fences never exists.
+  const MODALITIES: readonly LobbyDisplayEntry[] = [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }];
+
+  function lobby(): HTMLElement {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO], new Map([[TRUCO.id, MODALITIES]]), { onPlayVsPerson: () => undefined, onPlayVsBot: () => undefined });
+    return el;
+  }
+
+  it.each([
+    [".hexdev-chrome-tagline", "the tagline under the title"],
+    [".hexdev-modality-title", "the section marker over each modality"],
+    [".hexdev-modality-cue", "the caption over the difficulty row"],
+  ])("%s reads at 4.5:1 — %s", (selector) => {
+    const el = lobby();
+    const target = el.querySelector<HTMLElement>(selector);
+
+    expect(target, `fence setup: nothing matched ${selector}`).not.toBeNull();
+    // 4.5:1 flat, never the 3:1 large-text allowance: none of these is large
+    // text. The marker is 11.2px, the caption 12px, the tagline 14.4px, and
+    // 1.4.3 puts the large-text line at 18.66px bold or 24px.
+    expect(ratioFor(target!), `${selector} is dimmed past legibility`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
   });
 });
