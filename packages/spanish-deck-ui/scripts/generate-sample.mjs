@@ -3,7 +3,7 @@
 // dist/index.js — this script itself is not part of the tsc project and is
 // deliberately excluded from it).
 //
-// Card fronts are now real images (Fournier 1878 scans), not generated SVG,
+// Card fronts are now real images (rasterized from Basquetteur's SVG deck), not generated SVG,
 // so `<img>` src values here use a path RELATIVE to this sample file
 // (../assets/fronts/<id>.webp) rather than `getCardArt(card).src` (an
 // absolute file:// URL derived from the built package's own location) —
@@ -141,7 +141,7 @@ ${rootVars}
 </head>
 <body>
 <h1>Spanish deck artwork — visual review</h1>
-<p>Card fronts are Heraclio Fournier's 1878 deck (real photographs, loaded on demand — see below).
+<p>Card fronts are Basquetteur's Spanish deck, CC BY-SA 3.0 (loaded on demand — see below).
 The card back is our own SVG, still CSS-themeable via custom properties (defaults shown here).</p>
 
 <h2>All 40 cards — game size (~60px wide, as seen in an actual hand)</h2>

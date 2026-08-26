@@ -254,7 +254,7 @@ describe("a widget SHORTER than its window still owns the whole screen", () => {
  * an 837px window on bands, gaps and padding before a single card was placed.
  *
  * THE CEILING IS THE ARTWORK, and that is the other half of this fence. The
- * committed deck is 520px tall (`tools/process-fournier-deck.mjs`'s own
+ * committed deck is 520px tall (`tools/process-svg-deck.mjs`'s own
  * `-resize x520`, chosen as "roughly 2x the largest on-screen use"). A card
  * drawn taller than 260 CSS px would upscale on a 2x display — trading the
  * blur the player reported for a worse one. 170px of WIDTH is that same

@@ -20,7 +20,7 @@ const ACE_ESPADA: Card = { suit: "espada", rank: 1 };
 const REY_ORO: Card = { suit: "oro", rank: 12 };
 
 describe("renderHand (spec: playable cards must look playable, unplayable ones must not invite a tap)", () => {
-  it("renders one card element per hand card, with the real Fournier art", () => {
+  it("renders one card element per hand card, with the real card art", () => {
     const el = freshContainer();
 
     renderHand(el, [ACE_ESPADA, REY_ORO], [], { onPlayCard: () => {} });

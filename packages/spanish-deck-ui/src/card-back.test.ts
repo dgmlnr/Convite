@@ -10,7 +10,7 @@ describe("card-back", () => {
   });
 
   // Previously verified separability by asserting the back never contains a
-  // hand-drawn suit symbol's markup — moot now that fronts are Fournier 1878
+  // hand-drawn suit symbol's markup — moot now that fronts are shipped
   // WebP photographs (front-image.ts), not generated SVG with markup to leak.
   // The meaningful separability claim today is that the back never embeds a
   // reference to any front image asset either — it stays a self-contained

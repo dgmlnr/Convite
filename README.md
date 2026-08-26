@@ -206,11 +206,26 @@ la topología está probada y no solamente descrita.
 
 ## Créditos
 
-Las cartas reproducen el mazo español de Heraclio Fournier de 1878, del Museo Fournier
-de Naipes de Vitoria-Gasteiz, digitalizado en Wikimedia Commons. La obra está en dominio
-público. La atribución no es legalmente exigible: se incluye por procedencia y respeto a
-la fuente.
+El arte de las cartas es de **Basquetteur**, publicado en Wikimedia Commons y distribuido
+como SVG por [spanish-playing-cards-svg](https://github.com/gjenkins20/spanish-playing-cards-svg).
+Está licenciado [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), y **se le
+hicieron cambios**: los vectores se rasterizaron a WebP de 329×520 para servirlos. Nada más
+—ni retoque, ni recorte, ni recolor—; la receta exacta está en
+`packages/spanish-deck-ui/tools/process-svg-deck.mjs`.
+
+Acá la atribución no es cortesía: es un término de la licencia, y por eso vive en el
+código (`packages/spanish-deck-ui/src/about.ts`) con un cercado que verifica que los tres
+requisitos —autor, enlace a la licencia, y que hubo cambios— sigan estando.
+
+El mazo anterior eran los escaneos de Heraclio Fournier de 1878 (Museo Fournier de Naipes,
+Vitoria-Gasteiz), de dominio público. Se cambió por legibilidad a los tamaños que el juego
+realmente dibuja: arte de línea plana y de alto contraste se lee a 60px como no se lee un
+naipe fotografiado de 1878. `process-fournier-deck.mjs` sigue en el repo documentando de
+dónde salían esos binarios, porque volver atrás es una opción real.
 
 ## Licencia
 
-Propietaria.
+Propietaria, **con una excepción**: los 40 archivos de
+`packages/spanish-deck-ui/assets/fronts/` son obra derivada y llevan sus propios términos
+(CC BY-SA 3.0). Están licenciados aparte en `packages/spanish-deck-ui/assets/LICENSE`, que
+es lo que corresponde a quien los redistribuya.

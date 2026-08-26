@@ -13,7 +13,7 @@ import type { StaticAssetResult } from "./static-widget-app.js";
 const CARD_FRONT_FILENAME = /^(?:1|2|3|4|5|6|7|10|11|12)-(?:espada|basto|oro|copa)\.webp$/;
 
 /**
- * Serves one real Fournier 1878 card front — the widget-app bundle resolves
+ * Serves one real card front — the widget-app bundle resolves
  * these at RUNTIME as `new URL("../assets/fronts/", import.meta.url)`
  * relative to wherever `widget-app.js` itself is served from
  * (`serveWidgetAppAsset`'s own `/assets/widget-app.js` route), which lands

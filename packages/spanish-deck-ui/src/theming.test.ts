@@ -5,7 +5,7 @@ import { DECK_THEME_DEFAULTS } from "./theme-tokens.js";
 // The "no card front ever hardcodes a color literal" test that used to live
 // here is REMOVED, not silently dropped: it existed to prove every
 // suit/court-figure fill in the generated SVG routed through a
-// `--deck-suit-*` custom property. Fronts are now Fournier 1878 WebP
+// `--deck-suit-*` custom property. Fronts are now shipped WebP
 // photographs (front-image.ts) — there is no SVG markup to scan, and
 // `--deck-suit-*` no longer exists as a token. This is intentional and
 // matches the "hybrid theming by zone" decision (obs 2955): the front keeps

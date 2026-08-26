@@ -1,0 +1,27 @@
+Card front artwork — packages/spanish-deck-ui/assets/fronts/*.webp
+==================================================================
+
+These 40 files are NOT covered by the license of the rest of this
+repository. They are a derivative work and carry their own terms.
+
+Original artwork
+  Basquetteur, via Wikimedia Commons
+  https://commons.wikimedia.org/wiki/Category:Spanish_playing_cards
+
+Distributed as SVG by
+  https://github.com/gjenkins20/spanish-playing-cards-svg
+
+License
+  Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+  https://creativecommons.org/licenses/by-sa/3.0/
+
+Changes made
+  The source SVGs were rasterized to WebP at 329x520. Nothing else was
+  altered: no retouch, no recolour, no crop. The exact recipe is
+  ../tools/process-svg-deck.mjs.
+
+ShareAlike
+  Because rasterizing is an adaptation, these WebP files are themselves
+  licensed CC BY-SA 3.0. Anyone redistributing them must keep this notice,
+  credit Basquetteur, link the license, and state that changes were made.
+  The attribution the product itself shows lives in ../src/about.ts.

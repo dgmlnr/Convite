@@ -1,6 +1,6 @@
 // Two theme surfaces were originally planned here (front + back), matching
 // the product decision (obs 2955): the FRONT stays fixed identity, the BACK
-// is the tenant-themeable surface. The front is now a real Fournier 1878
+// is the tenant-themeable surface. The front is now a real
 // photograph (front-image.ts) rather than generated SVG, and a raster image
 // can't respond to a CSS custom property — so the front tokens
 // (`--deck-card-bg`/`--deck-border`/`--deck-ink`/`--deck-suit-*`) are gone,
