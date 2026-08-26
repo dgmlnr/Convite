@@ -3,12 +3,33 @@ import { ACCENT_INK } from "@hexdev/widget-protocol";
 import { CHROME_STYLE_ID, buildChromeStylesheet } from "./chrome-styles.js";
 
 describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lobby/selection screen is CHROME, so it takes the tenant's brand)", () => {
-  it("drives every visible surface from the tenant's --gx- tokens, never a hardcoded truco-specific color", () => {
+  /**
+   * THE LINE MOVED, and this fence moved with it rather than being deleted.
+   *
+   * It used to read "every visible surface comes from the tenant's tokens",
+   * which was the old answer to a real question: whose identity is the lobby?
+   * The answer changed on purpose. A tenant with a white page produced a white
+   * lobby — a tidy FORM, never a table — and quality any embedder can dissolve
+   * is not quality.
+   *
+   * So the contract is now SPECIFIC instead of total, and that is what this
+   * asserts: the SURFACE is ours and the tenant only tints it, while every
+   * CONTROL still takes their brand. Both halves are load-bearing. Drop the
+   * first and an embedder can wash the product out; drop the second and we
+   * have quietly stopped being themeable at all, which is the thing this
+   * widget is sold on.
+   */
+  it("keeps the surface ours and the controls theirs", () => {
     const css = buildChromeStylesheet();
 
-    expect(css).toMatch(/\.convite-chrome[^}]*var\(--gx-color-surface/);
-    expect(css).toMatch(/\.hexdev-chrome-title[^}]*var\(--gx-color-on-surface/);
-    expect(css).toMatch(/\.hexdev-game-card[^}]*var\(--gx-radius/);
+    // OURS: the felt is the base, and --gx-color-surface may only tint it.
+    expect(css, "the chrome surface stopped being the felt").toMatch(/\.convite-chrome\s*\{[^}]*var\(--hx-felt-base\)/);
+    expect(css, "the tenant paints the surface again instead of tinting it").toMatch(/color-mix\([^)]*var\(--gx-color-surface[^)]*\)\s*var\(--hx-felt-tint\)/);
+
+    // THEIRS: radius, accent and primary still reach the controls.
+    expect(css, "the game card stopped honouring the tenant radius").toMatch(/\.hexdev-game-card[^}]*var\(--gx-radius/);
+    expect(css, "the prominent CTA stopped honouring the tenant accent").toMatch(/var\(--gx-color-accent/);
+    expect(css, "the tenant primary no longer tints the controls").toMatch(/var\(--gx-color-primary/);
   });
 
   it("never references a truco-only token (--truco-*/--deck-*) — chrome must stay generic for any future game", () => {
@@ -132,9 +153,14 @@ describe("ACCENT_INK drift fence (Tanda 3): widget-protocol validates accent aga
     expect(css).toMatch(new RegExp(`--hx-ink:\\s*${ACCENT_INK};`));
   });
 
+  // Reads the TOKEN, not the literal, and the chain is what makes that
+  // stronger rather than looser: the test directly above proves
+  // `--hx-ink` IS `ACCENT_INK`, so matching `var(--hx-ink)` here proves the
+  // CTA carries the exact ink widget-protocol validates tenant accents
+  // against — through one source instead of two copies that can drift.
   it("paints that same ink on the prominent lobby CTA, the accent-backed surface the audit measured at 1.37:1", () => {
     const css = buildChromeStylesheet();
 
-    expect(css).toMatch(new RegExp(`background: var\\(--gx-color-accent[^}]*color: ${ACCENT_INK};`));
+    expect(css).toMatch(/background: var\(--gx-color-accent[^}]*color: var\(--hx-ink\);/);
   });
 });

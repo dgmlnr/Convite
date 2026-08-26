@@ -24,8 +24,6 @@ export function buildChromeStylesheet(): string {
   display: flex;
   flex-direction: column;
   font-family: var(--gx-font-family, system-ui, sans-serif);
-  color: var(--gx-color-on-surface, #1a1a1a);
-  background: var(--gx-color-surface, #ffffff);
   /* --hx-* private token layer (design token-parity, VDS-1), identical to
    * table-styles.ts's own :root declaration (proved by
    * design-token-parity.test.ts). Scoped here, not :root: chrome has no
@@ -64,7 +62,7 @@ export function buildChromeStylesheet(): string {
    * deliberate: 48px is large enough to carry the screen, small enough that a
    * tenant's own page still frames it. Tracking goes NEGATIVE because that is
    * what large type wants — the label tracking below is its mirror image. */
-  --hx-text-display-hero: clamp(1.75rem, 4.5vw, 3rem);
+  --hx-text-display-hero: clamp(2rem, 6vw, 4.25rem);
   --hx-tracking-hero: -0.02em;
   /* One step between --hx-text-title and the hero: the game's own name. It was
    * sharing --hx-text-title with everything else, so nothing on the card
@@ -75,6 +73,25 @@ export function buildChromeStylesheet(): string {
    * widget loads inside somebody else's page and has no business adding a font
    * fetch they never asked for. */
   --hx-font-display: Georgia, "Times New Roman", "Noto Serif", serif;
+  /* THE SURFACE IS OURS (PR-EST2), and that is a product decision, not a
+   * palette. The lobby used to paint --gx-color-surface directly, so a tenant
+   * with a white page got a white lobby — a very tidy FORM, never a table.
+   * Quality that any embedder can dissolve is not quality.
+   *
+   * So the tenant TINTS rather than paints: their surface colour shifts the
+   * felt's hue by a bounded amount and the felt stays a felt. That keeps
+   * --gx-color-surface meaningful — a token we accepted and then ignored
+   * would be a silent no-op, which is worse than not accepting it — while
+   * putting a floor under how far it can go. Their primary, accent, radius
+   * and font are untouched and still drive every control.
+   *
+   * --hx-felt-ink is the light-on-dark counterpart the felt needs; the chrome
+   * cannot go on reading --gx-color-on-surface, which a tenant sets for THEIR
+   * background and not for ours. */
+  --hx-felt-base: #1d3b30;
+  --hx-felt-tint: 14%;
+  --hx-felt-ink: #f4efe4;
+  --hx-felt-ink-soft: #cdd8cf;
   /* Consumed by the chrome body-copy rule at the end of this stylesheet
    * (status-card paragraphs, lobby modality paragraphs, empty/loading
    * messages -- FU-5). The felt side declares the same leading token but
@@ -99,6 +116,28 @@ export function buildChromeStylesheet(): string {
    * the chrome. Every chrome button's border reads --gx-color-primary against
    * a real tenant surface, where that token is correct. Mirrored for parity. */
   --hx-felt-outline: #65b08a;
+  /* THE FELT, and the tenant tints it instead of replacing it — see
+   * --hx-felt-base's own note. The vignette is what turns a flat colour into
+   * a surface: a table is lit from above, so the centre is where the light
+   * falls and the edges fall away. Two layers, not one, because a single
+   * radial reads as a spotlight; the second, wider and subtler, is what keeps
+   * it looking like cloth. */
+  /* Four layers, and the order is the whole trick: weave, weave, light,
+   * shadow, colour. The two repeating gradients are a CLOTH, not a pattern —
+   * 3px apart and under 3% alpha, so they never resolve into stripes at any
+   * zoom, they just stop the felt being a flat fill.
+   *
+   * Pure CSS rather than an SVG noise data: URI, deliberately: this mounts
+   * inside somebody else's page, a strict host CSP can refuse a data: image,
+   * and a texture that silently vanishes under exactly the tenants who care
+   * most about security is not a texture. */
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.028) 0 1px, transparent 1px 3px),
+    radial-gradient(90% 60% at 50% -10%, rgba(255, 255, 255, 0.10), transparent 70%),
+    radial-gradient(130% 100% at 50% 40%, transparent 28%, rgba(0, 0, 0, 0.48) 100%),
+    color-mix(in srgb, var(--gx-color-surface, transparent) var(--hx-felt-tint), var(--hx-felt-base));
+  color: var(--hx-felt-ink);
 }
 .convite-chrome * { box-sizing: border-box; }
 
@@ -140,6 +179,37 @@ export function buildChromeStylesheet(): string {
  * genuine DESCENDANT of the query container, so its padding CAN respond to
  * the @container override below, at 24px 16px (nearest --hx-space-* pair to
  * the former hardcoded 20px 16px, a deliberate small snap) by default. */
+/* CEREMONY, and it is composition rather than decoration. The header block
+ * centres and the grid under it does not: centring EVERYTHING turns a lobby
+ * into a poster and makes a list of games hard to scan, while centring
+ * nothing leaves a dashboard. A centred title over a left-aligned grid is the
+ * shape of an entrance with a table behind it.
+ *
+ * The vertical padding is fluid and generous on purpose — space above the
+ * title is most of what separates a front door from a form, and it costs
+ * nothing but room this screen has. */
+.hexdev-chrome-header {
+  text-align: center;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: clamp(24px, 6vh, 64px) 0 0;
+}
+.hexdev-chrome-header .hexdev-chrome-tagline {
+  margin-inline: auto;
+}
+/* A rule that ENDS the header rather than divides the screen: it fades out at
+ * both ends, so it reads as the edge of the title block and not as a border
+ * between two halves. Gold at 40% — visible enough to close the composition,
+ * quiet enough that the eye goes to the games and not to a line. */
+.hexdev-chrome-header::after {
+  content: "";
+  display: block;
+  width: min(220px, 40%);
+  height: 1px;
+  margin: var(--hx-space-lg) auto 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--hx-gold) 40%, transparent), transparent);
+}
+
 .hexdev-chrome-content {
   width: min(1120px, 100%);
   margin-inline: auto;
@@ -191,7 +261,38 @@ export function buildChromeStylesheet(): string {
    * exact cascade-source-order CRITICAL this chain already hit twice,
    * PR4/PR5). Self-checked: no other rule in this file re-declares padding
    * on .hexdev-chrome-content after this point. */
-  .hexdev-chrome-content {
+  /* CEREMONY, and it is composition rather than decoration. The header block
+ * centres and the grid under it does not: centring EVERYTHING turns a lobby
+ * into a poster and makes a list of games hard to scan, while centring
+ * nothing leaves a dashboard. A centred title over a left-aligned grid is the
+ * shape of an entrance with a table behind it.
+ *
+ * The vertical padding is fluid and generous on purpose — space above the
+ * title is most of what separates a front door from a form, and it costs
+ * nothing but room this screen has. */
+.hexdev-chrome-header {
+  text-align: center;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: clamp(24px, 6vh, 64px) 0 0;
+}
+.hexdev-chrome-header .hexdev-chrome-tagline {
+  margin-inline: auto;
+}
+/* A rule that ENDS the header rather than divides the screen: it fades out at
+ * both ends, so it reads as the edge of the title block and not as a border
+ * between two halves. Gold at 40% — visible enough to close the composition,
+ * quiet enough that the eye goes to the games and not to a line. */
+.hexdev-chrome-header::after {
+  content: "";
+  display: block;
+  width: min(220px, 40%);
+  height: 1px;
+  margin: var(--hx-space-lg) auto 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--hx-gold) 40%, transparent), transparent);
+}
+
+.hexdev-chrome-content {
     padding: var(--hx-space-2xl) var(--hx-space-xl);
   }
 }
@@ -216,7 +317,20 @@ export function buildChromeStylesheet(): string {
   font-weight: 800;
   letter-spacing: var(--hx-tracking-hero);
   line-height: 1.05;
-  color: var(--gx-color-on-surface, #1a1a1a);
+  /* GOLD, AND CLIPPED TO THE GLYPHS, because a flat fill at this size reads as
+   * a heading and a gradient reads as an object — the difference between
+   * type that is set and type that is MADE. Light at the top, deep at the
+   * bottom: the same direction the felt above is lit from, so the two agree
+   * about where the light is.
+   *
+   * "color" stays declared and is what any browser without background-clip
+   * paints instead. Not a formality: unclipped, the fallback is a gold word
+   * on felt, which is fine — the failure mode is plainer, never invisible. */
+  color: var(--hx-gold);
+  background-image: linear-gradient(180deg, #fbeec6 0%, var(--hx-gold) 42%, var(--hx-gold-edge) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* One line under the title, and it earns its place by being the only thing on
@@ -228,7 +342,7 @@ export function buildChromeStylesheet(): string {
   margin: 6px 0 0;
   font-size: var(--hx-text-body);
   line-height: var(--hx-leading);
-  color: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 70%, transparent);
+  color: var(--hx-felt-ink-soft);
   max-width: 46ch;
 }
 
@@ -273,11 +387,14 @@ export function buildChromeStylesheet(): string {
   gap: 14px;
   padding: 16px;
   border-radius: var(--gx-radius, 14px);
-  background: color-mix(in srgb, var(--gx-color-primary, #2f6f4f) 6%, var(--gx-color-surface, #ffffff));
-  /* Elevation (PR6-T3, VDS-4, paint-only): --hx-elev-1 + --hx-relief, the
-   * same combined-shadow-list convention table-styles.ts's own felt-side
-   * surfaces already use for scoreboard-panel/call-log. */
-  box-shadow: var(--hx-elev-1), var(--hx-relief);
+  /* A PANEL ON THE FELT, not a white card on a page. Lifted with light rather
+   * than with a different colour: the fill is the felt plus a few per cent of
+   * white, and the hairline is what actually draws the edge. That is how a
+   * surface reads as raised without becoming a second surface — and it is the
+   * same construction table-styles.ts uses for the scoreboard and call log,
+   * which is why the lobby and the table now look like one place. */
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: var(--hx-elev-1), var(--hx-relief), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 /* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-title. */
 /* The game's own name, one step up (PR-EST). It shared --hx-text-title with
@@ -290,7 +407,7 @@ export function buildChromeStylesheet(): string {
   font-size: var(--hx-text-heading);
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: var(--gx-color-on-surface, #1a1a1a);
+  color: var(--hx-felt-ink);
 }
 
 .hexdev-modality {
@@ -299,7 +416,7 @@ export function buildChromeStylesheet(): string {
   gap: 10px;
   padding: 14px;
   border-radius: var(--gx-radius, 10px);
-  background: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 5%, transparent);
+  background: rgba(0, 0, 0, 0.16);
   /* Elevation (PR6-T3): relief only, no --hx-elev-N -- keeps the color-mix
    * tint as the primary depth signal here; [data-prominent] below stays the
    * primary, non-exclusive prominence signal too (VB-6: elevation is
@@ -326,11 +443,20 @@ export function buildChromeStylesheet(): string {
   font-weight: 700;
   letter-spacing: var(--hx-tracking-label);
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 65%, transparent);
+  color: var(--hx-gold);
 }
+/* ON THE FELT, THE TENANT'S PRIMARY IS THE WRONG COLOUR — this is where that
+ * stops being an abstraction. It was painting "2 jugadores esperando" in
+ * --gx-color-primary, a colour a tenant picks to read on THEIR page, and on a
+ * dark felt the default (#2f6f4f) is dark green on dark green: technically
+ * themed, practically invisible.
+ *
+ * So live presence speaks in the felt's own language. Gold is what this
+ * product already uses for "something is happening here" (table-styles.ts's
+ * turn badge, the señas control), and it is ours, so no tenant can dim it. */
 .hexdev-modality-count {
   font-weight: 700;
-  color: var(--gx-color-primary, #2f6f4f);
+  color: var(--hx-gold);
 }
 
 /* The cue over a row of controls, and it is deliberately a DIFFERENT REGISTER
@@ -346,14 +472,13 @@ export function buildChromeStylesheet(): string {
 .hexdev-modality-cue {
   font-size: var(--hx-text-meta);
   font-weight: 500;
-  /* 65%, NOT the 55% this wanted to be. Measured against the real stack it
-   * sits on (--gx-color-on-surface at 5% over the card, which is
-   * --gx-color-primary at 6% over the surface), 55% computes to 3.69:1 at
-   * 12px — under WCAG 1.4.3's 4.5:1, and 12px is not large text by any
-   * reading of it. 65% is the first step that clears, at 5.03:1.
-   *
-   * "Quiet" is a design intention with a floor, and the floor wins. */
-  color: color-mix(in srgb, var(--gx-color-on-surface, #1a1a1a) 65%, transparent);
+  /* "Quiet" is a design intention with a FLOOR, and the floor wins. An
+   * earlier revision of this had it at 55% of the ink and it measured 3.69:1
+   * at 12px — under WCAG 1.4.3's 4.5:1, and 12px is not large text by any
+   * reading. On the felt the soft ink clears comfortably; the fence in
+   * chrome-contrast.browser.test.ts is what keeps it that way when somebody
+   * next wants this a little softer. */
+  color: var(--hx-felt-ink-soft);
 }
 
 .hexdev-bot-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -369,8 +494,13 @@ export function buildChromeStylesheet(): string {
   font-size: var(--hx-text-body);
   cursor: pointer;
   background: transparent;
-  border-color: var(--gx-color-primary, #2f6f4f);
-  color: var(--gx-color-on-surface, #1a1a1a);
+  /* Same argument as .hexdev-modality-count above: a control sitting on the
+   * felt is outlined in the felt's own outline colour, not in a primary a
+   * tenant chose for a white page. The tenant still tints it — that is what
+   * the color-mix is — but it can only shift the hue, never darken the
+   * control into the table. */
+  border-color: color-mix(in srgb, var(--gx-color-primary, transparent) 35%, var(--hx-felt-outline));
+  color: var(--hx-felt-ink);
 }
 /* PR-EST: "brightness()" on a TRANSPARENT background changes nothing that can
  * be seen — the default button here has no fill, so the old rule brightened a
@@ -380,7 +510,7 @@ export function buildChromeStylesheet(): string {
  * the half that always worked. */
 .convite-chrome button:hover,
 .convite-chrome button:focus-visible {
-  background: color-mix(in srgb, var(--gx-color-primary, #2f6f4f) 12%, transparent);
+  background: rgba(255, 255, 255, 0.09);
   filter: brightness(1.04);
 }
 .convite-chrome button:active {
@@ -462,11 +592,16 @@ export function buildChromeStylesheet(): string {
  * data-prominent, set once from the SAME entry.waitingCount/promoteBotFallback
  * value game-selection.ts already receives from deriveLobbyDisplay — never
  * re-decided here, only painted differently. */
+/* The one filled control on the screen, and it stays filled: prominence is
+ * the whole job of this rule. The tenant's accent leads here — this is the
+ * place their brand SHOULD show — with gold underneath it, so a tenant that
+ * sets none gets the product's own accent rather than a hardcoded yellow that
+ * belongs to nobody. */
 .hexdev-modality[data-prominent="person"] button[data-action="vs-person"],
 .hexdev-modality[data-prominent="bot"] button[data-action="vs-bot"] {
-  background: var(--gx-color-accent, #ffd166);
-  border-color: var(--gx-color-accent, #ffd166);
-  color: #1a1a1a;
+  background: var(--gx-color-accent, var(--hx-gold));
+  border-color: var(--gx-color-accent, var(--hx-gold));
+  color: var(--hx-ink);
 }
 
 .hexdev-chrome-empty,

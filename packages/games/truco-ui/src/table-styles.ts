@@ -77,7 +77,7 @@ export function buildTableStylesheet(): string {
    * deliberate: 48px is large enough to carry the screen, small enough that a
    * tenant's own page still frames it. Tracking goes NEGATIVE because that is
    * what large type wants — the label tracking below is its mirror image. */
-  --hx-text-display-hero: clamp(1.75rem, 4.5vw, 3rem);
+  --hx-text-display-hero: clamp(2rem, 6vw, 4.25rem);
   --hx-tracking-hero: -0.02em;
   /* One step between --hx-text-title and the hero: the game's own name. It was
    * sharing --hx-text-title with everything else, so nothing on the card
@@ -88,6 +88,25 @@ export function buildTableStylesheet(): string {
    * widget loads inside somebody else's page and has no business adding a font
    * fetch they never asked for. */
   --hx-font-display: Georgia, "Times New Roman", "Noto Serif", serif;
+  /* THE SURFACE IS OURS (PR-EST2), and that is a product decision, not a
+   * palette. The lobby used to paint --gx-color-surface directly, so a tenant
+   * with a white page got a white lobby — a very tidy FORM, never a table.
+   * Quality that any embedder can dissolve is not quality.
+   *
+   * So the tenant TINTS rather than paints: their surface colour shifts the
+   * felt's hue by a bounded amount and the felt stays a felt. That keeps
+   * --gx-color-surface meaningful — a token we accepted and then ignored
+   * would be a silent no-op, which is worse than not accepting it — while
+   * putting a floor under how far it can go. Their primary, accent, radius
+   * and font are untouched and still drive every control.
+   *
+   * --hx-felt-ink is the light-on-dark counterpart the felt needs; the chrome
+   * cannot go on reading --gx-color-on-surface, which a tenant sets for THEIR
+   * background and not for ours. */
+  --hx-felt-base: #1d3b30;
+  --hx-felt-tint: 14%;
+  --hx-felt-ink: #f4efe4;
+  --hx-felt-ink-soft: #cdd8cf;
   /* Consumed on the CHROME side (chrome-styles.ts's body-copy rule reads
    * this leading token for status-card/lobby paragraphs, FU-5); no felt
    * rule reads it, and this declaration stays anyway for cross-stylesheet
