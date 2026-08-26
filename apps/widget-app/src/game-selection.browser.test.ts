@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
-import { CHROME_STYLE_ID } from "./chrome-styles.js";
+import { CHROME_STYLE_ID, DEAL_DURATION_MS, DEAL_STAGGER_MS } from "./chrome-styles.js";
+import { GAME_UI_HERO } from "./game-ui-registry.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { renderGameSelection } from "./game-selection.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
@@ -621,13 +622,90 @@ describe("the hand is dealt once, not on every repaint", () => {
     expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the cards never arrive").not.toBeNull();
   });
 
-  it("does NOT animate any render after it", () => {
+  it("survives the repaint that lands nine milliseconds later", () => {
+    // THE DEFECT, MEASURED IN THE RUNNING LOBBY. A MutationObserver installed
+    // before the widget booted recorded this:
+    //
+    //   17ms RENDER fan=hexdev-chrome-fan hexdev-chrome-fan--dealing
+    //   26ms RENDER fan=hexdev-chrome-fan
+    //   ...one more render every second, forever
+    //
+    // The greeting was applied correctly and destroyed nine milliseconds
+    // later by the next presence broadcast, which rebuilds the fan from
+    // scratch. The animation needs about 680ms. It was reported as never
+    // playing; it was playing, for nine milliseconds.
+    //
+    // The version of this fence that shipped the defect asserted the class
+    // was GONE after a second render. It was written against a real concern
+    // — the hand must not re-deal on every broadcast — but it could not tell
+    // "restarted" from "still running", so it demanded the only behaviour
+    // that guarantees nothing is ever seen. Those are separated now: this
+    // fence owns "still running", the elapsed-offset one below owns "not
+    // restarted", and the last one owns "eventually stops".
     const el = freshContainer();
     renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
     renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-chrome-fan"), "fence setup: the fan stopped rendering at all").not.toBeNull();
-    expect(el.querySelector(".hexdev-chrome-fan--dealing"), "a presence broadcast re-dealt the hand").toBeNull();
+    expect(
+      el.querySelector(".hexdev-chrome-fan--dealing"),
+      "a repaint mid-greeting threw the deal away",
+    ).not.toBeNull();
+  });
+
+  it("resumes where it was instead of replaying from the first card", () => {
+    // Why an offset is needed at all, and not just the class: removing an
+    // element from the document CANCELS its CSS animations, and re-inserting
+    // it starts them again at zero. Measured in the running lobby, not
+    // assumed — before removal the animation read `currentTime: 118`, while
+    // disconnected it was gone entirely, and after re-insertion it read
+    // `currentTime: 0`.
+    //
+    // So a rebuilt fan that merely kept the class would restart the deal on
+    // every presence broadcast: a hand that deals itself again once a second
+    // and never finishes. Publishing how long ago the greeting began lets the
+    // rebuilt cards pick the animation up mid-flight through a negative
+    // animation-delay, which is what makes it look continuous.
+    vi.useFakeTimers();
+    try {
+      const el = freshContainer();
+      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+      vi.advanceTimersByTime(200);
+      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+      const fan = el.querySelector<HTMLElement>(".hexdev-chrome-fan--dealing");
+      expect(fan, "fence setup: the greeting did not survive to be resumed").not.toBeNull();
+      expect(
+        fan?.style.getPropertyValue("--elapsed").trim(),
+        "the rebuilt hand deals itself again from the first card",
+      ).toBe("200ms");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops greeting once the deal has had time to land", () => {
+    // The concern the replaced fence was protecting, kept: a lobby left open
+    // repaints every second for as long as the player looks at it, and none
+    // of those repaints may deal a hand. The greeting is over when its own
+    // last card has finished — stagger for the last index plus one duration —
+    // and the numbers come from the stylesheet that animates it, so this can
+    // never disagree with the CSS about when that is.
+    vi.useFakeTimers();
+    try {
+      const el = freshContainer();
+      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+      vi.advanceTimersByTime(DEAL_DURATION_MS + DEAL_STAGGER_MS * GAME_UI_HERO.length);
+      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+      expect(el.querySelector(".hexdev-chrome-fan"), "fence setup: the fan stopped rendering at all").not.toBeNull();
+      expect(
+        el.querySelector(".hexdev-chrome-fan--dealing"),
+        "the lobby keeps re-dealing the hand for as long as it is open",
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not spend the greeting on a lobby that is still loading", () => {

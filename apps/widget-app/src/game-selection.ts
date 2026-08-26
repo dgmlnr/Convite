@@ -1,6 +1,6 @@
 import type { BotTier, GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry, ModalityConfig } from "@hexdev/platform-core";
-import { ensureChromeStyles } from "./chrome-styles.js";
+import { DEAL_DURATION_MS, DEAL_STAGGER_MS, ensureChromeStyles } from "./chrome-styles.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
@@ -166,11 +166,11 @@ const SELECTION = new WeakMap<HTMLElement, Map<string, string>>();
  * with.
  *
  * So the greeting belongs to the first render the player can actually USE.
- * A WeakSet and not a flag on the element, for the same reason the selection
- * is a WeakMap: it belongs to the container, survives the wipe that clears
+ * A WeakMap and not a flag on the element, for the same reason the selection
+ * is one: it belongs to the container, survives the wipe that clears
  * the DOM, and dies with it.
  */
-const DEALT = new WeakSet<HTMLElement>();
+const DEALT_AT = new WeakMap<HTMLElement, number>();
 
 function selectionFor(container: HTMLElement): Map<string, string> {
   const existing = SELECTION.get(container);
@@ -434,14 +434,27 @@ export function renderGameSelection(
   // a lobby and not a hole.
   if (GAME_UI_HERO.length > 0) {
     const fan = document.createElement("div");
-    // The animation class on the first render this container can be PLAYED
-    // with — see DEALT above. A lobby still waiting for its counts is not an
-    // arrival, so it does not consume the greeting; every repaint after the
-    // real one builds the same fan, already dealt.
+    // The greeting, which begins on the first render this container can be
+    // PLAYED with — see DEALT_AT above. A lobby still waiting for its counts
+    // is not an arrival, so it does not consume it.
+    //
+    // What is stored is the MOMENT it began, not the fact that it did, and
+    // that is the whole fix: this function runs again on every presence
+    // broadcast and rebuilds these cards from scratch, which cancels their
+    // animations and would restart them at zero. Publishing how long ago the
+    // hand started lets the rebuilt cards resume mid-flight instead.
     const playable = catalog.some((game) => (presenceByGame.get(game.id)?.length ?? 0) > 0);
-    const dealing = playable && !DEALT.has(container);
-    if (playable) DEALT.add(container);
+    if (playable && !DEALT_AT.has(container)) DEALT_AT.set(container, Date.now());
+    const startedAt = DEALT_AT.get(container);
+    // The greeting is over when its LAST card has finished: that card waits
+    // out the stagger for its index and then takes a full duration to land.
+    const greeting = DEAL_STAGGER_MS * Math.max(0, GAME_UI_HERO.length - 1) + DEAL_DURATION_MS;
+    const elapsed = startedAt === undefined ? undefined : Date.now() - startedAt;
+    const dealing = elapsed !== undefined && elapsed < greeting;
     fan.className = dealing ? "hexdev-chrome-fan hexdev-chrome-fan--dealing" : "hexdev-chrome-fan";
+    // What the stylesheet subtracts from each card's delay. Set only while
+    // the greeting is running, so a finished hand carries no stale offset.
+    if (dealing) fan.style.setProperty("--elapsed", `${String(elapsed)}ms`);
     fan.setAttribute("aria-hidden", "true");
     for (const [index, src] of GAME_UI_HERO.entries()) {
       const card = document.createElement("img");
