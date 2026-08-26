@@ -71,7 +71,7 @@ function seatOf(state: PriorityState, playerId: PlayerId): number {
 /** `seat3AlsoHasItsOwnMove` is what separates the two rules under test: with
  * it, the bot at seat 3 has a blocking action nobody else can take, so it
  * must keep moving even while a human is owed the shared decision. */
-function buildModule(seat3AlsoHasItsOwnMove: boolean, answeringSideCanAlsoEscalate = false): GameModule<PriorityState, PriorityAction, PriorityState, void> {
+function buildModule(seat3AlsoHasItsOwnMove: boolean, answeringSideCanAlsoEscalate = false, onlyThePartnerCanEscalate = false): GameModule<PriorityState, PriorityAction, PriorityState, void> {
   return {
     id: "fixture-priority",
     metadata: { seatCount: 4, displayNameKey: "fixture.priority", assetBase: "/fixture-priority" },
@@ -102,6 +102,15 @@ function buildModule(seat3AlsoHasItsOwnMove: boolean, answeringSideCanAlsoEscala
         if (seat === 0 || seat === 2) {
           const shared: PriorityAction[] = [{ type: "respond", playerId }];
           if (answeringSideCanAlsoEscalate) shared.push({ type: "escalate", playerId });
+          // The asymmetric case, and the one truco actually produces: the
+          // human has played their card and lost the right to open an envido,
+          // while their partner -- the pie, still holding three -- has not.
+          // Only the BOT is offered the extra call.
+          // `!state.escalated` is load-bearing, not tidiness: without it the
+          // bot escalates, is offered the same call again, and escalates
+          // forever -- which kills the test worker rather than failing, and
+          // is a fixture bug and not a room one.
+          if (onlyThePartnerCanEscalate && seat === 2 && !state.escalated) shared.push({ type: "escalate", playerId });
           return shared;
         }
         if (seat === 3 && seat3AlsoHasItsOwnMove && !state.seat3Moved) return [{ type: "own-move", playerId }];
@@ -184,8 +193,9 @@ async function runTable(options: {
   readonly humanPriority: boolean;
   readonly seat3AlsoHasItsOwnMove?: boolean;
   readonly answeringSideCanAlsoEscalate?: boolean;
+  readonly onlyThePartnerCanEscalate?: boolean;
 }): Promise<PriorityState> {
-  const module = buildModule(options.seat3AlsoHasItsOwnMove ?? false, options.answeringSideCanAlsoEscalate ?? false);
+  const module = buildModule(options.seat3AlsoHasItsOwnMove ?? false, options.answeringSideCanAlsoEscalate ?? false, options.onlyThePartnerCanEscalate ?? false);
   const auth = await createAuth();
   const registry = createGameModuleRegistry([
     options.humanPriority
@@ -213,6 +223,22 @@ describe("a bot stands down from a decision its human is also being offered", ()
 
     expect(state.pending, "fence setup: the table really did reach the shared decision").toBe(true);
     expect(state.answeredBy, "the bot partner answered a question that was the human's to answer").toBeNull();
+  });
+
+  it("still takes a call that is ITS OWN — one the human is not being offered at all", async () => {
+    // THE OTHER HALF, and the report that produced it: "no puedo cantar
+    // envido y mi compañero tampoco lo canta". The human had played their
+    // card, which in truco gives up the right to open an envido; their pie
+    // partner still held three and was the only one who could. Standing down
+    // wholesale swallowed that too, and the team simply lost the call.
+    //
+    // Holding back what the human HOLDS, rather than everything, separates
+    // the two: the shared answer stays theirs, the call only the bot has is
+    // the bot's to make.
+    const state = await runTable({ humanPriority: true, onlyThePartnerCanEscalate: true });
+
+    expect(state.answeredBy, "the bot partner answered a question that was the human's to answer").toBeNull();
+    expect(state.escalated, "the bot sat on a call its human teammate could not make at all").toBe(true);
   });
 
   it("WITHOUT the classifier the bot answers — which is the behaviour being changed, not an accident of the fixture", async () => {

@@ -164,6 +164,14 @@ function actorOf(action: unknown): PlayerId | undefined {
  * mutation — the identical guarantee (a client only ever receives its own
  * view), with no Schema/StateView machinery and no per-game room subclass.
  */
+/** An erased action's own `type`, if it has one. The transport never knows a
+ * game's action shape -- it only ever compares like with like. */
+function typeOf(action: unknown): string | undefined {
+  if (typeof action !== "object" || action === null) return undefined;
+  const type = (action as { type?: unknown }).type;
+  return typeof type === "string" ? type : undefined;
+}
+
 export class MatchRoom extends Room {
   private module: GameModule<unknown, ErasedAction, unknown, unknown> | undefined;
   private config: unknown;
@@ -777,7 +785,9 @@ export class MatchRoom extends Room {
         const actingBot = this.findActingBot();
         if (actingBot !== undefined) {
           const view = module.getViewFor(this.matchState, actingBot.playerId);
-          const legal = module.getLegalActions(this.matchState, actingBot.playerId);
+          // The bot's OWN options, already stripped of whatever its human
+          // teammate is being asked to decide (findActingBot).
+          const legal = actingBot.legal;
           const bought = this.boughtAnswers.get(actingBot.playerId);
           const action = await actingBot.strategy.chooseAction(view, legal, BOT_BUDGET_MS, bought);
           const result = module.applyAction(this.matchState, action);
@@ -865,15 +875,21 @@ export class MatchRoom extends Room {
    * disclosed limitation (see apply-progress's own bot-honesty section),
    * not a correctness gap — nothing depends on a bot ever sending one.
    */
-  private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction> } | undefined {
+  private findActingBot(): { readonly playerId: PlayerId; readonly strategy: BotStrategy<unknown, ErasedAction>; readonly legal: readonly ErasedAction[] } | undefined {
     const module = this.module;
     const registry = this.registry;
     const gameId = this.gameId;
     if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return undefined;
-    const humanIsOfferedTheSameDecision = this.someHumanCanTakePriorityAction();
+    const held = this.decisionsAHumanIsWaitingOn();
     for (const controller of this.controllers.values()) {
       if (controller.kind !== "bot") continue;
-      const legal = module.getLegalActions(this.matchState, controller.playerId);
+      const all = module.getLegalActions(this.matchState, controller.playerId);
+      // HELD BACK BY TYPE, not wholesale. Everything the human is being
+      // offered right now is theirs to decide; anything else this bot can do
+      // is its own, and taking it away was costing the team calls only the
+      // bot could make. See decisionsAHumanIsWaitingOn for the two reports
+      // that shaped this.
+      const legal = held === undefined ? all : all.filter((action) => !held.has(typeOf(action) ?? ""));
       const blocking = legal.filter((action) => !registry.isNonBlockingAction(gameId, action));
       if (blocking.length === 0) continue;
       // THE HUMAN GETS THE FIRST WORD. When this bot is offered a decision
@@ -897,8 +913,7 @@ export class MatchRoom extends Room {
       // to be settled, so while anything is pending nobody is playing a card.
       // A bot with a genuinely private move has no human-priority action at
       // all and never reaches this line.
-      if (humanIsOfferedTheSameDecision && blocking.some((action) => registry.isHumanPriorityAction(gameId, action))) continue;
-      return controller;
+      return { playerId: controller.playerId, strategy: controller.strategy, legal };
     }
     return undefined;
   }
@@ -919,16 +934,45 @@ export class MatchRoom extends Room {
    * the answering side is being offered it" are the same statement here.
    */
   private someHumanCanTakePriorityAction(): boolean {
+    return this.decisionsAHumanIsWaitingOn() !== undefined;
+  }
+
+  /**
+   * The action TYPES a human seat is currently being offered, when one of
+   * them is a decision the game marks as the human's to make first --
+   * `undefined` when no human is waiting on anything.
+   *
+   * WHY TYPES, AND NOT JUST A BOOLEAN. A bot standing down used to stand down
+   * from EVERYTHING, and that was too blunt in both directions at once.
+   *
+   * It was right for a pending envido: the engine offers the answering side
+   * its two responses AND every higher call it could escalate to, to BOTH
+   * teammates, so a bot allowed to escalate takes the decision away just as
+   * surely as one allowed to answer. Reported exactly that way once.
+   *
+   * It was wrong for a pending truco whose human teammate has already played
+   * a card. The human is offered only the two responses; the pie who has not
+   * played is ALSO offered the envido -- "el envido esta primero" -- and the
+   * blanket stand-down swallowed it. The team simply lost the call, which is
+   * how it was reported: "no puedo cantar envido y mi compañero tampoco lo
+   * canta".
+   *
+   * Holding back exactly what the human is holding covers both: the
+   * escalations disappear when the human has them too, and the envido
+   * survives when they do not.
+   */
+  private decisionsAHumanIsWaitingOn(): ReadonlySet<string> | undefined {
     const module = this.module;
     const registry = this.registry;
     const gameId = this.gameId;
-    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return false;
+    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return undefined;
     for (const controller of this.controllers.values()) {
       if (controller.kind !== "human") continue;
       const legal = module.getLegalActions(this.matchState, controller.playerId);
-      if (legal.some((action) => registry.isHumanPriorityAction(gameId, action))) return true;
+      if (!legal.some((action) => registry.isHumanPriorityAction(gameId, action))) continue;
+      return new Set(legal.map((action) => typeOf(action)).filter((type): type is string => type !== undefined));
     }
-    return false;
+    return undefined;
   }
 
   /**
