@@ -1,3 +1,11 @@
+// The credit for the artwork this UI draws with, re-exported so the widget
+// shell can show it without depending on the deck package itself. Not a
+// convenience: the card art is CC BY-SA 3.0, so crediting it is a license
+// term, and the surface that must satisfy that term is the shell — which is
+// game-agnostic and has no business knowing which deck a given game uses.
+// Declaring it here is how a game says what its own rendering owes.
+export { DECK_ATTRIBUTION } from "@hexdev/spanish-deck-ui";
+export type { DeckAttribution } from "@hexdev/spanish-deck-ui";
 export { renderCalls } from "./calls.js";
 export { deriveHandOutcomeEvent, renderHandOutcomeBanner } from "./hand-outcome.js";
 export type { HandOutcomeBannerProps, HandOutcomeEvent } from "./hand-outcome.js";
