@@ -1,6 +1,19 @@
 export const CHROME_STYLE_ID = "convite-chrome-styles";
 
 /**
+ * How long one card takes to land, and how long each waits behind the one
+ * before it. Exported and interpolated into the rule below rather than
+ * written into the CSS as literals, because game-selection.ts has to know
+ * exactly when the greeting is over: it stops publishing the elapsed offset
+ * at that moment, and a stylesheet that disagreed by so much as a frame would
+ * either cut the last card short or leave the class on a finished animation.
+ * One pair of numbers, read by the code that animates and by the code that
+ * times it.
+ */
+export const DEAL_DURATION_MS = 460;
+export const DEAL_STAGGER_MS = 55;
+
+/**
  * The lobby/selection screen's own stylesheet, generated as a string for the
  * same reason `truco-ui`'s `table-styles.ts` is: this package builds via
  * plain `vite build` for its app bundle, but nothing here needs a `.css`
@@ -333,8 +346,15 @@ export function buildChromeStylesheet(): string {
 }
 
 .hexdev-chrome-fan--dealing .hexdev-chrome-fan-card {
-  animation: hexdev-deal 460ms var(--hx-ease) backwards;
-  animation-delay: calc(var(--i) * 55ms);
+  animation: hexdev-deal ${DEAL_DURATION_MS}ms var(--hx-ease) backwards;
+  /* MINUS how long ago the greeting began (game-selection.ts publishes it on
+   * the fan). Every presence broadcast rebuilds these cards, and a rebuilt
+   * element restarts its animation at zero, so without this the hand would
+   * deal itself again once a second and never finish. A negative delay starts
+   * an animation partway through: subtracting the elapsed time puts each
+   * rebuilt card exactly where the destroyed one was, which is what makes a
+   * hand that is torn down mid-deal look like it was never interrupted. */
+  animation-delay: calc(var(--i) * ${DEAL_STAGGER_MS}ms - var(--elapsed, 0ms));
 }
 
 /* Not a preference to honour grudgingly: for a vestibular-sensitive player
@@ -503,8 +523,15 @@ export function buildChromeStylesheet(): string {
 }
 
 .hexdev-chrome-fan--dealing .hexdev-chrome-fan-card {
-  animation: hexdev-deal 460ms var(--hx-ease) backwards;
-  animation-delay: calc(var(--i) * 55ms);
+  animation: hexdev-deal ${DEAL_DURATION_MS}ms var(--hx-ease) backwards;
+  /* MINUS how long ago the greeting began (game-selection.ts publishes it on
+   * the fan). Every presence broadcast rebuilds these cards, and a rebuilt
+   * element restarts its animation at zero, so without this the hand would
+   * deal itself again once a second and never finish. A negative delay starts
+   * an animation partway through: subtracting the elapsed time puts each
+   * rebuilt card exactly where the destroyed one was, which is what makes a
+   * hand that is torn down mid-deal look like it was never interrupted. */
+  animation-delay: calc(var(--i) * ${DEAL_STAGGER_MS}ms - var(--elapsed, 0ms));
 }
 
 /* Not a preference to honour grudgingly: for a vestibular-sensitive player
