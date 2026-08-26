@@ -6,7 +6,7 @@
 //
 // These four are the three matas plus the seven of gold — the cards a player
 // recognises before they read anything, which is the entire job of a hero.
-export { HERO_CARDS } from "./hero-cards.js";
+export { HERO_CARDS, HERO_TITLE } from "./hero-cards.js";
 // The credit for the artwork this UI draws with, re-exported so the widget
 // shell can show it without depending on the deck package itself. Not a
 // convenience: the card art is CC BY-SA 3.0, so crediting it is a license

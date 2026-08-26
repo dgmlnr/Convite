@@ -4,7 +4,7 @@ import { ensureChromeStyles } from "./chrome-styles.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
-import { GAME_UI_CREDITS, GAME_UI_HERO } from "./game-ui-registry.js";
+import { GAME_UI_CREDITS, GAME_UI_HERO, GAME_UI_HERO_TITLE } from "./game-ui-registry.js";
 
 export interface GameSelectionCallbacks {
   onPlayVsPerson(gameId: GameId, modality: ModalityConfig): void;
@@ -130,7 +130,93 @@ function renderModality(
   return wrapper;
 }
 
-function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] | undefined, callbacks: GameSelectionCallbacks): HTMLElement {
+/** The modality signature this card is currently showing, in the same shape
+ * `dataset.modality` already used — it is the one thing about a modality that
+ * is stable across presence broadcasts. */
+/**
+ * Which modality each game is showing, per container.
+ *
+ * NOT IN THE DOM, unlike the credit panel's open state, and the difference is
+ * the order of events: the panel is read BEFORE the wipe and re-applied
+ * after, which works because nothing changes it in between. A selection is
+ * changed by a click that then triggers the re-render — so reading it off the
+ * DOM would read the value the click was replacing, and the choice would
+ * never take.
+ *
+ * Keyed by container and weakly held: a page with two widgets on it keeps two
+ * selections, and neither outlives its container.
+ */
+const SELECTION = new WeakMap<HTMLElement, Map<string, string>>();
+
+function selectionFor(container: HTMLElement): Map<string, string> {
+  const existing = SELECTION.get(container);
+  if (existing !== undefined) return existing;
+  const created = new Map<string, string>();
+  SELECTION.set(container, created);
+  return created;
+}
+
+function signatureOf(modality: ModalityConfig): string {
+  return Object.entries(modality)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+}
+
+/**
+ * ONE CHOICE AT A TIME, which is what this screen stopped being.
+ *
+ * Every modality used to render its OWN opponent block, so a game with two
+ * point totals showed two "play against a person" buttons and six difficulty
+ * buttons — a matrix, laid out as a list, that the player had to read
+ * entirely before understanding that most of it was the same offer twice.
+ *
+ * Now the modalities are a segmented selector and the opponent block belongs
+ * to whichever one is selected. Two decisions in sequence — WHICH GAME, then
+ * AGAINST WHOM — instead of one grid of every combination.
+ *
+ * IT ALSO FIXES AN ACCESSIBILITY PROBLEM RATHER THAN MOVING IT. The old
+ * layout repeated "Fácil" once per modality with nothing but a group label to
+ * tell the copies apart (WCAG 2.4.6, and the group naming below is what
+ * remains of it). One row per game means there is nothing to disambiguate.
+ */
+function renderModalityPicker(
+  gameId: GameId,
+  entries: readonly LobbyDisplayEntry[],
+  selected: string,
+  configOptions: CatalogEntry["configOptions"],
+  onSelect: (signature: string) => void,
+): HTMLElement {
+  const nav = document.createElement("div");
+  nav.className = "hexdev-modality-picker";
+  nav.setAttribute("role", "group");
+  nav.setAttribute("aria-label", STRINGS.modalityLegend);
+
+  for (const entry of entries) {
+    const signature = signatureOf(entry.modality);
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "hexdev-modality-option";
+    option.dataset.modality = signature;
+    option.textContent = describeModality(entry.modality, configOptions);
+    // aria-pressed and not a radio group: these are buttons that change what
+    // the panel below shows, and a screen reader should hear the state
+    // change rather than a form control that was never submitted.
+    option.setAttribute("aria-pressed", String(signature === selected));
+    option.addEventListener("click", () => {
+      onSelect(signature);
+    });
+    nav.appendChild(option);
+  }
+  return nav;
+}
+
+function renderGame(
+  entry: CatalogEntry,
+  presence: readonly LobbyDisplayEntry[] | undefined,
+  callbacks: GameSelectionCallbacks,
+  selectedByGame: ReadonlyMap<string, string>,
+  onSelect: (gameId: GameId, signature: string) => void,
+): HTMLElement {
   const card = document.createElement("section");
   card.className = "hexdev-game-card";
   // Focus-continuity ancestor context: two games can offer the SAME modality
@@ -142,6 +228,17 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
   title.textContent = gameName;
   card.appendChild(title);
 
+  // What this format IS, from the platform's own seat count — see
+  // i18n.ts's formatDescription. Absent for a seat count nobody has written a
+  // line for yet, and an absent line is simply not rendered.
+  const explanation = STRINGS.formatDescription(entry.seatCount);
+  if (explanation !== undefined) {
+    const blurb = document.createElement("p");
+    blurb.className = "hexdev-game-blurb";
+    blurb.textContent = explanation;
+    card.appendChild(blurb);
+  }
+
   if (presence === undefined || presence.length === 0) {
     const loading = document.createElement("p");
     loading.className = "hexdev-chrome-loading";
@@ -150,9 +247,23 @@ function renderGame(entry: CatalogEntry, presence: readonly LobbyDisplayEntry[] 
     return card;
   }
 
-  for (const modalityEntry of presence) {
-    card.appendChild(renderModality(entry.id, gameName, modalityEntry, entry.configOptions, callbacks));
+  // The selection, or the first modality when this card has never been
+  // touched — and the fallback matters: a remembered signature can vanish
+  // between broadcasts (a modality stops being offered), and a card that
+  // then showed nothing would look broken rather than reset.
+  const remembered = selectedByGame.get(entry.id);
+  const current = presence.find((option) => signatureOf(option.modality) === remembered) ?? presence[0]!;
+
+  // A single modality is not a choice, so it is not offered as one.
+  if (presence.length > 1) {
+    card.appendChild(
+      renderModalityPicker(entry.id, presence, signatureOf(current.modality), entry.configOptions, (signature) => {
+        onSelect(entry.id, signature);
+      }),
+    );
   }
+
+  card.appendChild(renderModality(entry.id, gameName, current, entry.configOptions, callbacks));
   return card;
 }
 
@@ -258,6 +369,11 @@ export function renderGameSelection(
   // the player had opened would slam shut every few seconds while they were
   // reading it. One DOM attribute, read before the wipe and re-applied after.
   const aboutWasOpen = container.querySelector<HTMLDetailsElement>(".hexdev-about")?.open ?? false;
+  const selectedByGame = selectionFor(container);
+  const select = (gameId: GameId, signature: string): void => {
+    selectedByGame.set(gameId, signature);
+    renderGameSelection(container, catalog, presenceByGame, callbacks);
+  };
   container.replaceChildren();
   container.className = "convite-chrome";
   // WCR-1: gates chrome-styles.ts's container-type declaration and the
@@ -314,10 +430,27 @@ export function renderGameSelection(
     header.appendChild(fan);
   }
 
+  // THE NAME IS THE TITLE, and the instruction moved under it. A front door
+  // says where you are first and what to do second; this screen had it the
+  // other way round, so the biggest thing on it was a verb.
+  //
+  // The name comes from the game (game-ui-registry.ts's GAME_UI_HERO_TITLE),
+  // never from the catalog: the catalog has "Truco Argentino" and "Truco
+  // Argentino 2v2" as separate entries because they are separate matches to
+  // join, and printing one of those here would put a seat count in the title
+  // of the screen. A platform whose games declare nothing falls back to the
+  // instruction as the heading, which is what this always was.
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";
-  title.textContent = STRINGS.selectionTitle;
+  title.textContent = GAME_UI_HERO_TITLE ?? STRINGS.selectionTitle;
   header.appendChild(title);
+
+  if (GAME_UI_HERO_TITLE !== undefined) {
+    const instruction = document.createElement("p");
+    instruction.className = "hexdev-chrome-instruction";
+    instruction.textContent = STRINGS.selectionTitle;
+    header.appendChild(instruction);
+  }
 
   const tagline = document.createElement("p");
   tagline.className = "hexdev-chrome-tagline";
@@ -340,7 +473,7 @@ export function renderGameSelection(
   games.className = "hexdev-chrome-games";
   content.appendChild(games);
   for (const entry of catalog) {
-    games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks));
+    games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks, selectedByGame, select));
   }
   appendIfPresent(content, renderAbout(aboutWasOpen));
   restoreFocus(container, focusSnapshot);

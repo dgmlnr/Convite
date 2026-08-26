@@ -31,4 +31,19 @@ const FACES: readonly Card[] = [
   { suit: "espada", rank: 7 },
 ];
 
+/**
+ * What this game calls itself on the front door.
+ *
+ * NOT the catalog's display name, and the difference matters: the catalog has
+ * "Truco Argentino" and "Truco Argentino 2v2" as separate entries, because
+ * they are separate matches to join. On the door they are one game with two
+ * formats, and printing an entry name there would put a seat count in the
+ * title of the screen.
+ *
+ * Declared by the game for the same reason its cards and its credits are: the
+ * shell is game-agnostic and must not learn that this platform is currently
+ * mostly truco.
+ */
+export const HERO_TITLE = "Truco Argentino";
+
 export const HERO_CARDS: readonly string[] = FACES.map((card) => getCardFrontUrl(card).href);

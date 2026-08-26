@@ -1,6 +1,6 @@
 import type { GameId } from "@hexdev/platform-contract";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
-import { DECK_ATTRIBUTION, HERO_CARDS, createMatchTableRenderer } from "@hexdev/truco-ui";
+import { DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -60,6 +60,8 @@ export interface GameUiEntry {
    * it. Optional — a game with nothing to show gets a lobby with no hero,
    * which is a lobby and not a hole. */
   readonly hero?: readonly string[];
+  /** What this game calls itself on the front door — see `hero`. */
+  readonly heroTitle?: string;
   /** A fresh renderer per match: `createMatchTableRenderer` closes over
    * small per-mount state (the trick-outcome banner) that must not leak
    * between two different matches sharing one widget session. `onPlayAgain`
@@ -112,7 +114,7 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
   };
 }
 
-const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS };
+const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS, heroTitle: HERO_TITLE };
 
 /** The 2v2 game-ui entry — additive, registered under its own distinct
  * `gameId` (matching `truco-module`'s own `trucoModule2v2.id`), never a
@@ -120,7 +122,7 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRendere
  * successfully over the wire but fall back to the generic "connection is
  * live" placeholder (`main.ts`'s own `enterMatch` fallback) instead of the
  * real table — found running an actual 2v2 match end to end, not assumed. */
-const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS };
+const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS, heroTitle: HERO_TITLE };
 
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
@@ -154,6 +156,10 @@ export function createGameUiRegistry(): GameUiRegistry {
  * catalogue is what the grid below the header already is — the hero's job is
  * to say what KIND of place this is, once, before anybody reads a word.
  */
+/** The name over the door, from the same game that supplied its images — so
+ * the title and the cards under it can never come from two different games. */
+export const GAME_UI_HERO_TITLE: string | undefined = [trucoEntry, trucoEntry2v2].find((entry) => (entry.hero ?? []).length > 0)?.heroTitle;
+
 export const GAME_UI_HERO: readonly string[] = [trucoEntry, trucoEntry2v2].find((entry) => (entry.hero ?? []).length > 0)?.hero ?? [];
 
 export const GAME_UI_CREDITS: readonly AssetCredit[] = (() => {
