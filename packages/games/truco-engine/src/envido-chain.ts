@@ -95,8 +95,8 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
 
 /** Envido may only be OPENED during the FIRST trick, before that trick's
  * second card is played (spec is silent on the exact boundary; verified
- * against real Truco Argentino convention — ludoteka.com, trucogame.com,
- * timbax.com, folkloretradiciones.com.ar, trucobits.com — all consistent).
+ * against real Truco Argentino convention across five published rulebooks,
+ * all consistent on this point).
  * This REPLACES the earlier `truco.status === "none"` simplification
  * (PR5/PR6/PR7): envido now correctly interrupts a PENDING or ACCEPTED truco
  * call, as long as it is still the first trick and the opener has not yet
@@ -215,13 +215,32 @@ export function getLegalEnvidoActions(state: MatchState, playerId: PlayerId): re
     // THE ROUND HAS A TURN ORDER OF ITS OWN, and it is not `hand.turnSeat`:
     // cards are frozen while an envido resolves, so the card turn cannot
     // serve. It runs from the MANO around the table — "el primero en cantar
-    // será el jugador que es mano" (trucogame.com's reglamento) — and
+    // será el jugador que es mano", per published rule -- and
     // deliberately NOT from whoever called the envido.
     if (declarerSeatFor(state, hand, envido) !== player.seat) return [];
-    return [
-      { type: "declare-envido", playerId, declaration: "points" },
-      { type: "declare-envido", playerId, declaration: "sonBuenas" },
-    ];
+    // SON BUENAS IS GIVING UP, so it is only offered to somebody who has
+    // something to give up. Conceding awards the envido to the OTHER team --
+    // see the note beside that award below -- so a player whose own side
+    // already holds the best number on the table was being offered a button
+    // that threw away a round their partner had won. Reported from real play:
+    // "mi compañero canto el tanto 29, el rival canto 25 y por mas que mi
+    // compañero va ganando, me sale el boton de son buenas".
+    //
+    // Withheld, not redefined: conceding stays exactly as final as it was,
+    // and stays available in the one situation where it says something --
+    // when the number to beat is a rival's, or when nobody has spoken yet and
+    // giving up first is a real choice.
+    const runningBest = envido.declarations.reduce<Extract<EnvidoDeclaration, { declaration: "points" }> | null>(
+      (winner, candidate) => (candidate.declaration === "points" && (winner === null || candidate.points > winner.points) ? candidate : winner),
+      null,
+    );
+    const ownSideIsAhead = runningBest !== null && runningBest.teamId === player.teamId;
+    return ownSideIsAhead
+      ? [{ type: "declare-envido", playerId, declaration: "points" }]
+      : [
+          { type: "declare-envido", playerId, declaration: "points" },
+          { type: "declare-envido", playerId, declaration: "sonBuenas" },
+        ];
   }
   return []; // "declined" or "revealed" — envido is done for this hand.
 }
