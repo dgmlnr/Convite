@@ -47,7 +47,7 @@ export interface RespondEnvidoAction {
  * genuinely chooses is only whether to say it — or to concede.
  *
  * AND CONCEDING IS NOT FREE. In pairs, "son buenas" gives the envido up for
- * the WHOLE TEAM, not just for the player saying it: es.wikipedia.org's own
+ * the WHOLE TEAM, not just for the player saying it: a published rulebook's
  * Truco article is explicit — "en caso de estar jugando en parejas, al decir
  * 'son buenas' se le da por perdido el envido a todo el equipo". This engine
  * used to model it as a per-player statement and let the round carry on to
@@ -133,12 +133,11 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  * each other, which is the whole reason this note exists rather than a code
  * change. In a 2v2 dealt from seat 0, play order is 1, 2, 3, 0:
  *
- *   - trucoargentino.com.ar/reglas: "los dos jugadores a la izquierda de
- *     quien repartió son los que podrán cantar envido, real envido o falta
- *     envido" — seats 1 and 2.
- *   - es.wikipedia.org/wiki/Truco_argentino: "los jugadores con el derecho a
- *     cantarlo serán los pie de cada equipo (3v3 o 2v2) ... en el 1v1
- *     cualquiera puede cantarlo" — seats 3 and 0.
+ *   - one gives it to the two seats immediately left of the dealer, which
+ *     is seats 1 and 2.
+ *   - another gives it to each team's PIE -- its last player to speak in the
+ *     round -- which is seats 3 and 0, and exempts 1v1 entirely because with
+ *     two seats "the last two" is everybody.
  *
  * Those are the exact complements of each other: each source hands the right
  * to precisely the two seats the other withholds it from. Convite implements
@@ -158,7 +157,7 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  * seats alternate teams, so whoever speaks last for one side speaks
  * second-to-last for the other. That is why this needs no team bookkeeping,
  * and why 1v1 needs no special case: with two seats "the last two" is
- * everybody, which is exactly the exemption Wikipedia spells out ("en el 1v1
+ * everybody, which is exactly the exemption that variant spells out ("in 1v1
  * cualquiera puede cantarlo"). 3v3 falls out the same way.
  */
 function isPie(hand: HandState, player: Player, seatCount: number): boolean {
@@ -363,7 +362,7 @@ export function applyEnvidoAction(state: MatchState, action: EnvidoAction): Appl
   // CONCEDING ENDS THE ROUND, FOR THE WHOLE TEAM. "Son buenas" means "yours
   // are better", said to the opponents — in pairs it gives the envido up for
   // both members, so the partner who has not spoken never gets to. That is
-  // the rule (es.wikipedia.org's Truco article states it in exactly those
+  // the rule (a published rulebook states it in exactly those
   // terms) and it is what makes the button worth thinking about before
   // pressing: it is a decision for two people, taken by one.
   //

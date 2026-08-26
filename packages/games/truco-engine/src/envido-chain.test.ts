@@ -703,7 +703,7 @@ describe("who may interpose an envido over a pending truco", () => {
  *     from whoever called the envido.
  *   - CONCEDING IS FOR THE TEAM: "en caso de estar jugando en parejas, al
  *     decir 'son buenas' se le da por perdido el envido a TODO EL EQUIPO"
- *     (es.wikipedia.org's Truco article). The engine used to treat it as a
+ *     (a published rulebook). The engine used to treat it as a
  *     per-player statement and carry the round on to the partner. It was
  *     caught by a player asking the question the implementation could not
  *     answer, and it is why the concession tests below exist at all.

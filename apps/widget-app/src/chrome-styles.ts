@@ -439,139 +439,25 @@ export function buildChromeStylesheet(): string {
 }
 
 @container hexdev-chrome (min-width: 1024px) {
-  /* Cascade note: identical 0-1-0 specificity to .hexdev-chrome-content's
-   * own base padding rule above -- this wins because it is declared LATER
-   * in this same stylesheet string, not because of @container nesting (the
-   * exact cascade-source-order CRITICAL this chain already hit twice,
-   * PR4/PR5). Self-checked: no other rule in this file re-declares padding
-   * on .hexdev-chrome-content after this point. */
-  /* CEREMONY, and it is composition rather than decoration. The header block
- * centres and the grid under it does not: centring EVERYTHING turns a lobby
- * into a poster and makes a list of games hard to scan, while centring
- * nothing leaves a dashboard. A centred title over a left-aligned grid is the
- * shape of an entrance with a table behind it.
- *
- * The vertical padding is fluid and generous on purpose — space above the
- * title is most of what separates a front door from a form, and it costs
- * nothing but room this screen has. */
-.hexdev-chrome-header {
-  text-align: center;
-  max-width: 46rem;
-  margin: 0 auto;
-  padding: clamp(24px, 6vh, 64px) 0 0;
-}
-/* A HAND, NOT A ROW. Three things make it read as cards somebody is holding
- * rather than four images in a line, and all three are geometry:
- *
- *   1. They OVERLAP (negative margin), because a held hand is fanned from one
- *      corner and cards hide each other.
- *   2. They rotate symmetrically around the centre, ±9° at the edges.
- *   3. They arc: the outer cards sit LOWER than the middle one. Without this
- *      the fan is a windscreen wiper; with it, it is a hand.
- *
- * The rotation is computed from the card's own index against the count, so a
- * game that offers three or five cards fans correctly without this stylesheet
- * knowing how many there are. --i and --n come from the renderer.
- *
- * Each card carries the same contact+ambient pair as every other raised
- * surface here — they are objects on the same table, lit by the same light. */
-.hexdev-chrome-fan {
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  margin: 0 0 clamp(14px, 3vh, 30px);
-  /* The fan overlaps and rotates outside its own box; without this the
-     rotated corners are clipped by the header's centring. */
-  overflow: visible;
-}
-
-.hexdev-chrome-fan-card {
-  --mid: calc((var(--n) - 1) / 2);
-  --offset: calc(var(--i) - var(--mid));
-  width: clamp(64px, 8.5vw, 104px);
-  height: auto;
-  /* A quarter of the card hidden under its neighbour: enough that the hand is
-   * clearly held and not laid out, little enough that every face is still
-   * readable. Proportional to the width, so the overlap survives the clamp. */
-  margin: 0 calc(clamp(64px, 8.5vw, 104px) * -0.10);
-  border-radius: 6px;
-  /* The arc without abs(): squaring the offset and dividing gives the same
-   * "further from centre, lower down" curve with arithmetic every browser has
-   * had for years. abs() is recent enough that relying on it here would drop
-   * the arc — and the fan back to a wiper — on the browsers least likely to
-   * be tested. */
-  transform:
-    translateY(calc(var(--offset) * var(--offset) * 2.5px))
-    rotate(calc(var(--offset) * 7deg));
-  box-shadow: var(--hx-lift-contact), var(--hx-lift-ambient);
-}
-
-/* THE ONE PIECE OF MOTION ON THIS SCREEN, and it happens once: the hand
- * settles onto the table as the lobby opens. Cards arrive a beat apart
- * (--i * 60ms) from slightly above and slightly flatter, which is what makes
- * it read as dealing rather than as an animation playing.
- *
- * 460ms and then never again. Nothing here loops, pulses or glows — a lobby
- * that keeps moving is a lobby nobody can read, and the point of an effect is
- * to say "this is a table", not to be noticed.
- */
-@keyframes hexdev-deal {
-  from {
-    opacity: 0;
-    transform: translateY(calc(var(--offset) * var(--offset) * 4px - 18px)) rotate(calc(var(--offset) * 4deg));
-  }
-}
-
-.hexdev-chrome-fan--dealing .hexdev-chrome-fan-card {
-  animation: hexdev-deal ${DEAL_DURATION_MS}ms var(--hx-ease) backwards;
-  /* MINUS how long ago the greeting began (game-selection.ts publishes it on
-   * the fan). Every presence broadcast rebuilds these cards, and a rebuilt
-   * element restarts its animation at zero, so without this the hand would
-   * deal itself again once a second and never finish. A negative delay starts
-   * an animation partway through: subtracting the elapsed time puts each
-   * rebuilt card exactly where the destroyed one was, which is what makes a
-   * hand that is torn down mid-deal look like it was never interrupted. */
-  animation-delay: calc(var(--i) * ${DEAL_STAGGER_MS}ms - var(--elapsed, 0ms));
-}
-
-/* Not a preference to honour grudgingly: for a vestibular-sensitive player
- * cards flying in is the exact motion that hurts. They get the same fan,
- * already dealt. */
-@media (prefers-reduced-motion: reduce) {
-  .hexdev-chrome-fan--dealing .hexdev-chrome-fan-card { animation: none; }
-}
-
-/* The instruction under the name: gold, small, letterspaced. It is the same
- * marker language the modality labels use, which is deliberate — it tells the
- * player that what follows is a choice, and it does it in the voice this
- * screen already uses for "a choice starts here". */
-.hexdev-chrome-instruction {
-  margin: 10px 0 0;
-  font-size: var(--hx-text-meta);
-  font-weight: 700;
-  letter-spacing: var(--hx-tracking-label);
-  text-transform: uppercase;
-  color: var(--hx-gold);
-  text-shadow: var(--hx-ink-shadow);
-}
-
-.hexdev-chrome-header .hexdev-chrome-tagline {
-  margin-inline: auto;
-}
-/* A rule that ENDS the header rather than divides the screen: it fades out at
- * both ends, so it reads as the edge of the title block and not as a border
- * between two halves. Gold at 40% — visible enough to close the composition,
- * quiet enough that the eye goes to the games and not to a line. */
-.hexdev-chrome-header::after {
-  content: "";
-  display: block;
-  width: min(220px, 40%);
-  height: 1px;
-  margin: var(--hx-space-lg) auto 0;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--hx-gold) 40%, transparent), transparent);
-}
-
-.hexdev-chrome-content {
+  /* THE ONE THING THIS TIER CHANGES: more air around the whole screen when
+   * there is room for it.
+   *
+   * It used to carry seven more rules -- the header, the fan, the fan's
+   * cards, the deal animation and its keyframes, the instruction, the
+   * tagline, the header's own rule -- every one of them written out word for
+   * word from its base rule above, and therefore changing nothing at all at
+   * any width. About a hundred and fifteen lines of override that overrode
+   * nothing, left behind by a bad repair.
+   *
+   * They were not harmless. A rule declared twice drifts: editing the base
+   * copy of the deal animation silently did nothing, because the copy down
+   * here won on source order. That is how this was found.
+   *
+   * Cascade note, still true and still the reason this works: identical
+   * 0-1-0 specificity to .hexdev-chrome-content's base padding above -- it
+   * wins because it is declared LATER in this same stylesheet string, not
+   * because of @container nesting. */
+  .hexdev-chrome-content {
     padding: var(--hx-space-2xl) var(--hx-space-xl);
   }
 }

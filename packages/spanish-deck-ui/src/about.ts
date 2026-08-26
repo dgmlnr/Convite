@@ -1,7 +1,7 @@
 // Who made the card artwork, under what license, and what was changed.
 //
 // THIS IS NOT OPTIONAL. The previous deck (Heraclio Fournier's 1878 scans —
-// see tools/process-fournier-deck.mjs, still in the repo) was PUBLIC DOMAIN,
+// whose build script went with them) was PUBLIC DOMAIN,
 // and the note this file used to carry said in as many words that attribution
 // "is not legally required". The current artwork is CC BY-SA 3.0, whose first
 // term is exactly that requirement.

@@ -12,13 +12,13 @@ import type { Action } from "./truco-chain.js";
  * rather than a comment is that three published rulebooks disagree about it.
  * Dealt from seat 0 a 2v2 plays 1, 2, 3, 0:
  *
- *   - es.wikipedia.org/wiki/Truco_argentino — "los jugadores con el derecho
+ *   - one published rulebook — the right
  *     a cantarlo serán los pie de cada equipo (3v3 o 2v2) ... en el 1v1
  *     cualquiera puede cantarlo": seats 2 and 3. THIS IS WHAT CONVITE PLAYS.
- *   - trucoargentino.com.ar/reglas — "los dos jugadores a la izquierda de
+ *   - another published rulebook — the two seats immediately left of
  *     quien repartió": seats 1 and 2. The exact complement of the seats
- *     Wikipedia withholds it from.
- *   - juegosdesalon.com's reglamento — "cada jugador en su turno tiene esas
+ *     the first one withholds it from.
+ *   - a third published rulebook — "cada jugador en su turno tiene esas
  *     tres opciones hasta que juega una carta": all four. This is the most
  *     formal of the three, and it is the one Convite does NOT follow.
  *
@@ -32,7 +32,7 @@ import type { Action } from "./truco-chain.js";
  * Reading around the table from the mano, the last two seats ARE one pie
  * each, because the seats alternate teams — which is why the engine needs no
  * team bookkeeping to find them, and why 1v1 needs no special case: with two
- * seats, "the last two" is everybody, exactly as Wikipedia says.
+ * seats, "the last two" is everybody, exactly as that variant says.
  *
  * IN TURN, STILL. The pie rule restricts WHO, not WHEN, so the floor gate
  * stays: the mano speaks first and the right moves as each seat plays. The

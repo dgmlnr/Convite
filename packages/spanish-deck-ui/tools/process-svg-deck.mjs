@@ -8,9 +8,8 @@
 // ../src/about.ts / DECK_ATTRIBUTION for the credit this license REQUIRES,
 // and ../assets/LICENSE for the license the derived files carry.
 //
-// This replaced the Fournier 1878 scans (process-fournier-deck.mjs, kept
-// alongside: it still documents where the previous 40 binaries came from,
-// and reverting is a real option). The reason for the swap was legibility at
+// This replaced the Fournier 1878 scans, whose own build script has since
+// been removed along with them. The reason for the swap was legibility at
 // the sizes the game actually draws — flat, high-contrast line art reads at
 // 60px in a way a photographed 1878 card does not.
 //
