@@ -872,14 +872,33 @@ export function buildTableStylesheet(): string {
   .hexdev-truco-side-rail {
     position: static;
     flex-direction: column;
-    padding-top: var(--hx-leave-lane);
     order: 0;
     flex: 0 0 auto;
     width: 168px;
-    max-height: none;
+    /* THE RAIL STRETCHES; ITS CONTENT DOES NOT COUNT. In a flex ROW the
+     * line's cross size is the tallest item's own content height -- so a rail
+     * holding a long call record made the whole TABLE taller, against a table
+     * whose height is locked per tier on purpose
+     * (table-height-stability.browser.test.ts). Measured before this: 65px of
+     * difference between two probe fonts at 700px, purely because the panel's
+     * text had grown.
+     *
+     * TWO WRONG WAYS FIRST, both caught rather than reasoned away. height: 0
+     * and expecting align-items: stretch to hand it back: stretch only
+     * applies to an item whose cross size is auto, so the rail stayed exactly
+     * zero tall and DISAPPEARED -- caught by the wide themed visual baseline.
+     * Then taking the body out of flow: that fixed the height but overflowed
+     * the fullscreen box by the leave lane, caught by
+     * table-viewport-fit.browser.test.ts. What actually works is neither:
+     * everything stays in flow, and the PANEL inside gets a flex-basis of
+     * zero (below), so its content never sets anyone's height. */
+    padding-top: var(--hx-leave-lane);
+    min-height: 0;
     align-items: stretch;
+    overflow: hidden;
     pointer-events: auto;
   }
+
   .hexdev-truco-rail-tab { display: none; }
   /* A drawer a player shut on a phone must not stay shut when the same widget
    * is wide enough to have no drawer at all. */
@@ -890,7 +909,16 @@ export function buildTableStylesheet(): string {
    * width -- 99.8px inside a 240px rail, which is the exact shape of the "58%
    * of it" bug the fence below already existed for. Same property, opposite
    * axis, second time in this file: worth naming rather than just fixing. */
-  .hexdev-truco-rail-body { width: auto; flex: 1 1 auto; align-self: stretch; max-height: none; }
+  .hexdev-truco-rail-body { width: auto; flex: 1 1 auto; align-self: stretch; max-height: none; min-height: 0; }
+  /* FLEX-BASIS ZERO, and the zero is the whole point. The panel takes the
+     rail's spare height instead of its own content's -- always the same box,
+     in the same place, whatever is in it -- and, because its hypothetical
+     size is zero, what it HOLDS never sets the rail's height either. That
+     second half is what keeps a long call record from making the whole TABLE
+     taller: in a flex row the line's cross size is the tallest item's content
+     height, and the table is height-locked per tier on purpose. Measured
+     without it: 65px of difference between two probe fonts at 700px. */
+  .hexdev-truco-rail-body > .hexdev-truco-call-log { flex: 1 1 0; min-height: 0; }
   .hexdev-truco-scoreboard-panel {
     flex: 0 0 auto;
     flex-direction: column;

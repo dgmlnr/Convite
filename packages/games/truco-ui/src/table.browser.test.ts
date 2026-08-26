@@ -859,7 +859,7 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
     expect(entries[0]!.getAttribute("data-position")).toBe("bottom");
   });
 
-  it("keeps piles and the call log visible through outcome.decided, then clears both once the next hand is dealt (Q5/D-9: no new UI state needed)", () => {
+  it("keeps piles through outcome.decided, clears them on the next deal — and KEEPS the calls, closed off", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer();
     const events: readonly CallEvent[] = [{ kind: "truco-call", playerId: SELF, teamId: MY_TEAM, seat: 0, level: "truco" }];
@@ -881,8 +881,15 @@ describe("createMatchTableRenderer — call-log panel (spec: 'Call-Log Panel Wit
     // reset-on-deal guarantee) — the same shape a real re-deal broadcasts.
     render(el, baseView(), [], () => {});
 
+    // The piles are of the HAND and go with it.
     expect(el.querySelectorAll("[data-played-by-seat]")).toHaveLength(0);
-    expect(el.querySelector(".hexdev-truco-call-log")!.children).toHaveLength(0);
+    // The calls are of the MATCH and stay, which is the half of this that
+    // changed. Emptying the panel every deal is what made the rail jump and
+    // the record unreadable; it keeps the finished hand and marks where it
+    // ended. See call-history.ts for how a new hand is recognised at all,
+    // given that nothing in the view numbers them.
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry"), "the finished hand's calls were thrown away on the next deal").toHaveLength(1);
+    expect(el.querySelector(".hexdev-truco-call-log-round-end"), "nothing marks where the finished hand ended").not.toBeNull();
   });
 
   // PR4 correction (native review, deterministic CRITICAL): the wide/ultra
@@ -950,8 +957,12 @@ describe("createMatchTableRenderer — the opening view of a match, broadcast be
     expect(el.querySelectorAll(".hexdev-truco-scoreboard")).toHaveLength(2);
 
     // And everything a hand would have supplied reads as genuinely empty
-    // rather than as leftovers: no history to log, no cards on the felt.
-    expect(el.querySelector(".hexdev-truco-call-log")!.children).toHaveLength(0);
+    // rather than as leftovers: nothing said yet, no cards on the felt. The
+    // panel is DRAWN — it is a fixed box in the rail now, and hiding itself
+    // when empty is exactly what made the rail move — but it holds no entries
+    // and says as much.
+    expect(el.querySelectorAll(".hexdev-truco-call-log-entry")).toHaveLength(0);
+    expect(el.querySelector(".hexdev-truco-call-log-empty"), "an empty panel says nothing about being empty").not.toBeNull();
     expect(el.querySelectorAll("[data-played-by-seat]")).toHaveLength(0);
     // Nobody owes a move between hands, so no seat is highlighted and no badge
     // (nor its countdown) claims one is late.

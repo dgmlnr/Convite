@@ -1,5 +1,7 @@
 import type { Action, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { announce, createAnnouncer } from "./announcer.js";
+import { advanceHistory } from "./call-history.js";
+import type { CallHistory } from "./call-history.js";
 import { renderCallLog, scrollCallLogToNewest, speakerLabel } from "./call-log.js";
 import { renderCalls } from "./calls.js";
 import { deriveEnvidoRevealEvent, describeEnvidoRevealNotice } from "./envido-reveal-notice.js";
@@ -15,6 +17,12 @@ import { renderOpponentHand } from "./opponent-hand.js";
 import { renderPlayedCards } from "./played-cards.js";
 import { derivePendingCall, describePendingCall, isMyTurnToAnswer, respondingTeamId } from "./pending-call.js";
 import { renderScoreboardPanel } from "./scoreboard-panel.js";
+
+/** Every hand's calls, for as long as this mount lives. See the note where
+ * it is filled, beside `advanceHistory`. A WeakMap on the container for the
+ * same reason the lobby's selection is one: it belongs to the mount, and dies
+ * with it. */
+const CALL_HISTORY = new WeakMap<HTMLElement, CallHistory>();
 
 /** Same one-per-mount id counter as senas.ts's own `senasRowSequence`: the
  * rail's tab needs an aria-controls target that is unique on a page that may
@@ -731,12 +739,34 @@ export function createMatchTableRenderer(
     // log itself, further down, and the reveal notice's speaker labels. One
     // object rather than two literals with the same fields — the seat a
     // player is called by must not depend on which of the two is asking.
-    const callLogInput = {
+    // THE RECORD IS OF THE MATCH, NOT OF THE HAND. `view.hand.callEvents`
+    // holds only the hand being played and starts over empty at every deal,
+    // so a panel fed straight from it emptied itself between hands -- and,
+    // hiding itself when empty, took the whole rail with it. Reported as the
+    // history simply never being there.
+    //
+    // Accumulated per MOUNT rather than per render, keyed on the container
+    // like every other piece of state this table has to keep across the wipe.
+    // advanceHistory owns the one hard question -- where one hand stops, with
+    // no hand number anywhere in the view to read -- and answers it purely,
+    // from the shape of the list itself.
+    const liveRound = {
       events: view.hand?.callEvents ?? [],
-      envido: view.hand?.envido ?? ({ status: "none" } as const),
       manoSeat: view.hand?.manoSeat ?? 0,
+      envido: view.hand?.envido ?? ({ status: "none" } as const),
+    };
+    const history = advanceHistory(CALL_HISTORY.get(container), liveRound);
+    CALL_HISTORY.set(container, history);
+
+    const callLogInput = {
+      events: liveRound.events,
+      envido: liveRound.envido,
+      manoSeat: liveRound.manoSeat,
       selfSeat: view.self.seat,
       positions,
+      // The finished hands only: the live one is what the fields above
+      // already carry.
+      history: history.closed,
     };
 
     const bannerSlot = center.appendChild(document.createElement("div"));

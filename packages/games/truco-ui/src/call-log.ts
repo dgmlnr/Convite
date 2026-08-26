@@ -1,4 +1,5 @@
 import type { CallEvent, EnvidoDeclaration, EnvidoState } from "@hexdev/truco-engine";
+import type { CallRound } from "./call-history.js";
 import type { TableAnchor } from "./seat-position.js";
 import { CALL_LABELS, TABLE_STRINGS } from "./strings.js";
 
@@ -20,6 +21,15 @@ export interface CallLogInput {
   readonly manoSeat: number;
   readonly selfSeat: number;
   readonly positions: ReadonlyMap<number, TableAnchor>;
+  /**
+   * Hands already finished, oldest first -- the ones above the hand being
+   * played. Each carries its OWN manoSeat and envido, because an entry is
+   * rendered against the hand it belongs to: the events are markers only, and
+   * the declared tantos live on that hand's envido state (D-1/D-5). Drawn
+   * against the current hand instead, last hand's tantos would be attributed
+   * to this hand's mano.
+   */
+  readonly history?: readonly CallRound[];
 }
 
 /**
@@ -133,7 +143,6 @@ function buildEntry(event: CallEvent, input: CallLogInput): HTMLElement {
 export function renderCallLog(host: HTMLElement, input: CallLogInput): void {
   host.replaceChildren();
   host.className = "hexdev-truco-call-log";
-  if (input.events.length === 0) return;
 
   // A real heading (WCAG 1.3.1), not a paragraph styled to look like one: this
   // line labels everything in the panel, which is what a heading is for, and
@@ -159,8 +168,33 @@ export function renderCallLog(host: HTMLElement, input: CallLogInput): void {
   list.tabIndex = 0;
   list.setAttribute("role", "log");
   list.setAttribute("aria-label", TABLE_STRINGS.callLogTitle);
+  // Every finished hand, then the one in play. A finished hand is closed off
+  // with a mark; the live one never is, because it is not over.
+  for (const round of input.history ?? []) {
+    if (round.events.length === 0) continue;
+    for (const event of round.events) {
+      list.appendChild(buildEntry(event, { ...input, envido: round.envido, manoSeat: round.manoSeat }));
+    }
+    const mark = list.appendChild(document.createElement("li"));
+    mark.className = "hexdev-truco-call-log-round-end";
+    mark.textContent = TABLE_STRINGS.callLogRoundEnd;
+  }
   for (const event of input.events) {
     list.appendChild(buildEntry(event, input));
+  }
+
+  // An empty panel says it is empty rather than being an empty box. It is
+  // still the same box in the same place, which is the whole reason this
+  // panel stopped hiding itself.
+  //
+  // Inserted UNDER THE TITLE rather than appended: the list is the panel's
+  // flexible child, so a message added after it gets pushed to the bottom of
+  // a tall empty box and reads as a footnote about nothing.
+  if (list.children.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hexdev-truco-call-log-empty";
+    empty.textContent = TABLE_STRINGS.callLogEmpty;
+    host.insertBefore(empty, list);
   }
 }
 
