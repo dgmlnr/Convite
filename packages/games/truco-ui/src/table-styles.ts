@@ -554,7 +554,15 @@ export function buildTableStylesheet(): string {
    * calls+señas share it, tasks §3.8) — the 2v2 two-strip formula only
    * starts at medium (below). */
   --hx-band-banner: 34px;
-  --hx-band-action: 40px;
+  /* 40px of button plus the lane a thin horizontal scrollbar takes when a
+   * call group has to scroll -- measured at 50px for the group's own box, not
+   * guessed.
+   *
+   * It only started needing that lane once the band stopped being a scroller
+   * of its own. With the row rigid the scrollbar sat on the BAND, which cost
+   * nothing here and cost the player two nested boxes to scroll instead. One
+   * scroller, and it gets its lane. */
+  --hx-band-action: 50px;
   --hx-band-action-total: var(--hx-band-action);
   position: relative;
   box-sizing: border-box;
@@ -2135,7 +2143,7 @@ export function buildTableStylesheet(): string {
  * Auto margins absorb the free space exactly the same way while there is
  * any, and collapse to zero when there is none -- so the row still centres
  * whenever it fits, and starts at the scroll origin the moment it does not. */
-.hexdev-truco-calls-row { display: flex; flex-direction: row; gap: var(--hx-space-xs, 12px); align-items: center; justify-content: flex-start; align-self: stretch; min-width: 0; max-width: 100%; flex: 0 0 auto; }
+.hexdev-truco-calls-row { display: flex; flex-direction: row; gap: var(--hx-space-xs, 12px); align-items: center; justify-content: flex-start; align-self: stretch; min-width: 0; max-width: 100%; flex: 0 1 auto; }
 .hexdev-truco-calls-row > :first-child { margin-inline-start: auto; }
 .hexdev-truco-calls-row > :last-child { margin-inline-end: auto; }
 /* Change 4: answering a pending call reads as a different decision from

@@ -420,7 +420,14 @@ const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1":
    * still drawing a full-size card, and it draws three of them in a row --
    * so it was the tallest row on a phone's felt. 1v1 is untouched: it has no
    * such seat. */
-  375: { "1v1": 482.34375, "2v2": 481.4375 },
+  /* THE SCROLLBAR'S OWN LANE: +10px at 375, and only there.
+   *   375  1v1: 482.34375 -> 492.34375   375  2v2: 481.4375 -> 491.4375
+   * The call band stopped being a scroller of its own -- it was wrapping a
+   * second, outer scroller around the groups that already scroll, so a player
+   * had two nested boxes to drag. With the scrolling where it belongs, the
+   * group's horizontal scrollbar takes its 10px inside the band instead of
+   * outside it. Measured off the group's own box, not guessed. */
+  375: { "1v1": 492.34375, "2v2": 491.4375 },
   700: { "1v1": 649.96875, "2v2": 838.328125 },
   960: { "1v1": 771.375, "2v2": 873.328125 },
   1280: { "1v1": 860.59375, "2v2": 983.515625 },

@@ -87,10 +87,14 @@ export const TABLE_STRINGS = {
      legal in two different situations -- you owe an answer to a call, or you
      are the pie who could open an envido -- and it used to read the same in
      both. Reported: "soy pie de ronda pongo consultar al compañero pero no se
-     si le estoy consultando para cantar el envido o el truco". */
-  consultAboutTruco: "Consultar: ¿quiero el truco?",
-  consultAboutEnvido: "Consultar: ¿quiero el envido?",
-  consultAboutOpeningEnvido: "Consultar: ¿canto envido?",
+     si le estoy consultando para cantar el envido o el truco".
+
+     Sin el prefijo "Consultar:": estos botones viven DENTRO del panel de
+     seña/consulta, que ya dice que son consultas, y el prefijo costaba unos
+     90px por boton en la pantalla que menos los tiene. */
+  consultAboutTruco: "¿Quiero el truco?",
+  consultAboutEnvido: "¿Quiero el envido?",
+  consultAboutOpeningEnvido: "¿Canto envido?",
   consultToggle: "Consultar al compañero",
   consultAsking: "Preguntando…",
   /* The declaration round. "Mis tantos" is the button; the LOG and the seat

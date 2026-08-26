@@ -246,6 +246,32 @@ describe("the escalated bar scrolls without mangling itself", () => {
     }
   });
 
+  it.each(WIDTHS)("%ipx: the band itself never becomes a second scroller around the groups", async (width) => {
+    // ONE SCROLLER, NOT TWO NESTED. The call groups scroll on purpose -- the
+    // documented valve for a fully escalated chain -- but the BAND around
+    // them must not, or a player has to scroll one box to find another box to
+    // scroll. Found by sweeping every width: the band was overflowing by a
+    // constant 166px from 320 to 570, and constant is the tell -- something
+    // inside was refusing to give way no matter how much room it had.
+    //
+    // It was `.hexdev-truco-calls-row` carrying flex: 0 0 auto, added while
+    // stopping the BUTTONS from being squeezed. The buttons were the right
+    // thing to freeze; the row around them was not.
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = envidoAnswerState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
+    if (bar === null) throw new Error("fence setup: action bar not rendered");
+
+    expect(
+      bar.scrollWidth - bar.clientWidth,
+      `the band holds ${String(bar.scrollWidth)}px in ${String(bar.clientWidth)}px, so it scrolls too`,
+    ).toBeLessThanOrEqual(1);
+  });
+
   it.each(WIDTHS)("%ipx: the first button can actually be reached", async (width) => {
     // `justify-content: center` on a box that overflows pushes the start of
     // the content off the left edge and out of the scroll range entirely —
