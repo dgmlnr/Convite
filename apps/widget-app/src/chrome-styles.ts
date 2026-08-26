@@ -88,10 +88,57 @@ export function buildChromeStylesheet(): string {
    * --hx-felt-ink is the light-on-dark counterpart the felt needs; the chrome
    * cannot go on reading --gx-color-on-surface, which a tenant sets for THEIR
    * background and not for ours. */
-  --hx-felt-base: #1d3b30;
+  /* THE CLOTH, promoted to the shared layer (PR-EST3). It lived as
+   * a game-scoped token the chrome is forbidden to read — and the fence that
+   * forbids it scans this very comment, which is why it is not named here —
+   * correctly: a lobby that reaches into a game's tokens stops being a lobby
+   * for any other game. So the values move up here, the truco tokens below
+   * become aliases of them, and both surfaces are lit by ONE cloth instead of
+   * two that drift.
+   *
+   * That is the whole reason the lobby and the table now look like the same
+   * room. The first version of the felt lobby reinvented these numbers a
+   * shade off, which is exactly how two surfaces end up almost matching. */
+  --hx-cloth-lit: #1d6a4d;
+  --hx-cloth: #123f2f;
+  --hx-cloth-deep: #0d3325;
+  /* DEPTH IS ALWAYS TWO SHADOWS, never one, and that is the single technique
+   * that separates a drawn rectangle from an object on a table: a tight
+   * CONTACT shadow that says where the thing touches, and a wide AMBIENT one
+   * that says how far above the surface it floats. One shadow can do either
+   * job and never both — a soft blur alone reads as fog, a hard one as a
+   * sticker.
+   *
+   * --hx-lift-edge is the third member: a hairline of light along the top,
+   * which is what a real edge catches from a light source above. Every raised
+   * surface in this product gets all three. */
+  --hx-lift-contact: 0 3px 6px rgba(0, 0, 0, 0.4);
+  --hx-lift-ambient: 0 14px 34px rgba(0, 0, 0, 0.48);
+  --hx-lift-edge: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  /* The room's own edges: a gold filet and two deep inset washes. This is
+   * what makes a flat felt read as a TABLE — the light falls in the middle
+   * and the corners recede. Huge blurs on purpose (120px), because a vignette
+   * that you can see the edge of is a border. */
+  --hx-room: inset 0 0 0 2px rgba(232, 200, 119, 0.18), inset 0 0 120px rgba(0, 0, 0, 0.5), inset 0 0 44px rgba(0, 0, 0, 0.4);
+  /* Copy sitting directly on cloth. One pixel, barely there: it is not a
+   * shadow you should notice, it is what stops light text vibrating against a
+   * mid-dark texture. */
+  --hx-ink-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  /* The letterpress under the display type: a hard offset in the cloth's own
+   * deepest tone, so the glyphs look pressed INTO the felt rather than laid
+   * on it, then two softer casts to lift them off again. Applied as
+   * drop-shadow rather than text-shadow because the title is gold clipped to
+   * its glyphs, and only drop-shadow follows an alpha mask. */
+  --hx-emboss: drop-shadow(0 2px 0 #0a2418) drop-shadow(0 4px 1px rgba(0, 0, 0, 0.45)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.5));
   --hx-felt-tint: 14%;
   --hx-felt-ink: #f4efe4;
-  --hx-felt-ink-soft: #cdd8cf;
+  /* #d8e2da and not the #cdd8cf this wanted to be. Measured against the
+   * LIGHTEST point of the felt — the centre, where light text is most at risk
+   * — the softer tone lands at 4.45:1, and 1.4.3 asks for 4.5. Four
+   * hundredths, and it is still a fail: the line is the line, and "almost"
+   * is how quiet copy ends up illegible one small step at a time. This tone
+   * clears at 4.91:1 and reads no louder. */
+  --hx-felt-ink-soft: #d8e2da;
   /* Consumed by the chrome body-copy rule at the end of this stylesheet
    * (status-card paragraphs, lobby modality paragraphs, empty/loading
    * messages -- FU-5). The felt side declares the same leading token but
@@ -131,13 +178,36 @@ export function buildChromeStylesheet(): string {
    * inside somebody else's page, a strict host CSP can refuse a data: image,
    * and a texture that silently vanishes under exactly the tenants who care
    * most about security is not a texture. */
+  /* A FLAT COLOUR UNDER THE GRADIENTS, and it does two jobs.
+   *
+   * It is the fallback: a browser that cannot paint one of the layers above
+   * gets a green table, not a white page with light text on it.
+   *
+   * And it is the only thing a contrast checker can READ. "background-color"
+   * is what walking the ancestor chain finds; a gradient is invisible to it,
+   * so without this the whole lobby measures against nothing — which is
+   * exactly what happened, and the suite failed with -no painted background
+   * anywhere up the ancestor chain- rather than with a bad number.
+   *
+   * --hx-cloth-LIT and not the mid tone, deliberately: the felt runs light in
+   * the centre and dark at the edges, and light text is at risk over the
+   * light part. Measuring against the lightest point measures the worst
+   * case. */
   background:
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.028) 0 1px, transparent 1px 3px),
-    radial-gradient(90% 60% at 50% -10%, rgba(255, 255, 255, 0.10), transparent 70%),
-    radial-gradient(130% 100% at 50% 40%, transparent 28%, rgba(0, 0, 0, 0.48) 100%),
-    color-mix(in srgb, var(--gx-color-surface, transparent) var(--hx-felt-tint), var(--hx-felt-base));
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.030) 0 1px, transparent 1px 6px),
+    radial-gradient(ellipse 120% 90% at 50% 30%,
+      var(--hx-cloth-lit),
+      color-mix(in srgb, var(--gx-color-surface, transparent) var(--hx-felt-tint), var(--hx-cloth)) 55%,
+      var(--hx-cloth-deep) 100%);
+  /* AFTER the shorthand, never before it: "background:" resets
+   * background-color to transparent, so a longhand declared above it is
+   * discarded — which is exactly how the first attempt at this changed
+   * nothing and the contrast suite went on reporting that it could find no
+   * painted background at all. */
+  background-color: var(--hx-cloth-lit);
   color: var(--hx-felt-ink);
+  box-shadow: var(--hx-room);
 }
 .convite-chrome * { box-sizing: border-box; }
 
@@ -194,6 +264,86 @@ export function buildChromeStylesheet(): string {
   margin: 0 auto;
   padding: clamp(24px, 6vh, 64px) 0 0;
 }
+/* A HAND, NOT A ROW. Three things make it read as cards somebody is holding
+ * rather than four images in a line, and all three are geometry:
+ *
+ *   1. They OVERLAP (negative margin), because a held hand is fanned from one
+ *      corner and cards hide each other.
+ *   2. They rotate symmetrically around the centre, ±9° at the edges.
+ *   3. They arc: the outer cards sit LOWER than the middle one. Without this
+ *      the fan is a windscreen wiper; with it, it is a hand.
+ *
+ * The rotation is computed from the card's own index against the count, so a
+ * game that offers three or five cards fans correctly without this stylesheet
+ * knowing how many there are. --i and --n come from the renderer.
+ *
+ * Each card carries the same contact+ambient pair as every other raised
+ * surface here — they are objects on the same table, lit by the same light. */
+.hexdev-chrome-fan {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  margin: 0 0 clamp(14px, 3vh, 30px);
+  /* The fan overlaps and rotates outside its own box; without this the
+     rotated corners are clipped by the header's centring. */
+  overflow: visible;
+}
+
+.hexdev-chrome-fan-card {
+  --mid: calc((var(--n) - 1) / 2);
+  --offset: calc(var(--i) - var(--mid));
+  width: clamp(64px, 8.5vw, 104px);
+  height: auto;
+  /* A quarter of the card hidden under its neighbour: enough that the hand is
+   * clearly held and not laid out, little enough that every face is still
+   * readable. Proportional to the width, so the overlap survives the clamp. */
+  margin: 0 calc(clamp(64px, 8.5vw, 104px) * -0.10);
+  border-radius: 6px;
+  /* The arc without abs(): squaring the offset and dividing gives the same
+   * "further from centre, lower down" curve with arithmetic every browser has
+   * had for years. abs() is recent enough that relying on it here would drop
+   * the arc — and the fan back to a wiper — on the browsers least likely to
+   * be tested. */
+  transform:
+    translateY(calc(var(--offset) * var(--offset) * 2.5px))
+    rotate(calc(var(--offset) * 7deg));
+  /* The centre sits on top and the stack falls away to both edges, which is
+   * how a hand looks from in front. Left to DOM order instead, the leftmost
+   * card ends up under every one of its neighbours and disappears entirely —
+   * which is what the first version did, and it cost a card without ever
+   * looking broken. Squared rather than abs(), same reason as the arc. */
+  z-index: calc(10 - var(--offset) * var(--offset));
+  box-shadow: var(--hx-lift-contact), var(--hx-lift-ambient);
+}
+
+/* THE ONE PIECE OF MOTION ON THIS SCREEN, and it happens once: the hand
+ * settles onto the table as the lobby opens. Cards arrive a beat apart
+ * (--i * 60ms) from slightly above and slightly flatter, which is what makes
+ * it read as dealing rather than as an animation playing.
+ *
+ * 460ms and then never again. Nothing here loops, pulses or glows — a lobby
+ * that keeps moving is a lobby nobody can read, and the point of an effect is
+ * to say "this is a table", not to be noticed.
+ */
+@keyframes hexdev-deal {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--offset) * var(--offset) * 4px - 18px)) rotate(calc(var(--offset) * 4deg));
+  }
+}
+
+.hexdev-chrome-fan-card {
+  animation: hexdev-deal 460ms var(--hx-ease) backwards;
+  animation-delay: calc(var(--i) * 55ms);
+}
+
+/* Not a preference to honour grudgingly: for a vestibular-sensitive player
+ * cards flying in is the exact motion that hurts. They get the same fan,
+ * already dealt. */
+@media (prefers-reduced-motion: reduce) {
+  .hexdev-chrome-fan-card { animation: none; }
+}
+
 .hexdev-chrome-header .hexdev-chrome-tagline {
   margin-inline: auto;
 }
@@ -276,6 +426,80 @@ export function buildChromeStylesheet(): string {
   margin: 0 auto;
   padding: clamp(24px, 6vh, 64px) 0 0;
 }
+/* A HAND, NOT A ROW. Three things make it read as cards somebody is holding
+ * rather than four images in a line, and all three are geometry:
+ *
+ *   1. They OVERLAP (negative margin), because a held hand is fanned from one
+ *      corner and cards hide each other.
+ *   2. They rotate symmetrically around the centre, ±9° at the edges.
+ *   3. They arc: the outer cards sit LOWER than the middle one. Without this
+ *      the fan is a windscreen wiper; with it, it is a hand.
+ *
+ * The rotation is computed from the card's own index against the count, so a
+ * game that offers three or five cards fans correctly without this stylesheet
+ * knowing how many there are. --i and --n come from the renderer.
+ *
+ * Each card carries the same contact+ambient pair as every other raised
+ * surface here — they are objects on the same table, lit by the same light. */
+.hexdev-chrome-fan {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  margin: 0 0 clamp(14px, 3vh, 30px);
+  /* The fan overlaps and rotates outside its own box; without this the
+     rotated corners are clipped by the header's centring. */
+  overflow: visible;
+}
+
+.hexdev-chrome-fan-card {
+  --mid: calc((var(--n) - 1) / 2);
+  --offset: calc(var(--i) - var(--mid));
+  width: clamp(64px, 8.5vw, 104px);
+  height: auto;
+  /* A quarter of the card hidden under its neighbour: enough that the hand is
+   * clearly held and not laid out, little enough that every face is still
+   * readable. Proportional to the width, so the overlap survives the clamp. */
+  margin: 0 calc(clamp(64px, 8.5vw, 104px) * -0.10);
+  border-radius: 6px;
+  /* The arc without abs(): squaring the offset and dividing gives the same
+   * "further from centre, lower down" curve with arithmetic every browser has
+   * had for years. abs() is recent enough that relying on it here would drop
+   * the arc — and the fan back to a wiper — on the browsers least likely to
+   * be tested. */
+  transform:
+    translateY(calc(var(--offset) * var(--offset) * 2.5px))
+    rotate(calc(var(--offset) * 7deg));
+  box-shadow: var(--hx-lift-contact), var(--hx-lift-ambient);
+}
+
+/* THE ONE PIECE OF MOTION ON THIS SCREEN, and it happens once: the hand
+ * settles onto the table as the lobby opens. Cards arrive a beat apart
+ * (--i * 60ms) from slightly above and slightly flatter, which is what makes
+ * it read as dealing rather than as an animation playing.
+ *
+ * 460ms and then never again. Nothing here loops, pulses or glows — a lobby
+ * that keeps moving is a lobby nobody can read, and the point of an effect is
+ * to say "this is a table", not to be noticed.
+ */
+@keyframes hexdev-deal {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--offset) * var(--offset) * 4px - 18px)) rotate(calc(var(--offset) * 4deg));
+  }
+}
+
+.hexdev-chrome-fan-card {
+  animation: hexdev-deal 460ms var(--hx-ease) backwards;
+  animation-delay: calc(var(--i) * 55ms);
+}
+
+/* Not a preference to honour grudgingly: for a vestibular-sensitive player
+ * cards flying in is the exact motion that hurts. They get the same fan,
+ * already dealt. */
+@media (prefers-reduced-motion: reduce) {
+  .hexdev-chrome-fan-card { animation: none; }
+}
+
 .hexdev-chrome-header .hexdev-chrome-tagline {
   margin-inline: auto;
 }
@@ -331,6 +555,7 @@ export function buildChromeStylesheet(): string {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  filter: var(--hx-emboss);
 }
 
 /* One line under the title, and it earns its place by being the only thing on
@@ -343,6 +568,7 @@ export function buildChromeStylesheet(): string {
   font-size: var(--hx-text-body);
   line-height: var(--hx-leading);
   color: var(--hx-felt-ink-soft);
+  text-shadow: var(--hx-ink-shadow);
   max-width: 46ch;
 }
 
@@ -394,7 +620,7 @@ export function buildChromeStylesheet(): string {
    * same construction table-styles.ts uses for the scoreboard and call log,
    * which is why the lobby and the table now look like one place. */
   background: rgba(255, 255, 255, 0.055);
-  box-shadow: var(--hx-elev-1), var(--hx-relief), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  box-shadow: var(--hx-lift-edge), var(--hx-lift-contact), var(--hx-lift-ambient), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 /* PR8 (WARNING-1/WCR-3 closure): exact match, --hx-text-title. */
 /* The game's own name, one step up (PR-EST). It shared --hx-text-title with
@@ -408,6 +634,7 @@ export function buildChromeStylesheet(): string {
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--hx-felt-ink);
+  text-shadow: var(--hx-ink-shadow);
 }
 
 .hexdev-modality {
@@ -501,6 +728,8 @@ export function buildChromeStylesheet(): string {
    * control into the table. */
   border-color: color-mix(in srgb, var(--gx-color-primary, transparent) 35%, var(--hx-felt-outline));
   color: var(--hx-felt-ink);
+  box-shadow: var(--hx-lift-edge), var(--hx-lift-contact);
+  transition: background var(--hx-motion-fast) var(--hx-ease), box-shadow var(--hx-motion-fast) var(--hx-ease), transform var(--hx-motion-fast) var(--hx-ease);
 }
 /* PR-EST: "brightness()" on a TRANSPARENT background changes nothing that can
  * be seen — the default button here has no fill, so the old rule brightened a
@@ -508,17 +737,28 @@ export function buildChromeStylesheet(): string {
  * tenant's own primary so it cannot fight a palette this stylesheet has never
  * met. The filter stays for the filled prominent state below, where it was
  * the half that always worked. */
+/* Hover LIFTS and press SETTLES — the object moves, the light does not. One
+ * pixel up with a deeper ambient shadow, one pixel down with the shadow
+ * pulled in. That reads as a thing you can press; a glow reads as a thing
+ * that is on. */
 .convite-chrome button:hover,
 .convite-chrome button:focus-visible {
   background: rgba(255, 255, 255, 0.09);
-  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow: var(--hx-lift-edge), var(--hx-lift-contact), var(--hx-lift-ambient);
 }
 .convite-chrome button:active {
   transform: translateY(1px);
+  box-shadow: var(--hx-lift-edge), 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 @media (prefers-reduced-motion: reduce) {
-  .convite-chrome button:active { transform: none; }
+  .convite-chrome button:hover,
+  .convite-chrome button:focus-visible,
+  .convite-chrome button:active {
+    transform: none;
+  }
 }
+
 
 /* An OWNED focus indicator (WCAG 2.4.7) — the chrome half of the rule
  * table-styles.ts declares for the felt. Until this rule, 2.4.7 on the lobby
@@ -602,6 +842,10 @@ export function buildChromeStylesheet(): string {
   background: var(--gx-color-accent, var(--hx-gold));
   border-color: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
+  /* The halo is the accent's OWN colour, so a tenant that rebrands the CTA
+   * rebrands its glow with it — a fixed gold halo under a red button would
+   * read as a rendering bug. */
+  box-shadow: var(--hx-lift-edge), var(--hx-lift-contact), 0 6px 20px color-mix(in srgb, var(--gx-color-accent, var(--hx-gold)) 30%, transparent);
 }
 
 .hexdev-chrome-empty,
@@ -718,8 +962,8 @@ p.hexdev-chrome-status,
 `.trim();
 }
 
-/** Idempotent injection into `<head>` — safe to call on every render, same
- * discipline as `truco-ui`'s `ensureTableStyles`. */
+/** Idempotent injection into <head> — safe to call on every render, same
+ * discipline as truco-ui's ensureTableStyles. */
 export function ensureChromeStyles(doc: Document): void {
   if (doc.getElementById(CHROME_STYLE_ID) !== null) return;
   const style = doc.createElement("style");

@@ -2,6 +2,30 @@ import { describe, expect, it } from "vitest";
 import { ACCENT_INK } from "@hexdev/widget-protocol";
 import { CHROME_STYLE_ID, buildChromeStylesheet } from "./chrome-styles.js";
 
+
+/**
+ * THE STYLESHEET CLOSES EVERY BLOCK IT OPENS.
+ *
+ * Trivial to check and worth checking, because of how this fails: an unclosed
+ * brace does not throw, does not warn, and does not break the rules ABOVE it.
+ * Everything after it is silently swallowed into the open block and simply
+ * stops applying. It shipped exactly once — a rule edit dropped a closing
+ * brace and every declaration in the last third of the file quietly stopped
+ * existing, which surfaced as one unrelated test seeing "line-height: normal"
+ * on an element whose rule was still right there in the source.
+ *
+ * These are template literals built by hand, so no CSS parser ever sees them
+ * before a browser does. This is the parser.
+ */
+function braceBalance(css: string): number {
+  let depth = 0;
+  for (const character of css) {
+    if (character === "{") depth += 1;
+    if (character === "}") depth -= 1;
+  }
+  return depth;
+}
+
 describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lobby/selection screen is CHROME, so it takes the tenant's brand)", () => {
   /**
    * THE LINE MOVED, and this fence moved with it rather than being deleted.
@@ -23,7 +47,7 @@ describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lob
     const css = buildChromeStylesheet();
 
     // OURS: the felt is the base, and --gx-color-surface may only tint it.
-    expect(css, "the chrome surface stopped being the felt").toMatch(/\.convite-chrome\s*\{[^}]*var\(--hx-felt-base\)/);
+    expect(css, "the chrome surface stopped being the cloth").toMatch(/\.convite-chrome\s*\{[^}]*var\(--hx-cloth\)/);
     expect(css, "the tenant paints the surface again instead of tinting it").toMatch(/color-mix\([^)]*var\(--gx-color-surface[^)]*\)\s*var\(--hx-felt-tint\)/);
 
     // THEIRS: radius, accent and primary still reach the controls.
@@ -37,6 +61,22 @@ describe("buildChromeStylesheet (design §10: hybrid theming by zone — the lob
 
     expect(css).not.toMatch(/--truco-/);
     expect(css).not.toMatch(/--deck-/);
+  });
+
+  it("closes every block it opens", () => {
+    expect(braceBalance(buildChromeStylesheet()), "an unclosed block is silently swallowing every rule after it").toBe(0);
+  });
+
+  it("never leaves a stray closing brace either — that ends the stylesheet early", () => {
+    // The mirror failure: one } too many terminates the sheet where a browser
+    // stops caring, and again nothing throws.
+    let depth = 0;
+    for (const character of buildChromeStylesheet()) {
+      if (character === "{") depth += 1;
+      if (character === "}") depth -= 1;
+      if (depth < 0) break;
+    }
+    expect(depth).toBeGreaterThanOrEqual(0);
   });
 
   it("exposes a stable element id for idempotent injection", () => {
