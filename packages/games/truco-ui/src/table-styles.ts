@@ -1845,6 +1845,18 @@ export function buildTableStylesheet(): string {
  * reading var(--gx-*, fallback) unchanged. */
 .hexdev-truco-action-bar {
   grid-area: actions;
+  /* THE ONE ROW THAT TAKES THE HANDLE LANE BACK. The felt reserves a strip on
+   * its right so the drawer's handle is never drawn on a card, and every grid
+   * row inside that padding pays for it -- including this one, which cost the
+   * bar six pixels it did not have: measured at 375px, 340px of buttons in a
+   * 334px band, and "Seña/Consulta (3)" was cut. Reported looking at it.
+   *
+   * This row can take it back because it can never collide with the handle:
+   * the handle is centred in the rail's band, well above the action row (at
+   * 375px, y197-y344 against a bar starting at y456), and the drawer opens
+   * leftward from there. Fenced rather than argued -- the handle-overlap
+   * fence in table-zone-overlap.browser.test.ts checks this bar too. */
+  margin-right: calc(-1 * var(--hx-rail-handle-lane, 0px));
   display: flex;
   flex-direction: row;
   align-items: center;
