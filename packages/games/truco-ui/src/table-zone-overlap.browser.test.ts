@@ -745,6 +745,55 @@ describe.each(WIDTHS)("the turn ring does not paint onto the action bar — %ipx
   });
 });
 
+/**
+ * THE SEAT'S NAME IS NOT UNDER ITS RING.
+ *
+ * Reported from a phone, looking at it: "las pils de Rival y Compañero deben
+ * estar arriba del contenedor amarillo de las cartas."
+ *
+ * The turn ring is an OUTLINE plus a halo, and both paint OUTSIDE the box they
+ * belong to -- 13px past it, and layout knows about none of it. The same
+ * mechanism was already fixed once BELOW the player's own hand, where the ring
+ * was drawing over the action bar; nothing ever reserved the matching room
+ * ABOVE a seat's cards, where the relation label sits 6px away in the anchor's
+ * flex column. 13 against 6 leaves 7px of gold straight through the word.
+ *
+ * Only the anchor whose turn it is can show this, which is why the fixture
+ * deals with the mano on seat 1 rather than reusing the viewer-turn ones.
+ */
+describe.each([375, 700] as const)("the turn ring does not paint onto a seat's own label — %ipx", (width) => {
+  function opponentOnTurn2v2(): MatchState {
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+    // dealerSeat 0 puts the mano on seat 1 -- an opponent -- so the ring is on
+    // a seat that HAS a relation label. The viewer's own hand has none.
+    return startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2_MAXIMAL);
+  }
+
+  it("2v2: the ring around a rival's cards clears the RIVAL chip above them", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = opponentOnTurn2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
+    await waitForArt(el);
+
+    const active = el.querySelector(".hexdev-truco-anchor--active");
+    if (active === null) throw new Error("test setup: no active anchor — is it really a rival's turn?");
+    const hand = active.querySelector(".hexdev-truco-opponent-hand");
+    const label = active.querySelector(".hexdev-truco-relation-label");
+    if (hand === null || label === null) throw new Error("test setup: the active anchor has no opponent hand or no relation label");
+
+    const reach = ringReachOf(hand);
+    expect(reach, "fence setup: the ring paints nothing outside the hand, so this cannot detect anything").toBeGreaterThan(0);
+
+    // The ring's TOP painted edge, which is above the box layout reports.
+    const painted = hand.getBoundingClientRect().top - reach;
+    const chip = label.getBoundingClientRect();
+
+    expect(painted, `the ring's top edge is at ${painted.toFixed(1)}px, the chip ends at ${chip.bottom.toFixed(1)}px`).toBeGreaterThanOrEqual(chip.bottom - 0.5);
+  });
+});
+
 describe.each([375, 700] as const)("the drawer handle sits beside the play, not on it — %ipx", (width) => {
   // Seen in a mobile screenshot: the vertical tab overlapped the right
   // rival's card backs. It is a small sliver of a handle, but a handle drawn

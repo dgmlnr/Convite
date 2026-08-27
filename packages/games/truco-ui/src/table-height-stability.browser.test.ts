@@ -427,7 +427,17 @@ const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1":
    * had two nested boxes to drag. With the scrolling where it belongs, the
    * group's horizontal scrollbar takes its 10px inside the band instead of
    * outside it. Measured off the group's own box, not guessed. */
-  375: { "1v1": 492.34375, "2v2": 491.4375 },
+  /* THE TURN RING GETS ITS ROOM, and 2v2 is the only shape that pays for it.
+   *   375  2v2: 491.4375   -> 496.421875   (+4.98, the compact card size)
+   *   700  2v2: 786.328125 -> 793.328125   (+7)
+   *   960  2v2: 817.328125 -> 824.328125   (+7)
+   *  1280  2v2: 983.515625 -> 990.515625   (+7)
+   * The ring paints 13px outside the box it belongs to and the anchor gap was
+   * 6, so 7px of gold ran through each seat's own RIVAL/COMPAÑERO chip.
+   * Reserved in the gap, on every anchor and every turn, so the table cannot
+   * reflow as the turn goes round. 1v1 has no relation labels and does not
+   * move. */
+  375: { "1v1": 492.34375, "2v2": 496.421875 },
   /* THE BAND GIVES BACK WHAT IT WAS RESERVING FOR A STRIP IT NO LONGER HAS.
    *   700  2v2: 838.328125 -> 786.328125   (-52)
    *   960  2v2: 873.328125 -> 817.328125   (-56)
@@ -435,9 +445,9 @@ const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1":
    * stacked the two and booked a double height for them. That control is in
    * the side rail now; the band holds one strip and books one strip. 1v1 never
    * had the second strip and does not move. */
-  700: { "1v1": 649.96875, "2v2": 786.328125 },
-  960: { "1v1": 771.375, "2v2": 817.328125 },
-  1280: { "1v1": 860.59375, "2v2": 983.515625 },
+  700: { "1v1": 649.96875, "2v2": 793.328125 },
+  960: { "1v1": 771.375, "2v2": 824.328125 },
+  1280: { "1v1": 860.59375, "2v2": 990.515625 },
 };
 
 function expectExactHeight(actual: number, expected: number, label: string): void {

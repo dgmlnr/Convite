@@ -1041,7 +1041,28 @@ export function buildTableStylesheet(): string {
   .hexdev-truco-side-rail { width: 240px; }
 }
 
-.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; }
+/* THE GAP IS THE RING'S ROOM. .hexdev-truco-relation-label carries order: -1,
+ * so it is always the FIRST item in whichever direction this anchor runs --
+ * above the cards in the side columns, beside them in the partner's row -- and
+ * this gap is what sits between the two.
+ *
+ * The turn ring is an OUTLINE plus a halo and both paint OUTSIDE the box they
+ * belong to, 13px past it, with layout knowing about none of it. At a 6px gap
+ * that put 7px of gold straight through the seat's own name. Reported looking
+ * at it: "las pils de Rival y Compañero deben estar arriba del contenedor
+ * amarillo de las cartas."
+ *
+ * The same mechanism, and the same fix, as .hexdev-truco-hand's margin-bottom
+ * further up -- that one reserved the ring's room BELOW the player's hand,
+ * where it was painting over the action bar. Nothing had ever reserved the
+ * matching room above a seat's cards.
+ *
+ * max(), so the token is a floor and never a shrink: if the ring ever reaches
+ * less than 6px this gap keeps the 6 it was designed with. And reserved on
+ * every anchor whether or not it is that seat's turn, for the reason the hand
+ * rule gives for its own -- a table that reflows every time the turn comes
+ * round is worse than one that is 7px looser all the time. */
+.hexdev-truco-anchor { position: relative; display: flex; align-items: center; justify-content: center; gap: max(6px, var(--hx-ring-reach)); }
 
 /* THE DEAL. Every card arrives from the deck's own corner of the table,
  * seat by seat from the mano, three each -- which is how a hand is actually
@@ -2154,7 +2175,22 @@ export function buildTableStylesheet(): string {
  * Auto margins absorb the free space exactly the same way while there is
  * any, and collapse to zero when there is none -- so the row still centres
  * whenever it fits, and starts at the scroll origin the moment it does not. */
-.hexdev-truco-calls-row { display: flex; flex-direction: row; gap: var(--hx-space-xs, 12px); align-items: center; justify-content: flex-start; align-self: stretch; min-width: 0; max-width: 100%; flex: 0 1 auto; }
+/* flex: 1 1 auto -- GROW as well as shrink, and the growing is what centres the
+ * calls under the hand.
+ *
+ * The auto margins on the two rules below have always been the centring
+ * mechanism (never justify-content: centring an OVERFLOWING box pushes its
+ * first button out of scroll range, which once cut "Quiero" down to "uiero").
+ * But an auto margin can only absorb free space that exists, and at 0 1 auto
+ * this row shrank to its content and had none.
+ *
+ * It never showed while the band carried a second strip beside this one: the
+ * two filled it between them. The moment the señas control moved to the side
+ * rail, a lone "Truco" sat hard against the left edge with the hand it belongs
+ * to centred above it. Measured at a 360px window: the row's centre at x=50,
+ * the band's at x=180. Found looking at a real phone render, by which time
+ * every assertion in this repo was green. */
+.hexdev-truco-calls-row { display: flex; flex-direction: row; gap: var(--hx-space-xs, 12px); align-items: center; justify-content: flex-start; align-self: stretch; min-width: 0; max-width: 100%; flex: 1 1 auto; }
 .hexdev-truco-calls-row > :first-child { margin-inline-start: auto; }
 .hexdev-truco-calls-row > :last-child { margin-inline-end: auto; }
 /* Change 4: answering a pending call reads as a different decision from
@@ -3311,9 +3347,19 @@ export function buildTableStylesheet(): string {
  *
  * Raised to the measured value plus a pixel, not to whatever silenced the
  * test. The cards still come out substantially bigger than before -- 54px
- * freed against 4px given back. */
+ * freed against 4px given back.
+ */
 :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table[data-seat-count="4"] {
-  --hx-fit-residual: 38px;
+  /* RE-FITTED, 38 -> 44, when the anchor gap grew by 7px to hold the turn ring
+   * off each seat's own chip. This rule owns the LANDSCAPE phone (844x390),
+   * which is the window that moved -- the portrait one belongs to the compact
+   * block further down and did not. Measured there: 5px over, plus one.
+   *
+   * The subtraction maps to total height 1:1, because the formula divides the
+   * remaining height by the row count and the rows multiply it straight back.
+   * Fitted against table-viewport-fit, never by arithmetic on the gap -- the
+   * same instruction the wide 2v2 block gives about its own value. */
+  --hx-fit-residual: 44px;
 }
 
 /* WIDE ENOUGH TO SHOW THE WHOLE LADDER, so it is shown.
@@ -3489,9 +3535,22 @@ export function buildTableStylesheet(): string {
      * this layout sits AT its fit limit, and the banner reserve shrinking
      * from 84px to 56px bought 2v2 fullscreen nothing — the residual absorbs
      * it exactly (28 - 56 = -28), which is why the number moved when the
-     * banner did. Re-fit it against that fence, never by arithmetic. */
+     * banner did. Re-fit it against that fence, never by arithmetic.
+     *
+     * RE-FITTED, -28 -> -21, when the anchor gap grew by 7px to hold the turn
+     * ring off each seat's own chip. Sitting AT the fit limit is exactly what
+     * that warning meant: 7px of new gap put every wide fullscreen window 7px
+     * over at once.
+     *
+     * Two other things were tried first and BOTH changed the overflow by zero,
+     * which is what said this was the binding constraint: raising the tier
+     * residual above (a different rule, overridden here) and lowering the
+     * card's 132px ceiling (the card measures 103px at 1550x837 -- nowhere
+     * near it). What actually binds is the centre row's own min-content floor:
+     * a side column is label + gap + three cards, grid gives that row 1fr with
+     * an implicit auto minimum, and the row cannot shrink under it. */
     --hx-fit-rows: 4.0;
-    --hx-fit-residual: -28px;
+    --hx-fit-residual: -21px;
   }
 }
 

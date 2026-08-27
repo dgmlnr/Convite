@@ -620,3 +620,38 @@ describe("the band belongs to the calls, and the partner's answer stays visible"
     expect(advice.getBoundingClientRect().width, "the answer's painted width").toBeGreaterThan(0);
   });
 });
+
+/**
+ * THE CALLS SIT UNDER THE HAND, not against the left edge.
+ *
+ * A regression from moving the señas control out of the band, caught looking
+ * at a real phone render rather than by any assertion here: the band used to
+ * carry two strips and they filled it between them, so nothing ever had to say
+ * where a lone strip goes. With one strip left, a flex row at its default
+ * flex-start put "Truco" hard against the left edge while the hand it belongs
+ * to sat centred above it. Measured at a 360px window: the row's centre at
+ * x=50, the band's at x=180.
+ *
+ * The buttons already centre THEMSELVES inside their group (auto margins, for
+ * the reason that rule gives: centring an overflowing box pushes its first
+ * button out of scroll range). What was missing was the group having the full
+ * band to centre within.
+ */
+describe("the call buttons are centred under the hand", () => {
+  it.each([320, 375, 570, 900, 1280] as const)("%ipx: the calls row is centred in the band", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = openingTurnState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
+    const row = el.querySelector<HTMLElement>(".hexdev-truco-calls-row");
+    if (bar === null || row === null) throw new Error("fence setup: no action bar or no calls row");
+
+    const b = bar.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    const drift = Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2);
+    expect(drift, `the row's centre is ${String(Math.round(drift))}px off the band's`).toBeLessThanOrEqual(1);
+  });
+});
