@@ -252,6 +252,60 @@ describe("MatchRoom pending consult — slice 2a", () => {
     expect(opponentPending).toEqual({ askerSeat: 0, deadline: expect.any(Number) });
     expect(new Set(fields.map((field) => JSON.stringify(field))).size).toBe(1); // same field, all four seats
   });
+
+  /**
+   * sdd-verify: the spec's own dividing line ("did the question outlive its
+   * own turn", not "did somebody take the seat") had NO fence — `onLeave`
+   * (the real disconnect path, distinct from 2a.6's `handleQuit`) was never
+   * driven with a consult open anywhere in this suite. Inserting the OLD,
+   * now-rejected behaviour — silently cancelling `pendingConsult` the
+   * instant `onLeave` sees the partner's own seat — left every other test
+   * green, because nothing here ever called `onLeave` at all.
+   *
+   * `DEFAULT_RECONNECTION_WINDOW_SECONDS` (30s) and `CONSULT_CAP_MS` (30s)
+   * are equal, but their clocks start at DIFFERENT instants: the cap starts
+   * when the consult opens (t=0 below), the reconnection window starts when
+   * `onLeave` actually runs (t=5000 below, simulating the disconnect
+   * happening a few seconds into the window) — so the cap's own deadline
+   * (t=30000) always arrives before the reconnection window's (t=35000).
+   * The test drives BOTH instants, in order, to prove the cap — not
+   * `onLeave` itself — is what resolves the consult, and that the LATER
+   * window expiry (which still runs `takeOverSeat`, per design D3) does not
+   * send a second answer.
+   */
+  it("the partner disconnects (onLeave) while the cap is still running: the cap resolves it with a marked fallback, exactly as if they had stayed connected and silent", async () => {
+    const { room, seats } = buildRoom(90); // long turn clock: the 30s cap binds the deadline, not the turn
+    await askConsult(room, seats.A.client, A);
+
+    // 5s pass with C (the asked partner) still silent, THEN C's connection
+    // drops. Deliberately not `await`ed here: `onLeave` awaits the whole
+    // reconnection window, which this scenario keeps open well past this
+    // point — awaiting it here would hang the test.
+    await vi.advanceTimersByTimeAsync(5_000);
+    const leaving = room.onLeave(seats.C.client);
+
+    // 25s more reaches the CONSULT's own cap (t=30000 since it opened at
+    // t=0) — before the reconnection window (t=5000 + 30000 = 35000).
+    await vi.advanceTimersByTimeAsync(25_000);
+    await settle(room);
+
+    expect(only(seats.A.sent, "consult-advice"), "the cap resolves it — a disconnected-but-still-reserved partner must not have silently cancelled the consult").toHaveLength(1);
+    expect(last(only(seats.A.sent, "consult-advice"))).toMatchObject({ message: { from: "fallback" } });
+    expect((room as unknown as { pendingConsult: unknown }).pendingConsult, "resolved and cleared by the cap, same as an ordinary silent partner").toBeNull();
+
+    // The reconnection window itself (t=5000 + 30000 = 35000) still has not
+    // expired at t=30000 — advance the remaining 5s so `onLeave`'s own await
+    // settles too, into the takeover branch (design D3's explicit hook).
+    // Harmless by now: the consult is already resolved, so `takeOverSeat`'s
+    // own `pending !== null` guard skips queuing a second fallback.
+    await vi.advanceTimersByTimeAsync(5_000);
+    await leaving;
+    await settle(room);
+
+    expect(only(seats.A.sent, "consult-advice"), "resolved exactly once — the later window expiry must not send a second answer").toHaveLength(1);
+    const controllers = (room as unknown as { controllers: Map<number, { kind: string }> }).controllers;
+    expect(controllers.get(2)?.kind, "the seat is still taken over once the window itself expires — just too late to matter for the already-resolved consult").toBe("bot");
+  });
 });
 
 /**

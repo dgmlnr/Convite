@@ -558,6 +558,20 @@ export function createMatchTableRenderer(
      * consult is asking to answer. The claim that the two always agree was
      * false precisely here; it no longer appears above.
      *
+     * SECOND REMEDIATION (sdd-verify, this pass): spec R9 requires the
+     * replacement badge "for every seat's view, not only the asker's own",
+     * and the first remediation satisfied that by showing NOTHING at all on
+     * the protected viewer's screen — a third option nobody had weighed.
+     * `appendTurnBadge` only mounts a clock node when `remainingMs !== null`
+     * (its own signature just above), so a STATIC "Consultando…" marker —
+     * no countdown, no interval, no second `mountedTurnClockEl` — IS
+     * representable without touching this file's single-mounted-clock
+     * architecture. So now: the protected viewer keeps their OWN badge and
+     * running clock (unchanged), and the ASKER's own anchor separately gets
+     * a second, clock-less mark — see `consultStaticMarkerSeat` below. Two
+     * marks, one clock: R9's "every seat sees it" holds without taking
+     * anyone's own turn clock away from them.
+     *
      * `deadline > now()` is the whole degrade path: a stale or late-clearing
      * field simply stops satisfying this check, and the badge falls back to
      * the ordinary turn text with no bookkeeping of its own required here.
@@ -566,20 +580,29 @@ export function createMatchTableRenderer(
     // Redirect the badge to the asker's seat UNLESS doing so would blank the
     // VIEWER'S OWN currently-active badge (the case above) — self wins. The
     // renderer mounts exactly ONE ticking clock per render
-    // (`mountedTurnClockEl`/`turnClockTimer` below), so a seat that keeps
-    // its own badge here shows no consult indicator of its OWN on this one
-    // screen; two simultaneously live, independently-ticking clocks are not
-    // representable without a larger change to that single-clock
-    // architecture. The narrative announcer just below is gated on
+    // (`mountedTurnClockEl`/`turnClockTimer` below), so this decides only
+    // which seat owns THAT one running clock — see `consultStaticMarkerSeat`
+    // just below for the second, clock-less mark the protected case no
+    // longer forfeits. The narrative announcer just below is gated on
     // `consultOpen`, not on `badgeSeat`, so this viewer is still told a
-    // consult is open regardless of which seat wins the one badge.
+    // consult is open regardless of which seat wins the one clock.
     const consultWouldBlankSelf = seatOnTheClock === view.self.seat && seatOnTheClock !== pendingConsult?.askerSeat;
     const badgeSeat = consultOpen && !consultWouldBlankSelf ? pendingConsult!.askerSeat : seatOnTheClock;
-    // Whether the ONE badge this render mounts is actually the consult's own
-    // — false when the protection above kept the viewer's own seat instead,
-    // in which case that badge must carry ITS OWN real turn data, never the
-    // consult's.
+    // Whether the ONE badge with a running clock is actually the consult's
+    // own — false when the protection above kept the viewer's own seat
+    // instead, in which case THAT badge must carry its own real turn data,
+    // never the consult's.
     const consultBadgeShown = consultOpen && badgeSeat === pendingConsult!.askerSeat;
+    // SECOND REMEDIATION — the public signal for exactly the case the
+    // protection above costs: whenever the viewer's own active seat won the
+    // one running clock instead of the asker, the asker's OWN anchor still
+    // gets marked — just without a countdown of its own, since this table
+    // has only one clock and it is legitimately the viewer's this render.
+    // `null` in every other shape: the ordinary consult badge above already
+    // carries the signal there, and marking the SAME seat twice would be
+    // the exact "two chips, two clocks" regression this file has already
+    // paid for once (see the block comment on `isAnchorActive` above).
+    const consultStaticMarkerSeat = consultOpen && consultWouldBlankSelf ? pendingConsult!.askerSeat : null;
 
     // SLICE 4b — the narrative announcer's own OPEN-transition line (design
     // D8), in the relation to the LISTENING seat — never a seat index, never
@@ -747,6 +770,17 @@ export function createMatchTableRenderer(
       if (other.seat === badgeSeat) {
         anchor.classList.add("hexdev-truco-anchor--active");
         mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(other.relation), remainingMs, consultBadgeShown ? "consult" : undefined) ?? mountedTurnClockEl;
+      } else if (other.seat === consultStaticMarkerSeat) {
+        // No `--active` ring here: that ring is reserved for the one seat
+        // that owns THIS render's single running clock (`isAnchorActive`'s
+        // own block comment above explains why only one seat may ever wear
+        // it). This mark carries strictly less than that ring — a public
+        // "a question is open here", never "act now" — and passing `null`
+        // for `remainingMs` means `appendTurnBadge` mounts no clock node at
+        // all, so it can never compete with the viewer's own countdown for
+        // the single `mountedTurnClockEl`/`turnClockTimer` this render
+        // tracks.
+        appendTurnBadge(anchor, TABLE_STRINGS.consulting, null, "consult");
       }
     }
 
