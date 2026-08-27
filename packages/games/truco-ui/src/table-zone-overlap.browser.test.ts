@@ -1000,3 +1000,51 @@ describe.each([320, 375] as const)("the deck marker yields to the turn countdown
     expect(onTop, `at the overlap the player sees ${hit?.className ?? "nothing"}, not the countdown`).toBe(true);
   });
 });
+
+/**
+ * THE WAY OUT IS NOT DRAWN ON THE PARTNER'S CARDS.
+ *
+ * The door lives in the felt's top-right corner, chosen because no tier's
+ * layout uses it. That held down to 320px and stopped holding below: measured
+ * at 300px, the partner's third card back runs 8px under the button, and 6px
+ * at 305 -- which is what a 320px phone really gives a widget once the page
+ * has a scrollbar.
+ *
+ * The top anchor is the one seat laid out ACROSS, so it is the only one whose
+ * row grows toward both corners as the felt narrows. Everything else on this
+ * table is a column against an edge.
+ *
+ * 300 and 305 are in the sweep on purpose. Every other width here was already
+ * clean, and a fence that only samples the tiers this repo names would have
+ * missed this entirely -- the same way the 570px case had to be added to
+ * action-bar-fit after a bug was reported at a width no tier boundary knows
+ * about.
+ */
+describe("the door in the corner never lands on a card", () => {
+  it.each([300, 305, 320, 360, 375, 414, 570, 640] as const)("%ipx: nothing in a seat's hand runs under .hexdev-truco-leave", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    // FRESHLY DEALT, three cards in every hand. That is the state that reaches
+    // the corner, and a first version of this fence reused the after-trick-1
+    // fixture, found a partner already down to two cards, and passed at every
+    // width while the defect was live at 300 and 305.
+    const state = freshlyDealt2v2();
+    // The SIXTH argument is what mounts the door at all; without it this fence
+    // would pass by measuring nothing.
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, null, () => {});
+    settleDeal(el);
+    await waitForArt(el);
+
+    const leave = el.querySelector<HTMLElement>(".hexdev-truco-leave");
+    if (leave === null) throw new Error("test setup: no leave control rendered");
+    const l = leave.getBoundingClientRect();
+    expect(l.width, "fence setup: the door has no box, so this cannot detect anything").toBeGreaterThan(0);
+
+    for (const card of el.querySelectorAll<HTMLElement>(".hexdev-truco-card, .hexdev-truco-deck")) {
+      const r = card.getBoundingClientRect();
+      if (r.width === 0) continue;
+      const seat = card.closest("[data-position]")?.getAttribute("data-position") ?? "?";
+      expect(overlaps(l, r), `the door covers a card at the ${seat} seat, ${String(Math.round(Math.min(l.right, r.right) - Math.max(l.left, r.left)))}px of it`).toBe(false);
+    }
+  });
+});

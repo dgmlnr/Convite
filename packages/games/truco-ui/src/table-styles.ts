@@ -286,6 +286,19 @@ export function buildTableStylesheet(): string {
   width: 100%;
   height: 100%;
   min-height: 0;
+  /* GROW INTO WHATEVER THE SHELL HAS SPARE, and height: 100% above is exactly
+   * why that has to be said out loud.
+   *
+   * In fullscreen the shell is sized by min-height: 100dvh, which leaves its
+   * own height INDEFINITE -- and a percentage height cannot resolve against
+   * an indefinite one. So this box quietly fell back to its content and left
+   * the rest of the screen as bare cloth: measured in the running widget at
+   * 305x568, a 568px shell holding a 489px table and 79px of nothing. Reported
+   * looking at it, twice, across two sessions.
+   *
+   * flex-grow does not care whether a percentage can resolve. It fills what is
+   * there. */
+  flex: 1 1 auto;
   box-sizing: border-box;
 }
 .hexdev-truco-shell-layout > .hexdev-truco-table { flex: 1 1 auto; }
@@ -1140,6 +1153,25 @@ export function buildTableStylesheet(): string {
  * laid out down -- so it never reaches past the felt's own edge. */
 .hexdev-truco-hand,
 .hexdev-truco-opponent-hand { position: relative; }
+/* THE ROW ACROSS THE TOP KEEPS OUT OF BOTH CORNERS.
+ *
+ * The way out is drawn in the felt's top-right corner, picked because no
+ * tier's layout uses it. That held down to 320px and stopped holding below:
+ * measured on a freshly dealt hand, the partner's third card back runs 8px
+ * under the button at 300 and 6px at 305 -- which is what a 320px phone really
+ * hands a widget once the page has a scrollbar.
+ *
+ * The top anchor is the ONLY seat laid out across, so it is the only one whose
+ * row grows toward a corner as the felt narrows; every other seat is a column
+ * against an edge.
+ *
+ * BOTH corners, not just the one with the door in it, so the row stays centred
+ * on the felt rather than shoved off-axis by exactly the width of a button.
+ * And unscoped by tier: from 320 up the row is already far narrower than this
+ * allows, so the rule resolves to nothing and costs nothing -- it only speaks
+ * where the felt has actually run out of room. --hx-leave-lane is the token
+ * that already describes that button's own size. */
+.hexdev-truco-anchor[data-position="top"] { max-width: calc(100% - var(--hx-leave-lane) * 2); }
 /* THE TWO SEATS LAID OUT ACROSS keep the deck at the outer end of their hand,
  * just clear of it -- above for the seat at the bottom, below for the one at
  * the top, both of which face empty cloth.
