@@ -238,3 +238,81 @@ describe("MatchRoom pending consult — slice 2a", () => {
     expect(new Set(fields.map((field) => JSON.stringify(field))).size).toBe(1); // same field, all four seats
   });
 });
+
+/**
+ * SLICE 2B — the inbound `consult-answer` handler and its four guards (design
+ * D4), plus the redaction fence's counterpart on the answer path itself. This
+ * is the one real trust boundary in the whole change: everything else the
+ * room does is deciding what to SEND; this is the one place it decides
+ * whether to BELIEVE something that arrived from outside. Every guard test
+ * proves the consult STAYS OPEN (same `pendingConsult.id`) after a rejection,
+ * not merely that no advice was sent — a handler that silently closed the
+ * consult on a forged answer would still pass a weaker assertion.
+ */
+describe("MatchRoom consult answer — slice 2b", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("2b.1 no pending consult open: consult-answer is dropped silently, no advice sent (guard 1)", () => {
+    const { room, seats } = buildRoom(60);
+
+    room.handleConsultAnswer(seats.C.client, { about: "pending-call", answer: "quiero" });
+
+    expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
+    expect((room as unknown as { pendingConsult: unknown }).pendingConsult).toBeNull();
+  });
+
+  it("2b.2 answer from a non-partner seat is rejected identically: bot seat, opponent, the asker, and an unseated socket (guard 2)", async () => {
+    const { room, seats } = buildRoom(60);
+    await askConsult(room, seats.A.client, A); // C (seat 2) is the asked partner
+    const openId = (room as unknown as { pendingConsult: { id: number } | null }).pendingConsult?.id;
+    // Seat 1 (B) is now bot-controlled — no live human behind it to answer as.
+    (room as unknown as { controllers: Map<number, unknown> }).controllers.set(1, { kind: "bot", playerId: B, strategy: { chooseAction: () => { throw new Error("must never be asked"); } } });
+    const stranger = fakeClient("stranger"); // never seated at all
+
+    room.handleConsultAnswer(seats.A.client, { about: "pending-call", answer: "quiero" }); // the asker themselves
+    room.handleConsultAnswer(seats.B.client, { about: "pending-call", answer: "quiero" }); // bot-controlled seat
+    room.handleConsultAnswer(seats.D.client, { about: "pending-call", answer: "quiero" }); // an opponent
+    room.handleConsultAnswer(stranger.client, { about: "pending-call", answer: "quiero" }); // unseated socket
+
+    expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
+    expect((room as unknown as { pendingConsult: { id: number } | null }).pendingConsult?.id).toBe(openId);
+  });
+
+  it("2b.3 answer for the wrong subject is rejected: consult open on pending-call, answered for envido (guard 3)", async () => {
+    const { room, seats } = buildRoom(60);
+    await askConsult(room, seats.A.client, A);
+    const openId = (room as unknown as { pendingConsult: { id: number } | null }).pendingConsult?.id;
+
+    room.handleConsultAnswer(seats.C.client, { about: "envido", answer: "quiero" });
+
+    expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
+    expect((room as unknown as { pendingConsult: { id: number } | null }).pendingConsult?.id).toBe(openId);
+  });
+
+  it('2b.4 a UI label sent as the answer is rejected as an unknown option — both "Dale" and "Quiere", either display vocabulary, never the wire value (guard 4)', async () => {
+    const { room, seats } = buildRoom(60);
+    await askConsult(room, seats.A.client, A);
+    const openId = (room as unknown as { pendingConsult: { id: number } | null }).pendingConsult?.id;
+
+    room.handleConsultAnswer(seats.C.client, { about: "pending-call", answer: "Dale" }); // the partner's own button label
+    room.handleConsultAnswer(seats.C.client, { about: "pending-call", answer: "Quiere" }); // the asker's report label
+
+    expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
+    expect((room as unknown as { pendingConsult: { id: number } | null }).pendingConsult?.id).toBe(openId);
+  });
+
+  it('2b.5 partner answers a valid option inside the window: consult-advice sent from:"partner", partner\'s own señas unchanged', async () => {
+    const { room, seats } = buildRoom(60);
+    await askConsult(room, seats.A.client, A);
+    const before = (last(seats.C.sent)!.message as { view: { self: { senasRemaining: number } } }).view.self.senasRemaining;
+
+    room.handleConsultAnswer(seats.C.client, { about: "pending-call", answer: "quiero" });
+
+    expect(only(seats.A.sent, "consult-advice")).toHaveLength(1);
+    expect(last(only(seats.A.sent, "consult-advice"))).toMatchObject({ message: { advice: "quiero", from: "partner" } });
+    expect((room as unknown as { pendingConsult: unknown }).pendingConsult).toBeNull(); // resolved, not left open
+    const after = (last(seats.C.sent)!.message as { view: { self: { senasRemaining: number } } }).view.self.senasRemaining;
+    expect(after).toBe(before); // answering spends nothing
+  });
+});

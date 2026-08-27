@@ -207,6 +207,16 @@ function subjectOf(action: unknown): string | undefined {
   return typeof about === "string" ? about : undefined;
 }
 
+/** The `answer` a `consult-answer` message claims (design D5's wire shape,
+ * `{about?, answer}`). Opaque to the transport: `handleConsultAnswer` only
+ * ever compares it by strict equality against the open consult's OWN
+ * `options`, never inspects or interprets it — the same "hand it back to the
+ * game that issued it" posture `subjectOf` already takes for `about`. */
+function answerOf(message: unknown): unknown {
+  if (typeof message !== "object" || message === null || !("answer" in message)) return undefined;
+  return (message as { answer: unknown }).answer;
+}
+
 function typeOf(action: unknown): string | undefined {
   if (typeof action !== "object" || action === null) return undefined;
   const type = (action as { type?: unknown }).type;
@@ -339,6 +349,10 @@ export class MatchRoom extends Room {
     // an answer. Everything else — whether the action is legal, what it
     // costs, what the answer is — belongs to the module.
     this.onMessage("consult", (client, message: unknown) => this.handleConsult(client, message));
+    // The one real trust boundary this room enforces (design D4): a reply on
+    // this channel is believed only after `handleConsultAnswer`'s four
+    // guards pass, never on the strength of anything the client claims.
+    this.onMessage("consult-answer", (client, message: unknown) => this.handleConsultAnswer(client, message));
     this.onMessage("quit", (client) => {
       this.handleQuit(client);
     });
@@ -718,6 +732,46 @@ export class MatchRoom extends Room {
     const advice = await this.adviceFor(controller.playerId, about);
     // `from: "partner"` even for a bot: that seat is answering for itself (D6).
     if (advice !== null) client.send("consult-advice", { advice, from: "partner" });
+  }
+
+  /**
+   * The inbound half of a consult — design D4's four guards, run in order,
+   * ANY failure dropping the answer SILENTLY:
+   *
+   * 1. A consult is actually open (`pendingConsult !== null`).
+   * 2. The sender's seat IS the asked partner's own seat. `seatOfClient`
+   *    matches only `kind: "human"` controllers by `sessionId`, so a bot
+   *    seat, an opponent, the asker themselves, and an unseated socket all
+   *    fail this check IDENTICALLY — there is no second, weaker path for any
+   *    of the four.
+   * 3. The claimed subject matches the open consult's own subject — answering
+   *    a different question is not answering this one.
+   * 4. The answer is strictly `===` one of the options THIS room itself
+   *    issued in `openConsult`. No module round-trip: forgery is decided
+   *    entirely inside the transport, and neither display vocabulary (D10's
+   *    "Dale"/"No" button labels, nor the "Quiere"/"No quiere" report words)
+   *    is ever a valid answer — only the wire value the module handed out.
+   *
+   * Silent rather than `action-rejected`, on purpose: an answer is not an
+   * action, it never reaches `applyAction`, and an identical silence on every
+   * guard keeps a forger from learning which one they tripped — the same
+   * posture `onAuth` already takes on a join. A legitimate late answer (the
+   * window already resolved) needs no message either: the next view already
+   * took the ask away.
+   *
+   * Guards pass through to `resolveConsult`, the SAME resolve-once primitive
+   * the 30s cap and a partner takeover already call (design D2) — this
+   * becomes its third caller, not a second implementation of "close it".
+   */
+  handleConsultAnswer(client: Client, message: unknown): void {
+    const pending = this.pendingConsult;
+    if (pending === null) return; // guard 1: nothing open to answer
+    const seat = this.seatOfClient(client);
+    if (seat === undefined || seat !== pending.partnerSeat) return; // guard 2
+    if (subjectOf(message) !== pending.about) return; // guard 3
+    const answer = answerOf(message);
+    if (!pending.options.some((option) => option === answer)) return; // guard 4
+    this.resolveConsult(pending.id, answer as JsonValue, "partner");
   }
 
   /**
