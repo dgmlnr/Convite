@@ -619,10 +619,13 @@ export class MatchRoom extends Room {
     const controller = this.controllers.get(seat);
     if (module === undefined || controller === undefined || controller.kind !== "human") return;
     this.controllers.set(seat, { kind: "bot", playerId: controller.playerId, strategy: module.createBot(this.takeoverTier) });
-    // Explicit hook (spec: "Partner disconnects mid-consult"): cancelled
-    // immediately, no advice — same silent posture as a turn-clock cancel.
+    // Explicit hook (design D3): the PARTNER's seat is taken over — resolved
+    // right away, marked `from: "fallback"` (never "partner": that would
+    // hide that the human is gone), through the SAME queued path the cap
+    // uses. Useful, so the asker does not sit out the rest of the window for
+    // someone who left; honest, because the mark still says nobody answered.
     const pending = this.pendingConsult;
-    if (pending !== null && pending.partnerSeat === seat) this.clearPendingConsult();
+    if (pending !== null && pending.partnerSeat === seat) this.queueConsultFallback(pending.id);
     void this.advance();
   }
 

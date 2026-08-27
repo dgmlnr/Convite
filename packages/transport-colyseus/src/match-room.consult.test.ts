@@ -162,13 +162,20 @@ describe("MatchRoom pending consult — slice 2a", () => {
     expect(seats.A.sent.length).toBeGreaterThan(before); // the timeout bot resolved A's own obligation
   });
 
-  it("2a.6 partner taken over by a bot mid-consult: cancelled immediately, no advice", async () => {
+  it('2a.6 partner taken over by a bot mid-consult: resolves right away, marked from:"fallback" (not "partner" — the human is gone)', async () => {
     const { room, seats } = buildRoom(60);
     await askConsult(room, seats.A.client, A);
 
-    room.handleQuit(seats.C.client); // synchronous — no settle needed
+    room.handleQuit(seats.C.client);
+    // Only flushes microtasks (no real/fake-timer delay): `adviceFor` never
+    // waits on a bot's own thinking delay. Deliberately NOT `settle(room)`
+    // here — the takeover's OWN `advance()` may separately drive C's fresh
+    // bot strategy, which DOES carry a real thinking delay, and awaiting
+    // that would be asserting on unrelated gameplay, not this resolution.
+    await vi.advanceTimersByTimeAsync(0);
 
-    expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
+    expect(only(seats.A.sent, "consult-advice")).toHaveLength(1);
+    expect(last(only(seats.A.sent, "consult-advice"))).toMatchObject({ message: { from: "fallback" } });
     expect((room as unknown as { pendingConsult: unknown }).pendingConsult).toBeNull();
   });
 
