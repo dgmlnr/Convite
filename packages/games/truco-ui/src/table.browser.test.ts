@@ -291,6 +291,32 @@ describe("createMatchTableRenderer — Slice 4a: the consult takeover, ONE CLOCK
     expect(badge.dataset.kind, "the calmer consult tone, not the gold 'act now' badge").toBe("consult");
   });
 
+  /* THE DEGRADE PATH, which had no fence of its own until sdd-verify mutated
+   * it away and watched 1978 tests stay green.
+   *
+   * `consultOpen` is `pendingConsult != null && pendingConsult.deadline >
+   * now()`, and the docblock above it calls that second clause "the whole
+   * degrade path". Nothing proved it. Drop it and a record that arrived stale
+   * — a broadcast delayed past its own deadline, a clock that moved — paints
+   * "Consultando…" over a countdown ticking BELOW ZERO, with no bookkeeping
+   * anywhere to notice.
+   *
+   * Asserted as the TURN text rather than as the absence of the consult one:
+   * "no consult badge" would also pass if the badge vanished entirely, and a
+   * seat with no badge at all is a different defect wearing the same green. */
+  it("a pendingConsult whose deadline has already passed is not open — the badge stays on the turn", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    // The record is present and well-formed. Only its deadline is spent.
+    render(el, teamView(), [], () => {}, undefined, T0 + 45_000, undefined, undefined, { askerSeat: 0, deadline: T0 - 1 });
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "one badge, as always").toHaveLength(1);
+    expect(badges[0]!.textContent, "a spent deadline degrades to the ordinary turn text, never to a consult counting below zero").toBe("Tu turno de responder0:45");
+    expect(badges[0]!.dataset.kind, "and it is not wearing the consult tone").toBeUndefined();
+  });
+
   it("reverts to the turn text with the remaining turn time in the SAME render that resolves it — never two badges, never zero", () => {
     const el = freshContainer();
     const render = createMatchTableRenderer({ now: () => T0 });
