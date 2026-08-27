@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ColyseusTestServer } from "@colyseus/testing";
 import { Room } from "@colyseus/core";
 import type { GameId, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
@@ -156,6 +156,59 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     expect(after.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
     expect(paired).toHaveLength(0);
   }, LIVE_TEST_TIMEOUT_MS);
+  /**
+   * THE SWEEP STOPS SHOUTING THE SAME NUMBERS.
+   *
+   * The room sweeps once a second and broadcast its counts on every tick,
+   * changed or not. Each of those lands on every lobby as a `"counts"` message,
+   * and the widget rebuilds its whole selection view on each one -- so an idle
+   * lobby with two games was being torn down and rebuilt a couple of times a
+   * second for numbers that had not moved.
+   *
+   * Fixed HERE and not in the widget, deliberately. `renderGameSelection` has a
+   * documented reason for rebuilding unconditionally (capture-then-restore over
+   * skip-identical-rebuild: one mechanism for both the same-data broadcast and a
+   * changed one, no second cache of presence state to drift). That argument is
+   * about the CLIENT and it still holds. What was wrong was sending a message
+   * that says nothing.
+   */
+  describe("presence counts are broadcast when they change, not on a timer", () => {
+    it("an idle room stops re-sending identical counts, and a later watcher still gets them", async () => {
+      // A fast tick so several sweeps really happen inside the wait below.
+      const room = await testServer.createRoom("presence", { gameId: "fixture-lobby", sweepTickMs: 20 });
+      const watcher = await testServer.connectTo(room, { gameId: "fixture-lobby" });
+      const counts: unknown[] = [];
+      watcher.onMessage("counts", (message) => counts.push(message));
+
+      // Its own join snapshot: a watcher must never wait for someone else's
+      // queue activity to see its first numbers.
+      await vi.waitFor(() => {
+        expect(counts.length, "the watcher never got its opening snapshot").toBeGreaterThan(0);
+      });
+      const afterJoin = counts.length;
+
+      // Long enough for many sweeps. Nothing joins, nothing leaves.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(counts.length - afterJoin, `${String(counts.length - afterJoin)} identical broadcasts on an idle room`).toBe(0);
+
+      // AND A LATER WATCHER STILL GETS THEM. This is the half that makes the
+      // skip safe: the join path must send even when the numbers have not
+      // changed, or a lobby opened during a quiet minute shows nothing at all.
+      const late = await testServer.connectTo(room, { gameId: "fixture-lobby" });
+      const lateCounts: unknown[] = [];
+      late.onMessage("counts", (message) => lateCounts.push(message));
+      await vi.waitFor(() => {
+        expect(lateCounts.length, "a watcher joining a quiet room saw nothing").toBeGreaterThan(0);
+      });
+
+      // A REAL CHANGE STILL TRAVELS.
+      const before = counts.length;
+      await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p-late" });
+      await vi.waitFor(() => {
+        expect(counts.length, "somebody queued and the lobby was never told").toBeGreaterThan(before);
+      });
+    });
+  });
 });
 
 /**
