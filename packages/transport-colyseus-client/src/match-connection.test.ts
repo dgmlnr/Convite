@@ -182,24 +182,36 @@ describe("reconnectMatch — the client's half of the reconnection window (desig
 });
 
 describe("the human-partner consult's client transport (design D5's wire table; spec 'Route to Human Partner Before Bot Fallback')", () => {
-  it("onConsultAsk relays exactly {about, options, deadline} to the PARTNER's own connection alone — a second connection standing in for the asker never receives it, because MatchRoom.openConsult only ever sends 'consult-ask' to the partner's room (task 3.1)", async () => {
+  it("onConsultAsk relays exactly {about, options, deadline} for a 'consult-ask' message on this connection's own room, and does not also fire for any other message type on it (task 3.1)", async () => {
+    // WARNING-1 (sdd-verify): a prior version of this test also built a
+    // second `askerRoom`/`askerConnection` and asserted that room's own
+    // listener stayed empty after emitting only on `partnerRoom`.
+    // `createFakeRoom` (test-fakes.ts) gives every room its own PRIVATE
+    // `handlers` Map, and `emit` only ever iterates that one room's own
+    // map — so that assertion could NEVER fail, for ANY implementation of
+    // `onConsultAsk`, correct or broken: it proved the fakes are separate
+    // objects, not that production code routes partner-only. THAT claim is
+    // a SERVER-side routing decision (`MatchRoom.openConsult` sends to the
+    // partner's own client alone), already fenced in
+    // `match-room.consult.test.ts`. What THIS package's own wrapper
+    // controls — and what can actually regress here — is which message
+    // TYPE `onConsultAsk` listens for on its own room; the second half
+    // below proves that.
     const partnerRoom = createFakeRoom({ sessionId: "partner" });
-    const askerRoom = createFakeRoom({ sessionId: "asker" });
     const partnerConnection = await joinMatchFromReservation(createFakeClient(partnerRoom), { roomId: "match-1" });
-    const askerConnection = await joinMatchFromReservation(createFakeClient(askerRoom), { roomId: "match-1" });
 
     const partnerAsks: unknown[] = [];
-    const askerAsks: unknown[] = [];
     partnerConnection.onConsultAsk((ask) => partnerAsks.push(ask));
-    askerConnection.onConsultAsk((ask) => askerAsks.push(ask));
 
-    // Only the partner's own room is ever emitted on — matching
-    // MatchRoom.openConsult's single `partner.controller.client.send(...)`
-    // call, never a broadcast to both seats.
     partnerRoom.emit("consult-ask", { about: "pending-call", options: ["quiero", "no-quiero"], deadline: 1_700_000_030_000 });
-
     expect(partnerAsks).toEqual([{ about: "pending-call", options: ["quiero", "no-quiero"], deadline: 1_700_000_030_000 }]);
-    expect(askerAsks).toEqual([]);
+
+    // A regression that widened `onConsultAsk`'s own registration to also
+    // catch other message types on the same room (e.g. a copy-paste of the
+    // wrong literal into `room.onMessage(...)`) would make this fail.
+    partnerRoom.emit("consult-advice", { advice: "quiero", from: "partner" });
+    partnerRoom.emit("view", { cardsRemaining: 3 });
+    expect(partnerAsks, "onConsultAsk must not also fire for other message types on the same room").toHaveLength(1);
   });
 
   it("sendConsultAnswer serializes {about, answer} and sends it, unchanged, as a 'consult-answer' message (task 3.2)", async () => {

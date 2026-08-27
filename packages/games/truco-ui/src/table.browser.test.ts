@@ -309,6 +309,35 @@ describe("createMatchTableRenderer — Slice 4a: the consult takeover, ONE CLOCK
     expect(clocks, "and exactly one countdown node with it").toHaveLength(1);
     expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-badge')!.textContent).toBe("Tu turno de responder0:45");
   });
+
+  /**
+   * sdd-verify CRITICAL-2: `askerSeat` used to replace `badgeSeat` GLOBALLY,
+   * for every viewer, with no regard for who ELSE is legitimately active.
+   * In 2v2 the WHOLE answering team is on the clock at once
+   * (`isAnchorActive` above), so on the ASKED PARTNER's own screen —
+   * `view.self.seat` is the partner being consulted, not the asker — that
+   * viewer's own badge, active ring and clock used to vanish for the entire
+   * window, even though their own answer is still owed and their own clock
+   * is still running underneath. Every other render in this describe block
+   * fixes `view.self.seat` to the asker's own seat, which is exactly why no
+   * fence before this one could see it: here the asker is the local
+   * player's TEAMMATE (seat 2, `askerSeat: 2`), and the viewer (seat 0) is
+   * the one being asked — reusing this block's own `teamView()` fixture,
+   * unchanged, with only the consult's askerSeat swapped.
+   */
+  it("does not blank the ASKED PARTNER's own active badge, ring and clock when they are not the asker (sdd-verify CRITICAL-2)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, T0 + 45_000, undefined, undefined, { askerSeat: 2, deadline: T0 + 30_000 });
+
+    const bottom = el.querySelector<HTMLElement>('[data-position="bottom"]')!;
+    const badge = bottom.querySelector(".hexdev-truco-turn-badge");
+    expect(badge, "the asked partner's own turn badge must survive the consult, not vanish").not.toBeNull();
+    expect(bottom.classList.contains("hexdev-truco-anchor--active"), "and keep its own active ring").toBe(true);
+    expect(badge!.textContent, "with the REAL turn clock, never the consult's own 0:30").toBe("Tu turno de responder0:45");
+    expect([...el.querySelectorAll(".hexdev-truco-turn-badge")], "still only one badge mounted on the table").toHaveLength(1);
+  });
 });
 
 /**

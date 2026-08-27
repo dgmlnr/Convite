@@ -194,7 +194,22 @@ describe("MatchRoom pending consult — slice 2a", () => {
     await askConsult(room, seats.A.client, A);
 
     await room.onDispose();
-    await vi.advanceTimersByTimeAsync(30_000); // if the timer leaked, this is where it would fire
+
+    // WARNING-2 (sdd-verify): the behavioural assertions below ALONE cannot
+    // tell a genuinely-cancelled cap timer apart from a LEAKED one, because
+    // `runConsultFallbackOnce` re-checks `this.disposed` and returns before
+    // sending anything (match-room.ts) — a SECOND, redundant guard that
+    // keeps both assertions green even if `clearPendingConsult`'s own
+    // `clearTimeout` call were deleted. `vi.getTimerCount()` reads vitest's
+    // own fake-timer queue directly — a channel neither this room's
+    // `disposed` flag nor its `pendingConsult` field can influence — so it
+    // is the one check that actually distinguishes "cancelled" from "leaked
+    // but silenced downstream". Both the turn timer and the consult's own
+    // cap timer must be gone: `onDispose` -> `clearTurnTimer` -> the D3
+    // funnel -> `clearPendingConsult`.
+    expect(vi.getTimerCount(), "no timer — turn or consult — survives dispose").toBe(0);
+
+    await vi.advanceTimersByTimeAsync(30_000); // if a timer had leaked, this is where it would fire
 
     expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
     expect((room as unknown as { pendingConsult: unknown }).pendingConsult).toBeNull();

@@ -79,6 +79,9 @@ importers:
         specifier: ^5.11.1
         version: 5.11.1
     devDependencies:
+      '@hexdev/truco-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/truco-engine
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2

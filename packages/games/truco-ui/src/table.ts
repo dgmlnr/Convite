@@ -547,17 +547,39 @@ export function createMatchTableRenderer(
      *
      * `askerSeat` is an exact server-issued seat, so once a consult is open
      * it is MORE accurate than `seatOnTheClock`'s own client-side heuristic
-     * above, not merely a substitute for it — the two agree on every render
-     * this table can actually produce (a consult only ever opens on the seat
-     * that already owes the table its move), but `askerSeat` is the one the
-     * server itself is authoritative about.
+     * above, not merely a substitute for it. But the two do NOT always agree
+     * — CORRECTED (sdd-verify CRITICAL-2): in 2v2 the WHOLE answering team
+     * is "active" (`isAnchorActive` above), and `seatOnTheClock` prefers the
+     * LOCAL viewer's own seat when it is one of them. When the asker's own
+     * TEAMMATE is the one being consulted, that teammate's screen has
+     * `seatOnTheClock === their own seat`, not the asker's — replacing it
+     * with `askerSeat` unconditionally used to blank that viewer's own
+     * active ring, badge and running clock, from the exact person the
+     * consult is asking to answer. The claim that the two always agree was
+     * false precisely here; it no longer appears above.
      *
      * `deadline > now()` is the whole degrade path: a stale or late-clearing
      * field simply stops satisfying this check, and the badge falls back to
      * the ordinary turn text with no bookkeeping of its own required here.
      */
     const consultOpen = pendingConsult != null && pendingConsult.deadline > now();
-    const badgeSeat = consultOpen ? pendingConsult!.askerSeat : seatOnTheClock;
+    // Redirect the badge to the asker's seat UNLESS doing so would blank the
+    // VIEWER'S OWN currently-active badge (the case above) — self wins. The
+    // renderer mounts exactly ONE ticking clock per render
+    // (`mountedTurnClockEl`/`turnClockTimer` below), so a seat that keeps
+    // its own badge here shows no consult indicator of its OWN on this one
+    // screen; two simultaneously live, independently-ticking clocks are not
+    // representable without a larger change to that single-clock
+    // architecture. The narrative announcer just below is gated on
+    // `consultOpen`, not on `badgeSeat`, so this viewer is still told a
+    // consult is open regardless of which seat wins the one badge.
+    const consultWouldBlankSelf = seatOnTheClock === view.self.seat && seatOnTheClock !== pendingConsult?.askerSeat;
+    const badgeSeat = consultOpen && !consultWouldBlankSelf ? pendingConsult!.askerSeat : seatOnTheClock;
+    // Whether the ONE badge this render mounts is actually the consult's own
+    // — false when the protection above kept the viewer's own seat instead,
+    // in which case that badge must carry ITS OWN real turn data, never the
+    // consult's.
+    const consultBadgeShown = consultOpen && badgeSeat === pendingConsult!.askerSeat;
 
     // SLICE 4b — the narrative announcer's own OPEN-transition line (design
     // D8), in the relation to the LISTENING seat — never a seat index, never
@@ -588,7 +610,7 @@ export function createMatchTableRenderer(
       // and it never names a relation — every seat's view reads the exact
       // same sentence on the asker's badge, regardless of who is watching
       // (spec: "the mark is on the seat itself").
-      if (consultOpen) return TABLE_STRINGS.consulting;
+      if (consultBadgeShown) return TABLE_STRINGS.consulting;
       if (pendingCall !== null) {
         if (relation === "self") return TABLE_STRINGS.yourTurnToAnswer;
         return relation === "partner" ? TABLE_STRINGS.waitingOnPartner : TABLE_STRINGS.waitingOnOpponent;
@@ -606,7 +628,7 @@ export function createMatchTableRenderer(
     // `null` (or an omitted argument) means this table is untimed: no clock
     // node is created at all, which is what keeps every pre-existing render —
     // and every visual baseline — byte-identical.
-    mountedTurnDeadline = consultOpen ? pendingConsult!.deadline : (turnDeadline ?? null);
+    mountedTurnDeadline = consultBadgeShown ? pendingConsult!.deadline : (turnDeadline ?? null);
     const remainingMs = mountedTurnDeadline === null ? null : mountedTurnDeadline - now();
 
     // READ BEFORE THE WIPE BELOW, which is the whole point: this subtree is
@@ -724,14 +746,14 @@ export function createMatchTableRenderer(
       // how many cards they hold, and whether they owe the next move.
       if (other.seat === badgeSeat) {
         anchor.classList.add("hexdev-truco-anchor--active");
-        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(other.relation), remainingMs, consultOpen ? "consult" : undefined) ?? mountedTurnClockEl;
+        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(other.relation), remainingMs, consultBadgeShown ? "consult" : undefined) ?? mountedTurnClockEl;
       }
     }
 
     const bottom = anchors.get("bottom")!;
     if (view.self.seat === badgeSeat) {
       bottom.classList.add("hexdev-truco-anchor--active");
-      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText("self"), remainingMs, consultOpen ? "consult" : undefined) ?? mountedTurnClockEl;
+      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText("self"), remainingMs, consultBadgeShown ? "consult" : undefined) ?? mountedTurnClockEl;
     }
     // Re-armed on every render, because the node it drives is rebuilt on every
     // render like everything else on this table. Cleared outright when there
