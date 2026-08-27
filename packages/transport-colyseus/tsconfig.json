@@ -14,6 +14,12 @@
     },
     {
       "path": "../platform-core"
+    },
+    {
+      "path": "../games/truco-engine"
+    },
+    {
+      "path": "../games/truco-module"
     }
   ]
 }

@@ -181,8 +181,8 @@ describe("MatchRoom", () => {
 
   it("sends each client only its own per-seat view — the opponent's secret never appears", async () => {
     const { seat0, seat1 } = await createJoinedRoom();
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null, turnDeadline: expect.any(Number) } });
-    expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number) } });
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null, turnDeadline: expect.any(Number), pendingConsult: null } });
+    expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number), pendingConsult: null } });
     // Deliberately NOT the whole message: `turnDeadline` is an epoch
     // millisecond, and a real slice of them contain the digits "11" by pure
     // accident — sweeping the server's clock for a game secret proves nothing
@@ -200,7 +200,7 @@ describe("MatchRoom", () => {
     room.handleAction(seat0.client, { type: "advance", playerId: P0 });
     expect(seat0.sent).toHaveLength(2);
     expect(seat1.sent).toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 1 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number) } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 1 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number), pendingConsult: null } });
   });
 
   it("rejects an out-of-turn action and leaves state unchanged (server-authoritative)", async () => {
@@ -453,8 +453,8 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     // system action's resulting (dealt) view — applied without any client
     // ever sending an "action" message.
     expect(seat0.sent).toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
-    expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
+    expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
   });
 
   it("waits out handEndPauseMs before dealing again, so the last card can be read", async () => {
@@ -482,7 +482,7 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     await new Promise((resolve) => setTimeout(resolve, 120));
 
     expect(seat0.sent, "the next hand never arrived at all").toHaveLength(2);
-    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null } });
+    expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
   });
 
   it("deals immediately when no pause is configured — every test that plays a hand pays nothing", async () => {
@@ -513,7 +513,7 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
     await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
     expect(seat0.sent).toHaveLength(1); // stuck: no second broadcast ever arrives
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [], outcome: null, turnDeadline: null } });
+    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
   });
 });
 
