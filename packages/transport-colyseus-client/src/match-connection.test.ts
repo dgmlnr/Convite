@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GameId, PlayerId } from "@hexdev/platform-contract";
-import { createFakeClient } from "./test-fakes.js";
+import { createFakeClient, createFakeRoom } from "./test-fakes.js";
 import { joinMatchFromReservation, reconnectMatch, startBotMatch } from "./match-connection.js";
 
 const GAME_ID = "fixture-game" as GameId;
@@ -178,5 +178,52 @@ describe("reconnectMatch — the client's half of the reconnection window (desig
     const connection = await reconnectMatch(client, "reconnection-token-6", { retries: 3, retryDelayMs: 0 });
     expect(attempt).toBe(2);
     expect(connection.reconnectionToken).toBe(client.room.reconnectionToken);
+  });
+});
+
+describe("the human-partner consult's client transport (design D5's wire table; spec 'Route to Human Partner Before Bot Fallback')", () => {
+  it("onConsultAsk relays exactly {about, options, deadline} to the PARTNER's own connection alone — a second connection standing in for the asker never receives it, because MatchRoom.openConsult only ever sends 'consult-ask' to the partner's room (task 3.1)", async () => {
+    const partnerRoom = createFakeRoom({ sessionId: "partner" });
+    const askerRoom = createFakeRoom({ sessionId: "asker" });
+    const partnerConnection = await joinMatchFromReservation(createFakeClient(partnerRoom), { roomId: "match-1" });
+    const askerConnection = await joinMatchFromReservation(createFakeClient(askerRoom), { roomId: "match-1" });
+
+    const partnerAsks: unknown[] = [];
+    const askerAsks: unknown[] = [];
+    partnerConnection.onConsultAsk((ask) => partnerAsks.push(ask));
+    askerConnection.onConsultAsk((ask) => askerAsks.push(ask));
+
+    // Only the partner's own room is ever emitted on — matching
+    // MatchRoom.openConsult's single `partner.controller.client.send(...)`
+    // call, never a broadcast to both seats.
+    partnerRoom.emit("consult-ask", { about: "pending-call", options: ["quiero", "no-quiero"], deadline: 1_700_000_030_000 });
+
+    expect(partnerAsks).toEqual([{ about: "pending-call", options: ["quiero", "no-quiero"], deadline: 1_700_000_030_000 }]);
+    expect(askerAsks).toEqual([]);
+  });
+
+  it("sendConsultAnswer serializes {about, answer} and sends it, unchanged, as a 'consult-answer' message (task 3.2)", async () => {
+    const client = createFakeClient();
+    const connection = await joinMatchFromReservation(client, { roomId: "match-1" });
+
+    connection.sendConsultAnswer({ about: "envido", answer: "no-quiero" });
+
+    expect(client.room.sent).toEqual([{ type: "consult-answer", payload: { about: "envido", answer: "no-quiero" } }]);
+  });
+
+  it("onConsultAdvice widens to carry `from: 'partner' | 'fallback'` alongside `advice` — the wire distinction spec 'Provenance Is Disclosed to the Asker' requires (task 3.3)", async () => {
+    const client = createFakeClient();
+    const connection = await joinMatchFromReservation(client, { roomId: "match-1" });
+
+    const received: unknown[] = [];
+    connection.onConsultAdvice((payload) => received.push(payload));
+
+    client.room.emit("consult-advice", { advice: "quiero", from: "partner" });
+    client.room.emit("consult-advice", { advice: "no-quiero", from: "fallback" });
+
+    expect(received).toEqual([
+      { advice: "quiero", from: "partner" },
+      { advice: "no-quiero", from: "fallback" },
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import type { GameId } from "@hexdev/platform-contract";
+import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
 
@@ -25,8 +26,27 @@ export interface GameUiPayload {
    * a view: `MatchRoom` sends it to the asking client alone, and a redacted
    * view able to carry it would carry it to everyone. Optional for the same
    * reason `turnDeadline` is — an older payload simply has no answer to
-   * report, which renders a table with no question outstanding. */
-  readonly consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean };
+   * report, which renders a table with no question outstanding. `from` is
+   * `null` while `asking` (no answer yet) and mirrors `MatchConnection`'s own
+   * widened `onConsultAdvice` payload otherwise — spec: "Provenance Is
+   * Disclosed to the Asker". */
+  readonly consult?: {
+    readonly advice: "quiero" | "no-quiero" | null;
+    readonly asking: boolean;
+    readonly from: "partner" | "fallback" | null;
+  };
+  /** The public per-seat consult signal every seat's own view carries while a
+   * consult is open (design D5/D8) — only `askerSeat` and `deadline`, enough
+   * for the turn badge to replace its text. Sourced directly from the "view"
+   * message's own sibling field, the same as `turnDeadline` above; no local
+   * state involved. `null`/absent means no consult is open for any seat. */
+  readonly pendingConsult?: { readonly askerSeat: number; readonly deadline: number } | null;
+  /** This seat's OWN incoming question, when it is the one being asked
+   * (design D5: "the PARTNER's client alone"). Never part of the view for
+   * the same reason `consult` above is not — it travels on its own private
+   * channel (`MatchConnection.onConsultAsk`) and is threaded onto the
+   * payload the same way `consult` already is for the asker's side. */
+  readonly consultAsk?: ConsultAskMessage | null;
 }
 
 /**

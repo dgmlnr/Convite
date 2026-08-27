@@ -1,4 +1,4 @@
-import type { BotTier, GameId, PlayerId, RuleViolation } from "@hexdev/platform-contract";
+import type { BotTier, GameId, JsonValue, PlayerId, RuleViolation } from "@hexdev/platform-contract";
 import type { ClientLike, Unsubscribe } from "./ports.js";
 
 /** Matches `apps/server`'s `gameServer.define("match", MatchRoom, ...)` and
@@ -13,6 +13,34 @@ const MATCH_ROOM_NAME = "match";
  * every action carries its actor's identity, matching `MatchRoom`'s own
  * `ErasedAction` on the server side. */
 export type ErasedAction = { readonly playerId: PlayerId } & Record<string, unknown>;
+
+/** The private question `MatchRoom.openConsult` sends to a live human
+ * PARTNER seat alone (design D5's wire table) — never broadcast, never seen
+ * by the asker's own connection. `options` are the module's own wire values
+ * (design D4: JSON scalars, validated by strict equality, never a UI label). */
+export interface ConsultAskMessage {
+  readonly about: string | undefined;
+  readonly options: readonly JsonValue[];
+  readonly deadline: number;
+}
+
+/** The private answer `MatchRoom` sends to the ASKER alone. `from`
+ * distinguishes an honest answer — the partner's own seat, human or
+ * bot-controlled — from a fallback substituting for a silent or departed
+ * human, and must never be presented as the partner's own answer (spec:
+ * "Provenance Is Disclosed to the Asker"). */
+export interface ConsultAdviceMessage {
+  readonly advice: JsonValue;
+  readonly from: "partner" | "fallback";
+}
+
+/** What the partner's client sends back: the transport's own half of design
+ * D4's four guards. `about` names which open question this answers — the
+ * same subject the partner was asked about, echoed rather than assumed. */
+export interface ConsultAnswerMessage {
+  readonly about?: string;
+  readonly answer: JsonValue;
+}
 
 /**
  * The game-agnostic connection to a live `MatchRoom` — the port
@@ -43,9 +71,17 @@ export interface MatchConnection<TView = unknown> {
    * refused consult is refused exactly like any other action.
    */
   sendConsult(action: ErasedAction): void;
+  /** Fires on every `"consult-ask"` message: a live question this client's
+   * OWN seat is being asked, addressed to it alone. Only ever fires on the
+   * partner's own connection — the asker's connection never receives one,
+   * because `MatchRoom` never sends it there (design D5). */
+  onConsultAsk(callback: (ask: ConsultAskMessage) => void): Unsubscribe;
+  /** The partner's own answer to an open `onConsultAsk` — the mirror of
+   * `sendConsult`, but this one is a reply rather than a question. */
+  sendConsultAnswer(answer: ConsultAnswerMessage): void;
   /** Fires on every `"consult-advice"` message: the private answer to a
    * consult this client sent. Never broadcast, so it arrives only here. */
-  onConsultAdvice(callback: (advice: unknown) => void): Unsubscribe;
+  onConsultAdvice(callback: (advice: ConsultAdviceMessage) => void): Unsubscribe;
   leave(consented?: boolean): Promise<void>;
   /**
    * Leave the match ON PURPOSE — the player chose to walk away, as opposed
@@ -78,7 +114,9 @@ function wrapMatchRoom<TView>(room: Awaited<ReturnType<ClientLike["join"]>>): Ma
     },
     sendAction: (action) => room.send("action", action),
     sendConsult: (action) => room.send("consult", action),
-    onConsultAdvice: (callback) => room.onMessage<{ readonly advice: unknown }>("consult-advice", (message) => { callback(message.advice); }),
+    onConsultAsk: (callback) => room.onMessage<ConsultAskMessage>("consult-ask", callback),
+    sendConsultAnswer: (answer) => room.send("consult-answer", answer),
+    onConsultAdvice: (callback) => room.onMessage<ConsultAdviceMessage>("consult-advice", callback),
     // Defaults to `false`, the OPPOSITE of real @colyseus/sdk `Room.leave`'s
     // own default (`true`). Found running this live, not assumed: `true`
     // sends a LEAVE_ROOM protocol message and waits for the SERVER to close
