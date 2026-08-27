@@ -110,4 +110,34 @@ describe("createGameModuleRegistry", () => {
       expect(() => createGameModuleRegistry([two, four])).not.toThrow();
     });
   });
+
+  describe("getConsultAsk — paired with a module, mirrors ConsultAdviceProvider's fail-closed shape (design D7)", () => {
+    it("returns null for a gameId nothing registered", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getConsultAsk("does-not-exist", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("returns null for a bare GameModule registration — no getConsultAsk provider supplied", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getConsultAsk("fixture-a", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("returns null when the paired provider itself has nobody to ask (a state with no teammate)", () => {
+      const module = fixtureModule("fixture-a");
+      const registry = createGameModuleRegistry([{ module, getConsultAsk: () => null }]);
+      expect(registry.getConsultAsk("fixture-a", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("delegates to the paired provider and returns its answer, forwarding the subject", () => {
+      const module = fixtureModule("fixture-a");
+      const seen: { about: string | undefined }[] = [];
+      const getConsultAsk = (_state: unknown, _playerId: PlayerId, about?: string): { readonly partnerId: PlayerId; readonly options: readonly string[] } => {
+        seen.push({ about });
+        return { partnerId: "partner-x" as PlayerId, options: ["quiero", "no-quiero"] };
+      };
+      const registry = createGameModuleRegistry([{ module, getConsultAsk }]);
+      expect(registry.getConsultAsk("fixture-a", { turn: 1 }, "p" as PlayerId, "envido")).toEqual({ partnerId: "partner-x", options: ["quiero", "no-quiero"] });
+      expect(seen).toEqual([{ about: "envido" }]);
+    });
+  });
 });

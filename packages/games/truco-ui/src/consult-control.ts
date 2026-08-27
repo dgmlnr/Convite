@@ -20,16 +20,45 @@ import { TABLE_STRINGS } from "./strings.js";
  * asking client alone), so it is passed in rather than derived from the view:
  * nothing in a redacted view could carry it without carrying it to everyone.
  */
+/**
+ * The wire's own answer domain (design D10), extracted from the ENGINE
+ * rather than retyped — `truco-engine` inlines this exact union in four
+ * places and exports no name for it (truco-chain.ts:23, envido-chain.ts:32,
+ * match.ts:159/161). Tying it to the engine's own declaration is what makes
+ * a third response a COMPILE error in both label maps below at once, rather
+ * than a silent gap either could drift into unnoticed.
+ */
+export type ConsultAnswer = Extract<Action, { type: "respond-truco" }>["response"];
+
+/**
+ * TWO LABEL MAPS OVER ONE WIRE DOMAIN, DELIBERATELY (design D10) — two
+ * grammatical persons for two roles. The BUTTON is the partner's own voice,
+ * imperative, first person: "Dale"/"No". The REPORT is a third-person
+ * description of their position: "Quiere"/"No quiere", UNCHANGED. A report
+ * describes; a button speaks. Only the button ever sat beside a clickable,
+ * identically-worded engine action, so only the button needed new words.
+ * Both keyed by the SAME `ConsultAnswer`, so a reader editing one sees the
+ * other right beside it.
+ */
+const CONSULT_ANSWER_LABELS: Record<ConsultAnswer, string> = { quiero: TABLE_STRINGS.consultAnswerYes, "no-quiero": TABLE_STRINGS.consultAnswerNo };
+const CONSULT_REPORT_LABELS: Record<ConsultAnswer, string> = { quiero: TABLE_STRINGS.consultQuiero, "no-quiero": TABLE_STRINGS.consultNoQuiero };
+
 export interface ConsultControlProps {
   /** The partner's answer, once it has arrived. `null` before asking and
    * after the answer has had its time. */
-  readonly advice: "quiero" | "no-quiero" | null;
+  readonly advice: ConsultAnswer | null;
   /** True between the click and the answer landing. */
   readonly asking: boolean;
+  /** Honest (the partner's own seat, human or bot) vs a fallback substitute
+   * for a silent or departed human (spec: "Provenance Is Disclosed to the
+   * Asker") — never presented as the partner's own answer. Optional and
+   * additive: every caller that predates Slice 4b omits it and keeps
+   * reading the honest report unchanged. */
+  readonly from?: "partner" | "fallback" | null;
 }
 
-function adviceText(advice: "quiero" | "no-quiero"): string {
-  return advice === "quiero" ? TABLE_STRINGS.consultQuiero : TABLE_STRINGS.consultNoQuiero;
+function adviceText(advice: ConsultAnswer): string {
+  return CONSULT_REPORT_LABELS[advice];
 }
 
 /**
@@ -105,5 +134,55 @@ export function renderConsultAdvice(container: HTMLElement, props: ConsultContro
   const said = container.appendChild(document.createElement("span"));
   said.className = "hexdev-truco-consult-advice";
   said.dataset.advice = props.advice;
-  said.textContent = `${TABLE_STRINGS.consultAdvicePrefix} ${adviceText(props.advice)}`;
+  // `data-from`, not only the prefix in the text: the same distinction two
+  // ways, matching this package's own "text alone is not enough" discipline.
+  const from = props.from ?? "partner";
+  said.dataset.from = from;
+  const prefix = from === "fallback" ? TABLE_STRINGS.consultAdviceFallbackPrefix : TABLE_STRINGS.consultAdvicePrefix;
+  said.textContent = `${prefix} ${adviceText(props.advice)}`;
+}
+
+/**
+ * THE ASK, on the PARTNER'S OWN SCREEN (design D9's third role) — the
+ * surface the button vocabulary above exists for.
+ *
+ * ISOLATED IN ITS OWN GROUP, `data-role="consult-ask"`, whose buttons carry
+ * `data-answer` and NEVER `data-action` — the structural half of the
+ * spec's own belt-and-braces mitigation. `onAnswer` is a callback of its
+ * own, never the action bar's `dispatch`: even a caller that mis-wired
+ * everything else could not make a click in this group read as a real,
+ * binding action, because nothing here speaks that vocabulary at all.
+ *
+ * NO COUNTDOWN of its own (design D9: "the asker's badge already carries
+ * the only clock") — a question and two buttons, nothing else.
+ */
+export interface ConsultAskProps {
+  readonly about: string | undefined;
+  readonly options: readonly ConsultAnswer[];
+}
+
+export function renderConsultAsk(
+  container: HTMLElement,
+  legalActions: readonly Action[],
+  props: ConsultAskProps,
+  onAnswer: (answer: ConsultAnswer) => void,
+): void {
+  const group = container.appendChild(document.createElement("div"));
+  group.className = "hexdev-truco-consult-ask";
+  group.dataset.role = "consult-ask";
+
+  const question = group.appendChild(document.createElement("p"));
+  question.className = "hexdev-truco-consult-ask-question";
+  question.textContent = consultLabelFor(legalActions, props.about);
+
+  for (const option of props.options) {
+    const button = group.appendChild(document.createElement("button"));
+    button.type = "button";
+    button.className = "hexdev-truco-consult-answer";
+    button.dataset.answer = option;
+    button.textContent = CONSULT_ANSWER_LABELS[option];
+    button.addEventListener("click", () => {
+      onAnswer(option);
+    });
+  }
 }

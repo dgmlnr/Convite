@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GameId, PlayerId } from "@hexdev/platform-contract";
-import { createFakeClient } from "./test-fakes.js";
+import { createFakeClient, createFakeRoom } from "./test-fakes.js";
 import { joinMatchFromReservation, reconnectMatch, startBotMatch } from "./match-connection.js";
 
 const GAME_ID = "fixture-game" as GameId;
@@ -178,5 +178,64 @@ describe("reconnectMatch — the client's half of the reconnection window (desig
     const connection = await reconnectMatch(client, "reconnection-token-6", { retries: 3, retryDelayMs: 0 });
     expect(attempt).toBe(2);
     expect(connection.reconnectionToken).toBe(client.room.reconnectionToken);
+  });
+});
+
+describe("the human-partner consult's client transport (design D5's wire table; spec 'Route to Human Partner Before Bot Fallback')", () => {
+  it("onConsultAsk relays exactly {about, options, deadline} for a 'consult-ask' message on this connection's own room, and does not also fire for any other message type on it (task 3.1)", async () => {
+    // WARNING-1 (sdd-verify): a prior version of this test also built a
+    // second `askerRoom`/`askerConnection` and asserted that room's own
+    // listener stayed empty after emitting only on `partnerRoom`.
+    // `createFakeRoom` (test-fakes.ts) gives every room its own PRIVATE
+    // `handlers` Map, and `emit` only ever iterates that one room's own
+    // map — so that assertion could NEVER fail, for ANY implementation of
+    // `onConsultAsk`, correct or broken: it proved the fakes are separate
+    // objects, not that production code routes partner-only. THAT claim is
+    // a SERVER-side routing decision (`MatchRoom.openConsult` sends to the
+    // partner's own client alone), already fenced in
+    // `match-room.consult.test.ts`. What THIS package's own wrapper
+    // controls — and what can actually regress here — is which message
+    // TYPE `onConsultAsk` listens for on its own room; the second half
+    // below proves that.
+    const partnerRoom = createFakeRoom({ sessionId: "partner" });
+    const partnerConnection = await joinMatchFromReservation(createFakeClient(partnerRoom), { roomId: "match-1" });
+
+    const partnerAsks: unknown[] = [];
+    partnerConnection.onConsultAsk((ask) => partnerAsks.push(ask));
+
+    partnerRoom.emit("consult-ask", { about: "pending-call", options: ["quiero", "no-quiero"], deadline: 1_700_000_030_000 });
+    expect(partnerAsks).toEqual([{ about: "pending-call", options: ["quiero", "no-quiero"], deadline: 1_700_000_030_000 }]);
+
+    // A regression that widened `onConsultAsk`'s own registration to also
+    // catch other message types on the same room (e.g. a copy-paste of the
+    // wrong literal into `room.onMessage(...)`) would make this fail.
+    partnerRoom.emit("consult-advice", { advice: "quiero", from: "partner" });
+    partnerRoom.emit("view", { cardsRemaining: 3 });
+    expect(partnerAsks, "onConsultAsk must not also fire for other message types on the same room").toHaveLength(1);
+  });
+
+  it("sendConsultAnswer serializes {about, answer} and sends it, unchanged, as a 'consult-answer' message (task 3.2)", async () => {
+    const client = createFakeClient();
+    const connection = await joinMatchFromReservation(client, { roomId: "match-1" });
+
+    connection.sendConsultAnswer({ about: "envido", answer: "no-quiero" });
+
+    expect(client.room.sent).toEqual([{ type: "consult-answer", payload: { about: "envido", answer: "no-quiero" } }]);
+  });
+
+  it("onConsultAdvice widens to carry `from: 'partner' | 'fallback'` alongside `advice` — the wire distinction spec 'Provenance Is Disclosed to the Asker' requires (task 3.3)", async () => {
+    const client = createFakeClient();
+    const connection = await joinMatchFromReservation(client, { roomId: "match-1" });
+
+    const received: unknown[] = [];
+    connection.onConsultAdvice((payload) => received.push(payload));
+
+    client.room.emit("consult-advice", { advice: "quiero", from: "partner" });
+    client.room.emit("consult-advice", { advice: "no-quiero", from: "fallback" });
+
+    expect(received).toEqual([
+      { advice: "quiero", from: "partner" },
+      { advice: "no-quiero", from: "fallback" },
+    ]);
   });
 });

@@ -242,6 +242,266 @@ describe("createMatchTableRenderer — whose turn it is must be unmistakable (Ch
   });
 });
 
+/**
+ * Slice 4a — the badge on a consulting seat BECOMES the consult, for the
+ * whole duration it is open (spec: "Public Signal Replaces the Consulting
+ * Seat's Turn Badge"). ONE CLOCK PER SEAT, ALWAYS: this is never a second
+ * chip beside the turn badge above — the turn is 60s and the consult window
+ * is `min(30s, remaining turn clock)`, so a separate chip would put two
+ * disagreeing countdowns on the same seat about half the time (design D8).
+ *
+ * A consult is only ever legal alongside a real pending call (a fixture
+ * fact this file's own "the pending call stays on the table" describe block
+ * above already established for `table.browser.test.ts`'s own hand-authored
+ * convention), so the fixture below keeps that call open across both
+ * renders rather than inventing an unrealistic bare-consult state.
+ */
+describe("createMatchTableRenderer — Slice 4a: the consult takeover, ONE CLOCK PER SEAT ALWAYS", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+  const T0 = 1_700_000_000_000;
+
+  function teamView(overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      // OPPONENT (seat 1) called truco, so the viewer's own team owes the
+      // answer — the one state a consult may ever open alongside (design's
+      // own Open Questions note: `consult-partner` is only ever legal beside
+      // a real blocking action).
+      hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } },
+      ...overrides,
+    });
+  }
+
+  it("replaces the asker's own badge with the consult while it is open — no turn-clock text underneath it", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "exactly one seat wears the badge — the asker's own").toHaveLength(1);
+    const bottom = el.querySelector<HTMLElement>('[data-position="bottom"]')!;
+    const badge = bottom.querySelector<HTMLElement>(".hexdev-truco-turn-badge")!;
+    expect(badge.textContent).toBe("Consultando… 0:30");
+    expect(badge.dataset.kind, "the calmer consult tone, not the gold 'act now' badge").toBe("consult");
+  });
+
+  /* THE DEGRADE PATH, which had no fence of its own until sdd-verify mutated
+   * it away and watched 1978 tests stay green.
+   *
+   * `consultOpen` is `pendingConsult != null && pendingConsult.deadline >
+   * now()`, and the docblock above it calls that second clause "the whole
+   * degrade path". Nothing proved it. Drop it and a record that arrived stale
+   * — a broadcast delayed past its own deadline, a clock that moved — paints
+   * "Consultando…" over a countdown ticking BELOW ZERO, with no bookkeeping
+   * anywhere to notice.
+   *
+   * Asserted as the TURN text rather than as the absence of the consult one:
+   * "no consult badge" would also pass if the badge vanished entirely, and a
+   * seat with no badge at all is a different defect wearing the same green. */
+  it("a pendingConsult whose deadline has already passed is not open — the badge stays on the turn", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    // The record is present and well-formed. Only its deadline is spent.
+    render(el, teamView(), [], () => {}, undefined, T0 + 45_000, undefined, undefined, { askerSeat: 0, deadline: T0 - 1 });
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "one badge, as always").toHaveLength(1);
+    expect(badges[0]!.textContent, "a spent deadline degrades to the ordinary turn text, never to a consult counting below zero").toBe("Tu turno de responder0:45");
+    expect(badges[0]!.dataset.kind, "and it is not wearing the consult tone").toBeUndefined();
+  });
+
+  it("reverts to the turn text with the remaining turn time in the SAME render that resolves it — never two badges, never zero", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+    expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-badge')!.textContent).toBe("Consultando… 0:30");
+
+    // The consult resolved: the record is gone, and the badge falls back to
+    // the pending call's own turn clock — which kept running unchanged while
+    // the question was open (spec: "the asker's turn clock keeps running
+    // unchanged"), so the number GROWS on return (0:30 -> 0:45) rather than
+    // resetting or freezing.
+    render(el, teamView(), [], () => {}, undefined, T0 + 45_000, undefined, undefined, null);
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "one render, one badge — never two live at once, never none").toHaveLength(1);
+    const clocks = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-clock")];
+    expect(clocks, "and exactly one countdown node with it").toHaveLength(1);
+    expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-badge')!.textContent).toBe("Tu turno de responder0:45");
+  });
+
+  /**
+   * sdd-verify CRITICAL-2: `askerSeat` used to replace `badgeSeat` GLOBALLY,
+   * for every viewer, with no regard for who ELSE is legitimately active.
+   * In 2v2 the WHOLE answering team is on the clock at once
+   * (`isAnchorActive` above), so on the ASKED PARTNER's own screen —
+   * `view.self.seat` is the partner being consulted, not the asker — that
+   * viewer's own badge, active ring and clock used to vanish for the entire
+   * window, even though their own answer is still owed and their own clock
+   * is still running underneath. Every other render in this describe block
+   * fixes `view.self.seat` to the asker's own seat, which is exactly why no
+   * fence before this one could see it: here the asker is the local
+   * player's TEAMMATE (seat 2, `askerSeat: 2`), and the viewer (seat 0) is
+   * the one being asked — reusing this block's own `teamView()` fixture,
+   * unchanged, with only the consult's askerSeat swapped.
+   *
+   * SECOND REMEDIATION (sdd-verify): the first fix satisfied R9 for every
+   * OTHER viewer shape by showing the protected viewer NOTHING for the
+   * asker's own seat — spec R9 requires every seat's view to show the
+   * replacement badge, and "nothing" is not that. The asker's own anchor
+   * (seat 2, the teammate) must now ALSO carry a mark: static, no
+   * countdown, since this table's one running clock legitimately belongs to
+   * the viewer this render.
+   */
+  it("does not blank the ASKED PARTNER's own active badge, ring and clock when they are not the asker — AND still marks the asker's own seat with a static, clock-less consult marker (sdd-verify, second remediation)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, T0 + 45_000, undefined, undefined, { askerSeat: 2, deadline: T0 + 30_000 });
+
+    const bottom = el.querySelector<HTMLElement>('[data-position="bottom"]')!;
+    const badge = bottom.querySelector(".hexdev-truco-turn-badge");
+    expect(badge, "the asked partner's own turn badge must survive the consult, not vanish").not.toBeNull();
+    expect(bottom.classList.contains("hexdev-truco-anchor--active"), "and keep its own active ring").toBe(true);
+    expect(badge!.textContent, "with the REAL turn clock, never the consult's own 0:30").toBe("Tu turno de responder0:45");
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "two marks now: the viewer's own running clock AND a static mark for the asker").toHaveLength(2);
+
+    const askerAnchor = el.querySelector<HTMLElement>('[data-relation="partner"]')!;
+    const askerBadge = askerAnchor.querySelector<HTMLElement>(".hexdev-truco-turn-badge");
+    expect(askerBadge, "the asker's own seat (seat 2, the teammate asking) must carry the public consult mark too — R9's 'every seat's view'").not.toBeNull();
+    expect(askerAnchor.classList.contains("hexdev-truco-anchor--active"), "no active ring on the static mark — that ring is reserved for the one seat that owns the running clock").toBe(false);
+    expect(askerBadge!.dataset.kind, "same calm consult tone as the real consult badge").toBe("consult");
+    expect(askerBadge!.textContent, "static — no countdown, since the one running clock belongs to the viewer's own seat").toBe("Consultando… ");
+    expect(askerBadge!.querySelector(".hexdev-truco-turn-clock"), "no clock node at all on the static marker").toBeNull();
+  });
+
+  /**
+   * sdd-verify (second remediation): R9's headline claim — "every seat's
+   * view shows the replaced badge" — had NO render-level fence at all.
+   * Mutating `badgeSeat` to require `pendingConsult.askerSeat ===
+   * view.self.seat` (i.e. only the ASKER's own screen ever shows the
+   * badge) left `pnpm test` fully green, because every fixture in this
+   * file — this describe block's own `teamView()` included — pins
+   * `view.self.seat` to 0. This test puts the local viewer on seat 1, an
+   * uninvolved opponent with no active seat of their own (no pending call,
+   * no turn), watching seat 0 consult seat 2 — the `others`-loop consult
+   * branch, exercised from a non-zero, non-asker, non-partner seat for the
+   * first time in this file.
+   */
+  it("shows the full consult badge, WITH its own running clock, on the asker's seat for an uninvolved, non-zero-seat viewer (sdd-verify R9 render fence)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+    const ASKER = "player-e" as PlayerId;
+    const ASKERS_PARTNER = "player-f" as PlayerId;
+
+    const view = baseView({
+      self: { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, hand: [{ suit: "espada", rank: 1 }], lastSena: null, senasRemaining: MAX_SENAS_PER_HAND },
+      teammates: [{ playerId: OPPONENT_2, seat: 3, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: ASKER, teamId: MY_TEAM, seat: 0, cardsRemaining: 3 },
+        { playerId: ASKERS_PARTNER, teamId: MY_TEAM, seat: 2, cardsRemaining: 3 },
+      ],
+      // No pending call, `turnSeat: 3` — the VIEWER's own teammate, neither
+      // the viewer (seat 1) nor the asker (seat 0). Deliberately NOT 0: an
+      // earlier draft of this fixture left `turnSeat` at baseView's default
+      // (0, coincidentally the asker's own seat too), under which
+      // `seatOnTheClock` landed on the asker's seat FOR A REASON UNRELATED
+      // TO THE CONSULT — a mutation gating `badgeSeat` on
+      // `askerSeat === view.self.seat` still passed, because `badgeSeat`
+      // fell back to `seatOnTheClock`, which HAPPENED to equal `askerSeat`
+      // anyway. Pointing `turnSeat` at a THIRD seat makes `seatOnTheClock`
+      // (3) diverge from `askerSeat` (0), so that exact mutation is
+      // observable: `badgeSeat` would fall back to seat 3 instead, and the
+      // assertions below would see the wrong seat, the wrong text and no
+      // `data-kind="consult"`.
+      hand: { ...baseView().hand!, turnSeat: 3 },
+    });
+
+    render(el, view, [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "exactly one badge on the whole table — the asker's own, with its own running clock").toHaveLength(1);
+    expect(badges[0]!.dataset.kind).toBe("consult");
+    expect(badges[0]!.textContent).toBe("Consultando… 0:30");
+    expect(badges[0]!.querySelector(".hexdev-truco-turn-clock"), "the uninvolved viewer sees the asker's OWN countdown, unchanged from before this remediation").not.toBeNull();
+
+    const bottom = el.querySelector<HTMLElement>('[data-position="bottom"]')!;
+    expect(bottom.querySelector(".hexdev-truco-turn-badge"), "the viewer's own seat mounts no mark at all — they are neither asking nor on their own clock this render").toBeNull();
+  });
+});
+
+/**
+ * Slice 4b — the screen-reader announcer speaks the RELATION to the
+ * consult, never a seat index or a compass word (spec: "Screen-Reader
+ * Announcer Uses Relation Vocabulary Only" — a reader has no badge to
+ * glance at, so this carries what the visual takeover above carries).
+ */
+describe("createMatchTableRenderer — Slice 4b: the announcer speaks the relation, never a seat or a compass word", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+  const T0 = 1_700_000_000_000;
+
+  function teamView(overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } },
+      ...overrides,
+    });
+  }
+
+  const consultAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="consult"]');
+  const turnClockAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn-clock"]');
+
+  it('says "Tu compañero está consultando" when the local player\'s own teammate opens it', () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 2, deadline: T0 + 30_000 });
+
+    expect(consultAnnouncerOf(el)!.textContent).toBe("Tu compañero está consultando");
+  });
+
+  it('says "Un rival está consultando" when an opponent opens it', () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 1, deadline: T0 + 30_000 });
+
+    expect(consultAnnouncerOf(el)!.textContent).toBe("Un rival está consultando");
+  });
+
+  it("does not re-announce the turn total while the local player's own consult is open (design D8)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, T0 + 60_000, undefined, undefined, null);
+    expect(turnClockAnnouncerOf(el)!.textContent).toBe("Tenés 60 segundos para jugar");
+
+    // The consult's own (shorter) deadline now feeds the same badge/clock
+    // machinery, but the turn's own total was already said above — it must
+    // not be said again just because the mounted deadline changed.
+    render(el, teamView(), [], () => {}, undefined, T0 + 60_000, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+
+    expect(turnClockAnnouncerOf(el)!.textContent, "still the turn's own sentence — the consult announced nothing here").toBe(
+      "Tenés 60 segundos para jugar",
+    );
+  });
+});
+
 describe("createMatchTableRenderer — end of a hand gets a clear acknowledgement (spec: 'who won it and how many points')", () => {
   it("announces nothing on the very first render", () => {
     const el = freshContainer();

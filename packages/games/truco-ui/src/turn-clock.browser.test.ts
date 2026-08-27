@@ -227,11 +227,12 @@ describe("turn countdown — THE ACCESSIBILITY FENCE: a per-second number must n
 
     const announcers = [...el.querySelectorAll<HTMLElement>("[data-announces]")];
     // hand-outcome, partner-sena, envido-reveal, turn, turn-clock,
-    // pending-call, trick, match-over — the count keeps this fence complete:
-    // a renamed or added region that dodged the filter below would tick-spam
-    // unpinned. It earned that keep: `envido-reveal` was added for the reveal
-    // notice and this assertion is what caught it, before anything else did.
-    expect(announcers).toHaveLength(8);
+    // pending-call, trick, match-over, consult — the count keeps this fence
+    // complete: a renamed or added region that dodged the filter below would
+    // tick-spam unpinned. It earned that keep: `envido-reveal` was added for
+    // the reveal notice and this assertion is what caught it, before
+    // anything else did; Slice 4b's own `consult` region is the same story.
+    expect(announcers).toHaveLength(9);
     // The turn-clock region is the clock's own sanctioned coarse voice — held
     // to its two whole sentences below, never to byte-identity: that is the
     // one region a threshold crossing is ALLOWED to change, exactly once.

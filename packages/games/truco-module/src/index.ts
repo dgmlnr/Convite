@@ -170,6 +170,37 @@ export async function getConsultAdvice(state: MatchState, playerId: PlayerId, ti
 }
 
 /**
+ * WHO may be asked, and WHAT they may say — the `ConsultAskProvider` half of
+ * design D7, asked BEFORE `getConsultAdvice` above ever forms a bot opinion,
+ * so a transport can offer a live human teammate the open consult first.
+ *
+ * Built from the SAME `questionFor` that `getConsultAdvice` chooses from,
+ * mapping each option to its own `response` value — no label knowledge
+ * added here at all (that lives in `truco-ui/src/strings.ts` alone, per
+ * D10). One source for the answer domain, so a human answer and a bot
+ * answer are the same value in the same shape by construction.
+ *
+ * `null` for the same two reasons `getConsultAdvice` returns `null`: nobody
+ * to ask (no teammate), or nothing to ask about right now.
+ */
+export function getConsultAsk(
+  state: MatchState,
+  playerId: PlayerId,
+  about?: string,
+): { readonly partnerId: PlayerId; readonly options: readonly JsonValue[] } | null {
+  const teammate = getViewFor(state, playerId).teammates[0];
+  if (teammate === undefined) return null;
+
+  const asked = questionFor(state, playerId, teammate.playerId, about);
+  if (asked.length === 0) return null;
+
+  const options = asked
+    .filter((action): action is Extract<EngineActionType, { readonly type: "respond-truco" | "respond-envido" }> => action.type === "respond-truco" || action.type === "respond-envido")
+    .map((action) => action.response);
+  return { partnerId: teammate.playerId, options };
+}
+
+/**
  * The two questions a partner can be asked, and which one this moment is.
  *
  * A CALL ON THE TABLE is the original: they answer from their REAL legal

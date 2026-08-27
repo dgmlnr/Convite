@@ -158,12 +158,22 @@ describe("with a call open, the clock lands on ONE seat", () => {
     return result.state;
   }
 
-  async function render2v2(): Promise<HTMLElement> {
+  async function render2v2(pendingConsult?: { readonly askerSeat: number; readonly deadline: number } | null): Promise<HTMLElement> {
     container = document.createElement("div");
     container.style.width = "1280px";
     document.body.appendChild(container);
     const state = pendingTruco();
-    createMatchTableRenderer()(container, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    createMatchTableRenderer()(
+      container,
+      getViewFor(state, SELF),
+      getLegalActions(state, SELF),
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      pendingConsult,
+    );
     await Promise.all([...container.querySelectorAll("img")].map((img) => img.decode()));
     return container;
   }
@@ -180,6 +190,21 @@ describe("with a call open, the clock lands on ONE seat", () => {
   it("so there is at most one countdown for the tick to keep — the other cannot freeze", async () => {
     const el = await render2v2();
     expect(el.querySelectorAll(".hexdev-truco-turn-clock").length, "a second clock is a clock nothing updates").toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * Slice 4a's own extension of this same fence: while a consult is open,
+   * the badge on the seat that opened it BECOMES the consult (design's own
+   * "ONE CLOCK PER SEAT, ALWAYS") — it must never sit ALONGSIDE the ordinary
+   * turn badge/clock this describe block already proves is singular. The
+   * fixture and selector are unchanged on purpose (the task's own
+   * instruction): a consult only ever opens on top of a seat that already
+   * owes the table a real decision, which `pendingTruco()` above already
+   * puts the viewer's own seat in.
+   */
+  it("still at most one clock once a consult opens on top of the pending call — replaced, never doubled", async () => {
+    const el = await render2v2({ askerSeat: 0, deadline: Date.now() + 30_000 });
+    expect(el.querySelectorAll(".hexdev-truco-turn-clock").length, "a consult swaps the badge's own text; it must never mount a second clock beside it").toBeLessThanOrEqual(1);
   });
 
   it("and the teammate's seat is not lit as though it owed the move", async () => {

@@ -15,6 +15,7 @@
     "ioredis": "^5.11.1"
   },
   "devDependencies": {
+    "@hexdev/truco-engine": "workspace:*",
     "@types/node": "^26.1.2"
   }
 }

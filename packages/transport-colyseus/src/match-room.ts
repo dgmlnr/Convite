@@ -146,6 +146,24 @@ type Controller =
  * than a magic number at each call site. */
 const BOT_BUDGET_MS = 1000;
 
+/** A live human teammate's whole answer window (design D1) — never longer,
+ * even with a long turn clock: a silent partner has, in practice, declined. */
+const CONSULT_CAP_MS = 30_000;
+
+/** An open question to a live human teammate (design D1/D7). `id` is the
+ * resolve-once guard `resolveConsult` checks: the field itself IS the
+ * guard, no `await` between check and clear (same argument as `advanceChain`). */
+interface PendingConsult {
+  readonly id: number;
+  readonly askerSeat: number;
+  readonly askerPlayerId: PlayerId;
+  readonly partnerSeat: number;
+  readonly about: string | undefined;
+  readonly options: readonly JsonValue[];
+  readonly deadline: number;
+  readonly timer: ReturnType<typeof setTimeout> | undefined;
+}
+
 /** Reads a claimed actor identity off an otherwise-opaque action arriving
  * over the wire as `unknown`. FORMERLY relied on an unenforced convention
  * (flagged in obs 2941); `platform-contract`'s `GameModule<TState, TAction
@@ -189,6 +207,16 @@ function subjectOf(action: unknown): string | undefined {
   return typeof about === "string" ? about : undefined;
 }
 
+/** The `answer` a `consult-answer` message claims (design D5's wire shape,
+ * `{about?, answer}`). Opaque to the transport: `handleConsultAnswer` only
+ * ever compares it by strict equality against the open consult's OWN
+ * `options`, never inspects or interprets it — the same "hand it back to the
+ * game that issued it" posture `subjectOf` already takes for `about`. */
+function answerOf(message: unknown): unknown {
+  if (typeof message !== "object" || message === null || !("answer" in message)) return undefined;
+  return (message as { answer: unknown }).answer;
+}
+
 function typeOf(action: unknown): string | undefined {
   if (typeof action !== "object" || action === null) return undefined;
   const type = (action as { type?: unknown }).type;
@@ -229,6 +257,11 @@ export class MatchRoom extends Room {
   /** Which seat that deadline belongs to — the key that decides whether a
    * broadcast re-arms the clock (a genuinely new turn) or leaves it alone. */
   private turnTimerSeat: number | undefined;
+  /** The one open consult, or none (design D1). */
+  private pendingConsult: PendingConsult | null = null;
+  /** Resolve-token source; never reused, so a stale deferred fallback can
+   * never resolve a LATER consult it was never asked about. */
+  private consultSeq = 0;
   /** Built lazily and reused: a `BotStrategy` is stateless (it is handed the
    * view and the legal actions on every call), so one instance can resolve a
    * timed-out turn for any seat. */
@@ -316,6 +349,10 @@ export class MatchRoom extends Room {
     // an answer. Everything else — whether the action is legal, what it
     // costs, what the answer is — belongs to the module.
     this.onMessage("consult", (client, message: unknown) => this.handleConsult(client, message));
+    // The one real trust boundary this room enforces (design D4): a reply on
+    // this channel is believed only after `handleConsultAnswer`'s four
+    // guards pass, never on the strength of anything the client claims.
+    this.onMessage("consult-answer", (client, message: unknown) => this.handleConsultAnswer(client, message));
     this.onMessage("quit", (client) => {
       this.handleQuit(client);
     });
@@ -538,6 +575,12 @@ export class MatchRoom extends Room {
     if (module === undefined || this.matchState === undefined || seat === undefined || controller === undefined || controller.kind !== "human") return;
     this.controllers.set(seat, { kind: "human", playerId: controller.playerId, client });
     client.send("view", this.viewMessageFor(module, controller.playerId));
+    // Explicit hook (design D3): reconnecting AS the consult's partner
+    // re-sends the open ask, rather than leaving it for the cap to expire.
+    const pending = this.pendingConsult;
+    if (pending !== null && pending.partnerSeat === seat) {
+      client.send("consult-ask", { about: pending.about, options: pending.options, deadline: pending.deadline });
+    }
   }
 
   /**
@@ -590,6 +633,13 @@ export class MatchRoom extends Room {
     const controller = this.controllers.get(seat);
     if (module === undefined || controller === undefined || controller.kind !== "human") return;
     this.controllers.set(seat, { kind: "bot", playerId: controller.playerId, strategy: module.createBot(this.takeoverTier) });
+    // Explicit hook (design D3): the PARTNER's seat is taken over — resolved
+    // right away, marked `from: "fallback"` (never "partner": that would
+    // hide that the human is gone), through the SAME queued path the cap
+    // uses. Useful, so the asker does not sit out the rest of the window for
+    // someone who left; honest, because the mark still says nobody answered.
+    const pending = this.pendingConsult;
+    if (pending !== null && pending.partnerSeat === seat) this.queueConsultFallback(pending.id);
     void this.advance();
   }
 
@@ -668,13 +718,60 @@ export class MatchRoom extends Room {
     const registry = this.registry;
     const gameId = this.gameId;
     const controller = this.controllerFor(client);
-    if (registry === undefined || gameId === undefined || controller === undefined || this.matchState === undefined) return;
+    const askerSeat = this.seatOfClient(client);
+    if (registry === undefined || gameId === undefined || controller === undefined || askerSeat === undefined || this.matchState === undefined) return;
 
     // The subject travels on the question the player actually sent. Read off
     // the action rather than re-derived, because re-deriving is exactly what
     // could only ever pick one of two open windows.
-    const advice = await this.adviceFor(controller.playerId, subjectOf(action));
-    if (advice !== null) client.send("consult-advice", { advice });
+    const about = subjectOf(action);
+    // Design D1/D7: opens a window for a live human teammate, or falls
+    // through to today's synchronous bot opinion either way.
+    if (this.openConsult(askerSeat, controller.playerId, about)) return;
+
+    const advice = await this.adviceFor(controller.playerId, about);
+    // `from: "partner"` even for a bot: that seat is answering for itself (D6).
+    if (advice !== null) client.send("consult-advice", { advice, from: "partner" });
+  }
+
+  /**
+   * The inbound half of a consult — design D4's four guards, run in order,
+   * ANY failure dropping the answer SILENTLY:
+   *
+   * 1. A consult is actually open (`pendingConsult !== null`).
+   * 2. The sender's seat IS the asked partner's own seat. `seatOfClient`
+   *    matches only `kind: "human"` controllers by `sessionId`, so a bot
+   *    seat, an opponent, the asker themselves, and an unseated socket all
+   *    fail this check IDENTICALLY — there is no second, weaker path for any
+   *    of the four.
+   * 3. The claimed subject matches the open consult's own subject — answering
+   *    a different question is not answering this one.
+   * 4. The answer is strictly `===` one of the options THIS room itself
+   *    issued in `openConsult`. No module round-trip: forgery is decided
+   *    entirely inside the transport, and neither display vocabulary (D10's
+   *    "Dale"/"No" button labels, nor the "Quiere"/"No quiere" report words)
+   *    is ever a valid answer — only the wire value the module handed out.
+   *
+   * Silent rather than `action-rejected`, on purpose: an answer is not an
+   * action, it never reaches `applyAction`, and an identical silence on every
+   * guard keeps a forger from learning which one they tripped — the same
+   * posture `onAuth` already takes on a join. A legitimate late answer (the
+   * window already resolved) needs no message either: the next view already
+   * took the ask away.
+   *
+   * Guards pass through to `resolveConsult`, the SAME resolve-once primitive
+   * the 30s cap and a partner takeover already call (design D2) — this
+   * becomes its third caller, not a second implementation of "close it".
+   */
+  handleConsultAnswer(client: Client, message: unknown): void {
+    const pending = this.pendingConsult;
+    if (pending === null) return; // guard 1: nothing open to answer
+    const seat = this.seatOfClient(client);
+    if (seat === undefined || seat !== pending.partnerSeat) return; // guard 2
+    if (subjectOf(message) !== pending.about) return; // guard 3
+    const answer = answerOf(message);
+    if (!pending.options.some((option) => option === answer)) return; // guard 4
+    this.resolveConsult(pending.id, answer as JsonValue, "partner");
   }
 
   /**
@@ -700,6 +797,93 @@ export class MatchRoom extends Room {
     } catch {
       return null;
     }
+  }
+
+  /** The seat/controller holding a `playerId` — `getConsultAsk`'s partner is
+   * never guaranteed to be the CLIENT `controllerFor`/`seatOfClient` key off. */
+  private controllerEntryFor(playerId: PlayerId): { readonly seat: number; readonly controller: Controller } | undefined {
+    for (const [seat, controller] of this.controllers) {
+      if (controller.playerId === playerId) return { seat, controller };
+    }
+    return undefined;
+  }
+
+  /** Opens a pending consult when the module names a LIVE HUMAN teammate on
+   * a timed table, or refuses — one at a time (design D1). `turnDeadline` is
+   * read AFTER `handleAction` re-armed it; `null` means untimed, so this
+   * falls through rather than inventing an unbounded window. */
+  private openConsult(askerSeat: number, askerPlayerId: PlayerId, about: string | undefined): boolean {
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (this.pendingConsult !== null || registry === undefined || gameId === undefined || this.matchState === undefined || this.turnDeadline === null) return false;
+    const ask = registry.getConsultAsk(gameId, this.matchState, askerPlayerId, about);
+    if (ask === null) return false;
+    const partner = this.controllerEntryFor(ask.partnerId);
+    if (partner === undefined || partner.controller.kind !== "human") return false;
+
+    const id = ++this.consultSeq;
+    const deadline = Math.min(Date.now() + CONSULT_CAP_MS, this.turnDeadline);
+    const timer = setTimeout(() => this.queueConsultFallback(id), Math.max(0, deadline - Date.now()));
+    timer.unref?.(); // same discipline as `armTurnTimer`'s own timer — never the reason a process stays alive
+    this.pendingConsult = { id, askerSeat, askerPlayerId, partnerSeat: partner.seat, about, options: ask.options, deadline, timer };
+    try {
+      partner.controller.client.send("consult-ask", { about, options: ask.options, deadline });
+    } catch {
+      // Same posture as `resolveConsult`'s send below: one seat's question.
+    }
+    // Pushes `view.pendingConsult`. `armTurnTimer` (called first, inside
+    // this) sees the SAME seat still on the clock and returns early without
+    // clearing, so the window just opened survives its own broadcast.
+    this.broadcastViews();
+    return true;
+  }
+
+  /** The resolve-once guard (design D2): checked and cleared with no `await`
+   * in between — atomic by construction. The cap fallback below is one
+   * caller; slice 2b's answer handler is the other, calling this only after
+   * its own guards pass. Cleared BEFORE the send: a throw on a dead socket
+   * after the clear leaves nothing open; before it would strand the
+   * consult with its timer already spent. */
+  private resolveConsult(id: number, advice: JsonValue, from: "partner" | "fallback"): void {
+    const pending = this.pendingConsult;
+    if (pending === null || pending.id !== id) return;
+    this.clearPendingConsult();
+    const asker = this.controllers.get(pending.askerSeat);
+    if (asker?.kind === "human") {
+      try {
+        asker.client.send("consult-advice", { advice, from });
+      } catch {
+        // One seat's question, not the match's integrity — same posture as `adviceFor`.
+      }
+    }
+    this.broadcastViews(); // the badge returns to the turn
+  }
+
+  /** Cancels with no send at all — a consult that dies with its asker's
+   * turn (design D3) was never answered, it was withdrawn. */
+  private clearPendingConsult(): void {
+    if (this.pendingConsult === null) return;
+    if (this.pendingConsult.timer !== undefined) clearTimeout(this.pendingConsult.timer);
+    this.pendingConsult = null;
+  }
+
+  /** Queued on `advanceChain`, exactly as `onTurnExpired` queues its timed-
+   * out turn: forming the fallback awaits `adviceFor` and must never race a
+   * decision already in flight. */
+  private queueConsultFallback(id: number): void {
+    const scheduled = this.advanceChain.then(() => this.runConsultFallbackOnce(id));
+    this.advanceChain = scheduled.catch(() => {
+      // Same defensive contract as `advance()`/`onTurnExpired`:
+      // `runConsultFallbackOnce` already swallows its own exceptions.
+    });
+  }
+
+  private async runConsultFallbackOnce(id: number): Promise<void> {
+    const pending = this.pendingConsult;
+    if (this.disposed || pending === null || pending.id !== id) return; // re-check after the chain wait
+    const advice = await this.adviceFor(pending.askerPlayerId, pending.about);
+    if (advice === null || this.pendingConsult?.id !== id) return; // re-check after adviceFor
+    this.resolveConsult(id, advice, "fallback");
   }
 
   /**
@@ -1032,6 +1216,7 @@ export class MatchRoom extends Room {
     readonly legalActions: readonly ErasedAction[];
     readonly outcome: MatchOutcome | null;
     readonly turnDeadline: number | null;
+    readonly pendingConsult: { readonly askerSeat: number; readonly deadline: number } | null;
   } {
     return {
       view: module.getViewFor(this.matchState, playerId),
@@ -1045,6 +1230,9 @@ export class MatchRoom extends Room {
       // the deadline rides on the view MESSAGE, never inside the engine's
       // `PlayerView`, so the engine stays a pure reducer with no clock.
       turnDeadline: this.turnDeadline,
+      // Not the full record: no subject/options/advice, only the badge's
+      // needs (design D5), same "same field for every client" rationale.
+      pendingConsult: this.pendingConsult === null ? null : { askerSeat: this.pendingConsult.askerSeat, deadline: this.pendingConsult.deadline },
     };
   }
 
@@ -1111,6 +1299,9 @@ export class MatchRoom extends Room {
     this.turnTimer = undefined;
     this.turnTimerSeat = undefined;
     this.turnDeadline = null;
+    // Cancellation funnel (design D3): every caller already covers exactly
+    // the moments an open consult must die, so it never outlives its clock.
+    this.clearPendingConsult();
   }
 
   /** Public for the same reason `handleAction` is: it is the only way a test
