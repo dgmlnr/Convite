@@ -1488,6 +1488,12 @@ describe("createMatchTableRenderer — keyboard focus survives every server broa
       });
     const trucoCall: Action = { type: "call-truco", playerId: SELF, level: "truco" };
     render(el, view2v2(3), [{ type: "send-sena", playerId: SELF, signal: "asDeEspada" }, trucoCall], () => {});
+    // OPENED THE WAY A PLAYER WOULD, for the same reason the call-log fence
+    // below does it: the señas control lives in the side rail now, and at this
+    // harness's phone width the rail is a drawer that starts shut. A control
+    // inside a display: none drawer cannot take focus at all, so focusing it
+    // through a closed drawer would be testing a state no player can reach.
+    el.querySelector<HTMLElement>(".hexdev-truco-rail-tab")!.click();
     el.querySelector<HTMLButtonElement>('button[data-action="senas-toggle"]')!.focus();
 
     // The quota is spent: the toggle SURVIVES with its exact identity but

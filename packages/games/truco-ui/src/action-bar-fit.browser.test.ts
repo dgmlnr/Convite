@@ -316,7 +316,11 @@ describe("the ordinary opening bar fits without scrolling", () => {
   // a fully escalated envido chain, and a player can find it. What this
   // fences is the ORDINARY state -- three buttons, nothing called yet, the
   // thing on screen for most of a hand -- fitting the band it is given.
-  it.each(WIDTHS)("%ipx: Truco, Envido and señas all fit the band with nothing scrolled away", async (width) => {
+  // TWO buttons now, not three. The Seña/Consulta control moved to the side
+  // rail (see "the band belongs to the calls" below), so the ordinary state
+  // this fences is Truco and Envido -- and the band being roomier is the
+  // point, not a weakening of the fence.
+  it.each(WIDTHS)("%ipx: Truco and Envido fit the band with nothing scrolled away", async (width) => {
     const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const state = openingTurnState();
@@ -326,7 +330,11 @@ describe("the ordinary opening bar fits without scrolling", () => {
     const bar = el.querySelector(".hexdev-truco-action-bar");
     if (bar === null) throw new Error("fence setup: action bar not rendered");
     const labels = [...bar.querySelectorAll("button")].map((x) => x.textContent ?? "");
-    expect(labels.length, `fence setup: the bar must carry the ordinary three, got ${labels.join(" | ")}`).toBeGreaterThanOrEqual(3);
+    expect(labels.length, `fence setup: the bar must carry the ordinary calls, got ${labels.join(" | ")}`).toBeGreaterThanOrEqual(2);
+    // AND THE THIRD CONTROL IS STILL REACHABLE, just not from here. A band
+    // that fits because a control quietly stopped rendering would pass the
+    // assertion below and be a worse table.
+    expect(el.querySelector(".hexdev-truco-senas-toggle"), "the señas control still exists, in the rail").not.toBeNull();
 
     expect(
       bar.scrollWidth - bar.clientWidth,
@@ -362,87 +370,45 @@ describe("every legal call button is actually visible inside the band, not merel
 });
 
 /**
- * THE SAME BAND, FROM THE OTHER SIDE: the strips stack only while the bar is
- * genuinely too narrow to seat them.
+ * ONE STRIP, AND THE BAND BOOKS ROOM FOR ONE STRIP.
  *
- * 2v2 carries a second strip (señas) that 1v1 has no use for, and the 640px
- * block stacks the two from that width UP — with no ceiling, so ultra
- * inherited it. There the stack costs a whole extra band
- * (`--hx-band-action-total` = one strip x2, plus a 4px seam) of the one
- * dimension this felt is actually short of, and it buys width that was never
- * scarce: measured at a 1550px shell the calls row asks 166px and señas
- * 102px, inside a bar 955px wide.
+ * 2v2 used to carry a second strip beside the calls -- señas -- so from 640px
+ * up the band stacked the two and reserved a double height for them, which the
+ * 1280px tier then clawed back by seating them side by side. Three tiers of
+ * machinery for one extra strip.
  *
- * So from 1280px up they sit side by side, `--hx-band-action-total` drops
- * back to one strip, and the fullscreen fit formula — which subtracts that
- * same variable through `var()` — grows the card out of it with no second
- * constant to keep in sync. Measured effect at a 1550x837 shell: the 2v2
- * card goes 99x151 -> 109x166.
+ * That strip is in the side rail now, so the band holds exactly one thing at
+ * every width. The reservation went with it, and this is the fence that says
+ * the reservation must never come back: a band that books height for a strip
+ * it does not have is 54px of felt gone, silently, between 640 and 1280 --
+ * height being the one dimension this widget is genuinely short of.
  *
- * WHY THIS IS FENCED FROM BOTH SIDES. The interesting property is not "they
- * are in a row at ultra" but that the two forms each stay where they were
- * measured to belong. A future tier change that lets ultra fall back to the
- * stack silently gives that band back, and the only thing that would notice
- * is `table-height-stability`'s pinned 1280/2v2 constant — which reads as a
- * height, not as a reason. This says the reason.
+ * Asserted as a MEASURED height rather than by reading the custom property,
+ * because the property is only a promise and the row is the fact.
  */
-describe("2v2 action band: the strips stack only where the bar cannot seat them", () => {
-  async function strips(width: number): Promise<{ bar: DOMRect; calls: DOMRect; senas: DOMRect; callsEl: HTMLElement; senasEl: HTMLElement }> {
+describe("the 2v2 band books room for one strip, because it holds one strip", () => {
+  it.each([375, 640, 700, 900, 960, 1280] as const)("%ipx: the band is exactly as tall as the calls it carries", async (width) => {
     const el = mountedContainer(width);
     const render = createMatchTableRenderer();
     const state = pendingTrucoState("2v2");
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
     await waitForArt(el);
 
-    const barEl = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
-    const callsEl = el.querySelector<HTMLElement>(".hexdev-truco-calls-row");
-    // ONE strip for everything the player can say to their partner: the
-    // picker's toggle is the allowance, and asking is an item inside it. A
-    // brief attempt at two separate strips overflowed the band at four tiers
-    // at once — it is a fixed two-track row — and this fence is what said so.
-    const senasEl = el.querySelector<HTMLElement>(".hexdev-truco-senas");
-    if (barEl === null || callsEl === null || senasEl === null) {
-      throw new Error("fence setup: 2v2 renders an action bar with both a calls row and a señas strip");
-    }
-    return { bar: barEl.getBoundingClientRect(), calls: callsEl.getBoundingClientRect(), senas: senasEl.getBoundingClientRect(), callsEl, senasEl };
-  }
+    const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
+    const calls = el.querySelector<HTMLElement>(".hexdev-truco-calls-row");
+    if (bar === null || calls === null) throw new Error("fence setup: 2v2 renders an action bar with a calls row");
 
-  it("1280px: side by side in ONE band, and neither strip has to scroll to show itself", async () => {
-    const { bar, calls, senas, callsEl, senasEl } = await strips(1280);
+    // The band is the calls row's own height, not twice it. A 4px tolerance
+    // for the seam a stacked band used to add: anything near a doubling fails
+    // this by a mile, which is the failure worth catching.
+    const barBox = bar.getBoundingClientRect();
+    const callsBox = calls.getBoundingClientRect();
+    expect(barBox.height - callsBox.height, `band ${String(Math.round(barBox.height))}px vs one strip ${String(Math.round(callsBox.height))}px`).toBeLessThanOrEqual(4);
 
-    // Side by side is exactly this: disjoint horizontally, overlapping
-    // vertically. Asserting the pair rather than a flex-direction keeps the
-    // fence on the geometry the player sees.
-    const horizontallyDisjoint = calls.right <= senas.left + 1 || senas.right <= calls.left + 1;
-    expect(horizontallyDisjoint, "the two strips occupy different horizontal space").toBe(true);
-    expect(Math.min(calls.bottom, senas.bottom) - Math.max(calls.top, senas.top), "and share the same band vertically").toBeGreaterThan(0);
-
-    // ONE band: both strips span it, so the bar is a single strip tall rather
-    // than two. A stacked bar would put each at about half this.
-    for (const [name, box] of [["calls", calls], ["señas", senas]] as const) {
-      expect(box.height, `the ${name} strip fills the band's full height`).toBeGreaterThan(bar.height - 2);
-    }
-
-    // Width was the whole reason for the move, so prove there is room to
-    // spare rather than a hidden scroller in either strip.
-    for (const [name, node] of [["calls", callsEl], ["señas", senasEl]] as const) {
-      expect(node.scrollWidth, `${name} strip horizontal overflow`).toBeLessThanOrEqual(node.clientWidth + 1);
-    }
-
-    // Centred, not packed left. The base bar leaves justify-content at
-    // flex-start — harmless while the strips stretched full-width in a
-    // column, and very visible once they shrink to content in a row.
-    const leftGap = Math.min(calls.left, senas.left) - bar.left;
-    const rightGap = bar.right - Math.max(calls.right, senas.right);
-    expect(leftGap, "the pair is not packed against one edge of the bar").toBeGreaterThan(8);
-    expect(Math.abs(leftGap - rightGap), "the free space falls evenly on both sides").toBeLessThan(2);
-  });
-
-  it("960px: still stacked — the reclaim is scoped to the tier that measured room for it", async () => {
-    const { calls, senas } = await strips(960);
-
-    const verticallyDisjoint = calls.bottom <= senas.top + 1 || senas.bottom <= calls.top + 1;
-    expect(verticallyDisjoint, "below the ultra tier the two strips keep their own rows").toBe(true);
+    // And the strip really is alone in there: a second in-flow child would be
+    // the old shape creeping back, whatever the heights happened to measure.
+    const inFlow = [...bar.children].filter((child) => getComputedStyle(child).position !== "absolute");
+    expect(inFlow.length, `the band's in-flow children: ${inFlow.map((c) => c.className).join(" | ")}`).toBe(1);
   });
 });
 
@@ -469,11 +435,15 @@ describe("2v2 action band: the strips stack only where the bar cannot seat them"
  * one budget, from its two ends.
  */
 describe("the band's width budget on the smallest screen", () => {
-  /** 320px: the narrowest phone still in real use, and the sweep's worst case. */
-  const NARROWEST = 320;
-
-  it("the Seña/Consulta toggle stops eating half the band, and keeps its name while it shrinks", async () => {
-    const el = mountedContainer(NARROWEST);
+  it("the compact toggle is carried by its glyph, and still says what it is", async () => {
+    // MEASURED WHERE THE RAIL IS A COLUMN. Below 640 the rail is a shut
+    // drawer, so nothing inside it has a painted size at all -- a first
+    // version of this asserted the glyph's width at 320 and read 0, which says
+    // "the drawer is shut", not "the glyph is missing". The compact tier is
+    // still what is under test: `--hx-rail-compact` styling is not what draws
+    // the glyph, the base rule is, and the words' clip is asserted separately
+    // below at the width where it applies.
+    const el = mountedContainer(1280);
     const render = createMatchTableRenderer();
     const state = pendingTrucoState("2v2");
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
@@ -482,32 +452,28 @@ describe("the band's width budget on the smallest screen", () => {
     const toggle = el.querySelector<HTMLElement>(".hexdev-truco-senas-toggle");
     if (toggle === null) throw new Error("fence setup: no señas toggle in a state that offers señas");
 
-    const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
-    if (bar === null) throw new Error("fence setup: action bar not rendered");
-
-    // A fraction, not a pixel count: the point is not "small", it is "no
-    // longer the biggest thing on the band". A third is generous -- it was
-    // taking 53% -- and it survives a font the player scaled up.
-    const share = toggle.getBoundingClientRect().width / bar.clientWidth;
-    expect(share, "the toggle's share of a 320px band").toBeLessThan(1 / 3);
-
-    // AND IT STILL SAYS WHAT IT IS. Hiding the words visually is a layout
-    // decision; hiding them from a screen reader would be a different and
-    // much worse one. `display: none` and `visibility: hidden` both drop text
-    // out of the accessible name -- the visually-hidden clip does not, which
-    // is the entire reason this uses it.
-    expect(toggle.textContent ?? "", "the toggle's accessible name at 320px").toContain("Seña/Consulta");
-
-    // AND SOMETHING IS PAINTED WHERE THE WORDS WERE. Asserted here rather than
-    // left to a baseline image, because the visual suite shoots `feltOf()` --
-    // the felt, not the band -- so no screenshot in this repo covers this
-    // glyph. A width-only change inside the band moves no baseline at all; the
-    // band's HEIGHT moves them, through the felt's share of the shell.
+    // SOMETHING IS PAINTED WHERE THE WORDS WILL BE CLIPPED. Asserted here
+    // rather than left to a baseline image, because the visual suite shoots
+    // `feltOf()` -- the felt, not the rail -- so no screenshot in this repo
+    // covers this glyph at all.
     const icon = toggle.querySelector<SVGSVGElement>(".hexdev-truco-senas-icon");
-    if (icon === null) throw new Error("the words are hidden and no glyph replaced them");
+    if (icon === null) throw new Error("the compact tier hides the words and no glyph replaced them");
     expect(icon.getBoundingClientRect().width, "the glyph's painted width").toBeGreaterThan(12);
     // Decorative, and marked so: the name comes from the words beside it.
     expect(icon.getAttribute("aria-hidden"), "the glyph must not join the accessible name").toBe("true");
+
+    // AND THE NAME SURVIVES THE CLIP. Hiding the words visually is a layout
+    // decision; hiding them from a screen reader would be a different and much
+    // worse one. `display: none` and `visibility: hidden` both drop text out
+    // of the accessible name -- the visually-hidden clip does not, which is
+    // the entire reason the compact rule uses it.
+    const compact = mountedContainer(320);
+    const compactRender = createMatchTableRenderer();
+    compactRender(compact, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(compact);
+    const compactToggle = compact.querySelector<HTMLElement>(".hexdev-truco-senas-toggle");
+    if (compactToggle === null) throw new Error("fence setup: no señas toggle at 320px");
+    expect(compactToggle.textContent ?? "", "the toggle's accessible name at 320px").toContain("Seña/Consulta");
   });
 
   /* EVERY width the sweep covers, not just the narrowest.
@@ -535,5 +501,81 @@ describe("the band's width budget on the smallest screen", () => {
     // scroll -- three long calls will not fit a 320px phone whatever we do,
     // and that group is the one the scroller was built for.
     expect(response.scrollWidth, `the owed answer clipped at ${String(width)}px`).toBeLessThanOrEqual(response.clientWidth + 1);
+  });
+});
+
+/**
+ * THE BAND BELONGS TO THE CALLS.
+ *
+ * Even shrunk to a glyph and a number the Seña/Consulta toggle was taking 84
+ * of a 320px band's 304, and the escalation ladder beside the owed answer was
+ * getting 16px of the 383 it wanted -- a sliver the player cannot read as a
+ * button, let alone as a scroller with two more behind it.
+ *
+ * So the control leaves the band for the side rail, which is the one place
+ * that already answers this exact question twice: a persistent column from
+ * 640px up, where nothing is hidden, and a tabbed drawer below it, where
+ * things the player does not always need go. One DOM, two behaviours, no
+ * runtime measurement -- truco-ui has never measured its own box and does not
+ * start here (`.hexdev-truco-table-shell`'s own container-query note argues
+ * why: an embedded widget's width is its container's, not the viewport's).
+ *
+ * WHAT MUST NOT GO WITH IT is the partner's answer. Consulting is worthless if
+ * the reply lands inside a closed drawer, so the advice stays out on the felt
+ * with the picker -- the same surface the player was already looking at when
+ * they asked.
+ */
+describe("the band belongs to the calls, and the partner's answer stays visible", () => {
+  const SWEPT = [320, 375, 640, 1280] as const;
+
+  it.each(SWEPT)("%ipx: the Seña/Consulta control sits in the rail, not on the band", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoState("2v2");
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const toggle = el.querySelector<HTMLElement>(".hexdev-truco-senas-toggle");
+    if (toggle === null) throw new Error("fence setup: no señas toggle in a state that offers señas");
+
+    expect(toggle.closest(".hexdev-truco-side-rail"), "the toggle's home").not.toBeNull();
+    expect(toggle.closest(".hexdev-truco-action-bar"), "the toggle must be off the band").toBeNull();
+  });
+
+  it("320px: with the band to itself, the escalation ladder is a button and not a sliver", async () => {
+    const el = mountedContainer(320);
+    const render = createMatchTableRenderer();
+    const state = envidoAnswerState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const opening = el.querySelector<HTMLElement>(".hexdev-truco-calls-group--opening");
+    if (opening === null) throw new Error("fence setup: the escalated state offers no opening group");
+
+    // Measured, not wished for: 320px cannot fit 184px of owed answer plus
+    // 383px of ladder however the pixels are arranged, so this group scrolls
+    // and always will. What it may not do is be invisible. 90px is most of
+    // "Envido envido" (134px) -- enough to read the call and to see there is
+    // more of it off the edge. It was 16px.
+    expect(opening.clientWidth, "the escalation ladder's painted width at 320px").toBeGreaterThanOrEqual(90);
+  });
+
+  it("the partner's answer is readable with the drawer shut", async () => {
+    const el = mountedContainer(375);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoState("2v2");
+    // The advice is the EIGHTH argument, never a field on the view: MatchRoom
+    // sends it to the asking client alone, and a view that could carry it
+    // would carry it to the whole table.
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, undefined, undefined, { advice: "quiero", asking: false });
+    await waitForArt(el);
+
+    const advice = el.querySelector<HTMLElement>(".hexdev-truco-consult-advice");
+    if (advice === null) throw new Error("fence setup: an advice value rendered no advice");
+
+    // The drawer is shut on the first render (the rail only opens on a tap),
+    // so an answer mounted inside it is an answer the player never sees.
+    expect(advice.closest(".hexdev-truco-side-rail"), "the answer must not be inside the drawer").toBeNull();
+    expect(advice.getBoundingClientRect().width, "the answer's painted width").toBeGreaterThan(0);
   });
 });

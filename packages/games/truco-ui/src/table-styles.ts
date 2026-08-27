@@ -842,25 +842,21 @@ export function buildTableStylesheet(): string {
      * raising it at tiers nothing measured would be trading a documented
      * under-reservation for an undocumented over-reservation. */
     min-height: calc((var(--truco-card-width) * 336 / 220) * 5 + 60px + var(--hx-band-action-total) + var(--hx-felt-gap));
-    /* PR5-T5 (tasks §3.8): 2v2 only, from medium onward — two stacked action
-     * strips (calls, then señas — design §7.2), not one. Declared ONCE, here
-     * — --hx-band-action itself is redeclared at every wider tier below
-     * (unscoped, so it applies to 1v1 and 2v2 alike), and because this
-     * formula reads --hx-band-action via var() it resolves against
-     * whichever value is cascaded for THIS element at used-value time, so it
-     * never needs its own redeclaration at wide/ultra. */
-    --hx-band-action-total: calc(var(--hx-band-action) * 2 + 4px);
   }
-  /* PR5-T2 (tasks §9, design §7.2): 2v2 only — the action bar stacks its two
-   * strips vertically instead of scrolling one row horizontally; each strip
-   * gets a fixed height (one band) with its own horizontal scroller. These
-   * three selectors are all MORE specific than their own base-rule
-   * counterparts further below (attribute+class beats a bare class), so —
-   * unlike the pending-call override that used to live here — source order
-   * does not matter for them; specificity alone decides the winner. */
-  [data-seat-count="4"] .hexdev-truco-action-bar { flex-direction: column; overflow-x: hidden; }
-  [data-seat-count="4"] .hexdev-truco-calls-row,
-  [data-seat-count="4"] .hexdev-truco-senas { height: var(--hx-band-action); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--hx-scroll-thumb) transparent; }
+  /* THE SECOND STRIP IS GONE, AND SO IS EVERYTHING THAT RESERVED ROOM FOR IT.
+   *
+   * 2v2 used to carry a señas strip beside the calls, so from 640px up the
+   * band stacked the two and --hx-band-action-total booked a double height
+   * (one strip x2, plus a 4px seam) that the ultra tier then clawed back by
+   * seating them side by side. The señas control lives in the side rail now,
+   * the band has exactly one strip at every width, and all of that machinery
+   * was reserving felt for something that is not there.
+   *
+   * Deleted together with the feature rather than left inert: a dead
+   * reservation is not free, it is 54px of the one dimension this widget is
+   * always short of, silently gone from 640 to 1280. --hx-band-action-total
+   * now equals --hx-band-action everywhere, which is what its base
+   * declaration already said. */
 }
 @container hexdev-truco-shell (min-width: 900px) {
   .hexdev-truco-table {
@@ -929,39 +925,18 @@ export function buildTableStylesheet(): string {
   }
   .hexdev-truco-table:not([data-seat-count="4"]) { --truco-card-tier: 108px; }
   .hexdev-truco-table[data-seat-count="4"] { --truco-card-tier: 100px; }
-  /* MEASURED at a 1550px shell: the calls row asks 166px and the senas strip
-   * a few hundred more, inside an action bar 955px wide. Stacking them here
-   * spent a whole extra band of HEIGHT -- the one thing this felt is short of
-   * -- to buy width it already had in abundance. From this tier up the two
-   * strips sit side by side and --hx-band-action-total drops back to one
-   * strip. The stacked form stays owned by the 640px block for every tier
-   * below, where the bar genuinely cannot seat both.
+  /* THE SIDE-BY-SIDE RECLAIM IS GONE WITH THE STRIP IT RECLAIMED FROM.
    *
-   * Nothing downstream needs re-tuning by hand: the fullscreen fit formula
-   * subtracts --hx-band-action-total through var(), so the card grows out of
-   * this change by itself rather than through a second constant kept in sync
-   * with this one.
+   * This tier used to seat the calls row and the señas strip in one row so
+   * --hx-band-action-total could drop back to a single strip, undoing the
+   * double booking the 640px block made. With the señas control moved to the
+   * side rail there is only ever one strip, the double booking is deleted at
+   * its source, and there is nothing left here to claw back.
    *
-   * justify-content is declared here on purpose. The base bar leaves it at
-   * flex-start and never needed more, because in column direction the strips'
-   * own align-self: stretch made them full-width and their internal
-   * justify-content did the centring. In row direction that same stretch
-   * governs the vertical axis instead, so without this the pair would pack
-   * against the left edge of a 955px track. */
-  /* CENTRED BY AUTO MARGINS, NOT BY justify-content, and the difference is
-   * whether the player can reach the first button at all. justify-content:
-   * center on a box that OVERFLOWS pushes the start of the content past the
-   * left edge and out of the scroll range entirely -- there is no scroll
-   * position that brings it back. That is what cut "Quiero" down to "uiero"
-   * in the reported screenshot, with no way to see the rest.
-   *
-   * Auto margins absorb the free space exactly the same way when there is
-   * any, and collapse to zero when there is none -- so the row centres while
-   * it fits and starts at the scroll origin the moment it does not. */
-  [data-seat-count="4"] .hexdev-truco-action-bar { flex-direction: row; justify-content: flex-start; gap: var(--hx-space-xl); }
-  [data-seat-count="4"] .hexdev-truco-action-bar > :first-child { margin-inline-start: auto; }
-  [data-seat-count="4"] .hexdev-truco-action-bar > :last-child { margin-inline-end: auto; }
-  .hexdev-truco-table[data-seat-count="4"] { --hx-band-action-total: var(--hx-band-action); }
+   * The centring went with it and is not missed: the calls group carries its
+   * own auto margins (see the base rule's note on why margins and never
+   * justify-content -- centring an OVERFLOWING box pushes its first button out
+   * of scroll range, which is what once cut "Quiero" down to "uiero"). */
 }
 
 /* Change 2: a side panel that works wide does not fit narrow, so the two
@@ -1909,8 +1884,8 @@ export function buildTableStylesheet(): string {
     white-space: nowrap;
     border: 0;
   }
-  /* The glyph is alone now, so the button stops being a label with padding and
-   * becomes a round target the size of the other 40px controls. */
+  /* Compact only: alone in a drawer the button has room, but the drawer is
+   * narrow, so the glyph and the count sit closer together. */
   .hexdev-truco-senas-toggle { gap: 4px; padding: 6px 12px; }
   /* The only text left standing in this row, so it gets the pin the two
    * sibling boxes carry: 1.2 matches their choice exactly (never
@@ -2732,10 +2707,27 @@ export function buildTableStylesheet(): string {
  * while the two strips were stacked and each owned a full row; the moment
  * they became neighbours in one row it read as the señas button sitting
  * about 8px above the call buttons beside it. Reported as exactly that. */
-/* The strip. It holds ONE toggle (which is the allowance) plus, when there is
- * one, the partner's answer beside it — a row rather than the column it used
- * to be, so the reply sits next to the button that paid for it. */
-.hexdev-truco-senas { align-self: stretch; max-width: 100%; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: var(--hx-space-sm); }
+/* THE STRIP, NOW A CELL IN THE RAIL. It holds ONE toggle and nothing else --
+ * the partner's answer used to sit beside it here and floats over the felt now
+ * (see .hexdev-truco-consult-advice), because an answer mounted in the rail is
+ * an answer inside a shut drawer on a phone.
+ *
+ * flex: 0 0 auto -- the two scrolling boxes below it in the rail are what
+ * absorb the column's height, never this. */
+.hexdev-truco-senas { display: flex; flex: 0 0 auto; max-width: 100%; }
+/* TWO LINES, and measuring is what said so.
+ *
+ * The rail is 168px wide and the button planted itself at 194: a flex item's
+ * automatic minimum size is its MIN-CONTENT width, and "Seña/Consulta" has no
+ * break opportunity a browser takes -- it does not break at "/". min-width: 0
+ * on the words changed nothing and the overflow stayed exactly 13px at 640 and
+ * 768.
+ *
+ * Wrapping the button's OWN row is what fits: glyph and words on the first
+ * line, the count on the second. Height is what a rail column has to spare and
+ * width is what it does not -- the exact opposite of the band this came from,
+ * which is the whole reason it moved. */
+.hexdev-truco-senas .hexdev-truco-senas-toggle { flex: 1 1 auto; flex-wrap: wrap; justify-content: center; }
 /* FU-1: the OPEN picker is a transient ELEVATED POPOVER anchored above the
  * action bar, not a third row inside it.
  *
@@ -2802,6 +2794,25 @@ export function buildTableStylesheet(): string {
  * box with a background and a shadow would otherwise paint a bare chrome
  * strip over the felt for the whole match. */
 .hexdev-truco-senas-row:empty { display: none; }
+/* display: contents -- the box itself must not exist as far as layout is
+ * concerned. It is a wiping handle for the renderer, nothing more: both of its
+ * children are absolutely positioned, so neither becomes a grid item of the
+ * felt and the felt's height, which is the scarcest thing this widget has, is
+ * untouched. */
+.hexdev-truco-senas-overlay { display: contents; }
+/* THE PARTNER'S ANSWER FLOATS. It used to sit in the band's flow, which meant
+ * it competed for width with the calls at the exact moment a player has both a
+ * question answered AND a call to answer. Out of flow it costs the band
+ * nothing, and it lands in the lane the player was already watching -- the
+ * same one the picker opens into, directly above the buttons. */
+.hexdev-truco-consult-advice {
+  position: absolute;
+  left: var(--hx-felt-pad);
+  right: var(--hx-felt-pad);
+  bottom: calc(var(--hx-felt-pad-block) + var(--hx-band-action-total) + var(--hx-felt-gap));
+  z-index: 1;
+  text-align: center;
+}
 .hexdev-truco-senas-row {
   position: absolute;
   left: var(--hx-felt-pad);
@@ -3262,8 +3273,22 @@ export function buildTableStylesheet(): string {
     )
   );
 }
+/* RE-MEASURED, 34px -> 38px, when the band stopped booking a strip it no
+ * longer has.
+ *
+ * 2v2's band used to reserve two strips from 640px up, and this formula
+ * subtracts that reservation. The residual -- the real content the row model
+ * does not account for -- was measured against that doubled subtraction, so
+ * part of its true value was hiding inside the band's slack. With the señas
+ * strip moved to the side rail the reservation is a single strip again, the
+ * formula has 54px more to give the cards, and it gave 3px more than the felt
+ * actually had: table-viewport-fit caught it at 844x390, the landscape phone.
+ *
+ * Raised to the measured value plus a pixel, not to whatever silenced the
+ * test. The cards still come out substantially bigger than before -- 54px
+ * freed against 4px given back. */
 :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table[data-seat-count="4"] {
-  --hx-fit-residual: 34px;
+  --hx-fit-residual: 38px;
 }
 
 /* A PORTRAIT PHONE NEEDS A BIGGER RESIDUAL, and finding that out is what the

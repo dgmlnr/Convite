@@ -428,8 +428,15 @@ const MAXIMAL_BASELINE_HEIGHT: Record<(typeof WIDTHS)[number], { readonly "1v1":
    * group's horizontal scrollbar takes its 10px inside the band instead of
    * outside it. Measured off the group's own box, not guessed. */
   375: { "1v1": 492.34375, "2v2": 491.4375 },
-  700: { "1v1": 649.96875, "2v2": 838.328125 },
-  960: { "1v1": 771.375, "2v2": 873.328125 },
+  /* THE BAND GIVES BACK WHAT IT WAS RESERVING FOR A STRIP IT NO LONGER HAS.
+   *   700  2v2: 838.328125 -> 786.328125   (-52)
+   *   960  2v2: 873.328125 -> 817.328125   (-56)
+   * 2v2 carried a señas strip beside the calls, so from 640px up the band
+   * stacked the two and booked a double height for them. That control is in
+   * the side rail now; the band holds one strip and books one strip. 1v1 never
+   * had the second strip and does not move. */
+  700: { "1v1": 649.96875, "2v2": 786.328125 },
+  960: { "1v1": 771.375, "2v2": 817.328125 },
   1280: { "1v1": 860.59375, "2v2": 983.515625 },
 };
 

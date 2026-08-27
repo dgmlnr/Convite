@@ -159,7 +159,7 @@ describe("visual: the 4-seat (2v2) game table — partner obvious at a glance, s
     await expect.element(feltOf(container)).toMatchScreenshot("table-2v2-senas-open");
   });
 
-  it("the per-hand cap spent: the Señas control still on the band, dimmed and unavailable — never a hole where a button used to be", async () => {
+  it("the per-hand cap spent: the Señas control still in the rail, dimmed and unavailable — never a hole where a button used to be", async () => {
     const container = mountedContainer();
     // The whole quota spent through the ACTUAL reducer, not a hand-authored
     // view, so this captures the state the engine really produces at the cap

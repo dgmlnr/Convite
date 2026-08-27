@@ -763,21 +763,18 @@ export function createMatchTableRenderer(
     // charges a seña for a question), so they count down together where a
     // player can see it happen. Gated on the same static fact the picker
     // uses — a match with teammates — so a 1v1 felt gains no node at all.
-    if (view.teammates.length > 0) {
-      // ONE CONTROL, and its own toggle IS the allowance. Two buttons
-      // counting the same budget were tried twice — a "(3)" on each, then a
-      // lone chip between them — and both read as two budgets. So the picker
-      // hosts both ways to spend it, and the number goes back on the single
-      // button where it can only mean one thing.
-      renderSenaPicker(
-        actionBar.appendChild(document.createElement("div")),
-        legalActions,
-        dispatch,
-        { remaining: view.self.senasRemaining },
-        layout,
-        { advice: consult?.advice ?? null, asking: consult?.asking ?? false },
-      );
-    }
+    // THE FLOATING HALF OF THE SEÑAS CONTROL. The toggle itself is mounted far
+    // below, into the side rail; these are the two pieces that must stay out
+    // here where the player can see them with the drawer shut — the picker
+    // they just opened, and their partner's answer.
+    //
+    // A wrapper rather than appending straight to the felt, so the renderer
+    // has one box it can safely wipe each render. `display: contents` keeps it
+    // from becoming a grid row of the felt: both of its children are
+    // absolutely positioned, so neither is a grid item and nothing here costs
+    // the felt a pixel of the height it is always short of.
+    const senasOverlay = felt.appendChild(document.createElement("div"));
+    senasOverlay.className = "hexdev-truco-senas-overlay";
     const handRow = bottom.appendChild(document.createElement("div"));
     renderHand(handRow, view.self.hand, legalActions, { onPlayCard: (card) => dispatch({ type: "play-card", playerId: view.self.playerId, card }) });
     handRow.style.setProperty("--deal-seat", String(Math.max(0, dealOrder.indexOf(view.self.seat))));
@@ -1162,6 +1159,35 @@ export function createMatchTableRenderer(
     // below on `scrollCallLogToNewest`: that call is only safe once `callLog`
     // is attached all the way up to `container`, and this append is the first
     // link in that chain.
+    // ACTIONS ABOVE INFORMATION. The rail used to be two boxes of things that
+    // HAPPENED -- what was called, what it is worth. The señas control is the
+    // one thing in here a player DOES, so it goes on top rather than under two
+    // scrolling logs.
+    //
+    // It is in the rail at all because the band's width belongs to the calls:
+    // even reduced to a glyph and a number this control was taking 84 of a
+    // 320px band's 304, and the escalation ladder next to an owed answer was
+    // getting 16px of the 383 it wanted. The rail already answers the "does
+    // this need to be on screen always?" question in two ways at once -- a
+    // visible column from 640 up, a tabbed drawer below -- which is exactly
+    // the question this control was losing.
+    //
+    // ONE CONTROL, and its own toggle IS the allowance. Two buttons counting
+    // the same budget were tried twice — a "(3)" on each, then a lone chip
+    // between them — and both read as two budgets. So the picker hosts both
+    // ways to spend it, and the number goes back on the single button where it
+    // can only mean one thing.
+    if (view.teammates.length > 0) {
+      renderSenaPicker(
+        railBody.appendChild(document.createElement("div")),
+        legalActions,
+        dispatch,
+        { remaining: view.self.senasRemaining },
+        layout,
+        { advice: consult?.advice ?? null, asking: consult?.asking ?? false },
+        senasOverlay,
+      );
+    }
     railBody.appendChild(callLog);
     railBody.appendChild(panel);
     rail.appendChild(railTab);

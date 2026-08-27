@@ -129,8 +129,30 @@ export function renderSenaPicker(
    * budget were tried twice and read as two budgets both times.
    */
   consult: ConsultControlProps = { advice: null, asking: false },
+  /**
+   * WHERE THE FLOATING HALF GOES, and why it cannot be `container`.
+   *
+   * The toggle lives in the side rail now -- the band's whole width belongs to
+   * the calls, and the rail is the one box that is already a visible column
+   * above 640px and a tabbed drawer below it. But the picker and the partner's
+   * answer must NOT go with it: an answer that lands inside a shut drawer is
+   * an answer the player never reads, and consulting is worthless then.
+   *
+   * They also cannot simply stay behind in the band. Both are positioned
+   * absolutely against `.hexdev-truco-shell-layout`, and the rail is itself
+   * absolute inside that same block -- so a picker mounted in the rail would
+   * anchor to the RAIL and open inside the drawer it was meant to escape.
+   *
+   * Hence two homes: the affordance in the rail, the floating half out on the
+   * felt where the player was already looking when they asked. Defaults to
+   * `container` so a caller that wants both in one box still can.
+   */
+  overlay: HTMLElement = container,
 ): void {
   container.replaceChildren();
+  // Two homes, two wipes. Missing this leaves last render's picker floating
+  // over the felt with nothing left to close it.
+  if (overlay !== container) overlay.replaceChildren();
   // Stable window height (apply prompt): the class is set BEFORE the early
   // return below, not after — table.ts now mounts this container for the
   // whole 2v2 match (view.teammates.length > 0), even once send-sena stops
@@ -174,7 +196,7 @@ export function renderSenaPicker(
     reason.textContent = `. ${TABLE_STRINGS.senasSpentHint(MAX_SENAS_PER_HAND)}`;
     toggle.append(reason);
     container.append(toggle);
-    renderConsultAdvice(container, consult);
+    renderConsultAdvice(overlay, consult);
     return;
   }
 
@@ -307,8 +329,9 @@ export function renderSenaPicker(
 
   toggle.addEventListener("click", () => setOpen(!open));
 
-  container.append(toggle, row);
+  container.append(toggle);
+  overlay.append(row);
   // Beside the toggle, never inside the row: the picker closes on the click
   // that asks, so a reply rendered in there would be a reply nobody sees.
-  renderConsultAdvice(container, consult);
+  renderConsultAdvice(overlay, consult);
 }
