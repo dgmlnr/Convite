@@ -25,6 +25,17 @@ blob-report/
 # __screenshots__/ directory, which IS committed.
 .vitest-attachments/
 
+# THE OTHER HALF OF THAT RULE, and it took committing the debris twice to see
+# it. Vitest also drops a screenshot into __screenshots__/<test file>/ when a
+# BROWSER test fails — and that directory is committed on purpose, because it
+# is where the visual baselines live. So a failing *.browser.test.ts quietly
+# leaves reviewable-looking PNGs beside real baselines.
+#
+# Only *.visual.test.ts owns baselines. Everything else in there is debris from
+# a test that failed on somebody's machine, and three of them reached main
+# inside a PR before this line existed.
+**/__screenshots__/*.browser.test.ts/
+
 # Environment
 .env
 .env.*
