@@ -1,0 +1,99 @@
+# The gate `main` is protected by.
+#
+# Branch protection went on before this existed, which meant a rule that could
+# require a pull request and nothing else: there was no check to be green.
+# These jobs are what give it something to hold.
+#
+# Split in two on purpose. The first is the fast gate every push should clear;
+# the second rasterises real pages in a container and is minutes slower, so a
+# failure in one is legible without reading the other's log.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same branch cancels the first: the only run that matters
+# is the one for the code as it stands now.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: types, lint, boundaries, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # --frozen-lockfile so a lockfile that drifted from package.json fails
+      # here rather than resolving to something nobody has run.
+      - run: pnpm install --frozen-lockfile
+
+      # Chromium only: the browser project pins one browser, and pulling the
+      # other two would be minutes spent on engines nothing here runs.
+      # --with-deps because a bare runner has none of the shared libraries a
+      # real Chromium needs.
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - name: Typecheck
+        run: pnpm exec tsc -b
+
+      - name: Lint
+        run: pnpm exec eslint . --max-warnings 0
+
+      - name: Boundaries
+        run: pnpm exec depcruise packages apps --config .dependency-cruiser.cjs
+
+      # HEADLESS HERE, HEADED ON A DEVELOPER'S MACHINE, and that difference is
+      # deliberate: vitest.config.ts leaves `headless` unset so it follows CI.
+      # The two modes measure identically -- verified by running the whole
+      # suite both ways, same totals -- and a future divergence is a real
+      # signal about a box whose height a font is still deciding, never
+      # something to bury under recalibrated constants.
+      - name: Tests
+        run: pnpm exec vitest run --project node --project browser
+
+  visual:
+    name: visual baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # No `playwright install` step: this suite runs inside Microsoft's own
+      # playwright image, which already carries the pinned browser, and the
+      # bind-mounted host package resolves to it. That container is the whole
+      # point -- the baselines are rasterised pages, and they only reproduce
+      # when the OS, the fonts and the browser are pinned with them.
+      - name: Visual
+        run: pnpm run test:visual
+
+      # A failed comparison is only readable as an image.
+      - name: Upload the failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: |
+            **/__screenshots__/**
+          if-no-files-found: ignore
+          retention-days: 7
