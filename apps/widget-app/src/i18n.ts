@@ -16,7 +16,17 @@ const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
 };
 
 const CONFIG_LABELS: Readonly<Record<string, string>> = {
-  "games.truco.pointsToWin": "Puntos para ganar",
+  /* "Puntos", not "Puntos para ganar". Measured on the rendered lobby: the
+   * full phrase broke every modality button across two line boxes inside a
+   * 42px box, at 320, 375 AND 414 -- read on a phone as "PUNTOS PARA /
+   * GANAR: 15".
+   *
+   * Shortened HERE rather than in the button, because describeModality builds
+   * every option as "<label>: <value>" from the platform's own labelKey and
+   * that genericity is deliberate (its own note: "never a hardcoded per-game
+   * phrase"). The label is the one piece this game owns. Under a group already
+   * announced as "Modo", "Puntos: 15" cannot mean anything else. */
+  "games.truco.pointsToWin": "Puntos",
 };
 
 /** Falls back to the raw key rather than an empty string: an untranslated
@@ -85,6 +95,19 @@ export const STRINGS = {
    */
   formatDescription: (seatCount: number): string | undefined =>
     seatCount === 2 ? "Vos contra un rival." : seatCount === 4 ? "En parejas: vos y un compañero contra dos." : undefined,
+  /* WHAT A CARD IS, once the hero has already said WHICH GAME.
+   *
+   * The hero reads "Truco Argentino" and the first card's heading read "Truco
+   * Argentino" too, word for word, at every width. The cards are FORMATS of
+   * one game, not different games, so where there is a hero the heading names
+   * the format instead and the pair stops repeating itself.
+   *
+   * Truco's own words for the two formats, not "1v1"/"2v2": a player at a
+   * table says mano a mano and en parejas. Same seat-count switch and same
+   * undefined-for-anything-else shape as formatDescription above, so a seat
+   * count nobody has written a line for falls back to the game's name. */
+  formatName: (seatCount: number): string | undefined =>
+    seatCount === 2 ? "Mano a mano" : seatCount === 4 ? "En parejas" : undefined,
   /** The label over the modality selector — what the buttons under it choose. */
   modalityLegend: "Modo",
   playVsBot: "Jugar contra la máquina",

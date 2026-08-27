@@ -16,7 +16,7 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
   });
 
   it("translates a known config-option label key", () => {
-    expect(translateConfigLabel("games.truco.pointsToWin")).toBe("Puntos para ganar");
+    expect(translateConfigLabel("games.truco.pointsToWin")).toBe("Puntos");
   });
 
   it("waitingCount pluralizes correctly for one vs many waiting players", () => {

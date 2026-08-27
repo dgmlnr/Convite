@@ -314,7 +314,7 @@ describe("chrome body copy consumes --hx-leading (FU-5: computed line-height con
 /**
  * WCAG 1.3.1 / 2.4.6 (B14). Two defects in one box.
  *
- * STRUCTURE: the line naming a modality ("Puntos para ganar: 15") is the
+ * STRUCTURE: the line naming a modality ("Puntos: 15") is the
  * heading of everything under it, and it was a `<p>` — so the lobby's outline
  * ended at the game name and a reader jumping by heading could not reach, or
  * even count, the modalities inside a game.
@@ -342,25 +342,29 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     return el;
   }
 
-  it("makes the modality line a real heading, one level below the game name that owns it", () => {
+  it("makes the modality line a real heading, one level below the card heading that owns it", () => {
     // ONE heading now, not one per modality: the card shows the SELECTED
     // modality and offers the rest as a picker above it. The heading is still
     // an H3 under the card's H2 (WCAG 1.3.1) — it names the block of controls
     // under it, and that block is now singular.
+    //
+    // The H2 reads "Mano a mano" and no longer "Truco Argentino": under a hero
+    // that already names the game, a card names its FORMAT. What this test is
+    // really about is the LEVELS, and those are unchanged.
     const el = renderTwoModalities();
 
     const gameHeading = el.querySelector<HTMLElement>(".hexdev-game-card h2");
     const modalityHeadings = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-title")];
-    expect(gameHeading?.textContent).toBe("Truco Argentino");
+    expect(gameHeading?.textContent).toBe("Mano a mano");
     expect(modalityHeadings.map((heading) => heading.tagName)).toEqual(["H3"]);
-    expect(modalityHeadings[0]?.textContent).toBe("Puntos para ganar: 15");
+    expect(modalityHeadings[0]?.textContent).toBe("Puntos: 15");
   });
 
   it("offers the other modalities as a picker, with exactly one pressed", () => {
     const el = renderTwoModalities();
 
     const options = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-option")];
-    expect(options.map((option) => option.textContent)).toEqual(["Puntos para ganar: 15", "Puntos para ganar: 30"]);
+    expect(options.map((option) => option.textContent)).toEqual(["Puntos: 15", "Puntos: 30"]);
     expect(options.filter((option) => option.getAttribute("aria-pressed") === "true")).toHaveLength(1);
   });
 
@@ -373,10 +377,10 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     const el = renderTwoModalities();
 
     el.querySelectorAll<HTMLElement>(".hexdev-modality-option")[1]!.click();
-    expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent).toBe("Puntos para ganar: 30");
+    expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent).toBe("Puntos: 30");
 
     renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
-    expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent, "a presence broadcast undid the player's choice").toBe("Puntos para ganar: 30");
+    expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent, "a presence broadcast undid the player's choice").toBe("Puntos: 30");
   });
 
   it("lets no heading UA default through — every one of them is set on purpose", () => {
@@ -387,7 +391,7 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     // the <p> it replaced, which caught that — and also froze the design.
     //
     // It is now a LABEL by deliberate choice (small, letterspaced, uppercase,
-    // secondary): "Puntos para ganar: 15" is a section marker that repeats
+    // secondary): "Puntos: 15" is a section marker that repeats
     // once per modality, and set as a sentence it was read instead of
     // scanned. So the assertion moved to the invariant that actually mattered:
     // nothing here is a UA default. Every property a heading would otherwise
@@ -421,7 +425,7 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
 
     const groups = [...el.querySelectorAll<HTMLElement>(".hexdev-modality")];
     expect(groups.map((group) => group.getAttribute("role"))).toEqual(["group"]);
-    expect(groups[0]?.getAttribute("aria-label")).toBe("Truco Argentino, Puntos para ganar: 15");
+    expect(groups[0]?.getAttribute("aria-label")).toBe("Truco Argentino, Puntos: 15");
   });
 
   it("gives every repeated tier button a distinct group name — the whole point, asserted end to end", () => {
@@ -732,5 +736,81 @@ describe("the hand is dealt once, not on every repaint", () => {
     renderGameSelection(second, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(second.querySelector(".hexdev-chrome-fan--dealing"), "a second widget on the page opened with no greeting").not.toBeNull();
+  });
+});
+
+/**
+ * THE LOBBY SAYS EACH THING ONCE, AND SAYS IT ON ONE LINE.
+ *
+ * Two defects from the same place -- the copy over the cards -- both found by
+ * measuring the rendered lobby rather than by reading it.
+ */
+describe("the lobby's own copy fits and does not repeat itself", () => {
+  const PRESENCE_BOTH = new Map<GameId, readonly LobbyDisplayEntry[]>([
+    [TRUCO_ID, [
+      { modality: { pointsToWin: 15 }, waitingCount: undefined, promoteBotFallback: true },
+      { modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true },
+    ]],
+    [TRUCO_2V2_ID, [
+      { modality: { pointsToWin: 15 }, waitingCount: undefined, promoteBotFallback: true },
+      { modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true },
+    ]],
+  ]);
+
+  /** Line boxes, which is the only thing that really says "this wrapped". */
+  function lineCount(el: HTMLElement): number {
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(el);
+    return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+  }
+
+  /*
+   * THE MODALITY BUTTONS BROKE IN TWO. Measured at 320 and 375: "Puntos para
+   * ganar: 15" rendered across two line boxes inside a 42px button -- the
+   * shape a player reads as "PUNTOS PARA / GANAR: 15".
+   *
+   * Text only, and that matters: this repo already learned that counting line
+   * boxes on a button with an ICON gives a rect per inline element rather than
+   * per line, and reported "Salir" as three lines at every width. These
+   * buttons are pure text, which is exactly where the technique is valid.
+   */
+  it.each([320, 375, 414] as const)("%ipx: no modality button breaks across two lines", (width) => {
+    const el = freshContainer();
+    el.style.width = `${String(width)}px`;
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], PRESENCE_BOTH, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const options = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-option")];
+    expect(options.length, "fence setup: no modality buttons rendered, so this asserts nothing").toBeGreaterThan(0);
+
+    for (const option of options) {
+      expect(lineCount(option), `"${option.textContent ?? ""}" at ${String(width)}px`).toBe(1);
+    }
+  });
+
+  /*
+   * AND THE HERO'S OWN NAME IS NOT REPEATED UNDER IT. The hero reads "Truco
+   * Argentino" and the first card's heading read "Truco Argentino" too, word
+   * for word, at every width. The cards are FORMATS of one game, not different
+   * games, so where the hero has already named the game a card says which
+   * format it is instead.
+   *
+   * Only where there IS a hero: a platform with no art gets no hero (see
+   * renderGameSelection's own note), and there the card heading is the only
+   * thing naming the game at all.
+   */
+  it("a card never repeats the hero's title back at the player", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], PRESENCE_BOTH, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const hero = el.querySelector<HTMLElement>("h1")?.textContent ?? "";
+    expect(hero, "fence setup: no hero title, so there is nothing to repeat").not.toBe("");
+
+    const headings = [...el.querySelectorAll<HTMLElement>(".hexdev-game-card h2")].map((h) => h.textContent ?? "");
+    expect(headings.length, "fence setup: no cards rendered").toBeGreaterThan(0);
+    expect(headings, `the hero says "${hero}" and a card says it again`).not.toContain(hero);
+
+    // AND STILL TELLS THEM APART. Dropping the repeat by blanking the heading
+    // would pass the line above and leave two identical-looking cards.
+    expect(new Set(headings).size, `the cards must stay distinguishable: ${headings.join(" | ")}`).toBe(headings.length);
   });
 });

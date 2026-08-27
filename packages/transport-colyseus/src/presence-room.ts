@@ -193,7 +193,9 @@ export class PresenceRoom extends Room {
     // watcher does not wait for someone else's queue activity to see its
     // first "counts" message, but never track/enqueue/pair this client.
     if (options.modality === undefined) {
-      this.broadcastCounts();
+      // FORCED: this is the watcher's first snapshot, and "nothing changed
+      // since the last watcher" is precisely when it still needs sending.
+      void this.broadcastCounts(true);
       return;
     }
     await pool.join(gameId, options.modality, { connectionId: client.sessionId, playerId: options.playerId }, this.poolKey);
@@ -432,7 +434,36 @@ export class PresenceRoom extends Room {
     await this.broadcastCounts();
   }
 
-  private async broadcastCounts(): Promise<void> {
+  /**
+   * The last payload actually sent, so an unchanged one is not sent again.
+   * `undefined` until the first broadcast, which is why a fresh room always
+   * sends once.
+   */
+  private lastCounts: string | undefined;
+
+  /**
+   * WHEN THE NUMBERS CHANGE, NOT ON A TIMER.
+   *
+   * The sweep runs once a second and used to broadcast on every tick, changed
+   * or not. Each of those lands on every open lobby as a "counts" message, and
+   * the widget rebuilds its whole selection view on each one -- so an idle
+   * lobby with two games was torn down and rebuilt a couple of times a second
+   * for numbers that had not moved. Measured with a 20ms tick: ten identical
+   * broadcasts in 200ms of nothing happening.
+   *
+   * FIXED HERE AND NOT IN THE WIDGET, deliberately. `renderGameSelection` has
+   * a documented reason for rebuilding unconditionally -- capture-then-restore
+   * over skip-identical-rebuild, one mechanism covering both the same-data
+   * broadcast and a changed one, with no second cache of presence state to
+   * drift from the screen. That argument is about the CLIENT and it still
+   * holds. What was wrong was sending a message that says nothing.
+   *
+   * `force` IS THE HALF THAT MAKES IT SAFE. A watch-only client gets its very
+   * first snapshot from this same call (see `onJoin`), so on that path the
+   * numbers being unchanged is exactly when it still has to be sent -- a lobby
+   * opened during a quiet minute would otherwise show nothing at all.
+   */
+  private async broadcastCounts(force = false): Promise<void> {
     const gameId = this.gameId;
     const module = gameId !== undefined ? this.registry?.get(gameId) : undefined;
     const pool = this.pool;
@@ -440,6 +471,9 @@ export class PresenceRoom extends Room {
     const counts = await Promise.all(
       deriveModalities(module.configOptions).map(async (modality) => ({ modality, waitingCount: await pool.count(gameId, modality, this.poolKey) })),
     );
+    const payload = JSON.stringify(counts);
+    if (!force && payload === this.lastCounts) return;
+    this.lastCounts = payload;
     this.broadcast("counts", counts);
   }
 }
