@@ -82,15 +82,43 @@ export const TABLE_STRINGS = {
    * button now, carrying the count that is unambiguously its own, and the two
    * ways to spend it live inside it — "un solo boton que ponga
    * 'Seña/Consulta' y al darle click muestre ambos botones". */
-  senasToggle: (remaining: number): string => `Seña/Consulta (${remaining})`,
+  /* SPLIT IN TWO because the compact tier paints only one of the halves.
+   *
+   * Measured at 320px: this toggle was taking 162 of the band's 304 available
+   * pixels -- 53%, more than every call button put together -- and it never
+   * yielded any of them at any width from 320 to 1440. The group a player OWED
+   * an answer to was getting 40px of the 184 it needed while this one held its
+   * full width. So below 640px the words go visually-hidden and the glyph
+   * carries the meaning; the count stays painted, because a number is the one
+   * thing an icon genuinely cannot say.
+   *
+   * The words never leave the DOM -- the accessible name is still
+   * "Seña/Consulta (3)" at every width -- which is exactly why the compact
+   * rule uses the clip and not `display: none`. */
+  senasToggleWords: "Seña/Consulta",
+  /* The leading space belongs to the count, not to a separator between two
+   * appended nodes: it is what keeps the flattened accessible name reading
+   * "Seña/Consulta (3)" instead of "Seña/Consulta(3)" once the words are
+   * clipped out of sight but not out of the name. */
+  senasToggleCount: (remaining: number): string => ` (${remaining})`,
   /* WHAT is being asked, not merely THAT something is. The same button is
      legal in two different situations -- you owe an answer to a call, or you
      are the pie who could open an envido -- and it used to read the same in
      both. Reported: "soy pie de ronda pongo consultar al compañero pero no se
-     si le estoy consultando para cantar el envido o el truco". */
-  consultAboutTruco: "Consultar: ¿quiero el truco?",
-  consultAboutEnvido: "Consultar: ¿quiero el envido?",
-  consultAboutOpeningEnvido: "Consultar: ¿canto envido?",
+     si le estoy consultando para cantar el envido o el truco".
+
+     Sin el prefijo "Consultar:": estos botones viven DENTRO del panel de
+     seña/consulta, que ya dice que son consultas, y el prefijo costaba unos
+     90px por boton en la pantalla que menos los tiene. */
+  /* THE FOLD. "Subir" is what a player says at a table -- the three ways to
+   * raise an envido are one branch of "quiero, no quiero, o subo?", not three
+   * peers of the first two. Deliberately not "Más" or "Otras": a neutral word
+   * would fit any group, and this one is only ever put on a group that really
+   * does escalate the call being answered. */
+  escalateToggle: "Subir",
+  consultAboutTruco: "¿Quiero el truco?",
+  consultAboutEnvido: "¿Quiero el envido?",
+  consultAboutOpeningEnvido: "¿Canto envido?",
   consultToggle: "Consultar al compañero",
   consultAsking: "Preguntando…",
   /* The declaration round. "Mis tantos" is the button; the LOG and the seat

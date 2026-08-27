@@ -145,9 +145,46 @@ const WINDOWS = [
    * by 68px. A list of five landscape windows is a list of one shape. */
   { w: 390, h: 844, label: "phone, portrait" },
   { w: 360, h: 780, label: "small phone, portrait" },
+  /* THE SHORT PHONES, and their absence hid the empty half of the fit.
+   *
+   * Every portrait window above is 780px tall or more, where the table fills
+   * what it is given. The screens people actually play a truco hand on in one
+   * hand are shorter than that, and there the felt stopped well short: 568px
+   * of screen holding a 489px table, 79px of empty cloth underneath. Reported
+   * looking at it -- twice, in two sessions -- while this suite stayed green,
+   * because it only ever asked whether the table OVERFLOWED. */
+  { w: 320, h: 568, label: "iPhone SE, portrait" },
+  { w: 360, h: 640, label: "short Android, portrait" },
 ] as const;
 
 describe.each(WINDOWS)("the widget fits its own window — $w x $h ($label)", ({ w, h }) => {
+  /**
+   * THE OTHER HALF OF THE FIT, and nothing here was asserting it.
+   *
+   * Every fence above says the table must not OVERFLOW its window. None of
+   * them says it must USE it, so a felt that stopped well short passed them
+   * all: measured on a 305x568 phone, a 568px screen holding a 489px table and
+   * 79px of empty cloth under it. Reported looking at it, twice, over two
+   * different sessions -- and green the whole time.
+   *
+   * A widget told to take the whole screen has taken the whole screen or it
+   * has not. Half of that contract was fenced and half was assumed.
+   */
+  it.each(["1v1", "2v2"] as const)("%s: the table fills the window it was given", async (seats) => {
+    const el = await mountedFullscreen(w, h);
+    renderMatch(el, seats);
+    await waitForArt(el);
+
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (felt === null) throw new Error("fence setup: felt not rendered");
+
+    // Against the SHELL rather than the window: the shell is position: fixed
+    // inset: 0, so the two agree, and measuring the shell keeps this honest if
+    // a host ever gives the widget less than the whole screen.
+    const shortfall = el.getBoundingClientRect().height - felt.getBoundingClientRect().height;
+    expect(shortfall, `${seats} leaves ${String(Math.round(shortfall))}px of empty cloth under the table at ${String(w)}x${String(h)}`).toBeLessThanOrEqual(1);
+  });
+
   it.each(["1v1", "2v2"] as const)("%s: nothing renders below the fold", async (seats) => {
     const el = await mountedFullscreen(w, h);
     renderMatch(el, seats);
@@ -388,5 +425,349 @@ describe("INLINE mode is untouched — the cap must never reach the path every o
     const cardWidth = getComputedStyle(felt).getPropertyValue("--truco-card-width").trim();
     const expected = seats === "1v1" ? "108px" : "100px";
     expect(cardWidth, `inline ${seats} card width at the 1280px tier must be the tier's own value`).toBe(expected);
+  });
+});
+
+/**
+ * THE EMBEDDED SHAPE, which every fence above was missing.
+ *
+ * `mountedFullscreen` gives its container `position: fixed; inset: 0`, and a
+ * fixed box with inset 0 takes its height from the viewport in a way that made
+ * the felt fill by itself. A widget embedded in someone's page is not that: it
+ * is a RELATIVE box the host has given a height to, and there the same shell
+ * left 79px of empty cloth under the table -- 568px of screen holding a 489px
+ * felt. Measured in a live browser, in the running widget, while all of the
+ * fullscreen fences above were green.
+ *
+ * The difference is one line of CSS and it was never asserted, because no
+ * harness in this repo built a shell the way a host builds one.
+ */
+describe.each([
+  { w: 320, h: 568, label: "iPhone SE" },
+  { w: 360, h: 640, label: "short Android" },
+  { w: 375, h: 667, label: "iPhone 8" },
+  { w: 414, h: 736, label: "iPhone Plus" },
+] as const)("the embedded table fills the box its host gave it — $label ($w x $h)", ({ w, h }) => {
+  it.each(["1v1", "2v2"] as const)("%s: no empty cloth under the table", async (seats) => {
+    await page.viewport(w, h);
+    document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
+    container = document.createElement("div");
+    // NO height, and no fixed positioning -- and getting that right is the
+    // whole reason this fence exists twice over.
+    //
+    // In the running widget the shell is sized by `min-height: 100dvh` and its
+    // `height` stays INDEFINITE. That is what breaks the layout inside it: a
+    // percentage height cannot resolve against an indefinite one, so the
+    // layout falls back to its own content and leaves the rest of the screen
+    // empty. Measured live at 305x568: a 568px shell holding a 489px table.
+    //
+    // Two earlier versions of this fence handed the container a definite
+    // height -- once via `position: fixed; inset: 0`, once via an explicit
+    // `height` -- and both made the percentage resolve, filled the shell by
+    // construction, and passed at every size while the defect was on screen.
+    // The bug lives in the indefinite case, so the fence has to live there.
+    document.body.style.margin = "0";
+    document.body.appendChild(container);
+    renderMatch(container, seats);
+    await waitForArt(container);
+
+    const felt = container.querySelector(".hexdev-truco-table");
+    if (felt === null) throw new Error("fence setup: felt not rendered");
+
+    const shortfall = container.getBoundingClientRect().height - felt.getBoundingClientRect().height;
+    expect(shortfall, `${seats} leaves ${String(Math.round(shortfall))}px of empty cloth under the table at ${String(w)}x${String(h)}`).toBeLessThanOrEqual(1);
+  });
+
+  it.each(["1v1", "2v2"] as const)("%s: nothing renders below the fold", async (seats) => {
+    const el = await mountedFullscreen(w, h);
+    renderMatch(el, seats);
+    await waitForArt(el);
+
+    // NOT the container's own height: table.ts makes the container itself
+    // the shell (container.className = "hexdev-truco-table-shell"), and this
+    // one is position: fixed; inset: 0, so its box is the viewport by
+    // definition and asserting on it would pass no matter how far its
+    // contents spilled. The felt is the thing that actually grew.
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (felt === null) throw new Error("fence setup: felt not rendered");
+    expect(felt.getBoundingClientRect().height, `${seats} felt height against a ${String(h)}px window`).toBeLessThanOrEqual(h);
+    expect(el.scrollHeight, `${seats} content overflowing the fullscreen box at ${String(h)}px`).toBeLessThanOrEqual(el.clientHeight + 1);
+    // The felt's own CONTENTS, not just its box. The two are different and the
+    // difference already hid a real overflow: `.hexdev-truco-table` carries
+    // `overflow: hidden`, so a felt whose rows add up to more than it has
+    // still measures exactly its own height and still reports no scroll on
+    // the shell — while clipping the table. Only scrollHeight against
+    // clientHeight, ON THE FELT, can see it.
+    expect(felt.scrollHeight, `${seats} felt rows overflowing the felt itself at ${String(h)}px`).toBeLessThanOrEqual(felt.clientHeight + 1);
+  });
+
+  it("the way out can actually be clicked", async () => {
+    // Reported from real play: "el boton de salir no actua cuando le hago
+    // click". Not covered, not disabled -- INTERCEPTED. The rail's own box
+    // spans the whole right column including the corner the leave control
+    // sits in, it carries a higher z-index, and it had been given the pointer
+    // events back. Nothing looked wrong, which is why no rectangle fence
+    // could have caught it: the two never overlap to the eye.
+    //
+    // It lives in THIS suite and not with the other rail fences because only
+    // this one drives a real viewport: elementFromPoint answers in viewport
+    // coordinates, and a harness that mounts a 1280px container inside a
+    // 414px window is asking about a point nobody can see.
+    const el = await mountedFullscreen(w, h);
+    // The SIXTH argument mounts .hexdev-truco-leave at all: without an
+    // onLeaveMatch there is no way out on the table, and this fence would
+    // pass by measuring nothing.
+    const state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
+    createMatchTableRenderer()(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, null, () => {});
+    await waitForArt(el);
+
+    const button = el.querySelector<HTMLElement>(".hexdev-truco-leave button");
+    if (button === null) throw new Error("fence setup: the leave control rendered no button");
+    const box = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2));
+
+    expect(
+      hit !== null && (hit === button || button.contains(hit)),
+      `the click at the button's own centre lands on ${hit === null ? "nothing" : `${hit.tagName}.${String(hit.className)}`}`,
+    ).toBe(true);
+  });
+
+    it("the deck marker is fully inside the felt", async () => {
+    // Found by looking at a portrait phone once the cards started sizing
+    // themselves from the window: the deck is a fraction of a CARD, so it
+    // grew with them, and it hangs off the side of the hand it belongs to --
+    // straight past the felt's edge and off the screen.
+    const el = await mountedFullscreen(w, h);
+    // dealerSeat 3 makes seat 0 -- the VIEWER -- the mano, which puts the deck
+    // on the seat before them; dealerSeat 0 puts it on the viewer's own seat,
+    // at the bottom, which is the case the report came from and the one a
+    // first version of this fence missed entirely.
+    const state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2);
+    createMatchTableRenderer()(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const deck = el.querySelector(".hexdev-truco-deck");
+    const felt = el.querySelector(".hexdev-truco-table");
+    if (deck === null || felt === null) throw new Error("fence setup: no deck or no felt");
+    const d = deck.getBoundingClientRect();
+    const f = felt.getBoundingClientRect();
+
+    expect(d.width, "fence setup: the deck did not paint").toBeGreaterThan(0);
+    expect(d.right, `deck right ${d.right.toFixed(0)}px vs the felt's own right edge ${f.right.toFixed(0)}px`).toBeLessThanOrEqual(f.right + 0.5);
+    expect(d.left, `deck left ${d.left.toFixed(0)}px vs the felt's own left edge ${f.left.toFixed(0)}px`).toBeGreaterThanOrEqual(f.left - 0.5);
+  });
+
+    it("the player's own hand is fully inside the window, not merely the shell", async () => {
+    const el = await mountedFullscreen(w, h);
+    renderMatch(el, "1v1");
+    await waitForArt(el);
+
+    // The hand is the row that went below the fold in the real report, and
+    // a shell that fits while clipping its own bottom row would satisfy the
+    // assertion above and still be the reported bug.
+    const hand = el.querySelector(".hexdev-truco-hand");
+    if (hand === null) throw new Error("fence setup: player hand not rendered");
+    expect(hand.getBoundingClientRect().bottom, `player hand bottom edge against a ${String(h)}px window`).toBeLessThanOrEqual(h + 1);
+  });
+});
+
+/**
+ * The other direction. The cap above stops the widget being TALLER than the
+ * window; this stops it leaving a hole when it is SHORTER.
+ *
+ * On a tall, narrow phone the felt is content-sized and simply does not need
+ * the whole screen — measured 587px of an 820px viewport at 400px wide. The
+ * shell painted nothing, so the 233px underneath fell through to the
+ * document canvas, which is white by default: a bright band under a green
+ * table, on a widget that had just taken over the entire screen. The lobby
+ * never showed it because `.convite-chrome` paints its own surface; the
+ * match view replaced that element with the truco shell, which painted
+ * nothing at all.
+ */
+describe("a widget SHORTER than its window still owns the whole screen", () => {
+  /**
+   * Mounted the way `apps/widget-app` really mounts it: a PLAIN BLOCK in
+   * normal flow (`#convite-app`), inside a document that is itself the
+   * viewport because the host pinned the iframe. Deliberately not
+   * `mountedFullscreen`'s `position: fixed; inset: 0` container — that one
+   * covers the viewport by construction, so a height assertion against it
+   * would pass no matter what the shell did, which is exactly the shape of
+   * fence that lets a bug like this ship.
+   */
+  async function mountedAsTheAppDoes(width: number, height: number): Promise<HTMLElement> {
+    await page.viewport(width, height);
+    document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
+    container = document.createElement("div");
+    container.style.width = `${String(width)}px`;
+    document.body.appendChild(container);
+    return container;
+  }
+
+  it.each([
+    { w: 400, h: 820, label: "tall phone" },
+    { w: 390, h: 900, label: "taller phone" },
+    { w: 768, h: 1024, label: "portrait tablet" },
+  ])("$label ($w x $h): the shell covers the viewport and paints it", async ({ w, h }) => {
+    const el = await mountedAsTheAppDoes(w, h);
+    renderMatch(el, "1v1");
+    await waitForArt(el);
+
+    const shell = el.getBoundingClientRect();
+    expect(shell.height, "nothing of the window is left to the canvas underneath").toBeGreaterThanOrEqual(h - 1);
+
+    const background = getComputedStyle(el).backgroundColor;
+    expect(background, "a transparent shell IS the white band — the canvas shows through it").not.toBe("rgba(0, 0, 0, 0)");
+    expect(background).not.toBe("transparent");
+  });
+
+  it("inline mode is left alone — filling the viewport there would fight the host's own resize", async () => {
+    // Inline, the widget MEASURES itself and the host grants that height
+    // (loader.ts's resize path). A shell that always claimed the viewport
+    // would report a height it did not need, and the iframe could never
+    // shrink back — a one-way ratchet on somebody else's page.
+    await page.viewport(400, 820);
+    container = document.createElement("div");
+    container.style.width = "400px";
+    document.body.appendChild(container);
+    renderMatch(container, "1v1");
+    await waitForArt(container);
+
+    expect(container.getBoundingClientRect().height, "inline height still comes from the content").toBeLessThan(820);
+  });
+});
+
+/**
+ * A desktop window spends its height on the CARDS, not on chrome.
+ *
+ * The cap above stops the felt outgrowing the window; this stops the window
+ * being wasted. Reported from real play: "la calidad de la imagen de las
+ * cartas es pobre... se podrían ajustar mejor al tamaño disponible". Measured,
+ * the cards were not low-resolution at all — the deck art is 322x520 and was
+ * being drawn into a 94x144 box, a 3.6x DOWNSCALE. They were simply small,
+ * and the reason was the felt's fixed overhead: at 1550x837 it spent 304px of
+ * an 837px window on bands, gaps and padding before a single card was placed.
+ *
+ * THE CEILING IS THE ARTWORK, and that is the other half of this fence. The
+ * committed deck is 520px tall (`tools/process-svg-deck.mjs`'s own
+ * `-resize x520`, chosen as "roughly 2x the largest on-screen use"). A card
+ * drawn taller than 260 CSS px would upscale on a 2x display — trading the
+ * blur the player reported for a worse one. 170px of WIDTH is that same
+ * bound expressed on the axis the token actually carries
+ * (170 * 336/220 = 260). Past it, the assets have to be re-exported before
+ * the layout may grow, and this assertion is what makes that a decision
+ * rather than a regression.
+ */
+describe("a desktop window spends its height on the cards", () => {
+  /** What the reported window must now afford. Measured at 94.3px before any
+   * of this: the felt's own bands and padding, not the artwork, were what
+   * kept the cards small. */
+  const DESKTOP_CARD_FLOOR = 108;
+
+  /** 520px of artwork / (336/220) / 2 for a HiDPI display. Growing past this
+   * upscales the deck — see the block comment above. */
+  const ARTWORK_CEILING = 170;
+
+  /** Deliberately the player's OWN hand and not any card: the opponents'
+   * face-down backs are sized separately (they carry no information and pay
+   * for that with height), so measuring "a card" would measure whichever one
+   * the DOM happened to put first. */
+  function cardInOwnHand(el: HTMLElement): HTMLElement {
+    const card = el.querySelector<HTMLElement>(".hexdev-truco-hand .hexdev-truco-card");
+    if (card === null) throw new Error("fence setup: the player's own hand did not render");
+    return card;
+  }
+
+  it("the reported 1550x837 window renders cards the player can actually read", async () => {
+    const el = await mountedFullscreen(1550, 837);
+    renderMatch(el, "1v1");
+    await waitForArt(el);
+
+    // The PLAYER'S OWN card, measured as rendered. A custom property computes
+    // to its token stream and not to a length, so reading --truco-card-width
+    // here hands back the literal "min(...)" and parses as NaN — which fails
+    // every comparison for a reason that has nothing to do with the layout.
+    const card = cardInOwnHand(el);
+    expect(card.getBoundingClientRect().width, "card width at the window the report came from").toBeGreaterThanOrEqual(DESKTOP_CARD_FLOOR);
+  });
+
+  it.each(WINDOWS)("$w x $h: never grows past what the artwork can draw", async ({ w, h }) => {
+    const el = await mountedFullscreen(w, h);
+    renderMatch(el, "1v1");
+    await waitForArt(el);
+
+    expect(cardInOwnHand(el).getBoundingClientRect().width, `card width at ${String(w)}x${String(h)} vs the deck's own resolution`).toBeLessThanOrEqual(
+      ARTWORK_CEILING,
+    );
+  });
+});
+
+describe("INLINE mode is untouched — the cap must never reach the path every other fence measures", () => {
+  it.each(["1v1", "2v2"] as const)("%s: a short window does not change the inline card size", async (seats) => {
+    // Same short window that forces the cap in fullscreen, but mounted the
+    // way the rest of this package mounts: a plain block in normal flow,
+    // with no layout-mode attribute at all.
+    await page.viewport(1550, 837);
+    container = document.createElement("div");
+    container.style.width = "1280px";
+    document.body.appendChild(container);
+    renderMatch(container, seats);
+    await waitForArt(container);
+
+    const felt = container.querySelector(".hexdev-truco-table");
+    if (felt === null) throw new Error("fence setup: felt not rendered");
+    const cardWidth = getComputedStyle(felt).getPropertyValue("--truco-card-width").trim();
+    const expected = seats === "1v1" ? "108px" : "100px";
+    expect(cardWidth, `inline ${seats} card width at the 1280px tier must be the tier's own value`).toBe(expected);
+  });
+});
+
+/**
+ * THE EMBEDDED SHAPE, which every fence above was missing.
+ *
+ * `mountedFullscreen` gives its container `position: fixed; inset: 0`, and a
+ * fixed box with inset 0 takes its height from the viewport in a way that made
+ * the felt fill by itself. A widget embedded in someone's page is not that: it
+ * is a RELATIVE box the host has given a height to, and there the same shell
+ * left 79px of empty cloth under the table -- 568px of screen holding a 489px
+ * felt. Measured in a live browser, in the running widget, while all of the
+ * fullscreen fences above were green.
+ *
+ * The difference is one line of CSS and it was never asserted, because no
+ * harness in this repo built a shell the way a host builds one.
+ */
+describe.each([
+  { w: 320, h: 568, label: "iPhone SE" },
+  { w: 360, h: 640, label: "short Android" },
+  { w: 375, h: 667, label: "iPhone 8" },
+  { w: 414, h: 736, label: "iPhone Plus" },
+] as const)("the embedded table fills the box its host gave it — $label ($w x $h)", ({ w, h }) => {
+  it.each(["1v1", "2v2"] as const)("%s: no empty cloth under the table", async (seats) => {
+    await page.viewport(w, h);
+    document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
+    container = document.createElement("div");
+    // NO height, and no fixed positioning -- and getting that right is the
+    // whole reason this fence exists twice over.
+    //
+    // In the running widget the shell is sized by `min-height: 100dvh` and its
+    // `height` stays INDEFINITE. That is what breaks the layout inside it: a
+    // percentage height cannot resolve against an indefinite one, so the
+    // layout falls back to its own content and leaves the rest of the screen
+    // empty. Measured live at 305x568: a 568px shell holding a 489px table.
+    //
+    // Two earlier versions of this fence handed the container a definite
+    // height -- once via `position: fixed; inset: 0`, once via an explicit
+    // `height` -- and both made the percentage resolve, filled the shell by
+    // construction, and passed at every size while the defect was on screen.
+    // The bug lives in the indefinite case, so the fence has to live there.
+    document.body.style.margin = "0";
+    document.body.appendChild(container);
+    renderMatch(container, seats);
+    await waitForArt(container);
+
+    const felt = container.querySelector(".hexdev-truco-table");
+    if (felt === null) throw new Error("fence setup: felt not rendered");
+
+    const shortfall = container.getBoundingClientRect().height - felt.getBoundingClientRect().height;
+    expect(shortfall, `${seats} leaves ${String(Math.round(shortfall))}px of empty cloth under the table`).toBeLessThanOrEqual(1);
   });
 });

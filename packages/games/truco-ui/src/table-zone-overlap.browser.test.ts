@@ -745,6 +745,55 @@ describe.each(WIDTHS)("the turn ring does not paint onto the action bar — %ipx
   });
 });
 
+/**
+ * THE SEAT'S NAME IS NOT UNDER ITS RING.
+ *
+ * Reported from a phone, looking at it: "las pils de Rival y Compañero deben
+ * estar arriba del contenedor amarillo de las cartas."
+ *
+ * The turn ring is an OUTLINE plus a halo, and both paint OUTSIDE the box they
+ * belong to -- 13px past it, and layout knows about none of it. The same
+ * mechanism was already fixed once BELOW the player's own hand, where the ring
+ * was drawing over the action bar; nothing ever reserved the matching room
+ * ABOVE a seat's cards, where the relation label sits 6px away in the anchor's
+ * flex column. 13 against 6 leaves 7px of gold straight through the word.
+ *
+ * Only the anchor whose turn it is can show this, which is why the fixture
+ * deals with the mano on seat 1 rather than reusing the viewer-turn ones.
+ */
+describe.each([375, 700] as const)("the turn ring does not paint onto a seat's own label — %ipx", (width) => {
+  function opponentOnTurn2v2(): MatchState {
+    const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+    // dealerSeat 0 puts the mano on seat 1 -- an opponent -- so the ring is on
+    // a seat that HAS a relation label. The viewer's own hand has none.
+    return startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2_MAXIMAL);
+  }
+
+  it("2v2: the ring around a rival's cards clears the RIVAL chip above them", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    const state = opponentOnTurn2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    settleDeal(el);
+    await waitForArt(el);
+
+    const active = el.querySelector(".hexdev-truco-anchor--active");
+    if (active === null) throw new Error("test setup: no active anchor — is it really a rival's turn?");
+    const hand = active.querySelector(".hexdev-truco-opponent-hand");
+    const label = active.querySelector(".hexdev-truco-relation-label");
+    if (hand === null || label === null) throw new Error("test setup: the active anchor has no opponent hand or no relation label");
+
+    const reach = ringReachOf(hand);
+    expect(reach, "fence setup: the ring paints nothing outside the hand, so this cannot detect anything").toBeGreaterThan(0);
+
+    // The ring's TOP painted edge, which is above the box layout reports.
+    const painted = hand.getBoundingClientRect().top - reach;
+    const chip = label.getBoundingClientRect();
+
+    expect(painted, `the ring's top edge is at ${painted.toFixed(1)}px, the chip ends at ${chip.bottom.toFixed(1)}px`).toBeGreaterThanOrEqual(chip.bottom - 0.5);
+  });
+});
+
 describe.each([375, 700] as const)("the drawer handle sits beside the play, not on it — %ipx", (width) => {
   // Seen in a mobile screenshot: the vertical tab overlapped the right
   // rival's card backs. It is a small sliver of a handle, but a handle drawn
@@ -870,5 +919,132 @@ describe.each([960, 1280] as const)("the calls and the score share one rail — 
 describe.each(PARTNER_ROW_EXTRA_WIDTHS)("the partner's hand stays one row at the widths outside this suite's shared list — %ipx", (width) => {
   it("2v2: all three of the partner's card backs sit on one row", async () => {
     await expectPartnerBacksOnOneRow(width);
+  });
+});
+
+/**
+ * THE DECK NEVER COVERS THE COUNTDOWN.
+ *
+ * Reported with a screenshot: "mira lo que pasa con el mazo y el contenedor
+ * amarillo de las cartas... debería de estar el mazo bajo el contenedor para
+ * que no tape el conteo."
+ *
+ * Both marks hang in the same strip above the player's hand -- the badge
+ * centred on it, the deck pinned to its right edge -- and neither is in flow,
+ * so nothing keeps them apart. They only meet when the badge's text is long
+ * enough to reach the right edge, which is exactly when it matters most: "TU
+ * TURNO DE RESPONDER 0:58" is the longest string it ever holds AND the one
+ * carrying a clock.
+ *
+ * ASSERTED BY HIT-TESTING, not by z-index or by rectangles. A rectangle test
+ * cannot tell which of two overlapping boxes the player actually SEES, and a
+ * z-index test asserts the mechanism instead of the outcome -- both would have
+ * passed while the deck sat over the digits. elementFromPoint answers the only
+ * question that matters: at that pixel, what is on top?
+ *
+ * Not "they never overlap": the strip is one deck-height tall and the two are
+ * genuinely sharing it. What is settled is the ORDER -- a decorative marker
+ * yields to a running clock.
+ */
+/**
+ * The viewer DEALS and owes an ANSWER.
+ *
+ * dealerSeat 0 puts the deck on the viewer and the mano on seat 1, who opens
+ * the truco -- so the badge reads "TU TURNO DE RESPONDER" rather than the far
+ * shorter "TU TURNO". That difference is the whole fence: the two marks only
+ * meet when the badge is long enough to reach the right edge the deck is
+ * pinned to, and a first version of this used a plain turn state, found no
+ * overlap, and passed by doing nothing at all.
+ */
+function selfDealsAndOwesAnAnswer2v2(): MatchState {
+  const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+  const dealt = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2_MAXIMAL);
+  return dispatch(dealt, { type: "call-truco", playerId: OPPONENT, level: "truco" });
+}
+
+describe.each([320, 375] as const)("the deck marker yields to the turn countdown — %ipx", (width) => {
+  it("2v2: where the deck and the badge meet, it is the badge the player sees", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    // The viewer's own turn, and the viewer DEALS -- the only combination that
+    // puts a deck and a turn badge on the same seat at the same moment. Built
+    // here rather than reused: every existing fixture has the deck somewhere
+    // else, which is why a first version of this fence threw on setup instead
+    // of measuring anything.
+    const state = selfDealsAndOwesAnAnswer2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, Date.now() + 60_000);
+    settleDeal(el);
+    await waitForArt(el);
+
+    const badge = el.querySelector<HTMLElement>(".hexdev-truco-turn-badge");
+    const deck = el.querySelector<HTMLElement>(".hexdev-truco-anchor--active .hexdev-truco-deck");
+    if (badge === null || deck === null) throw new Error("test setup: this state must show both a turn badge and the viewer's own deck");
+
+    const b = badge.getBoundingClientRect();
+    const d = deck.getBoundingClientRect();
+    const dx = Math.min(b.right, d.right) - Math.max(b.left, d.left);
+    const dy = Math.min(b.bottom, d.bottom) - Math.max(b.top, d.top);
+    // ASSERTED, never skipped. An early return here is what let the first
+    // version of this fence pass while the deck sat squarely on the digits:
+    // it used a state whose badge was too short to reach the deck, found no
+    // overlap, and quietly measured nothing. If these two ever stop meeting
+    // this line fails and asks for the fence to be re-aimed on purpose.
+    expect(Math.min(dx, dy), "fence setup: the badge and the deck must actually meet, or this asserts nothing").toBeGreaterThan(1);
+
+    // The centre of the overlap: if the badge is on top anywhere, it is here.
+    const x = Math.max(b.left, d.left) + dx / 2;
+    const y = Math.max(b.top, d.top) + dy / 2;
+    const hit = el.ownerDocument.elementFromPoint(x, y);
+    const onTop = hit === badge || badge.contains(hit);
+
+    expect(onTop, `at the overlap the player sees ${hit?.className ?? "nothing"}, not the countdown`).toBe(true);
+  });
+});
+
+/**
+ * THE WAY OUT IS NOT DRAWN ON THE PARTNER'S CARDS.
+ *
+ * The door lives in the felt's top-right corner, chosen because no tier's
+ * layout uses it. That held down to 320px and stopped holding below: measured
+ * at 300px, the partner's third card back runs 8px under the button, and 6px
+ * at 305 -- which is what a 320px phone really gives a widget once the page
+ * has a scrollbar.
+ *
+ * The top anchor is the one seat laid out ACROSS, so it is the only one whose
+ * row grows toward both corners as the felt narrows. Everything else on this
+ * table is a column against an edge.
+ *
+ * 300 and 305 are in the sweep on purpose. Every other width here was already
+ * clean, and a fence that only samples the tiers this repo names would have
+ * missed this entirely -- the same way the 570px case had to be added to
+ * action-bar-fit after a bug was reported at a width no tier boundary knows
+ * about.
+ */
+describe("the door in the corner never lands on a card", () => {
+  it.each([300, 305, 320, 360, 375, 414, 570, 640] as const)("%ipx: nothing in a seat's hand runs under .hexdev-truco-leave", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    // FRESHLY DEALT, three cards in every hand. That is the state that reaches
+    // the corner, and a first version of this fence reused the after-trick-1
+    // fixture, found a partner already down to two cards, and passed at every
+    // width while the defect was live at 300 and 305.
+    const state = freshlyDealt2v2();
+    // The SIXTH argument is what mounts the door at all; without it this fence
+    // would pass by measuring nothing.
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, null, () => {});
+    settleDeal(el);
+    await waitForArt(el);
+
+    const leave = el.querySelector<HTMLElement>(".hexdev-truco-leave");
+    if (leave === null) throw new Error("test setup: no leave control rendered");
+    const l = leave.getBoundingClientRect();
+    expect(l.width, "fence setup: the door has no box, so this cannot detect anything").toBeGreaterThan(0);
+
+    for (const card of el.querySelectorAll<HTMLElement>(".hexdev-truco-card, .hexdev-truco-deck")) {
+      const r = card.getBoundingClientRect();
+      if (r.width === 0) continue;
+      const seat = card.closest("[data-position]")?.getAttribute("data-position") ?? "?";
+      expect(overlaps(l, r), `the door covers a card at the ${seat} seat, ${String(Math.round(Math.min(l.right, r.right) - Math.max(l.left, r.left)))}px of it`).toBe(false);
+    }
   });
 });
