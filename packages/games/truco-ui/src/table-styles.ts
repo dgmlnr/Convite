@@ -2184,6 +2184,31 @@ export function buildTableStylesheet(): string {
  * collapse to zero when there is none, so a group still centres whenever it
  * fits and starts at its scroll origin the moment it does not. */
 .hexdev-truco-calls-group { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; justify-content: flex-start; min-height: 40px; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--hx-scroll-thumb) transparent; }
+/* THE ESCALATION LADDER, FOLDED.
+ *
+ * A POPOVER ABOVE THE BAND, never more buttons inside it. Unfolded in place it
+ * would need room the band has never had -- 184px of owed answer plus 383px of
+ * ladder in the 296 a 320px band gets -- so it floats over the felt, wraps onto
+ * as many lines as it needs, and leaves the answer underneath reachable the
+ * whole time. Same lane, same anchor and same argument as
+ * .hexdev-truco-senas-row, the picker this table already opens this way.
+ *
+ * position: absolute is also what keeps the FOLDED group honest: out of flow,
+ * the ladder contributes nothing to the group width, so the band measures one
+ * "Subir" and not four buttons pretending to be one. */
+.hexdev-truco-calls-ladder {
+  position: absolute;
+  left: var(--hx-felt-pad);
+  right: var(--hx-felt-pad);
+  bottom: calc(var(--hx-felt-pad-block) + var(--hx-band-action-total) + var(--hx-felt-gap));
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.hexdev-truco-calls-group[data-open="false"] .hexdev-truco-calls-ladder { display: none; }
+
 /* THE OWED ANSWER IS SERVED FIRST, at every width.
  *
  * A flex item's default is to shrink in proportion to its own base size, which
@@ -3289,6 +3314,33 @@ export function buildTableStylesheet(): string {
  * freed against 4px given back. */
 :root[data-hexdev-layout="fullscreen"] .hexdev-truco-table[data-seat-count="4"] {
   --hx-fit-residual: 38px;
+}
+
+/* WIDE ENOUGH TO SHOW THE WHOLE LADDER, so it is shown.
+ *
+ * Measured: the fold buys nothing from 900px up -- the band seats the answer
+ * and all three raises with room over -- and a player who can see every option
+ * at once should not have to tap to find one. So here the ladder unfolds back
+ * into the group in flow and the toggle goes.
+ *
+ * Decided in CSS and not in calls.ts because it is a question about the box's
+ * width, and this package has never measured its own box: an embedded widget's
+ * available width is its CONTAINER's, which is why every tier switch in this
+ * file is a container query (see .hexdev-truco-table-shell's own note).
+ *
+ * The selectors carry [data-open] deliberately: the folded rule above is
+ * attribute-plus-class, so a bare class here would lose the cascade to it and
+ * the ladder would stay hidden at every width. Matched specificity, and the
+ * ladder ignores the open state entirely up here -- there is no toggle left to
+ * change it. */
+@container hexdev-truco-shell (min-width: 900px) {
+  .hexdev-truco-calls-group[data-open] .hexdev-truco-escalate-toggle { display: none; }
+  .hexdev-truco-calls-group[data-open] .hexdev-truco-calls-ladder {
+    position: static;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
 }
 
 /* A PORTRAIT PHONE NEEDS A BIGGER RESIDUAL, and finding that out is what the

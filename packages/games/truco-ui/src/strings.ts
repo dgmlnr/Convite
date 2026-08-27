@@ -110,6 +110,12 @@ export const TABLE_STRINGS = {
      Sin el prefijo "Consultar:": estos botones viven DENTRO del panel de
      seña/consulta, que ya dice que son consultas, y el prefijo costaba unos
      90px por boton en la pantalla que menos los tiene. */
+  /* THE FOLD. "Subir" is what a player says at a table -- the three ways to
+   * raise an envido are one branch of "quiero, no quiero, o subo?", not three
+   * peers of the first two. Deliberately not "Más" or "Otras": a neutral word
+   * would fit any group, and this one is only ever put on a group that really
+   * does escalate the call being answered. */
+  escalateToggle: "Subir",
   consultAboutTruco: "¿Quiero el truco?",
   consultAboutEnvido: "¿Quiero el envido?",
   consultAboutOpeningEnvido: "¿Canto envido?",

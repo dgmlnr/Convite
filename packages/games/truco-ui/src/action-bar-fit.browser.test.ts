@@ -542,22 +542,63 @@ describe("the band belongs to the calls, and the partner's answer stays visible"
     expect(toggle.closest(".hexdev-truco-action-bar"), "the toggle must be off the band").toBeNull();
   });
 
-  it("320px: with the band to itself, the escalation ladder is a button and not a sliver", async () => {
+  /* FROM THE ENGINE'S OWN ACTION LIST, which is the whole point of putting
+   * this here instead of beside the unit tests in calls.browser.test.ts.
+   *
+   * Those hand `renderCalls` a clean array of calls. A real table hands it
+   * play-card, send-sena and consult-partner as well, and the first version of
+   * the fold asked whether EVERY opening escalated the owed chain -- against
+   * that unfiltered list, which it never did. The unit fence passed on its
+   * tidy array while the ladder never folded once on a real table. */
+  it("320px: the ladder really folds, on the action list a real table hands it", async () => {
     const el = mountedContainer(320);
     const render = createMatchTableRenderer();
     const state = envidoAnswerState();
     render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
     await waitForArt(el);
 
-    const opening = el.querySelector<HTMLElement>(".hexdev-truco-calls-group--opening");
-    if (opening === null) throw new Error("fence setup: the escalated state offers no opening group");
+    const toggle = el.querySelector<HTMLButtonElement>('button[data-action="escalate-toggle"]');
+    if (toggle === null) throw new Error("the escalated envido did not fold");
 
-    // Measured, not wished for: 320px cannot fit 184px of owed answer plus
-    // 383px of ladder however the pixels are arranged, so this group scrolls
-    // and always will. What it may not do is be invisible. 90px is most of
-    // "Envido envido" (134px) -- enough to read the call and to see there is
-    // more of it off the edge. It was 16px.
-    expect(opening.clientWidth, "the escalation ladder's painted width at 320px").toBeGreaterThanOrEqual(90);
+    // The band shows the answer and one way to raise, and fits.
+    const row = el.querySelector<HTMLElement>(".hexdev-truco-calls-row");
+    if (row === null) throw new Error("fence setup: no calls row");
+    expect(row.scrollWidth, "the folded band's content against its width").toBeLessThanOrEqual(row.clientWidth + 1);
+
+    // And the ladder, once open, is off the band entirely -- out of flow, so
+    // the group it belongs to never grows to hold it.
+    toggle.click();
+    const ladder = el.querySelector<HTMLElement>(".hexdev-truco-calls-ladder");
+    if (ladder === null) throw new Error("fence setup: no ladder");
+    expect(getComputedStyle(ladder).position, "the open ladder floats, never widens the band").toBe("absolute");
+    expect(row.scrollWidth, "the band's content with the ladder open").toBeLessThanOrEqual(row.clientWidth + 1);
+    // Every raise readable at once, nothing scrolled away.
+    expect(ladder.scrollWidth, "the open ladder clipping its own calls").toBeLessThanOrEqual(ladder.clientWidth + 1);
+  });
+
+  /* SUPERSEDED, AND THE STRONGER CLAIM PUT IN ITS PLACE.
+   *
+   * This asked for at least 90px of the escalation group at 320 -- most of
+   * "Envido envido" -- because the honest arithmetic then was that 184px of
+   * owed answer plus 383px of ladder cannot share a 296px band, so the ladder
+   * would always scroll and the only question was whether a player could see
+   * enough of it to know it was there.
+   *
+   * Folding the ladder behind one button changed the arithmetic rather than
+   * the pixels, so the group is now 73px of "Subir" and the old bar would fail
+   * on a strictly better table. What replaces it is what could never be
+   * asserted before: at 320px, with the whole escalated envido on screen,
+   * NOTHING in this row clips at all. */
+  it("320px: the fully escalated envido fits the band, with nothing scrolled away", async () => {
+    const el = mountedContainer(320);
+    const render = createMatchTableRenderer();
+    const state = envidoAnswerState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    for (const group of el.querySelectorAll<HTMLElement>(".hexdev-truco-calls-group")) {
+      expect(group.scrollWidth, `${group.className} clipped at 320px`).toBeLessThanOrEqual(group.clientWidth + 1);
+    }
   });
 
   it("the partner's answer is readable with the drawer shut", async () => {
