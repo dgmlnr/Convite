@@ -445,3 +445,95 @@ describe("2v2 action band: the strips stack only where the bar cannot seat them"
     expect(verticallyDisjoint, "below the ultra tier the two strips keep their own rows").toBe(true);
   });
 });
+
+/**
+ * THE BAND'S WIDTH BUDGET, on the screen that has the least of it.
+ *
+ * Measured across twelve widths in the two worst states the game can reach.
+ * At 320px the band has 304px to give and the Seña/Consulta toggle was taking
+ * 162 of them -- 53%, more than every call button put together -- and never
+ * yielded a pixel of it at any width, from 320 to 1440.
+ *
+ * What that did was worse than a tight fit. With a rival's envido escalated,
+ * the two groups split what was left in proportion to what each wanted:
+ *
+ *     respuesta (Quiero / No quiero) .... 40px of the 184 it needs
+ *     escalada  (Envido envido / ...) ... 82px of the 383 it needs
+ *
+ * The group the player MUST answer got half the room of the group they merely
+ * MAY use. Forty pixels of "Quiero" while a turn clock runs.
+ *
+ * So: the toggle keeps its glyph and its count on the compact tier and lets
+ * its words go visually-hidden, and the response group is served its natural
+ * width before the opening group gets any. Both fences below are about that
+ * one budget, from its two ends.
+ */
+describe("the band's width budget on the smallest screen", () => {
+  /** 320px: the narrowest phone still in real use, and the sweep's worst case. */
+  const NARROWEST = 320;
+
+  it("the Seña/Consulta toggle stops eating half the band, and keeps its name while it shrinks", async () => {
+    const el = mountedContainer(NARROWEST);
+    const render = createMatchTableRenderer();
+    const state = pendingTrucoState("2v2");
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const toggle = el.querySelector<HTMLElement>(".hexdev-truco-senas-toggle");
+    if (toggle === null) throw new Error("fence setup: no señas toggle in a state that offers señas");
+
+    const bar = el.querySelector<HTMLElement>(".hexdev-truco-action-bar");
+    if (bar === null) throw new Error("fence setup: action bar not rendered");
+
+    // A fraction, not a pixel count: the point is not "small", it is "no
+    // longer the biggest thing on the band". A third is generous -- it was
+    // taking 53% -- and it survives a font the player scaled up.
+    const share = toggle.getBoundingClientRect().width / bar.clientWidth;
+    expect(share, "the toggle's share of a 320px band").toBeLessThan(1 / 3);
+
+    // AND IT STILL SAYS WHAT IT IS. Hiding the words visually is a layout
+    // decision; hiding them from a screen reader would be a different and
+    // much worse one. `display: none` and `visibility: hidden` both drop text
+    // out of the accessible name -- the visually-hidden clip does not, which
+    // is the entire reason this uses it.
+    expect(toggle.textContent ?? "", "the toggle's accessible name at 320px").toContain("Seña/Consulta");
+
+    // AND SOMETHING IS PAINTED WHERE THE WORDS WERE. Asserted here rather than
+    // left to a baseline image, because the visual suite shoots `feltOf()` --
+    // the felt, not the band -- so no screenshot in this repo covers this
+    // glyph. A width-only change inside the band moves no baseline at all; the
+    // band's HEIGHT moves them, through the felt's share of the shell.
+    const icon = toggle.querySelector<SVGSVGElement>(".hexdev-truco-senas-icon");
+    if (icon === null) throw new Error("the words are hidden and no glyph replaced them");
+    expect(icon.getBoundingClientRect().width, "the glyph's painted width").toBeGreaterThan(12);
+    // Decorative, and marked so: the name comes from the words beside it.
+    expect(icon.getAttribute("aria-hidden"), "the glyph must not join the accessible name").toBe("true");
+  });
+
+  /* EVERY width the sweep covers, not just the narrowest.
+   *
+   * A first version of the fix scoped "answer first" to the compact tier, and
+   * a first version of THIS fence only checked 320 -- so it passed while 640
+   * and 768 still clipped the answer by 52 and 11 pixels. The rule is about
+   * which group matters, not about how wide the screen is, and the fence has
+   * to be able to say that. */
+  const SWEPT = [320, 360, 375, 390, 414, 570, 640, 768, 900, 1024, 1280, 1440] as const;
+
+  it.each(SWEPT)("%ipx: the group the player owes an answer to is served before the one they may skip", async (width) => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    // A rival opened the envido: SELF owes quiero / no quiero, and MAY answer
+    // with envido envido, real envido or falta envido. Two groups, one owed.
+    const state = envidoAnswerState();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+    await waitForArt(el);
+
+    const response = el.querySelector<HTMLElement>(".hexdev-truco-calls-group--response");
+    if (response === null) throw new Error("fence setup: the escalated state offers no response group");
+
+    // The answer pair fits WHOLE. The escalation ladder is still free to
+    // scroll -- three long calls will not fit a 320px phone whatever we do,
+    // and that group is the one the scroller was built for.
+    expect(response.scrollWidth, `the owed answer clipped at ${String(width)}px`).toBeLessThanOrEqual(response.clientWidth + 1);
+  });
+});

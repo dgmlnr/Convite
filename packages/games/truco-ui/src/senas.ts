@@ -20,6 +20,61 @@ export interface SenaQuota {
 }
 
 /**
+ * THE EYE.
+ *
+ * A seña is something you show across the table and your partner reads off
+ * your face, so the glyph is the reading rather than the making of it -- a
+ * gesture drawn at 24px is a smudge, an eye is unmistakable.
+ *
+ * Decorative and marked so, following `leave-control.ts`'s door: the meaning
+ * for a sighted player at a glance, and nothing at all for the accessible
+ * name, which comes from the words beside it. Below 640px those words are
+ * clipped out of sight -- which is precisely when a decorative icon must NOT
+ * be the only thing carrying the button.
+ */
+function senaIcon(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.classList.add("hexdev-truco-senas-icon");
+  for (const d of [
+    "M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z", // the eye
+    "M12 9.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2z", // the pupil
+  ]) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+  }
+  return svg;
+}
+
+/** The half the compact tier clips out of sight but never out of the name. */
+function words(): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = "hexdev-truco-senas-toggle-words";
+  span.textContent = TABLE_STRINGS.senasToggleWords;
+  return span;
+}
+
+/**
+ * The half that stays painted at every width. A number is the one thing the
+ * glyph genuinely cannot say, and "how many señas do I have left" is a rule
+ * the player is entitled to read without opening anything.
+ */
+function count(remaining: number): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = "hexdev-truco-senas-toggle-count";
+  span.textContent = TABLE_STRINGS.senasToggleCount(remaining);
+  return span;
+}
+
+/**
  * The señas affordance (spec: "discoverable without being noisy"). Renders
  * NOTHING at all when no `send-sena` action is legal AND the quota is still
  * whole — the same convention `renderCalls` already applies for a
@@ -123,7 +178,10 @@ export function renderSenaPicker(
     return;
   }
 
-  toggle.textContent = TABLE_STRINGS.senasToggle(quota.remaining);
+  // GLYPH, WORDS, COUNT -- three nodes, because the compact tier paints only
+  // two of them. `textContent` still flattens to "Seña/Consulta (3)" byte for
+  // byte, at every width: the words are clipped from sight, never removed.
+  toggle.append(senaIcon(), words(), count(quota.remaining));
   // Present from the first render, never merely added on open: a control
   // that owns a revealable region always announces its state. It is also
   // the hook table-styles.ts selects on to give the open toggle its own

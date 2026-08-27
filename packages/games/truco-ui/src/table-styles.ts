@@ -1876,6 +1876,42 @@ export function buildTableStylesheet(): string {
     white-space: nowrap;
     border: 0;
   }
+  /* THE BAND'S WIDTH BUDGET, on the screen with the least of it.
+   *
+   * Measured at 320px, where the band has 304px to hand out:
+   *
+   *     Seña/Consulta (3) ..... 162px   53% of the band
+   *     every call button ..... 130px   all of them, together
+   *
+   * And it never yielded a pixel of that at any width from 320 to 1440. What
+   * it did to a rival's escalated envido was worse than a tight fit -- the two
+   * groups split what was left in proportion to what each WANTED, so the group
+   * the player owes an answer to came out behind the one they may skip:
+   *
+   *     respuesta (Quiero / No quiero) ..... 40px of the 184 it needs
+   *     escalada  (Envido envido / ...) .... 82px of the 383 it needs
+   *
+   * Forty pixels of "Quiero" with a turn clock running.
+   *
+   * So below 640px the words go, the glyph and the count stay, and the ~114px
+   * that frees goes to the calls. Same treatment and same reason as
+   * .hexdev-truco-score-label directly above: the clip, NEVER display: none or
+   * visibility: hidden, both of which would take "Seña/Consulta" out of the
+   * accessible name and leave a screen-reader user with a button called "(3)". */
+  .hexdev-truco-senas-toggle-words {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* The glyph is alone now, so the button stops being a label with padding and
+   * becomes a round target the size of the other 40px controls. */
+  .hexdev-truco-senas-toggle { gap: 4px; padding: 6px 12px; }
   /* The only text left standing in this row, so it gets the pin the two
    * sibling boxes carry: 1.2 matches their choice exactly (never
    * var(--hx-leading), which is the chrome's 1.35 body-copy rhythm), and
@@ -2173,6 +2209,28 @@ export function buildTableStylesheet(): string {
  * collapse to zero when there is none, so a group still centres whenever it
  * fits and starts at its scroll origin the moment it does not. */
 .hexdev-truco-calls-group { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; justify-content: flex-start; min-height: 40px; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--hx-scroll-thumb) transparent; }
+/* THE OWED ANSWER IS SERVED FIRST, at every width.
+ *
+ * A flex item's default is to shrink in proportion to its own base size, which
+ * is exactly backwards for these two: it hands the most room to the group that
+ * WANTS the most, and the group that wants the most is the optional one.
+ * Measured at 320px with a rival's envido escalated, before this rule:
+ *
+ *     respuesta (Quiero / No quiero) ..... 40px of the 184 it needs
+ *     escalada  (Envido envido / ...) .... 82px of the 383 it needs
+ *
+ * Forty pixels of "Quiero" with a turn clock running. Refusing to shrink is
+ * the whole rule -- the escalation ladder beside it keeps the default and
+ * absorbs all of the squeeze into the horizontal scroller it already owns and
+ * was built for.
+ *
+ * NOT scoped to a tier, because "answer first" is not a size question. A first
+ * version put it in the compact block only and the sweep caught the rest:
+ * 640px and 768px still clipped the answer by 52 and 11 pixels.
+ *
+ * Capped at two buttons by the engine (quiero / no quiero), so this can never
+ * become a group that refuses to shrink AND cannot fit. */
+.hexdev-truco-calls-group--response { flex-shrink: 0; }
 .hexdev-truco-calls-group > :first-child { margin-inline-start: auto; }
 .hexdev-truco-calls-group > :last-child { margin-inline-end: auto; }
 /* A CALL BUTTON KEEPS ITS OWN WIDTH. The band is a horizontal scroller by
@@ -2586,6 +2644,13 @@ export function buildTableStylesheet(): string {
  * transparent on that same lane since it existed, which is the direct evidence
  * that this is a solved problem here, not a re-opened one. */
 .hexdev-truco-senas-toggle {
+  /* A ROW OF THREE: glyph, words, count. Inline-flex rather than plain inline
+   * text because the glyph has to sit on the words' optical centre, and a
+   * baseline-aligned SVG sits on their baseline instead -- half a glyph below
+   * where the eye expects it. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-height: 40px;
   padding: 6px 16px;
   border: 2px solid var(--hx-felt-outline);
@@ -2603,6 +2668,10 @@ export function buildTableStylesheet(): string {
   cursor: pointer;
 }
 .hexdev-truco-senas-toggle:hover:not(:disabled), .hexdev-truco-senas-toggle:focus-visible { filter: brightness(1.15); }
+/* flex: 0 0 auto -- the glyph is the half that survives the compact tier, so
+ * it is the one thing on this button that must never be squeezed. */
+.hexdev-truco-senas-icon { flex: 0 0 auto; width: 20px; height: 20px; }
+.hexdev-truco-senas-toggle-count { flex: 0 0 auto; }
 /* THE SPENT STATE (per-hand cap, truco-engine's MAX_SENAS_PER_HAND). The
  * control stays on the band, disabled, rather than disappearing the moment a
  * player spends their last seña -- a button that vanishes mid-hand reads as a

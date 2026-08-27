@@ -82,7 +82,25 @@ export const TABLE_STRINGS = {
    * button now, carrying the count that is unambiguously its own, and the two
    * ways to spend it live inside it — "un solo boton que ponga
    * 'Seña/Consulta' y al darle click muestre ambos botones". */
-  senasToggle: (remaining: number): string => `Seña/Consulta (${remaining})`,
+  /* SPLIT IN TWO because the compact tier paints only one of the halves.
+   *
+   * Measured at 320px: this toggle was taking 162 of the band's 304 available
+   * pixels -- 53%, more than every call button put together -- and it never
+   * yielded any of them at any width from 320 to 1440. The group a player OWED
+   * an answer to was getting 40px of the 184 it needed while this one held its
+   * full width. So below 640px the words go visually-hidden and the glyph
+   * carries the meaning; the count stays painted, because a number is the one
+   * thing an icon genuinely cannot say.
+   *
+   * The words never leave the DOM -- the accessible name is still
+   * "Seña/Consulta (3)" at every width -- which is exactly why the compact
+   * rule uses the clip and not `display: none`. */
+  senasToggleWords: "Seña/Consulta",
+  /* The leading space belongs to the count, not to a separator between two
+   * appended nodes: it is what keeps the flattened accessible name reading
+   * "Seña/Consulta (3)" instead of "Seña/Consulta(3)" once the words are
+   * clipped out of sight but not out of the name. */
+  senasToggleCount: (remaining: number): string => ` (${remaining})`,
   /* WHAT is being asked, not merely THAT something is. The same button is
      legal in two different situations -- you owe an answer to a call, or you
      are the pie who could open an envido -- and it used to read the same in
