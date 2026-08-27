@@ -75,7 +75,13 @@ function dispatchOrThrow(state: MatchState, action: Action): MatchState {
   return result.state;
 }
 
-type Consult = { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean };
+type Consult = {
+  readonly advice: "quiero" | "no-quiero" | null;
+  readonly asking: boolean;
+  /** Slice 4b: optional, additive — every pre-existing call in this file
+   * omits it and keeps reading the honest "partner" report unchanged. */
+  readonly from?: "partner" | "fallback" | null;
+};
 
 function paint(state: MatchState, consult?: Consult): { sent: Action[] } {
   container = document.createElement("div");
@@ -234,5 +240,87 @@ describe("asking before you open an envido", () => {
     paint(played);
     open();
     expect(button(), "playing is how you give the call up, and the question goes with it").toBeNull();
+  });
+});
+
+/**
+ * Slice 4b — THE ASK, on the PARTNER'S OWN SCREEN. Design D10: two
+ * grammatical persons for two roles — the button is the partner's OWN
+ * voice, "Dale"/"No", never the report's "Quiere"/"No quiere" above. It is
+ * ALSO structurally isolated (spec's own belt-and-braces): its own group,
+ * `data-answer` never `data-action`, and a click inside it must never reach
+ * the same `dispatch` the real action bar uses.
+ */
+describe("the ask, on the partner's own screen (Slice 4b)", () => {
+  function paintAsPartner(
+    state: MatchState,
+    consultAsk: { about: string | undefined; options: readonly ("quiero" | "no-quiero")[] } | null,
+  ): { sent: Action[]; answered: { answer: "quiero" | "no-quiero"; about: string | undefined }[] } {
+    container = document.createElement("div");
+    container.style.width = "1280px";
+    document.body.appendChild(container);
+
+    const sent: Action[] = [];
+    const answered: { answer: "quiero" | "no-quiero"; about: string | undefined }[] = [];
+    createMatchTableRenderer()(
+      container,
+      getViewFor(state, TEAMMATE),
+      getLegalActions(state, TEAMMATE),
+      (action) => sent.push(action),
+      undefined,
+      null,
+      undefined,
+      undefined,
+      undefined,
+      consultAsk,
+      (answer, about) => answered.push({ answer, about }),
+    );
+    return { sent, answered };
+  }
+
+  const askButtons = (): HTMLButtonElement[] => [...container.querySelectorAll<HTMLButtonElement>('[data-role="consult-ask"] button')];
+
+  it.each(["pending-call", "envido"] as const)('reads exactly "Dale"/"No" for %s — never the report\'s own words', (about) => {
+    paintAsPartner(pendingTruco(), { about, options: ["quiero", "no-quiero"] });
+
+    const buttons = askButtons();
+    expect(buttons.map((b) => b.textContent)).toEqual(["Dale", "No"]);
+    expect(
+      buttons.every((b) => b.dataset.action === undefined),
+      "never data-action — that vocabulary belongs to the action bar's real, binding calls",
+    ).toBe(true);
+  });
+
+  it("never reaches dispatch — a click inside the group is not a move", () => {
+    const { sent, answered } = paintAsPartner(pendingTruco(), { about: "pending-call", options: ["quiero", "no-quiero"] });
+
+    askButtons()[0]!.click();
+
+    expect(sent, "the engine's own dispatch never saw this click").toEqual([]);
+    expect(answered, "it went out the answer's own channel instead").toEqual([{ answer: "quiero", about: "pending-call" }]);
+  });
+
+  it("renders nothing when there is no open ask", () => {
+    paintAsPartner(pendingTruco(), null);
+    expect(container.querySelector('[data-role="consult-ask"]'), "no question, no group").toBeNull();
+  });
+});
+
+/**
+ * Slice 4b — PROVENANCE (spec: "Provenance Is Disclosed to the Asker"). The
+ * REPORT itself does not change (lines 168/182 above stay untouched); this
+ * is the NEW `from` marking layered on top of it.
+ */
+describe("provenance — honest vs fallback, marked and worded differently (Slice 4b)", () => {
+  it("marks a partner's own honest answer — human or bot-controlled read identically", () => {
+    paint(pendingTruco(), { advice: "quiero", asking: false, from: "partner" });
+    expect(advice()?.dataset.from).toBe("partner");
+    expect(advice()?.textContent).toBe("Tu compañero: Quiere");
+  });
+
+  it("marks the fallback the same whether the 30s cap or a partner takeover produced it", () => {
+    paint(pendingTruco(), { advice: "quiero", asking: false, from: "fallback" });
+    expect(advice()?.dataset.from).toBe("fallback");
+    expect(advice()?.textContent).toBe("Tu compañero no contestó. Sugerencia: Quiere");
   });
 });

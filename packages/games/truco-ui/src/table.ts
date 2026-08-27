@@ -3,6 +3,8 @@ import { announce, createAnnouncer } from "./announcer.js";
 import { advanceHistory } from "./call-history.js";
 import type { CallHistory } from "./call-history.js";
 import { renderCallLog, scrollCallLogToNewest, speakerLabel } from "./call-log.js";
+import { renderConsultAsk } from "./consult-control.js";
+import type { ConsultAnswer } from "./consult-control.js";
 import { dealDurationMs, dealOrderFrom, dealerSeatOf, renderDeckMarker } from "./deck-marker.js";
 import { renderCalls } from "./calls.js";
 import { deriveEnvidoRevealEvent, describeEnvidoRevealNotice } from "./envido-reveal-notice.js";
@@ -127,9 +129,13 @@ function anchorShell(position: TableAnchor): HTMLElement {
  * that owes the next move, so it points at a specific seat rather than a
  * generic "it's someone's turn" signal — the piece that keeps working once a
  * fourth seat exists. */
-function appendTurnBadge(anchor: HTMLElement, text: string, remainingMs: number | null): HTMLElement | null {
+function appendTurnBadge(anchor: HTMLElement, text: string, remainingMs: number | null, kind?: "consult"): HTMLElement | null {
   const badge = document.createElement("span");
   badge.className = "hexdev-truco-turn-badge";
+  // Slice 4a: a style hook only, never a second source of truth for WHAT the
+  // badge says — `text` already carries that. `table-styles.ts` reads this to
+  // give the consult a calmer tone than the "act now" gold turn badge.
+  if (kind !== undefined) badge.dataset.kind = kind;
   badge.textContent = text;
   anchor.appendChild(badge);
   if (remainingMs === null) return null;
@@ -189,7 +195,25 @@ export function createMatchTableRenderer(
    * EXPORTS, so a parameter added only to the implementation is invisible to
    * every caller — the declaration emit simply drops it, and the call site
    * fails with "expected 4-7 arguments" while the source plainly shows 8. */
-  consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean },
+  consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean; readonly from?: "partner" | "fallback" | null },
+  /** Slice 4a: while a consult is open, the ASKER's own seat's turn badge
+   * BECOMES the consult — see `render`'s own `consultOpen`/`badgeSeat`
+   * projection for why this replaces rather than adds a chip. `null`/omitted
+   * means no consult is open; every render behaves exactly as before. Every
+   * seat's own view carries this (design's "for every seat's view — not only
+   * the asker's own"), redacted to the two fields `viewMessageFor` puts on
+   * the wire: no subject, no options, no advice content ever reaches this
+   * renderer through it. Declared here too, for the same "the package
+   * EXPORTS this annotation" reason `consult` above already documents. */
+  pendingConsult?: { readonly askerSeat: number; readonly deadline: number } | null,
+  /** Slice 4b: THIS seat's own incoming question, when it is the one being
+   * asked (design D5 — the PARTNER's client alone). `null`/omitted renders
+   * no ask block at all. */
+  consultAsk?: { readonly about: string | undefined; readonly options: readonly ConsultAnswer[] } | null,
+  /** The answer's own channel — never the `dispatch` above, by design
+   * (spec's belt-and-braces structural isolation, design D10). Omitted
+   * together with `consultAsk` renders nothing. */
+  onConsultAnswer?: (answer: ConsultAnswer, about: string | undefined) => void,
 ) => void {
   let previousTrickCount = 0;
   let trickFeedback = "";
@@ -248,6 +272,8 @@ export function createMatchTableRenderer(
     readonly pendingCall: HTMLElement;
     readonly trick: HTMLElement;
     readonly matchOver: HTMLElement;
+    /** Slice 4b — the consult's own OPEN-transition line (design D8). */
+    readonly consult: HTMLElement;
   } | null = null;
 
   /* PER-MATCH, NOT PER-CONTAINER. Both of these used to live in a WeakMap
@@ -294,6 +320,11 @@ export function createMatchTableRenderer(
   // wiped by the next opponent move — precisely when a player is most likely
   // to be looking at it.
   let leaveAsking = false;
+  // Slice 4b — tracks the OPEN transition for the narrative announcer below
+  // (design D8: "one line on the OPEN transition"), the same per-mount
+  // closure shape `previousTrickCount` already uses for the same reason: a
+  // fresh server view rebuilds everything else on this table.
+  let previousConsultOpen = false;
 
   return function render(
     container: HTMLElement,
@@ -307,7 +338,17 @@ export function createMatchTableRenderer(
      * flight. Passed in rather than read off the view because it never
      * travels in a view: `MatchRoom` sends it to the asking client alone, and
      * a redacted view that could carry it would carry it to everyone. */
-    consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean },
+    consult?: { readonly advice: "quiero" | "no-quiero" | null; readonly asking: boolean; readonly from?: "partner" | "fallback" | null },
+    /** Slice 4a's own badge takeover. Passed in rather than read off the view
+     * for the opposite reason `consult` above is: this one DOES travel on
+     * every seat's view (`transport-colyseus`'s `viewMessageFor`), but as a
+     * sibling field beside it, exactly like `turnDeadline` already is — see
+     * that parameter's own comment. */
+    pendingConsult?: { readonly askerSeat: number; readonly deadline: number } | null,
+    /** Slice 4b's own mirror of `consultAsk`/`onConsultAnswer` above — see
+     * the declaration's own comments for both. */
+    consultAsk?: { readonly about: string | undefined; readonly options: readonly ConsultAnswer[] } | null,
+    onConsultAnswer?: (answer: ConsultAnswer, about: string | undefined) => void,
   ): void {
     ensureMatchstickDefs(container.ownerDocument);
     ensureTableStyles(container.ownerDocument);
@@ -333,6 +374,7 @@ export function createMatchTableRenderer(
         pendingCall: createAnnouncer(container.ownerDocument, "pending-call"),
         trick: createAnnouncer(container.ownerDocument, "trick"),
         matchOver: createAnnouncer(container.ownerDocument, "match-over"),
+        consult: createAnnouncer(container.ownerDocument, "consult"),
       };
     }
     if (announcers.handOutcome.parentElement !== container) {
@@ -350,6 +392,7 @@ export function createMatchTableRenderer(
       pendingCall: pendingCallAnnouncer,
       trick: trickAnnouncer,
       matchOver: matchOverAnnouncer,
+      consult: consultAnnouncer,
     } = announcers;
 
     // A hand ending is a POINT-IN-TIME event, not an ongoing view field — it
@@ -493,12 +536,104 @@ export function createMatchTableRenderer(
       ? view.self.seat
       : (others.find((other) => isAnchorActive(other.seat, other.teamId))?.seat ?? null);
 
+    /**
+     * SLICE 4a — ONE CLOCK PER SEAT, ALWAYS. While a consult is open, the
+     * asker's own seat's badge BECOMES the consult; it is never a second
+     * chip beside the badge the block above already keeps singular. The
+     * asker's turn is (at most) 60s and the consult window is
+     * `min(30s, remaining turn clock)` (design D8), so the consult number can
+     * never exceed the turn number — replacing always shows the more urgent
+     * of the two, where a second, disagreeing countdown would only confuse.
+     *
+     * `askerSeat` is an exact server-issued seat, so once a consult is open
+     * it is MORE accurate than `seatOnTheClock`'s own client-side heuristic
+     * above, not merely a substitute for it. But the two do NOT always agree
+     * — CORRECTED (sdd-verify CRITICAL-2): in 2v2 the WHOLE answering team
+     * is "active" (`isAnchorActive` above), and `seatOnTheClock` prefers the
+     * LOCAL viewer's own seat when it is one of them. When the asker's own
+     * TEAMMATE is the one being consulted, that teammate's screen has
+     * `seatOnTheClock === their own seat`, not the asker's — replacing it
+     * with `askerSeat` unconditionally used to blank that viewer's own
+     * active ring, badge and running clock, from the exact person the
+     * consult is asking to answer. The claim that the two always agree was
+     * false precisely here; it no longer appears above.
+     *
+     * SECOND REMEDIATION (sdd-verify, this pass): spec R9 requires the
+     * replacement badge "for every seat's view, not only the asker's own",
+     * and the first remediation satisfied that by showing NOTHING at all on
+     * the protected viewer's screen — a third option nobody had weighed.
+     * `appendTurnBadge` only mounts a clock node when `remainingMs !== null`
+     * (its own signature just above), so a STATIC "Consultando…" marker —
+     * no countdown, no interval, no second `mountedTurnClockEl` — IS
+     * representable without touching this file's single-mounted-clock
+     * architecture. So now: the protected viewer keeps their OWN badge and
+     * running clock (unchanged), and the ASKER's own anchor separately gets
+     * a second, clock-less mark — see `consultStaticMarkerSeat` below. Two
+     * marks, one clock: R9's "every seat sees it" holds without taking
+     * anyone's own turn clock away from them.
+     *
+     * `deadline > now()` is the whole degrade path: a stale or late-clearing
+     * field simply stops satisfying this check, and the badge falls back to
+     * the ordinary turn text with no bookkeeping of its own required here.
+     */
+    const consultOpen = pendingConsult != null && pendingConsult.deadline > now();
+    // Redirect the badge to the asker's seat UNLESS doing so would blank the
+    // VIEWER'S OWN currently-active badge (the case above) — self wins. The
+    // renderer mounts exactly ONE ticking clock per render
+    // (`mountedTurnClockEl`/`turnClockTimer` below), so this decides only
+    // which seat owns THAT one running clock — see `consultStaticMarkerSeat`
+    // just below for the second, clock-less mark the protected case no
+    // longer forfeits. The narrative announcer just below is gated on
+    // `consultOpen`, not on `badgeSeat`, so this viewer is still told a
+    // consult is open regardless of which seat wins the one clock.
+    const consultWouldBlankSelf = seatOnTheClock === view.self.seat && seatOnTheClock !== pendingConsult?.askerSeat;
+    const badgeSeat = consultOpen && !consultWouldBlankSelf ? pendingConsult!.askerSeat : seatOnTheClock;
+    // Whether the ONE badge with a running clock is actually the consult's
+    // own — false when the protection above kept the viewer's own seat
+    // instead, in which case THAT badge must carry its own real turn data,
+    // never the consult's.
+    const consultBadgeShown = consultOpen && badgeSeat === pendingConsult!.askerSeat;
+    // SECOND REMEDIATION — the public signal for exactly the case the
+    // protection above costs: whenever the viewer's own active seat won the
+    // one running clock instead of the asker, the asker's OWN anchor still
+    // gets marked — just without a countdown of its own, since this table
+    // has only one clock and it is legitimately the viewer's this render.
+    // `null` in every other shape: the ordinary consult badge above already
+    // carries the signal there, and marking the SAME seat twice would be
+    // the exact "two chips, two clocks" regression this file has already
+    // paid for once (see the block comment on `isAnchorActive` above).
+    const consultStaticMarkerSeat = consultOpen && consultWouldBlankSelf ? pendingConsult!.askerSeat : null;
+
+    // SLICE 4b — the narrative announcer's own OPEN-transition line (design
+    // D8), in the relation to the LISTENING seat — never a seat index, never
+    // a compass word (spec: "the mark is on the seat itself"). Gated on the
+    // TRANSITION, not on `consultOpen` alone, so a table that stays open
+    // across several re-renders (each point-in-time notice above forces one)
+    // announces exactly once, and a resolution falls silent rather than
+    // saying anything (a removal, excluded by `aria-relevant`'s default).
+    if (consultOpen && !previousConsultOpen) {
+      const relation =
+        pendingConsult!.askerSeat === view.self.seat ? "self" : (others.find((other) => other.seat === pendingConsult!.askerSeat)?.relation ?? "opponent");
+      announce(
+        consultAnnouncer,
+        relation === "self" ? TABLE_STRINGS.consultAnnounceSelf : relation === "partner" ? TABLE_STRINGS.consultAnnouncePartner : TABLE_STRINGS.consultAnnounceOpponent,
+      );
+    } else if (!consultOpen && previousConsultOpen) {
+      announce(consultAnnouncer, null);
+    }
+    previousConsultOpen = consultOpen;
+
     // THE BADGE NAMES WHO, and until this it only ever knew self from
     // not-self — so on a 2v2 table the one player on your side wore a badge
     // that called them a rival. Reported from a screenshot of live play, on
     // the seat directly opposite. A screen whose whole job is making the
     // pairing obvious at a glance cannot call the partner the other thing.
     const turnBadgeText = (relation: "self" | "partner" | "opponent"): string => {
+      // A consult is strictly more specific than "somebody owes an answer",
+      // and it never names a relation — every seat's view reads the exact
+      // same sentence on the asker's badge, regardless of who is watching
+      // (spec: "the mark is on the seat itself").
+      if (consultBadgeShown) return TABLE_STRINGS.consulting;
       if (pendingCall !== null) {
         if (relation === "self") return TABLE_STRINGS.yourTurnToAnswer;
         return relation === "partner" ? TABLE_STRINGS.waitingOnPartner : TABLE_STRINGS.waitingOnOpponent;
@@ -516,7 +651,7 @@ export function createMatchTableRenderer(
     // `null` (or an omitted argument) means this table is untimed: no clock
     // node is created at all, which is what keeps every pre-existing render —
     // and every visual baseline — byte-identical.
-    mountedTurnDeadline = turnDeadline ?? null;
+    mountedTurnDeadline = consultBadgeShown ? pendingConsult!.deadline : (turnDeadline ?? null);
     const remainingMs = mountedTurnDeadline === null ? null : mountedTurnDeadline - now();
 
     // READ BEFORE THE WIPE BELOW, which is the whole point: this subtree is
@@ -632,16 +767,27 @@ export function createMatchTableRenderer(
       // once in the banner lane and gone (see `renderSenaNotice` above). The
       // anchor carries only what is permanently true of a seat: who they are,
       // how many cards they hold, and whether they owe the next move.
-      if (other.seat === seatOnTheClock) {
+      if (other.seat === badgeSeat) {
         anchor.classList.add("hexdev-truco-anchor--active");
-        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(other.relation), remainingMs) ?? mountedTurnClockEl;
+        mountedTurnClockEl = appendTurnBadge(anchor, turnBadgeText(other.relation), remainingMs, consultBadgeShown ? "consult" : undefined) ?? mountedTurnClockEl;
+      } else if (other.seat === consultStaticMarkerSeat) {
+        // No `--active` ring here: that ring is reserved for the one seat
+        // that owns THIS render's single running clock (`isAnchorActive`'s
+        // own block comment above explains why only one seat may ever wear
+        // it). This mark carries strictly less than that ring — a public
+        // "a question is open here", never "act now" — and passing `null`
+        // for `remainingMs` means `appendTurnBadge` mounts no clock node at
+        // all, so it can never compete with the viewer's own countdown for
+        // the single `mountedTurnClockEl`/`turnClockTimer` this render
+        // tracks.
+        appendTurnBadge(anchor, TABLE_STRINGS.consulting, null, "consult");
       }
     }
 
     const bottom = anchors.get("bottom")!;
-    if (view.self.seat === seatOnTheClock) {
+    if (view.self.seat === badgeSeat) {
       bottom.classList.add("hexdev-truco-anchor--active");
-      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText("self"), remainingMs) ?? mountedTurnClockEl;
+      mountedTurnClockEl = appendTurnBadge(bottom, turnBadgeText("self"), remainingMs, consultBadgeShown ? "consult" : undefined) ?? mountedTurnClockEl;
     }
     // Re-armed on every render, because the node it drives is rebuilt on every
     // render like everything else on this table. Cleared outright when there
@@ -697,7 +843,14 @@ export function createMatchTableRenderer(
       // Falls silent rather than saying anything: emptying a region is a
       // REMOVAL, which `aria-relevant`'s default excludes (announcer.ts).
       announce(turnClockAnnouncer, null);
-    } else if (announcedClockDeadline !== mountedTurnDeadline) {
+      // `!consultOpen` here (Slice 4b): while a consult is open,
+      // `mountedTurnDeadline` reads the CONSULT's own deadline (above), not
+      // the turn's — whose total was already announced before the consult
+      // opened. Silently skipping this branch leaves `announcedClockDeadline`
+      // pinned to that original value, so the return render's own equality
+      // check below finds nothing changed and stays silent too (design D8:
+      // "do not re-announce the turn total while consultOpen").
+    } else if (!consultOpen && announcedClockDeadline !== mountedTurnDeadline) {
       announcedClockDeadline = mountedTurnDeadline;
       announce(turnClockAnnouncer, describeTurnClockStart(remainingMs));
       // A turn that STARTS at or under the warning threshold has already had
@@ -726,6 +879,19 @@ export function createMatchTableRenderer(
     const callsRow = actionBar.appendChild(document.createElement("div"));
     callsRow.className = "hexdev-truco-calls-row";
     renderCalls(callsRow, legalActions, dispatch);
+
+    // SLICE 4b — THE ASK, on the PARTNER's own screen. A sibling of
+    // `callsRow` inside the SAME action bar (where a player is already
+    // looking for something to answer), never a child of it: `renderCalls`
+    // above owns the real, binding respond-truco/respond-envido buttons, and
+    // the spec's own structural isolation requires this group to be a
+    // genuinely separate subtree — see `renderConsultAsk`'s own doc comment.
+    if (consultAsk != null && onConsultAnswer !== undefined) {
+      const consultAskRow = actionBar.appendChild(document.createElement("div"));
+      renderConsultAsk(consultAskRow, legalActions, consultAsk, (answer) => {
+        onConsultAnswer(answer, consultAsk.about);
+      });
+    }
     // 1v1 must stay BYTE-IDENTICAL (visual regression safety property): no
     // extra DOM node is even created in `bottom` for a 1v1 view —
     // `view.teammates` is structurally always empty outside a 2v2 match, so
@@ -1184,7 +1350,7 @@ export function createMatchTableRenderer(
         dispatch,
         { remaining: view.self.senasRemaining },
         layout,
-        { advice: consult?.advice ?? null, asking: consult?.asking ?? false },
+        { advice: consult?.advice ?? null, asking: consult?.asking ?? false, from: consult?.from ?? null },
         senasOverlay,
       );
     }

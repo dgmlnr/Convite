@@ -1,8 +1,8 @@
 import { parseTargetOrigin } from "@hexdev/widget-protocol";
-import type { GameId } from "@hexdev/platform-contract";
+import type { GameId, JsonValue } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, reconnectMatch, startBotMatch, watchPresence } from "@hexdev/transport-colyseus-client";
-import type { ErasedAction, MatchConnection } from "@hexdev/transport-colyseus-client";
+import type { ConsultAskMessage, ErasedAction, MatchConnection } from "@hexdev/transport-colyseus-client";
 import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
 import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
 import { connectToHost } from "./handshake.js";
@@ -160,11 +160,22 @@ function main(): void {
     // out on its own channel and the answer comes back addressed to this
     // client alone, never inside a view. The renderer is handed the result
     // and stays a pure function of what it is given.
-    let consult: { advice: "quiero" | "no-quiero" | null; asking: boolean } = { advice: null, asking: false };
+    let consult: { advice: "quiero" | "no-quiero" | null; asking: boolean; from: "partner" | "fallback" | null } = {
+      advice: null,
+      asking: false,
+      from: null,
+    };
+    // The PARTNER's own side of the same little state: the question this
+    // seat is being asked, when it is the one asked (design D5 — never part
+    // of the view, same reasoning as `consult` above). Valid only while the
+    // view's own `pendingConsult` says a consult is still open — see
+    // `onView` below, which is the server-authoritative "it resolved" signal
+    // (design D8: "the field going away IS the degrade path").
+    let consultAsk: ConsultAskMessage | null = null;
     let latest: GameUiPayload | null = null;
     const paint = (): void => {
       if (latest === null) return;
-      render(app!, { ...latest, consult }, dispatch, onPlayAgain, onLeaveMatch);
+      render(app!, { ...latest, consult, consultAsk }, dispatch, onPlayAgain, onLeaveMatch);
     };
     const dispatch = (action: unknown): void => {
       // Routed by TYPE, and this is the one place that can do it: the
@@ -172,17 +183,29 @@ function main(): void {
       // holding the connection knows that a question travels on a different
       // channel from a move.
       if ((action as { readonly type?: unknown }).type === "consult-partner") {
-        consult = { advice: null, asking: true };
+        consult = { advice: null, asking: true, from: null };
         connection.sendConsult(action as ErasedAction);
         paint();
         return;
       }
+      // The mirror of the branch above, on the PARTNER's side: an answer to
+      // an open ask is a reply on its own private channel, never a move —
+      // same distinction, same routing discipline, the opposite direction.
+      if ((action as { readonly type?: unknown }).type === "consult-answer") {
+        const { about, answer } = action as { readonly about?: string; readonly answer: JsonValue };
+        connection.sendConsultAnswer({ about, answer });
+        return;
+      }
       connection.sendAction(action as ErasedAction);
     };
-    connection.onConsultAdvice((advice) => {
+    connection.onConsultAsk((ask) => {
+      consultAsk = ask;
+      paint();
+    });
+    connection.onConsultAdvice(({ advice, from }) => {
       // A rejected consult never produces one of these, so `asking` is
       // cleared by the answer OR by the next view — whichever lands first.
-      consult = { advice: advice === "quiero" || advice === "no-quiero" ? advice : null, asking: false };
+      consult = { advice: advice === "quiero" || advice === "no-quiero" ? advice : null, asking: false, from };
       paint();
     });
     connection.onView((payload) => {
@@ -192,7 +215,11 @@ function main(): void {
       // the view the consult itself produces (it spends a seña, so it
       // broadcasts): that one arrives while the question is still in flight,
       // and clearing on it would drop the answer before it landed.
-      if (!consult.asking) consult = { advice: null, asking: false };
+      if (!consult.asking) consult = { advice: null, asking: false, from: null };
+      // Same rule for the partner's own outstanding ask, keyed off the
+      // view's own `pendingConsult` rather than a local flag: it is the one
+      // server-authoritative fact that a consult is still open for ANY seat.
+      if ((payload as GameUiPayload).pendingConsult == null) consultAsk = null;
       latest = payload as GameUiPayload;
       paint();
     });
