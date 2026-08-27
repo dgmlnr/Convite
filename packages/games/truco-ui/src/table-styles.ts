@@ -1117,9 +1117,20 @@ export function buildTableStylesheet(): string {
    * became another row and made the seat taller: measured as the 2v2 table
    * failing its own per-tier height lock and overflowing a phone-sized
    * window. It is a mark ABOUT a seat, so it costs that seat no layout at
-   * all, the same choice the turn badge makes for the same reason. */
+   * all, the same choice the turn badge makes for the same reason.
+   *
+   * UNDER THE TURN BADGE, and that is a priority rather than a detail. Both
+   * marks hang in the same strip above the hand -- the badge centred on it,
+   * this pinned to its right edge -- and neither is in flow, so nothing keeps
+   * them apart. They meet exactly when the badge's text is long enough to
+   * reach that edge, which is the moment it matters most: "TU TURNO DE
+   * RESPONDER 0:58" is both the longest string it holds and the one carrying a
+   * clock. Reported with a screenshot of the deck sitting on the digits.
+   *
+   * A decorative marker yields to a running clock. Still above the cards,
+   * which is what this z-index was for. */
   position: absolute;
-  z-index: 2;
+  z-index: 1;
   width: calc(var(--truco-card-width) * 0.42);
   height: calc(var(--truco-card-width) * 0.42 * 336 / 220);
 }
@@ -1317,7 +1328,9 @@ export function buildTableStylesheet(): string {
    * flat fill. Additive to the existing shadow list, same convention
    * --hx-relief/--hx-rim already use. */
   box-shadow: var(--hx-elev-2), inset 0 -1px 0 var(--hx-gold-edge);
-  z-index: 1;
+  /* ABOVE THE DECK MARKER, which shares this strip and used to win it. See the
+   * deck's own rule for the argument: the clock outranks the ornament. */
+  z-index: 2;
 }
 [data-position="top"] .hexdev-truco-turn-badge { top: auto; bottom: -11px; }
 /* THE SIDE SEATS HANG THEIRS ABOVE TOO, and this rule exists to say that the

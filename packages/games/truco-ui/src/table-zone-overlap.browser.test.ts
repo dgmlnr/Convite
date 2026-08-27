@@ -921,3 +921,82 @@ describe.each(PARTNER_ROW_EXTRA_WIDTHS)("the partner's hand stays one row at the
     await expectPartnerBacksOnOneRow(width);
   });
 });
+
+/**
+ * THE DECK NEVER COVERS THE COUNTDOWN.
+ *
+ * Reported with a screenshot: "mira lo que pasa con el mazo y el contenedor
+ * amarillo de las cartas... debería de estar el mazo bajo el contenedor para
+ * que no tape el conteo."
+ *
+ * Both marks hang in the same strip above the player's hand -- the badge
+ * centred on it, the deck pinned to its right edge -- and neither is in flow,
+ * so nothing keeps them apart. They only meet when the badge's text is long
+ * enough to reach the right edge, which is exactly when it matters most: "TU
+ * TURNO DE RESPONDER 0:58" is the longest string it ever holds AND the one
+ * carrying a clock.
+ *
+ * ASSERTED BY HIT-TESTING, not by z-index or by rectangles. A rectangle test
+ * cannot tell which of two overlapping boxes the player actually SEES, and a
+ * z-index test asserts the mechanism instead of the outcome -- both would have
+ * passed while the deck sat over the digits. elementFromPoint answers the only
+ * question that matters: at that pixel, what is on top?
+ *
+ * Not "they never overlap": the strip is one deck-height tall and the two are
+ * genuinely sharing it. What is settled is the ORDER -- a decorative marker
+ * yields to a running clock.
+ */
+/**
+ * The viewer DEALS and owes an ANSWER.
+ *
+ * dealerSeat 0 puts the deck on the viewer and the mano on seat 1, who opens
+ * the truco -- so the badge reads "TU TURNO DE RESPONDER" rather than the far
+ * shorter "TU TURNO". That difference is the whole fence: the two marks only
+ * meet when the badge is long enough to reach the right edge the deck is
+ * pinned to, and a first version of this used a plain turn state, found no
+ * overlap, and passed by doing nothing at all.
+ */
+function selfDealsAndOwesAnAnswer2v2(): MatchState {
+  const seatOrder: readonly [PlayerId, PlayerId, PlayerId, PlayerId] = [SELF, OPPONENT, TEAMMATE, OPPONENT_2];
+  const dealt = startHand(createTeamMatch({ seatOrder, pointsToWin: 30, dealerSeat: 0 }), DEAL_2V2_MAXIMAL);
+  return dispatch(dealt, { type: "call-truco", playerId: OPPONENT, level: "truco" });
+}
+
+describe.each([320, 375] as const)("the deck marker yields to the turn countdown — %ipx", (width) => {
+  it("2v2: where the deck and the badge meet, it is the badge the player sees", async () => {
+    const el = mountedContainer(width);
+    const render = createMatchTableRenderer();
+    // The viewer's own turn, and the viewer DEALS -- the only combination that
+    // puts a deck and a turn badge on the same seat at the same moment. Built
+    // here rather than reused: every existing fixture has the deck somewhere
+    // else, which is why a first version of this fence threw on setup instead
+    // of measuring anything.
+    const state = selfDealsAndOwesAnAnswer2v2();
+    render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {}, undefined, Date.now() + 60_000);
+    settleDeal(el);
+    await waitForArt(el);
+
+    const badge = el.querySelector<HTMLElement>(".hexdev-truco-turn-badge");
+    const deck = el.querySelector<HTMLElement>(".hexdev-truco-anchor--active .hexdev-truco-deck");
+    if (badge === null || deck === null) throw new Error("test setup: this state must show both a turn badge and the viewer's own deck");
+
+    const b = badge.getBoundingClientRect();
+    const d = deck.getBoundingClientRect();
+    const dx = Math.min(b.right, d.right) - Math.max(b.left, d.left);
+    const dy = Math.min(b.bottom, d.bottom) - Math.max(b.top, d.top);
+    // ASSERTED, never skipped. An early return here is what let the first
+    // version of this fence pass while the deck sat squarely on the digits:
+    // it used a state whose badge was too short to reach the deck, found no
+    // overlap, and quietly measured nothing. If these two ever stop meeting
+    // this line fails and asks for the fence to be re-aimed on purpose.
+    expect(Math.min(dx, dy), "fence setup: the badge and the deck must actually meet, or this asserts nothing").toBeGreaterThan(1);
+
+    // The centre of the overlap: if the badge is on top anywhere, it is here.
+    const x = Math.max(b.left, d.left) + dx / 2;
+    const y = Math.max(b.top, d.top) + dy / 2;
+    const hit = el.ownerDocument.elementFromPoint(x, y);
+    const onTop = hit === badge || badge.contains(hit);
+
+    expect(onTop, `at the overlap the player sees ${hit?.className ?? "nothing"}, not the countdown`).toBe(true);
+  });
+});
