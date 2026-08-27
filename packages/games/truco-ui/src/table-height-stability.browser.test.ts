@@ -841,3 +841,57 @@ describe.each(WIDTHS)("createMatchTableRenderer — the table's own reported hei
     ).toBeLessThan(1);
   });
 });
+
+/**
+ * THE HOST'S FONT DOES NOT DECIDE THIS TABLE'S HEIGHT.
+ *
+ * Found by CI, on the second machine that ever ran this suite. The runner's
+ * `system-ui` resolves to DejaVu Sans and this table came out 31.9px taller
+ * there than on the machine it was written on -- 528.33 against 496.42, a
+ * number every pinned baseline in this file would have to be rewritten for.
+ *
+ * THE WIDGET CANNOT PIN ITS OWN FONT, and that is the point rather than an
+ * oversight: it declares `font-family: var(--gx-font-family, system-ui,
+ * sans-serif)` so it inherits the type of the page that embeds it. So the
+ * fence cannot ask for one font. It asks for something better: that the height
+ * be the SAME whichever font arrives.
+ *
+ * Two faces every Linux box has, plus the machine default, driven through the
+ * same override a host really uses. This is the width-axis twin of the four
+ * line-box fences this file already carries -- same doctrine, same sentence:
+ * a box whose size a font is still deciding is the defect, and the fix is to
+ * pin the property, never to recalibrate the constant.
+ */
+describe("the table's height does not depend on the host's font", () => {
+  const FACES = ["system-ui", '"DejaVu Sans"', '"Liberation Sans"'] as const;
+
+  it.each([320, 375, 414] as const)("%ipx: 2v2 measures the same under every face", async (width) => {
+    const heights = new Map<string, number>();
+
+    for (const face of FACES) {
+      const el = mountedContainer(width);
+      // Through --gx-font-family, which is the knob a host page really turns.
+      const style = el.ownerDocument.createElement("style");
+      style.dataset.fontProbe = "true";
+      style.textContent = `.hexdev-truco-table-shell { --gx-font-family: ${face}; }`;
+      el.ownerDocument.head.appendChild(style);
+
+      const render = createMatchTableRenderer();
+      const state = startHand(createTeamMatch({ seatOrder: [SELF, OPPONENT, TEAMMATE, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 }), DEAL_2V2);
+      render(el, getViewFor(state, SELF), getLegalActions(state, SELF), () => {});
+      await waitForArt(el);
+
+      heights.set(face, el.getBoundingClientRect().height);
+      style.remove();
+      el.remove();
+      el.ownerDocument.getElementById("hexdev-truco-matchstick-defs")?.remove();
+      el.ownerDocument.getElementById("hexdev-truco-table-styles")?.remove();
+    }
+
+    const measured = [...heights.entries()];
+    const [, baseline] = measured[0]!;
+    for (const [face, height] of measured) {
+      expect(Math.abs(height - baseline), `${face} measured ${String(height)}px against ${String(baseline)}px`).toBeLessThan(1);
+    }
+  });
+});

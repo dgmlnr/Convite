@@ -1273,7 +1273,31 @@ export function buildTableStylesheet(): string {
  * turn came up — measured, with "COMPAÑERO" 6px from a hand whose ring
  * reaches 13. This anchor is the only one laid out as a ROW, so the extra
  * space is spent on the axis the felt has to spare and costs no height. */
-[data-position="top"] { grid-area: top; align-items: flex-start; flex-wrap: wrap; gap: 18px; }
+/* NOWRAP, AND THE LABEL IS WHAT YIELDS.
+ *
+ * The wrap above it was written for a row of THREE -- label, hand, and the
+ * partner's seña chip -- where wrapping let the CHIP drop to a second line so
+ * the hand kept its full width instead of being shrunk until its third card
+ * broke away. That chip is gone: a seña is transient now and lives in the
+ * banner lane. With two children left, "wrap" means the HAND is what drops,
+ * and the mechanism started causing the exact defect it was added to prevent.
+ *
+ * Found by CI, on the second machine that ever ran this suite. The runner's
+ * system-ui resolves to DejaVu Sans, which draws COMPAÑERO seven pixels
+ * wider -- enough to break the row and make the whole table 31.9px taller
+ * there than here (528.33 against 496.42). The widget cannot answer that by
+ * pinning a font: it declares var(--gx-font-family, system-ui, sans-serif) so
+ * it inherits the type of the page embedding it, and any host may hand it
+ * anything.
+ *
+ * So the row is pinned as ONE row and the two items are told who pays for a
+ * squeeze. The hand never shrinks -- shrinking it is what broke the third card
+ * in the first place. The label does, clipping if it must, still whole in the
+ * accessibility tree: byte for byte the treatment .hexdev-truco-score-label
+ * already carries, for the same reason it carries it. */
+[data-position="top"] { grid-area: top; align-items: flex-start; flex-wrap: nowrap; gap: 18px; }
+[data-position="top"] .hexdev-truco-opponent-hand { flex: 0 0 auto; }
+[data-position="top"] .hexdev-truco-relation-label { min-width: 0; overflow: hidden; }
 [data-position="bottom"] { grid-area: bottom; flex-direction: column; }
 [data-position="left"] { grid-area: left; flex-direction: column; }
 [data-position="right"] { grid-area: right; flex-direction: column; }
