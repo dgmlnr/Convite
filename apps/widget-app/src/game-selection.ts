@@ -249,7 +249,18 @@ function renderGame(
 
   const gameName = translateGameName(entry.displayNameKey);
   const title = document.createElement("h2");
-  title.textContent = gameName;
+  /* THE HERO SAYS WHICH GAME; THIS SAYS WHICH FORMAT.
+   *
+   * Measured on the rendered lobby at every width: the hero read "Truco
+   * Argentino" and this heading read "Truco Argentino", word for word. The
+   * cards under a hero are formats of the game it names, so repeating that
+   * name spends the one line a card has on something already on screen.
+   *
+   * ONLY under a hero. A platform whose games have no art gets no hero at all
+   * (see renderGameSelection's own note on GAME_UI_HERO_TITLE), and there this
+   * heading is the only thing naming the game -- so it keeps the name. And a
+   * seat count with no format word written for it keeps it too. */
+  title.textContent = GAME_UI_HERO_TITLE === undefined ? gameName : (STRINGS.formatName(entry.seatCount) ?? gameName);
   card.appendChild(title);
 
   // What this format IS, from the platform's own seat count — see
