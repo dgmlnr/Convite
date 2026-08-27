@@ -79,6 +79,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # THE WORKSPACE HAS TO BE BUILT FIRST. Each package's `exports` points at
+      # its `dist/`, so without this vite cannot resolve `@hexdev/truco-engine`
+      # at all and every visual file dies on import rather than on a pixel.
+      # Invisible locally, where `tsc -b` has always already run.
+      - name: Build
+        run: pnpm exec tsc -b
+
       # No `playwright install` step: this suite runs inside Microsoft's own
       # playwright image, which already carries the pinned browser, and the
       # bind-mounted host package resolves to it. That container is the whole
