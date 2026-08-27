@@ -129,6 +129,21 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
         // reconnection window waiting for someone who chose to leave.
         onLeaveMatch,
         payload.consult,
+        // Slice 4a wired the badge takeover into the renderer's own
+        // signature but never threaded THIS payload field into the call —
+        // found in Slice 4b, since nothing forwarding it meant the badge
+        // could never reach a real match even though every browser test that
+        // calls the renderer directly kept passing.
+        payload.pendingConsult,
+        payload.consultAsk == null ? null : { about: payload.consultAsk.about, options: payload.consultAsk.options as readonly ("quiero" | "no-quiero")[] },
+        // The mirror of `(action) => dispatch(action)` above, on the
+        // PARTNER's side: routed through the SAME widget-level `dispatch`
+        // (which already special-cases "consult-answer", Slice 3), but
+        // through a genuinely DIFFERENT function reference than the one the
+        // real action bar's own buttons call — the package-level half of
+        // `truco-ui`'s own structural isolation (design D10, belt and
+        // braces).
+        (answer, about) => dispatch({ type: "consult-answer", about, answer }),
       );
     };
   };

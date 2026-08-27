@@ -62,4 +62,41 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     expect(container.querySelector(".hexdev-truco-match-over")?.textContent).toContain("¡Ganaste la partida!");
     expect(onPlayAgain).toHaveBeenCalledOnce();
   });
+
+  /**
+   * Slice 4b — closing a gap Slice 4a left open: the renderer's own
+   * signature grew `pendingConsult`/`consultAsk` params, but nothing in
+   * THIS wiring forwarded the payload's own fields into them — so the badge
+   * takeover and the ask block could never reach a real match, even though
+   * every browser test that called the renderer directly kept passing. This
+   * fences the WIRING itself, not the renderer's own handling of a value
+   * it was handed directly.
+   */
+  it("forwards the payload's pendingConsult into the renderer — the badge takeover reaches a real match", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("truco-argentino" as never)!.createRenderer();
+
+    render(container, { view, legalActions: [], pendingConsult: { askerSeat: 0, deadline: Date.now() + 30_000 } }, () => {});
+
+    const badge = container.querySelector(".hexdev-truco-turn-badge");
+    expect(badge, "the badge takeover reaches a real match, not just a directly-handed fixture").not.toBeNull();
+    expect(badge!.textContent).toContain("Consultando");
+  });
+
+  it("forwards the payload's consultAsk into the renderer, and routes an answer back through dispatch as a consult-answer message", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const dispatch = vi.fn();
+
+    render(container, { view, legalActions: [], consultAsk: { about: "pending-call", options: ["quiero", "no-quiero"], deadline: Date.now() + 30_000 } }, dispatch);
+
+    expect(container.querySelector('[data-role="consult-ask"]'), "the ask reaches the real table, not just a directly-handed fixture").not.toBeNull();
+    container.querySelector<HTMLButtonElement>('[data-answer="quiero"]')!.click();
+
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "consult-answer", about: "pending-call", answer: "quiero" });
+  });
 });

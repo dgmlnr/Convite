@@ -121,6 +121,12 @@ export const TABLE_STRINGS = {
   consultAboutOpeningEnvido: "¿Canto envido?",
   consultToggle: "Consultar al compañero",
   consultAsking: "Preguntando…",
+  /* Slice 4b (design D10): the PARTNER'S OWN BUTTON, first-person imperative
+   * — never "Quiero"/"No quiero", which name real plays and sit on the
+   * teammate's own binding respond-truco/respond-envido buttons. The REPORT
+   * below (consultQuiero/consultNoQuiero) keeps its own words unchanged. */
+  consultAnswerYes: "Dale",
+  consultAnswerNo: "No",
   /* Slice 4a: the seat's TURN BADGE while a consult is open — it REPLACES
    * that seat's turn text for the duration, never a second chip beside it
    * (design's own "ONE CLOCK PER SEAT, ALWAYS"). The trailing space is
@@ -136,6 +142,15 @@ export const TABLE_STRINGS = {
   consultAdvicePrefix: "Tu compañero:",
   consultQuiero: "Quiere",
   consultNoQuiero: "No quiere",
+  /* The fallback report — a 30s cap AND a partner takeover both read this,
+   * never the honest prefix above (spec: "Provenance Is Disclosed"). */
+  consultAdviceFallbackPrefix: "Tu compañero no contestó. Sugerencia:",
+  /* The narrative announcer's own OPEN-transition line (design D8), in the
+   * relation to the LISTENING seat — never a seat index, never a compass
+   * word (spec: "the mark is on the seat itself"). */
+  consultAnnounceSelf: "Estás consultando a tu compañero",
+  consultAnnouncePartner: "Tu compañero está consultando",
+  consultAnnounceOpponent: "Un rival está consultando",
   // The spent state, said in words rather than as "Señas (0)": a zero in
   // parentheses reads as a counter that happens to be empty, "Sin señas"
   // reads as a state the player is in. Same terse register as "Sin envido"

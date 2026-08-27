@@ -311,6 +311,68 @@ describe("createMatchTableRenderer — Slice 4a: the consult takeover, ONE CLOCK
   });
 });
 
+/**
+ * Slice 4b — the screen-reader announcer speaks the RELATION to the
+ * consult, never a seat index or a compass word (spec: "Screen-Reader
+ * Announcer Uses Relation Vocabulary Only" — a reader has no badge to
+ * glance at, so this carries what the visual takeover above carries).
+ */
+describe("createMatchTableRenderer — Slice 4b: the announcer speaks the relation, never a seat or a compass word", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+  const T0 = 1_700_000_000_000;
+
+  function teamView(overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } },
+      ...overrides,
+    });
+  }
+
+  const consultAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="consult"]');
+  const turnClockAnnouncerOf = (el: HTMLElement): HTMLElement | null => el.querySelector('[data-announces="turn-clock"]');
+
+  it('says "Tu compañero está consultando" when the local player\'s own teammate opens it', () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 2, deadline: T0 + 30_000 });
+
+    expect(consultAnnouncerOf(el)!.textContent).toBe("Tu compañero está consultando");
+  });
+
+  it('says "Un rival está consultando" when an opponent opens it', () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 1, deadline: T0 + 30_000 });
+
+    expect(consultAnnouncerOf(el)!.textContent).toBe("Un rival está consultando");
+  });
+
+  it("does not re-announce the turn total while the local player's own consult is open (design D8)", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, T0 + 60_000, undefined, undefined, null);
+    expect(turnClockAnnouncerOf(el)!.textContent).toBe("Tenés 60 segundos para jugar");
+
+    // The consult's own (shorter) deadline now feeds the same badge/clock
+    // machinery, but the turn's own total was already said above — it must
+    // not be said again just because the mounted deadline changed.
+    render(el, teamView(), [], () => {}, undefined, T0 + 60_000, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+
+    expect(turnClockAnnouncerOf(el)!.textContent, "still the turn's own sentence — the consult announced nothing here").toBe(
+      "Tenés 60 segundos para jugar",
+    );
+  });
+});
+
 describe("createMatchTableRenderer — end of a hand gets a clear acknowledgement (spec: 'who won it and how many points')", () => {
   it("announces nothing on the very first render", () => {
     const el = freshContainer();

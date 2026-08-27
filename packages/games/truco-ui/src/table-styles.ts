@@ -1482,6 +1482,33 @@ export function buildTableStylesheet(): string {
   white-space: nowrap;
 }
 .hexdev-truco-consult-toggle:disabled { cursor: default; font-style: italic; }
+/* Slice 4b — the ASK, on the partner's own screen. A row beside the real
+ * call buttons, not one of them (spec's own structural isolation): its own
+ * question, its own two buttons, dressed like the escalation ladder's own
+ * buttons so it reads as "a decision" without reading as "a call". */
+.hexdev-truco-consult-ask {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.hexdev-truco-consult-ask-question {
+  margin: 0;
+  font-size: var(--hx-text-meta);
+  font-weight: 600;
+}
+.hexdev-truco-consult-answer {
+  min-height: 40px;
+  padding: 6px 16px;
+  border: 2px solid var(--hx-felt-outline);
+  border-radius: var(--gx-radius, 999px);
+  background: transparent;
+  color: var(--hx-felt-text);
+  font-family: inherit;
+  font-size: var(--hx-text-body);
+  font-weight: 600;
+  cursor: pointer;
+}
 .hexdev-truco-consult-advice {
   font-size: var(--hx-text-meta);
   font-weight: 700;
