@@ -130,26 +130,64 @@ const findPlayer = (state: MatchState, playerId: PlayerId): Player | undefined =
  * is not a reason to keep the gap.
  *
  * TWO WIDELY-PUBLISHED VARIANTS RESTRICT THIS FURTHER, and they contradict
- * each other, which is the whole reason this note exists rather than a code
- * change. In a 2v2 dealt from seat 0, play order is 1, 2, 3, 0:
+ * each other. In a 2v2 dealt from seat 0, play order is 1, 2, 3, 0:
  *
  *   - one gives it to the two seats immediately left of the dealer, which
  *     is seats 1 and 2.
- *   - another gives it to each team's PIE -- its last player to speak in the
- *     round -- which is seats 3 and 0, and exempts 1v1 entirely because with
+ *   - another gives it to each team's PIE — its last player to speak in the
+ *     round — which is seats 3 and 0, and exempts 1v1 entirely because with
  *     two seats "the last two" is everybody.
  *
  * Those are the exact complements of each other: each source hands the right
- * to precisely the two seats the other withholds it from. Convite implements
- * NEITHER, and that is a decision, not an oversight. It implements the
- * turn-of-speech rule quoted above, which was stated from real play and is
- * the superset both variants are restrictions of — every seat may open, but
- * only when the floor reaches it. Anyone can still open in the order the
- * table would actually let them speak, and no seat is silently robbed of a
- * call by a variant the players at this table may not use.
+ * to precisely the two seats the other withholds it from.
  *
- * If Convite ever offers house rules, this is one of them, and the two seat
- * sets above are the two options — do not "fix" this by picking one. */
+ * CONVITE PICKS THE PIE VARIANT AND THEN NARROWS IT AGAIN. `canOpenEnvido`
+ * below asks two independent questions of an opening, and refuses on either:
+ *
+ *   1. `isPie` — the second variant above, whole. A non-pie seat can NEVER
+ *      open an envido, no matter whose turn it is. Seats 1 and 2 of that 2v2
+ *      are simply out.
+ *   2. `player.seat === hand.turnSeat` — the turn-of-speech rule quoted
+ *      above, applied on top. A pie who holds the right still has to wait
+ *      for the floor to reach them.
+ *
+ * So the opening right is the INTERSECTION of the pie variant and the floor,
+ * which is stricter than either alone. Replying to a pending truco keeps only
+ * gate 1: the pending call freezes `turnSeat`, so gate 2 there would refuse
+ * the very reply "el envido está primero" exists to allow.
+ *
+ * THE CONSEQUENCE IS NOT OBVIOUS FROM EITHER GATE, so here it is measured
+ * rather than argued. A 2v2 dealt with mano on seat 1, asking the engine
+ * which seats `getLegalEnvidoActions` lets open, after each card played:
+ *
+ *   just dealt        -> NOBODY
+ *   after seat 1 plays -> NOBODY
+ *   after seat 2 plays -> seat 3
+ *   after seat 3 plays -> seat 0
+ *
+ * NOBODY CAN OPEN THE ENVIDO ON THE OPENING BEAT of a 4-seat hand, and that
+ * is the two gates meeting, not a bug: the mano holds the floor but is never
+ * a pie (the pies are the LAST two to speak), and the pies do not hold the
+ * floor until the two seats ahead of them have played. The window opens only
+ * as the floor walks down to them, and it closes at the end of trick one.
+ * 1v1 has no such delay -- with two seats everyone is a pie, so the mano can
+ * open immediately.
+ *
+ * This is only about OPENING. Replying with an envido over a pending truco
+ * skips gate 2 entirely, so a pie can say it long before the floor arrives.
+ *
+ * THIS COMMENT USED TO SAY CONVITE IMPLEMENTED "NEITHER" VARIANT, and that
+ * "every seat may open, but only when the floor reaches it". Both halves were
+ * false against the code directly beneath them — `isPie` was already there,
+ * gating both branches. The note predates the pie gate and was never
+ * revisited. Corrected by asking the engine — building the state and printing
+ * `getLegalEnvidoActions` per seat — rather than by reasoning about what the
+ * file claims. A comment that contradicts the function under it is worse than
+ * no comment, because it is the one thing a reader trusts without checking.
+ *
+ * If Convite ever offers house rules, the OTHER variant — the two seats left
+ * of the dealer — is the alternative to `isPie`, and the turn gate is a
+ * separate switch from it. Two knobs, not one. */
 /**
  * The pie of each team: the last seat of that team to speak in the round.
  *
