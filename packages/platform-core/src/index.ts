@@ -1,4 +1,4 @@
-export type { GameModuleRegistration, GameModuleRegistry, NonBlockingActionClassifier, ConsultAdviceProvider, PaidQuestionClassifier, SystemActionRequester } from "./registry.js";
+export type { GameModuleRegistration, GameModuleRegistry, NonBlockingActionClassifier, ConsultAdviceProvider, ConsultAskProvider, PaidQuestionClassifier, SystemActionRequester } from "./registry.js";
 export { createGameModuleRegistry } from "./registry.js";
 export type { RateLimiter, RateLimiterOptions } from "./rate-limiter.js";
 export { createRateLimiter } from "./rate-limiter.js";

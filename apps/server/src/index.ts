@@ -13,10 +13,10 @@ import {
   createStaticTenantRepository,
 } from "@hexdev/platform-core";
 import { connectRedis } from "@hexdev/platform-core/node";
-import type { ConsultAdviceProvider, JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
+import type { ConsultAdviceProvider, ConsultAskProvider, JtiReplayGuard, MatchmakingPool, RateLimiter, SystemActionRequester } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
-import { getConsultAdvice, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
+import { getConsultAdvice, getConsultAsk, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { loadServerConfig } from "./config.js";
 
 
@@ -89,11 +89,27 @@ const isTrucoResponseHumanFirst = (action: unknown): boolean => {
 const isTrucoPaidQuestion = (action: unknown): boolean =>
   typeof action === "object" && action !== null && (action as { type?: unknown }).type === "consult-partner";
 const registry = createGameModuleRegistry([
-  { module: trucoModule, requestSystemAction: requestSystemAction as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider, isPaidQuestion: isTrucoPaidQuestion },
+  {
+    module: trucoModule,
+    requestSystemAction: requestSystemAction as SystemActionRequester,
+    isNonBlockingAction: isTrucoSenaNonBlocking,
+    isHumanPriorityAction: isTrucoResponseHumanFirst,
+    getConsultAdvice: getConsultAdvice as ConsultAdviceProvider,
+    getConsultAsk: getConsultAsk as ConsultAskProvider,
+    isPaidQuestion: isTrucoPaidQuestion,
+  },
   // The 2v2 module, additive registration (obs 2927/2925's own named gap):
   // same registry, same generic MatchRoom, a distinct gameId. Nothing above
   // this line changed for the 1v1 entry.
-  { module: trucoModule2v2, requestSystemAction: requestSystemAction2v2 as SystemActionRequester, isNonBlockingAction: isTrucoSenaNonBlocking, isHumanPriorityAction: isTrucoResponseHumanFirst, getConsultAdvice: getConsultAdvice as ConsultAdviceProvider, isPaidQuestion: isTrucoPaidQuestion },
+  {
+    module: trucoModule2v2,
+    requestSystemAction: requestSystemAction2v2 as SystemActionRequester,
+    isNonBlockingAction: isTrucoSenaNonBlocking,
+    isHumanPriorityAction: isTrucoResponseHumanFirst,
+    getConsultAdvice: getConsultAdvice as ConsultAdviceProvider,
+    getConsultAsk: getConsultAsk as ConsultAskProvider,
+    isPaidQuestion: isTrucoPaidQuestion,
+  },
 ]);
 // The server is where entropy lives (design §4): the engine never
 // randomizes itself. A real CSPRNG, not `Math.random`.

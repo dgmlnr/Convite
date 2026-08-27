@@ -102,6 +102,29 @@ export type ConsultAdviceProvider = (
 ) => Promise<JsonValue | null>;
 
 /**
+ * WHO may be asked, and WHAT they may say — asked BEFORE any bot advice
+ * forms, so a transport can offer an open consult to a live human seat
+ * first instead of resolving a bot opinion straight away (design D7).
+ *
+ * Synchronous and tier-less, unlike `ConsultAdviceProvider` above: this is
+ * not judgement, it is who may be asked and what the answer domain is. A
+ * game builds it from the SAME question its own advice provider answers
+ * from — `truco-module`'s `getConsultAsk` maps the identical `questionFor`
+ * output `ConsultAdviceProvider`'s bot strategy chooses from — so a human
+ * answer and a bot answer are the same value in the same shape, by
+ * construction rather than by two providers happening to agree.
+ *
+ * `null` for "there is nobody to ask, or nothing to ask about" — the same
+ * fail-closed shape as `ConsultAdviceProvider`, for the same reason: the
+ * game's own rules will have refused the action already in both cases.
+ */
+export type ConsultAskProvider = (
+  state: unknown,
+  playerId: PlayerId,
+  about?: string,
+) => { readonly partnerId: PlayerId; readonly options: readonly JsonValue[] } | null;
+
+/**
  * "Is this the action that BUYS an answer?" — the one thing a transport needs
  * to know in order to hand a bot what it just paid for.
  *
@@ -134,6 +157,7 @@ export type GameModuleRegistration =
       readonly isNonBlockingAction?: NonBlockingActionClassifier;
       readonly isHumanPriorityAction?: HumanPriorityActionClassifier;
       readonly getConsultAdvice?: ConsultAdviceProvider;
+      readonly getConsultAsk?: ConsultAskProvider;
       readonly isPaidQuestion?: PaidQuestionClassifier;
     };
 
@@ -163,6 +187,10 @@ export interface GameModuleRegistry {
    * provider, OR the game itself has no answer — all three fail closed the
    * same way, exactly like `getSystemAction` above. */
   getConsultAdvice(gameId: GameId, state: unknown, playerId: PlayerId, tier: BotTier, about?: string): Promise<JsonValue | null>;
+  /** `null` when nothing is registered for `gameId`, OR the module supplied no
+   * provider, OR the game itself has nobody to ask — the same fail-closed
+   * shape as `getConsultAdvice` above, and for the same reason. */
+  getConsultAsk(gameId: GameId, state: unknown, playerId: PlayerId, about?: string): { readonly partnerId: PlayerId; readonly options: readonly JsonValue[] } | null;
   /** `false` (this action buys nothing, so a bot taking it is owed no answer)
    * when nothing is registered for `gameId` OR the module supplied no
    * classifier — the same fail-closed shape as the two above. */
@@ -195,6 +223,7 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
     isNonBlockingAction: (gameId, action) => byId.get(gameId)?.isNonBlockingAction?.(action) ?? false,
     isHumanPriorityAction: (gameId, action) => byId.get(gameId)?.isHumanPriorityAction?.(action) ?? false,
     getConsultAdvice: async (gameId, state, playerId, tier, about) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier, about)) ?? null,
+    getConsultAsk: (gameId, state, playerId, about) => byId.get(gameId)?.getConsultAsk?.(state, playerId, about) ?? null,
     isPaidQuestion: (gameId, action) => byId.get(gameId)?.isPaidQuestion?.(action) ?? false,
   };
 }
