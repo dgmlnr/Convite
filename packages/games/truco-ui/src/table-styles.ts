@@ -1419,6 +1419,14 @@ export function buildTableStylesheet(): string {
   transform: translateX(-50%);
 }
 
+/* Slice 4a: the consult badge — same chip, calmer tone. It REPLACES the turn
+ * badge for the duration (never a second chip beside it), so a different
+ * background is what tells the two states apart at a glance: gold says
+ * "act now", this says "a question is in flight". */
+.hexdev-truco-turn-badge[data-kind="consult"] {
+  background: var(--hx-felt-outline);
+}
+
 /* WHO said it, marked on the seat that said it.
  *
  * The centre banner names a TEAM ("Canto: Ellos") and there are three other

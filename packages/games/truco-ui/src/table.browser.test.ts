@@ -242,6 +242,75 @@ describe("createMatchTableRenderer — whose turn it is must be unmistakable (Ch
   });
 });
 
+/**
+ * Slice 4a — the badge on a consulting seat BECOMES the consult, for the
+ * whole duration it is open (spec: "Public Signal Replaces the Consulting
+ * Seat's Turn Badge"). ONE CLOCK PER SEAT, ALWAYS: this is never a second
+ * chip beside the turn badge above — the turn is 60s and the consult window
+ * is `min(30s, remaining turn clock)`, so a separate chip would put two
+ * disagreeing countdowns on the same seat about half the time (design D8).
+ *
+ * A consult is only ever legal alongside a real pending call (a fixture
+ * fact this file's own "the pending call stays on the table" describe block
+ * above already established for `table.browser.test.ts`'s own hand-authored
+ * convention), so the fixture below keeps that call open across both
+ * renders rather than inventing an unrealistic bare-consult state.
+ */
+describe("createMatchTableRenderer — Slice 4a: the consult takeover, ONE CLOCK PER SEAT ALWAYS", () => {
+  const TEAMMATE = "player-c" as PlayerId;
+  const OPPONENT_2 = "player-d" as PlayerId;
+  const T0 = 1_700_000_000_000;
+
+  function teamView(overrides: Partial<PlayerView> = {}): PlayerView {
+    return baseView({
+      teammates: [{ playerId: TEAMMATE, seat: 2, cardsRemaining: 3, lastSena: null }],
+      opponents: [
+        { playerId: OPPONENT, teamId: OPPONENT_TEAM, seat: 1, cardsRemaining: 3 },
+        { playerId: OPPONENT_2, teamId: OPPONENT_TEAM, seat: 3, cardsRemaining: 3 },
+      ],
+      // OPPONENT (seat 1) called truco, so the viewer's own team owes the
+      // answer — the one state a consult may ever open alongside (design's
+      // own Open Questions note: `consult-partner` is only ever legal beside
+      // a real blocking action).
+      hand: { ...baseView().hand!, truco: { status: "pending", level: "truco", callingTeamId: OPPONENT_TEAM } },
+      ...overrides,
+    });
+  }
+
+  it("replaces the asker's own badge with the consult while it is open — no turn-clock text underneath it", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "exactly one seat wears the badge — the asker's own").toHaveLength(1);
+    const bottom = el.querySelector<HTMLElement>('[data-position="bottom"]')!;
+    expect(bottom.querySelector(".hexdev-truco-turn-badge")!.textContent).toBe("Consultando… 0:30");
+  });
+
+  it("reverts to the turn text with the remaining turn time in the SAME render that resolves it — never two badges, never zero", () => {
+    const el = freshContainer();
+    const render = createMatchTableRenderer({ now: () => T0 });
+
+    render(el, teamView(), [], () => {}, undefined, undefined, undefined, undefined, { askerSeat: 0, deadline: T0 + 30_000 });
+    expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-badge')!.textContent).toBe("Consultando… 0:30");
+
+    // The consult resolved: the record is gone, and the badge falls back to
+    // the pending call's own turn clock — which kept running unchanged while
+    // the question was open (spec: "the asker's turn clock keeps running
+    // unchanged"), so the number GROWS on return (0:30 -> 0:45) rather than
+    // resetting or freezing.
+    render(el, teamView(), [], () => {}, undefined, T0 + 45_000, undefined, undefined, null);
+
+    const badges = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-badge")];
+    expect(badges, "one render, one badge — never two live at once, never none").toHaveLength(1);
+    const clocks = [...el.querySelectorAll<HTMLElement>(".hexdev-truco-turn-clock")];
+    expect(clocks, "and exactly one countdown node with it").toHaveLength(1);
+    expect(el.querySelector('[data-position="bottom"] .hexdev-truco-turn-badge')!.textContent).toBe("Tu turno de responder0:45");
+  });
+});
+
 describe("createMatchTableRenderer — end of a hand gets a clear acknowledgement (spec: 'who won it and how many points')", () => {
   it("announces nothing on the very first render", () => {
     const el = freshContainer();

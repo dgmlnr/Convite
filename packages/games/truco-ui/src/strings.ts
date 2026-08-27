@@ -121,6 +121,13 @@ export const TABLE_STRINGS = {
   consultAboutOpeningEnvido: "¿Canto envido?",
   consultToggle: "Consultar al compañero",
   consultAsking: "Preguntando…",
+  /* Slice 4a: the seat's TURN BADGE while a consult is open — it REPLACES
+   * that seat's turn text for the duration, never a second chip beside it
+   * (design's own "ONE CLOCK PER SEAT, ALWAYS"). The trailing space is
+   * deliberate, not decorative: `appendTurnBadge` concatenates this with the
+   * clock's own "0:30" as a second child node, with no separator of its
+   * own — this space is the only thing standing between the two. */
+  consulting: "Consultando… ",
   /* The declaration round. "Mis tantos" is the button; the LOG and the seat
    * chip show the number itself, because by then it has been said out loud.
    * The concession reuses the `sonBuenas` string this file already had for
