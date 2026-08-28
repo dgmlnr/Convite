@@ -4,6 +4,7 @@ import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, reconnectMatch, startBotMatch, watchPresence } from "@hexdev/transport-colyseus-client";
 import type { ConsultAskMessage, ErasedAction, MatchConnection } from "@hexdev/transport-colyseus-client";
 import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
+import { CONSULT_IDLE, askOnView, consultOnAdvice, consultOnAsk, consultOnView, routeAction, type ConsultState } from "./consult-channel.js";
 import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
 import { connectToHost } from "./handshake.js";
 import {
@@ -47,6 +48,18 @@ type MatchDeparture = "match-over" | "quit";
  * live (the two-origin Playwright run in apply-progress), not by a
  * dedicated unit test of its own — there is no production LOGIC here that
  * isn't already covered where it lives.
+ *
+ * THAT LAST SENTENCE STOPPED BEING TRUE ONCE, so it is worth saying what
+ * keeps it true. The consult arrived carrying real decisions — which channel
+ * a press travels on, whether a wire value is an opinion at all, when an
+ * opinion stops being worth showing — and they sat here, in the one file
+ * nothing tests, for a whole change. `sdd-verify` caught it; the fix was to
+ * move them to `consult-channel.ts` and fence them there, following
+ * `apps/server/src/registry.ts`'s split from `index.ts`.
+ *
+ * So the rule this file lives by: composition stays, decisions leave. If you
+ * find yourself writing an `if` here that decides something rather than
+ * wiring something, it belongs in a module with a test beside it.
  */
 function main(): void {
   const app = document.getElementById("convite-app");
@@ -160,11 +173,7 @@ function main(): void {
     // out on its own channel and the answer comes back addressed to this
     // client alone, never inside a view. The renderer is handed the result
     // and stays a pure function of what it is given.
-    let consult: { advice: "quiero" | "no-quiero" | null; asking: boolean; from: "partner" | "fallback" | null } = {
-      advice: null,
-      asking: false,
-      from: null,
-    };
+    let consult: ConsultState = CONSULT_IDLE;
     // The PARTNER's own side of the same little state: the question this
     // seat is being asked, when it is the one asked (design D5 — never part
     // of the view, same reasoning as `consult` above). Valid only while the
@@ -181,22 +190,23 @@ function main(): void {
       // Routed by TYPE, and this is the one place that can do it: the
       // renderer hands back whatever the player pressed, and only the layer
       // holding the connection knows that a question travels on a different
-      // channel from a move.
-      if ((action as { readonly type?: unknown }).type === "consult-partner") {
-        consult = { advice: null, asking: true, from: null };
-        connection.sendConsult(action as ErasedAction);
-        paint();
-        return;
+      // channel from a move. The routing table itself lives in
+      // `consult-channel.ts`, where it is fenced; this switch only spends the
+      // answer on the connection it is holding.
+      switch (routeAction(action)) {
+        case "consult":
+          consult = consultOnAsk();
+          connection.sendConsult(action as ErasedAction);
+          paint();
+          return;
+        case "consult-answer": {
+          const { about, answer } = action as { readonly about?: string; readonly answer: JsonValue };
+          connection.sendConsultAnswer({ about, answer });
+          return;
+        }
+        default:
+          connection.sendAction(action as ErasedAction);
       }
-      // The mirror of the branch above, on the PARTNER's side: an answer to
-      // an open ask is a reply on its own private channel, never a move —
-      // same distinction, same routing discipline, the opposite direction.
-      if ((action as { readonly type?: unknown }).type === "consult-answer") {
-        const { about, answer } = action as { readonly about?: string; readonly answer: JsonValue };
-        connection.sendConsultAnswer({ about, answer });
-        return;
-      }
-      connection.sendAction(action as ErasedAction);
     };
     connection.onConsultAsk((ask) => {
       consultAsk = ask;
@@ -205,7 +215,7 @@ function main(): void {
     connection.onConsultAdvice(({ advice, from }) => {
       // A rejected consult never produces one of these, so `asking` is
       // cleared by the answer OR by the next view — whichever lands first.
-      consult = { advice: advice === "quiero" || advice === "no-quiero" ? advice : null, asking: false, from };
+      consult = consultOnAdvice(advice, from);
       paint();
     });
     connection.onView((payload) => {
@@ -215,11 +225,11 @@ function main(): void {
       // the view the consult itself produces (it spends a seña, so it
       // broadcasts): that one arrives while the question is still in flight,
       // and clearing on it would drop the answer before it landed.
-      if (!consult.asking) consult = { advice: null, asking: false, from: null };
+      consult = consultOnView(consult);
       // Same rule for the partner's own outstanding ask, keyed off the
       // view's own `pendingConsult` rather than a local flag: it is the one
       // server-authoritative fact that a consult is still open for ANY seat.
-      if ((payload as GameUiPayload).pendingConsult == null) consultAsk = null;
+      consultAsk = askOnView(consultAsk, (payload as GameUiPayload).pendingConsult);
       latest = payload as GameUiPayload;
       paint();
     });
