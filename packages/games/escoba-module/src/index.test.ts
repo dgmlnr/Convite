@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { describeGameModule } from "@hexdev/platform-contract";
 import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { buildDeck } from "@hexdev/escoba-engine";
 import type { Card, HandState, MatchState } from "@hexdev/escoba-engine";
-import { escobaModule, escobaModule2v2 } from "./index.js";
+import { SYSTEM_ACTOR_ID, escobaModule, escobaModule2v2, requestEscobaSystemAction } from "./index.js";
 import type { EscobaModuleAction } from "./index.js";
 
 const config = {};
@@ -112,5 +113,88 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
     const bot = escobaModule.createBot("easy");
     const chosen = await bot.chooseAction(view, legal, 50);
     expect(chosen).toEqual(legal[0]);
+  });
+
+  it("rejects starting a new hand while one is already in progress", () => {
+    const result = escobaModule.applyAction(reachable2p(), { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deck: buildDeck() });
+    expect(result.ok).toBe(false);
+  });
+
+  it("requestEscobaSystemAction fires on a fresh match (no hand dealt yet)", () => {
+    const fresh = escobaModule.createMatch(config, seats2p);
+    const action = requestEscobaSystemAction(fresh, () => 0.5);
+    expect(action).not.toBeNull();
+    expect(action?.deck).toHaveLength(40);
+  });
+
+  it("requestEscobaSystemAction returns null while a seat can still act mid-hand", () => {
+    expect(requestEscobaSystemAction(reachable2p(), () => 0.5)).toBeNull();
+  });
+
+  it("requestEscobaSystemAction returns null once the match already has a winner, even with a decided hand", () => {
+    const state = reachable2p();
+    const [teamA, teamB] = state.teams;
+    const won: MatchState = { ...state, teams: [{ ...teamA, score: 30 }, teamB], hand: { ...state.hand!, outcome: { decided: true } } };
+    expect(requestEscobaSystemAction(won, () => 0.5)).toBeNull();
+  });
+
+  it("settles hand end when the last card is played into an already-empty stock: leftover swept, scored, hand.outcome.decided flips true", () => {
+    const created = escobaModule.createMatch(config, seats2p);
+    const [teamA, teamB] = created.teams;
+    const lastCard: Card = { suit: "oro", rank: 2 };
+    const almostDone: MatchState = {
+      ...created,
+      players: created.players.map((player) => (player.id === playerB ? { ...player, hand: [lastCard] } : player)),
+      hand: {
+        table: [],
+        stock: [],
+        piles: { [teamA.id]: [], [teamB.id]: [] },
+        escobas: { [teamA.id]: 0, [teamB.id]: 0 },
+        turn: playerB,
+        lastCapturer: teamA.id,
+        outcome: null,
+      } satisfies HandState,
+    };
+
+    const result = escobaModule.applyAction(almostDone, { type: "play-card", playerId: playerB, card: lastCard, captured: [] });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // the lone leftover card (oro-2) is swept to the last capturer (team A,
+    // not the player who just played it): cartas 1-0, nothing else resolves.
+    expect(result.state.teams[0].score).toBe(created.teams[0].score + 1);
+    expect(result.state.teams[1].score).toBe(created.teams[1].score);
+    expect(result.state.hand?.outcome?.decided).toBe(true);
+  });
+
+  it("re-deals mid-hand (pure engine step) instead of settling, when the stock still has cards", () => {
+    const created = escobaModule.createMatch(config, seats2p);
+    const [teamA, teamB] = created.teams;
+    const lastCard: Card = { suit: "basto", rank: 3 };
+    const stock = buildDeck().slice(0, 6); // exactly CARDS_PER_PLAYER * seatCount
+    const almostDone: MatchState = {
+      ...created,
+      players: created.players.map((player) => (player.id === playerB ? { ...player, hand: [lastCard] } : player)),
+      hand: {
+        table: [],
+        stock,
+        piles: { [teamA.id]: [], [teamB.id]: [] },
+        escobas: { [teamA.id]: 0, [teamB.id]: 0 },
+        turn: playerB,
+        lastCapturer: null,
+        outcome: null,
+      } satisfies HandState,
+    };
+
+    const result = escobaModule.applyAction(almostDone, { type: "play-card", playerId: playerB, card: lastCard, captured: [] });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.players.every((player) => player.hand.length === 3)).toBe(true);
+    expect(result.state.hand?.stock).toHaveLength(0);
+    // no scoring happened — this was a mid-hand continuation, not a hand end.
+    expect(result.state.hand?.outcome).toBeNull();
+    expect(result.state.teams[0].score).toBe(created.teams[0].score);
+    expect(result.state.teams[1].score).toBe(created.teams[1].score);
   });
 });
