@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser/matchers" />
 import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
-import { applyAction, createHeadToHeadMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
+import { applyAction, createHeadToHeadMatch, createTeamMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
 import type { DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
@@ -27,6 +27,8 @@ import { createMatchTableRenderer } from "./table.js";
 
 const SELF = "visual-self" as PlayerId; // 1v1 seat 0 / 2v2 seat 0
 const OPPONENT = "visual-opponent" as PlayerId; // 1v1 seat 1 / 2v2 seat 1
+const PARTNER = "visual-partner" as PlayerId; // 2v2 seat 2, partners across the table
+const OPPONENT_2 = "visual-opponent-2" as PlayerId; // 2v2 seat 3
 
 /** Identical to `table.visual.test.ts`'s own `FIXED_DEAL`. */
 const FIXED_DEAL: DealInput = [
@@ -42,8 +44,19 @@ const FIXED_DEAL: DealInput = [
 ];
 
 /** Identical to `table-2v2.visual.test.ts`'s own `FIXED_DEAL_4`. */
+const FIXED_DEAL_4: DealInput = [
+  [{ suit: "espada", rank: 1 }, { suit: "oro", rank: 7 }, { suit: "copa", rank: 3 }],
+  [{ suit: "copa", rank: 12 }, { suit: "basto", rank: 5 }, { suit: "oro", rank: 3 }],
+  [{ suit: "basto", rank: 1 }, { suit: "espada", rank: 7 }, { suit: "oro", rank: 12 }],
+  [{ suit: "oro", rank: 11 }, { suit: "copa", rank: 10 }, { suit: "basto", rank: 6 }],
+];
+
 function withScore1v1(state: MatchState): MatchState {
   return { ...state, teams: state.teams.map((team, index) => ({ ...team, score: index === 0 ? 12 : 8 })) };
+}
+
+function withScore2v2(state: MatchState): MatchState {
+  return { ...state, teams: state.teams.map((team, index) => ({ ...team, score: index === 0 ? 9 : 5 })) };
 }
 
 function dealtMatch(): MatchState {
@@ -57,6 +70,19 @@ function dealtMatch(): MatchState {
  * is WAITING ON the local player needs the rival seated as mano. Every other
  * baseline here keeps `dealtMatch`'s own dealer, because they are about the
  * local player holding the turn. */
+function dealtMatchOpponentMano(): MatchState {
+  const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 0 });
+  return withScore1v1(startHand(base, FIXED_DEAL));
+}
+
+function dealtTeamMatch(): MatchState {
+  const base = createTeamMatch({ seatOrder: [SELF, OPPONENT, PARTNER, OPPONENT_2], pointsToWin: 30, dealerSeat: 3 });
+  return withScore2v2(startHand(base, FIXED_DEAL_4));
+}
+
+/** Containers this file has mounted, removed after EVERY test — same
+ * cleanup and reasoning as the two files this one is split from (an
+ * accumulated table pushes the next one below the viewport fold). */
 const mounted: HTMLElement[] = [];
 
 /** Every custom property `table-wide-themed` below sets on `<html>`, reset
@@ -108,24 +134,20 @@ async function mountedContainer(width: number): Promise<HTMLElement> {
   return container;
 }
 
+function feltOf(container: HTMLElement): HTMLElement {
+  const felt = container.querySelector<HTMLElement>(".hexdev-truco-table");
+  if (felt === null) throw new Error("visual fixture setup: felt element not rendered");
+  return felt;
+}
+
 async function waitForArt(container: HTMLElement): Promise<void> {
   const images = [...container.querySelectorAll("img")];
   await Promise.all(images.map((img) => img.decode()));
 }
 
 describe("visual: the game table at the wide/ultra container tiers (VB-3 — new wide baseline coverage)", () => {
-
-
-  it("wide (960px), a themed tenant: proves VB-5 at wide — table-themed (320px) was the only baseline that ever captured panel theming at all", async () => {
+  it("wide (960px), mid-hand: the same deal table-mid-hand captures, at the tier where the call-log rail sits in flow (PR4)", async () => {
     const container = await mountedContainer(960);
-    const root = document.documentElement;
-    root.style.setProperty("--gx-color-surface", "#141233");
-    root.style.setProperty("--gx-color-on-surface", "#f4f1ff");
-    root.style.setProperty("--gx-color-primary", "#7c3aed");
-    root.style.setProperty("--gx-color-on-primary", "#ffffff");
-    root.style.setProperty("--gx-color-accent", "#22d3ee");
-    root.style.setProperty("--gx-radius", "2px");
-
     const played = applyAction(dealtMatch(), { type: "play-card", playerId: SELF, card: FIXED_DEAL[0]![0]! });
     if (!played.ok) throw new Error(`visual fixture setup: illegal action — ${played.violation}`);
     const view = getViewFor(played.state, SELF);
@@ -134,31 +156,39 @@ describe("visual: the game table at the wide/ultra container tiers (VB-3 — new
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
-    // The whole shell, not just the felt — same reasoning as table-themed:
-    // the panel (now beside the felt, at its own wider 200px rail per
-    // tasks §3.8) is exactly what this shot must keep in frame.
-    await expect.element(container).toMatchScreenshot("table-wide-themed");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-wide-mid-hand");
   });
 
-
-  it("wide (960px), match over: the solid-fill overlay (no --hx-scrim, refinement 3) — the one shape no visual test captured before this PR", async () => {
+  it("wide (960px), a pending truco call: the same deal table-truco-pending captures, banner lane + reserved action-bar row both in flow (PR5)", async () => {
     const container = await mountedContainer(960);
-    const played = applyAction(dealtMatch(), { type: "play-card", playerId: SELF, card: FIXED_DEAL[0]![0]! });
-    if (!played.ok) throw new Error(`visual fixture setup: illegal action — ${played.violation}`);
-    const view = getViewFor(played.state, SELF);
-    const legalActions = getLegalActions(played.state, SELF);
+    const called = applyAction(dealtMatchOpponentMano(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
+    if (!called.ok) throw new Error(`visual fixture setup: illegal action — ${called.violation}`);
+    const view = getViewFor(called.state, SELF);
+    const legalActions = getLegalActions(called.state, SELF);
 
-    // MatchEndInfo.outcome is the one authoritative end-of-match signal
-    // (table.ts's own doc comment) — fabricated directly here, the same
-    // convention match-outcome.browser.test.ts already uses, independent of
-    // view.teams/pointsToWin (never re-derived from them client-side).
-    createMatchTableRenderer()(container, view, legalActions, () => {}, { outcome: { winnerIds: [SELF] }, onPlayAgain: () => {} });
+    createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
-    // The overlay (`renderMatchOverOverlay`, match-outcome.ts) is appended
-    // as a SIBLING of `.hexdev-truco-shell-layout` directly on the
-    // renderer's own `container` argument, never a felt descendant — the
-    // shell is the only element that shows it at all.
-    await expect.element(container).toMatchScreenshot("match-over-wide");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-wide-truco-pending");
   });
+
+
+  it("ultra (1280px), 2v2 mid-hand: the same deal table-2v2-mid-hand captures, at the ultra card-width/gap tier", async () => {
+    const container = await mountedContainer(1280);
+    // No seña in this fixture any more: the partner's claim used to leave a
+    // persistent chip on their anchor, which this shot existed partly to
+    // capture at the ultra tier. A seña is transient now — it shows once in
+    // the banner lane and is gone — so sending one here would leave nothing
+    // on screen for a single-snapshot capture to record. The narrow-tier
+    // table-2v2-sena-notice baseline owns the notice itself.
+    const state = dealtTeamMatch();
+    const view = getViewFor(state, SELF);
+    const legalActions = getLegalActions(state, SELF);
+
+    createMatchTableRenderer()(container, view, legalActions, () => {});
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-ultra-2v2");
+  });
+
 });
