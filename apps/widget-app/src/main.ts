@@ -5,6 +5,9 @@ import { createTransportClient, joinMatchFromReservation, joinMatchmakingQueue, 
 import type { ConsultAskMessage, ErasedAction, MatchConnection } from "@hexdev/transport-colyseus-client";
 import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
 import { CONSULT_IDLE, askOnView, consultOnAdvice, consultOnAsk, consultOnView, routeAction, type ConsultState } from "./consult-channel.js";
+import { groupByFamily } from "./game-families.js";
+import { renderGameList } from "./game-list.js";
+import { createLobbyScreen } from "./lobby-screen.js";
 import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
 import { connectToHost } from "./handshake.js";
 import {
@@ -293,6 +296,15 @@ function main(): void {
     // own docstring).
     const departureGate = createDepartureGate();
 
+    // WHICH SCREEN IS OPEN, constructed ONCE here and only ever read below.
+    // The families are fixed for the session -- a tenant's entitlements do
+    // not change under a player -- so this holds a single variable and every
+    // question about it (`canGoBack`, `affects`) is answered by the module
+    // rather than by an `if` in this file. Same reason `departureGate` above
+    // is a gate and not a boolean: composition stays here, decisions leave.
+    const families = groupByFamily(catalog);
+    const screen = createLobbyScreen(families);
+
     // The moment someone most wants another match is right after finishing
     // one (spec) — leaves the just-ended connection (fire-and-forget: the
     // server's own reconnection window is irrelevant to a genuine, consented
@@ -321,7 +333,32 @@ function main(): void {
     }
 
     function rerender(): void {
-      renderGameSelection(app!, catalog, presenceByGame, {
+      const view = screen.current();
+      if (view.kind === "families") {
+        // The SAME `app` element on both screens, and that is load-bearing:
+        // `game-screen.ts` keys the player's picked modality by container, so
+        // handing screen two a different element would silently reset it on
+        // every trip through the list.
+        renderGameList(app!, families, {
+          onOpenGame: (family) => {
+            screen.open(family.id);
+            rerender();
+          },
+        });
+        return;
+      }
+      renderGameSelection(app!, view.family.entries, presenceByGame, {
+        // Passed only when there is a list to return to. A tenant with one
+        // game gets no control at all rather than a disabled one -- see
+        // `GameSelectionCallbacks.onBack`.
+        ...(screen.canGoBack()
+          ? {
+              onBack: (): void => {
+                screen.back();
+                rerender();
+              },
+            }
+          : {}),
         onPlayVsPerson: (gameId, modality) => {
           departureGate.markDeparted();
           const attempt = (): void => {
@@ -393,8 +430,11 @@ function main(): void {
     for (const entry of catalog) {
       const watcher = await watchPresence(client, { gameId: entry.id, playerId });
       watcher.onCounts((display) => {
+        // THE COUNT IS STORED UNCONDITIONALLY; only the repaint is gated.
+        // Gating the store instead would make a player open a game and read a
+        // stale number until the next broadcast happened to arrive.
         presenceByGame.set(entry.id, display);
-        if (!departureGate.hasDeparted()) rerender();
+        if (!departureGate.hasDeparted() && screen.affects(entry.id)) rerender();
       });
     }
     rerender();

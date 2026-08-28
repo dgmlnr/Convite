@@ -13,6 +13,7 @@ const TRUCO_2V2_ID = "truco-argentino-2v2" as GameId;
 
 const TRUCO_ENTRY: CatalogEntry = {
   id: TRUCO_ID,
+  gameFamily: "truco",
   displayNameKey: "games.truco.name",
   seatCount: 2,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
@@ -20,6 +21,7 @@ const TRUCO_ENTRY: CatalogEntry = {
 
 const TRUCO_2V2_ENTRY: CatalogEntry = {
   id: TRUCO_2V2_ID,
+  gameFamily: "truco",
   displayNameKey: "games.truco2v2.name",
   seatCount: 4,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],

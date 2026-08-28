@@ -1,4 +1,4 @@
-import type { ConfigOption, GameId } from "@hexdev/platform-contract";
+import type { ConfigOption, GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { ThemeOverride } from "@hexdev/widget-protocol";
 
 /** The client-side mirror of `apps/server`'s `CatalogEntry` — the SAME shape
@@ -6,6 +6,14 @@ import type { ThemeOverride } from "@hexdev/widget-protocol";
  * import of server code into the browser bundle. */
 export interface CatalogEntry {
   readonly id: GameId;
+  /** The game this entry is a way of playing — see the contract's
+   * `GameFamilyId`. The server has sent it since `gameFamily` landed; this
+   * mirror simply had not declared it, so the client could not read a field
+   * that was already on the wire. Required here for the same reason it is
+   * required on the server's own `CatalogEntry`: `buildCatalog` normalizes an
+   * undeclared family to the game's own id, so no consumer ever sees
+   * `undefined`. */
+  readonly gameFamily: GameFamilyId;
   readonly displayNameKey: string;
   readonly seatCount: number;
   readonly configOptions: readonly ConfigOption[];

@@ -173,6 +173,7 @@ describe("chrome text stays legible on the card's own coloured surface (WCAG 2.1
 describe("the lobby's secondary copy stays legible however quiet the design wants it", () => {
   const TRUCO: CatalogEntry = {
     id: "truco-argentino" as GameId,
+    gameFamily: "truco",
     displayNameKey: "games.truco.name",
     seatCount: 2,
     configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
