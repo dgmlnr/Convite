@@ -1,4 +1,6 @@
 import type { GameFamilyId, GameId } from "@hexdev/platform-contract";
+import type { Card } from "@hexdev/spanish-deck-ui";
+import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
@@ -184,7 +186,33 @@ export interface GameFamilyUi {
 
 const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_ATTRIBUTION] };
 
-const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY];
+/**
+ * The three cards that name escoba, not just any three faces (see
+ * `escoba/cartas-insignia-del-lobby`): art must say the MECHANIC, and escoba
+ * is named by a number, so it shows three cards that sum to fifteen. Order is
+ * the layout, same rule as truco's own `hero-cards.ts` — the middle entry is
+ * the one fully visible, so el 7 de oro (the capture's own badge card, worth
+ * a point of its own at hand end) holds the centre.
+ *
+ * Minimal on purpose for this slice: only `heroTitle`/`hero`/`credits` — no
+ * `cardArt`, no `GameUiEntry`, no server registration. This entry exists
+ * solely to prove and fix the screen-two regression a second family triggers;
+ * the completed lobby card lands with the lobby-second-family unit.
+ */
+const ESCOBA_HERO_FACES: readonly Card[] = [
+  { suit: "copa", rank: 3 },
+  { suit: "oro", rank: 7 },
+  { suit: "espada", rank: 5 },
+];
+
+const ESCOBA_FAMILY: GameFamilyUi = {
+  id: "escoba",
+  heroTitle: "Escoba de 15",
+  hero: ESCOBA_HERO_FACES.map((card) => getCardFrontUrl(card).href),
+  credits: [DECK_ATTRIBUTION],
+};
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY];
 
 /**
  * The family whose face the front door wears — or none.

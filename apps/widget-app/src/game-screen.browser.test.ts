@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
 import { CHROME_STYLE_ID, DEAL_DURATION_MS, DEAL_STAGGER_MS } from "./chrome-styles.js";
-import { GAME_UI_HERO } from "./game-ui-registry.js";
+import { familyUiFor } from "./game-ui-registry.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { renderGameSelection } from "./game-screen.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
@@ -48,7 +48,7 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
   it("shows an empty-state message when the tenant has no entitled games", () => {
     const el = freshContainer();
 
-    renderGameSelection(el, [], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.textContent).toContain("Este sitio todavía no tiene juegos habilitados.");
   });
@@ -56,7 +56,7 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
   it("renders the entitled game's translated Spanish name", () => {
     const el = freshContainer();
 
-    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.textContent).toContain("Truco Argentino");
   });
@@ -67,7 +67,7 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.textContent).toContain("2 jugadores esperando");
     expect(el.querySelector('button[data-action="vs-person"]')).not.toBeNull();
@@ -79,7 +79,7 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
       [TRUCO_ID, [{ modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.textContent).not.toContain("0 jugador");
     const botButtons = el.querySelectorAll('button[data-action="vs-bot"]');
@@ -93,7 +93,7 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 3, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson, onPlayVsBot: noop });
     el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')?.click();
 
     expect(onPlayVsPerson).toHaveBeenCalledWith(TRUCO_ID, { pointsToWin: 15 });
@@ -106,10 +106,40 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 1, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot });
     el.querySelector<HTMLButtonElement>('button[data-action="vs-bot"][data-tier="hard"]')?.click();
 
     expect(onPlayVsBot).toHaveBeenCalledWith(TRUCO_ID, { pointsToWin: 15 }, "hard");
+  });
+});
+
+/**
+ * MODIFIED requirement (spec: `lobby-chosen-game/Hero identity from the
+ * selected game`, delta against `sdd/dos-pantallas-de-lobby/spec`).
+ *
+ * THE REGRESSION IS SILENT BY CONSTRUCTION. `GAME_UI_HERO`/`GAME_UI_HERO_TITLE`
+ * (`game-ui-registry.ts`) derive from `soleFamilyUi(FAMILIES)`, which returns
+ * `undefined` the moment `FAMILIES` holds more than one entry — no thrown
+ * error, no broken type, just an empty fan and a title that falls back to the
+ * generic instruction. Every OTHER test in this file uses its own
+ * `CatalogEntry` fixtures, never `FAMILIES` itself, so none of them can catch
+ * this on their own; only an assertion against the real, currently-registered
+ * `FAMILIES` proves the fence bites.
+ *
+ * This fence MUST be run and observed FAILING before the fix (threading
+ * `family` through to `familyUiFor`) lands, and it fails for the reason named
+ * above — not for an unrelated setup mistake.
+ */
+describe("renderGameSelection — MODIFIED requirement: hero identity survives a second family's registration (spec: lobby-chosen-game/Hero identity from the selected game)", () => {
+  it("keeps truco's hero fan, H1, instruction line, and seat-count card title once a second family (escoba) is registered", () => {
+    const el = freshContainer();
+
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelectorAll(".hexdev-chrome-fan-card").length, "the hero fan — empty once a second family exists").toBeGreaterThan(0);
+    expect(el.querySelector("h1")?.textContent, "the H1 — falls back to the generic instruction once the door has no sole family").toBe("Truco Argentino");
+    expect(el.querySelector(".hexdev-chrome-instruction"), "the instruction line — gated on the same undefined title").not.toBeNull();
+    expect(el.querySelector(".hexdev-game-card h2")?.textContent, "the card title — reverts to the full game name").toBe("Mano a mano");
   });
 });
 
@@ -120,7 +150,7 @@ describe("renderGameSelection — a 4-seat modality (2v2) queues like any other:
       [TRUCO_2V2_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 3, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_2V2_ENTRY], TRUCO_2V2_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector('button[data-action="vs-person"]')).not.toBeNull();
     expect(el.querySelectorAll('button[data-action="vs-bot"]').length).toBeGreaterThan(0);
@@ -133,7 +163,7 @@ describe("renderGameSelection — a 4-seat modality (2v2) queues like any other:
       [TRUCO_2V2_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 0, promoteBotFallback: true }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelectorAll('button[data-action="vs-person"]')).toHaveLength(2);
   });
@@ -143,7 +173,7 @@ describe("renderGameSelection — chrome styling (design §10: this screen takes
   it("styles the screen as chrome and injects the chrome stylesheet exactly once", () => {
     const el = freshContainer();
 
-    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.className).toBe("convite-chrome");
     expect(el.querySelector("h1")?.className).toBe("hexdev-chrome-title");
@@ -156,7 +186,7 @@ describe("renderGameSelection — chrome styling (design §10: this screen takes
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-modality")?.getAttribute("data-prominent")).toBe("person");
   });
@@ -167,7 +197,7 @@ describe("renderGameSelection — chrome styling (design §10: this screen takes
       [TRUCO_ID, [{ modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-modality")?.getAttribute("data-prominent")).toBe("bot");
   });
@@ -184,10 +214,10 @@ describe("renderGameSelection — keyboard focus survives a live presence re-ren
 
   it("keeps focus on the vs-person button when a counts broadcast re-renders identical content", () => {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(2), CALLBACKS);
     el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')!.focus();
 
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(2), CALLBACKS);
 
     const focused = document.activeElement as HTMLElement;
     expect(focused.dataset.action).toBe("vs-person");
@@ -196,10 +226,10 @@ describe("renderGameSelection — keyboard focus survives a live presence re-ren
 
   it("restores focus to the equivalent bot-tier button when the re-render changes the waiting count", () => {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(2), CALLBACKS);
     el.querySelector<HTMLButtonElement>('button[data-action="vs-bot"][data-tier="hard"]')!.focus();
 
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(5), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(5), CALLBACKS);
 
     const focused = document.activeElement as HTMLElement;
     expect(focused.dataset.action).toBe("vs-bot");
@@ -208,13 +238,13 @@ describe("renderGameSelection — keyboard focus survives a live presence re-ren
 
   it("moves focus to the container itself — never <body> — when the focused control's whole modality is gone", () => {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(2), CALLBACKS);
     el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')!.focus();
 
     const otherModality = new Map<GameId, readonly LobbyDisplayEntry[]>([
       [TRUCO_ID, [{ modality: { pointsToWin: 30 }, waitingCount: undefined, promoteBotFallback: true }]],
     ]);
-    renderGameSelection(el, [TRUCO_ENTRY], otherModality, CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, otherModality, CALLBACKS);
 
     expect(document.activeElement).toBe(el);
     expect(el.getAttribute("tabindex")).toBe("-1");
@@ -255,10 +285,10 @@ describe("renderGameSelection — keyboard focus survives a live presence re-ren
     const el = freshContainer();
     const outside = document.createElement("button");
     document.body.appendChild(outside);
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(2), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(2), CALLBACKS);
     outside.focus();
 
-    renderGameSelection(el, [TRUCO_ENTRY], presenceWith(5), CALLBACKS);
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presenceWith(5), CALLBACKS);
 
     expect(document.activeElement).toBe(outside);
     outside.remove();
@@ -271,7 +301,7 @@ describe("chrome owns its focus indicator (2.4.7: a host CSS reset must not leav
     const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
     ]);
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const button = el.querySelector<HTMLButtonElement>('button[data-action="vs-person"]')!;
     button.focus();
@@ -291,7 +321,7 @@ describe("chrome body copy consumes --hx-leading (FU-5: computed line-height con
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const description = el.querySelector<HTMLElement>(".hexdev-modality-title");
     expect(description).not.toBeNull();
@@ -306,7 +336,7 @@ describe("chrome body copy consumes --hx-leading (FU-5: computed line-height con
       [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const style = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality p:not(.hexdev-modality-count)")!);
     expect(Number.parseFloat(style.lineHeight)).toBeCloseTo(Number.parseFloat(style.fontSize) * 1.35, 0);
@@ -340,7 +370,7 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
 
   function renderTwoModalities(): HTMLElement {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
     return el;
   }
 
@@ -381,7 +411,7 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     el.querySelectorAll<HTMLElement>(".hexdev-modality-option")[1]!.click();
     expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent).toBe("Puntos: 30");
 
-    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, TWO_MODALITIES]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
     expect(el.querySelector<HTMLElement>(".hexdev-modality-title")?.textContent, "a presence broadcast undid the player's choice").toBe("Puntos: 30");
   });
 
@@ -403,7 +433,7 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     // statement about a clip rect rather than about typography. The invariant
     // — no UA heading default reaches the page — is about the VISIBLE one.
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const heading = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-modality-title")!);
     // The chrome root's own size, NOT a sibling's: a sibling is something this
@@ -437,7 +467,7 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
       [TRUCO_2V2_ID, TWO_MODALITIES],
     ]);
 
-    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     // The repetition SHRANK but did not vanish, which is the point of keeping
     // this test rather than deleting it with the layout that caused it. One
@@ -473,7 +503,7 @@ describe("the deck credit reaches the player", () => {
   };
 
   it("offers a control with a real accessible name, not the letter it draws", () => {
-    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     const summary = container.querySelector<HTMLElement>(".hexdev-about-toggle");
 
     expect(summary, "nothing credits the artwork at all").not.toBeNull();
@@ -484,14 +514,14 @@ describe("the deck credit reaches the player", () => {
   });
 
   it("names the author", () => {
-    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     openAbout();
 
     expect(container.querySelector(".hexdev-about-panel")?.textContent ?? "").toContain("Basquetteur");
   });
 
   it("links the license itself, and says which one it is", () => {
-    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     openAbout();
     const hrefs = [...container.querySelectorAll<HTMLAnchorElement>(".hexdev-about-links a")].map((a) => a.href);
 
@@ -502,7 +532,7 @@ describe("the deck credit reaches the player", () => {
   it("states that changes were made", () => {
     // The term easiest to drop, and the reason it is a required field on
     // `DeckAttribution` rather than something a renderer may skip.
-    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     openAbout();
 
     expect((container.querySelector(".hexdev-about-panel")?.textContent ?? "").toLowerCase()).toContain("cambios");
@@ -512,7 +542,7 @@ describe("the deck credit reaches the player", () => {
     // This widget is embedded in somebody else's site. A credit link that
     // replaced the host page would be the most expensive footnote in the
     // product.
-    renderGameSelection(freshContainer(), [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     openAbout();
 
     for (const anchor of container.querySelectorAll<HTMLAnchorElement>(".hexdev-about-links a")) {
@@ -522,7 +552,7 @@ describe("the deck credit reaches the player", () => {
   });
 
   it("credits the same deck ONCE, though two games draw it", () => {
-    renderGameSelection(freshContainer(), [TRUCO_ENTRY, TRUCO_2V2_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY, TRUCO_2V2_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     openAbout();
 
     // Both truco entries declare the same artwork. Two identical credits
@@ -536,10 +566,10 @@ describe("the deck credit reaches the player", () => {
     // all), so a panel the player had opened to READ would slam shut under
     // them on a timer.
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     openAbout();
 
-    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [] as readonly LobbyDisplayEntry[]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, [] as readonly LobbyDisplayEntry[]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(about()?.open, "the credit closed itself while the player was reading it").toBe(true);
   });
@@ -547,7 +577,7 @@ describe("the deck credit reaches the player", () => {
   it("is reachable even when the tenant has no games enabled", () => {
     // That screen still ships the deck art in the bundle, so it still owes
     // the credit.
-    renderGameSelection(freshContainer(), [], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(freshContainer(), [], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(about(), "the empty lobby drops the credit").not.toBeNull();
   });
@@ -575,7 +605,7 @@ describe("the deck credit reaches the player", () => {
 describe("the clipped-gold title is not amputated by its own line box", () => {
   it("gives the title a box at least as tall as the text inside it", () => {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const title = el.querySelector<HTMLElement>(".hexdev-chrome-title")!;
     const style = getComputedStyle(title);
@@ -595,7 +625,7 @@ describe("the clipped-gold title is not amputated by its own line box", () => {
     // 1.15 is the floor: below it a Georgia-class face runs out of box before
     // it runs out of glyph.
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const style = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-chrome-title")!);
     const ratio = Number.parseFloat(style.lineHeight) / Number.parseFloat(style.fontSize);
@@ -623,7 +653,7 @@ describe("the hand is dealt once, not on every repaint", () => {
 
   it("animates the first render", () => {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the cards never arrive").not.toBeNull();
   });
@@ -649,8 +679,8 @@ describe("the hand is dealt once, not on every repaint", () => {
     // fence owns "still running", the elapsed-offset one below owns "not
     // restarted", and the last one owns "eventually stops".
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
-    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-chrome-fan"), "fence setup: the fan stopped rendering at all").not.toBeNull();
     expect(
@@ -675,9 +705,9 @@ describe("the hand is dealt once, not on every repaint", () => {
     vi.useFakeTimers();
     try {
       const el = freshContainer();
-      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+      renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
       vi.advanceTimersByTime(200);
-      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+      renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
       const fan = el.querySelector<HTMLElement>(".hexdev-chrome-fan--dealing");
       expect(fan, "fence setup: the greeting did not survive to be resumed").not.toBeNull();
@@ -697,12 +727,19 @@ describe("the hand is dealt once, not on every repaint", () => {
     // last card has finished — stagger for the last index plus one duration —
     // and the numbers come from the stylesheet that animates it, so this can
     // never disagree with the CSS about when that is.
+    //
+    // The hero length is read PER FAMILY (`familyUiFor`), never off a
+    // module-level "sole family" constant: that constant collapses to empty
+    // the moment a second family registers (the MODIFIED requirement fenced
+    // above), which would silently make this test advance the clock by too
+    // little and pass for the wrong reason.
+    const trucoHeroLength = familyUiFor(TRUCO_ENTRY.gameFamily)?.hero?.length ?? 0;
     vi.useFakeTimers();
     try {
       const el = freshContainer();
-      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
-      vi.advanceTimersByTime(DEAL_DURATION_MS + DEAL_STAGGER_MS * GAME_UI_HERO.length);
-      renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+      renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+      vi.advanceTimersByTime(DEAL_DURATION_MS + DEAL_STAGGER_MS * trucoHeroLength);
+      renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
       expect(el.querySelector(".hexdev-chrome-fan"), "fence setup: the fan stopped rendering at all").not.toBeNull();
       expect(
@@ -723,19 +760,19 @@ describe("the hand is dealt once, not on every repaint", () => {
     // playing at all. It was playing; nobody could see it.
     const el = freshContainer();
 
-    renderGameSelection(el, [TRUCO_ENTRY], new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     expect(el.querySelector(".hexdev-chrome-loading"), "fence setup: this render is not a loading one").not.toBeNull();
     expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the greeting was spent on a loading screen").toBeNull();
 
-    renderGameSelection(el, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
     expect(el.querySelector(".hexdev-chrome-fan--dealing"), "the first playable render did not deal").not.toBeNull();
   });
 
   it("deals again for a different container — the greeting belongs to a mount, not to the page", () => {
     const first = freshContainer();
-    renderGameSelection(first, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(first, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
     const second = freshContainer();
-    renderGameSelection(second, [TRUCO_ENTRY], PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(second, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(second.querySelector(".hexdev-chrome-fan--dealing"), "a second widget on the page opened with no greeting").not.toBeNull();
   });
@@ -779,7 +816,7 @@ describe("the lobby's own copy fits and does not repeat itself", () => {
   it.each([320, 375, 414] as const)("%ipx: no modality button breaks across two lines", (width) => {
     const el = freshContainer();
     el.style.width = `${String(width)}px`;
-    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], PRESENCE_BOTH, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE_BOTH, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const options = [...el.querySelectorAll<HTMLElement>(".hexdev-modality-option")];
     expect(options.length, "fence setup: no modality buttons rendered, so this asserts nothing").toBeGreaterThan(0);
@@ -802,7 +839,7 @@ describe("the lobby's own copy fits and does not repeat itself", () => {
    */
   it("a card never repeats the hero's title back at the player", () => {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], PRESENCE_BOTH, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, [TRUCO_ENTRY, TRUCO_2V2_ENTRY], TRUCO_ENTRY.gameFamily, PRESENCE_BOTH, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const hero = el.querySelector<HTMLElement>("h1")?.textContent ?? "";
     expect(hero, "fence setup: no hero title, so there is nothing to repeat").not.toBe("");
@@ -840,7 +877,7 @@ describe("the games row shares the header's band (measured, at 1024px)", () => {
   function mountAt1024(entries: readonly CatalogEntry[]): HTMLElement {
     const el = freshContainer();
     el.style.width = "1024px";
-    renderGameSelection(el, entries, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, entries, TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
     return el;
   }
 

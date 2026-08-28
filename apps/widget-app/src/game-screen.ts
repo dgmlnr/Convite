@@ -1,10 +1,10 @@
-import type { BotTier, GameId } from "@hexdev/platform-contract";
+import type { BotTier, GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry, ModalityConfig } from "@hexdev/platform-core";
 import { DEAL_DURATION_MS, DEAL_STAGGER_MS, ensureChromeStyles } from "./chrome-styles.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
 import { STRINGS, translateConfigLabel, translateGameName } from "./i18n.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
-import { GAME_UI_CREDITS, GAME_UI_HERO, GAME_UI_HERO_TITLE } from "./game-ui-registry.js";
+import { GAME_UI_CREDITS, familyUiFor } from "./game-ui-registry.js";
 
 export interface GameSelectionCallbacks {
   onPlayVsPerson(gameId: GameId, modality: ModalityConfig): void;
@@ -254,6 +254,7 @@ function renderGame(
   callbacks: GameSelectionCallbacks,
   selectedByGame: ReadonlyMap<string, string>,
   onSelect: (gameId: GameId, signature: string) => void,
+  heroTitle: string | undefined,
 ): HTMLElement {
   const card = document.createElement("section");
   card.className = "hexdev-game-card";
@@ -271,10 +272,10 @@ function renderGame(
    * name spends the one line a card has on something already on screen.
    *
    * ONLY under a hero. A platform whose games have no art gets no hero at all
-   * (see renderGameSelection's own note on GAME_UI_HERO_TITLE), and there this
+   * (see renderGameSelection's own note on `heroTitle`), and there this
    * heading is the only thing naming the game -- so it keeps the name. And a
    * seat count with no format word written for it keeps it too. */
-  title.textContent = GAME_UI_HERO_TITLE === undefined ? gameName : (STRINGS.formatName(entry.seatCount) ?? gameName);
+  title.textContent = heroTitle === undefined ? gameName : (STRINGS.formatName(entry.seatCount) ?? gameName);
   card.appendChild(title);
 
   // What this format IS, from the platform's own seat count — see
@@ -400,9 +401,20 @@ function appendIfPresent(parent: HTMLElement, child: HTMLElement | undefined): v
 export function renderGameSelection(
   container: HTMLElement,
   catalog: readonly CatalogEntry[],
+  family: GameFamilyId,
   presenceByGame: ReadonlyMap<GameId, readonly LobbyDisplayEntry[]>,
   callbacks: GameSelectionCallbacks,
 ): void {
+  // Resolved by the family the player already selected — NEVER the
+  // module-level `soleFamilyUi` constant. That constant answers "is there a
+  // single family on the whole platform", which degrades to no hero the
+  // moment a second family registers (see the MODIFIED requirement this
+  // function now satisfies); `familyUiFor` answers "what does THIS family
+  // look like", which this screen always has a real answer for regardless of
+  // how many other families exist.
+  const familyUi = familyUiFor(family);
+  const hero = familyUi?.hero ?? [];
+  const heroTitle = familyUi?.heroTitle;
   ensureChromeStyles(container.ownerDocument);
   // WCAG 2.1.1/2.4.3 (focus-continuity.ts): every live presence broadcast
   // re-runs this whole function, and the wipe below used to dump keyboard
@@ -421,7 +433,7 @@ export function renderGameSelection(
   const selectedByGame = selectionFor(container);
   const select = (gameId: GameId, signature: string): void => {
     selectedByGame.set(gameId, signature);
-    renderGameSelection(container, catalog, presenceByGame, callbacks);
+    renderGameSelection(container, catalog, family, presenceByGame, callbacks);
   };
   container.replaceChildren();
   container.className = "convite-chrome";
@@ -454,10 +466,10 @@ export function renderGameSelection(
   // act on, so it is hidden from the accessibility tree rather than given
   // four alt texts that would be read out before the heading.
   //
-  // Rendered only if a registered game offered one (game-ui-registry.ts's
-  // GAME_UI_HERO). A platform with no art gets a lobby with no hero, which is
-  // a lobby and not a hole.
-  if (GAME_UI_HERO.length > 0) {
+  // Rendered only if the SELECTED family declares one (`familyUiFor`, above).
+  // A family with no art gets a lobby with no hero, which is a lobby and not
+  // a hole.
+  if (hero.length > 0) {
     const fan = document.createElement("div");
     // The greeting, which begins on the first render this container can be
     // PLAYED with — see DEALT_AT above. A lobby still waiting for its counts
@@ -473,7 +485,7 @@ export function renderGameSelection(
     const startedAt = DEALT_AT.get(container);
     // The greeting is over when its LAST card has finished: that card waits
     // out the stagger for its index and then takes a full duration to land.
-    const greeting = DEAL_STAGGER_MS * Math.max(0, GAME_UI_HERO.length - 1) + DEAL_DURATION_MS;
+    const greeting = DEAL_STAGGER_MS * Math.max(0, hero.length - 1) + DEAL_DURATION_MS;
     const elapsed = startedAt === undefined ? undefined : Date.now() - startedAt;
     const dealing = elapsed !== undefined && elapsed < greeting;
     fan.className = dealing ? "hexdev-chrome-fan hexdev-chrome-fan--dealing" : "hexdev-chrome-fan";
@@ -481,7 +493,7 @@ export function renderGameSelection(
     // the greeting is running, so a finished hand carries no stale offset.
     if (dealing) fan.style.setProperty("--elapsed", `${String(elapsed)}ms`);
     fan.setAttribute("aria-hidden", "true");
-    for (const [index, src] of GAME_UI_HERO.entries()) {
+    for (const [index, src] of hero.entries()) {
       const card = document.createElement("img");
       card.className = "hexdev-chrome-fan-card";
       card.src = src;
@@ -495,7 +507,7 @@ export function renderGameSelection(
       card.style.setProperty("--i", String(index));
       fan.appendChild(card);
     }
-    fan.style.setProperty("--n", String(GAME_UI_HERO.length));
+    fan.style.setProperty("--n", String(hero.length));
     header.appendChild(fan);
   }
 
@@ -503,15 +515,15 @@ export function renderGameSelection(
   // says where you are first and what to do second; this screen had it the
   // other way round, so the biggest thing on it was a verb.
   //
-  // The name comes from the game (game-ui-registry.ts's GAME_UI_HERO_TITLE),
-  // never from the catalog: the catalog has "Truco Argentino" and "Truco
-  // Argentino 2v2" as separate entries because they are separate matches to
-  // join, and printing one of those here would put a seat count in the title
-  // of the screen. A platform whose games declare nothing falls back to the
+  // The name comes from the SELECTED family (`heroTitle`, above, resolved via
+  // `familyUiFor`), never from the catalog: the catalog has "Truco Argentino"
+  // and "Truco Argentino 2v2" as separate entries because they are separate
+  // matches to join, and printing one of those here would put a seat count in
+  // the title of the screen. A family that declares nothing falls back to the
   // instruction as the heading, which is what this always was.
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";
-  title.textContent = GAME_UI_HERO_TITLE ?? STRINGS.selectionTitle;
+  title.textContent = heroTitle ?? STRINGS.selectionTitle;
   // BEFORE the title, so a screen reader meets the way out before the
   // heading rather than after everything under it.
   if (callbacks.onBack !== undefined) {
@@ -525,7 +537,7 @@ export function renderGameSelection(
 
   header.appendChild(title);
 
-  if (GAME_UI_HERO_TITLE !== undefined) {
+  if (heroTitle !== undefined) {
     const instruction = document.createElement("p");
     instruction.className = "hexdev-chrome-instruction";
     instruction.textContent = STRINGS.selectionTitle;
@@ -553,7 +565,7 @@ export function renderGameSelection(
   games.className = "hexdev-chrome-games";
   content.appendChild(games);
   for (const entry of catalog) {
-    games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks, selectedByGame, select));
+    games.appendChild(renderGame(entry, presenceByGame.get(entry.id), callbacks, selectedByGame, select, heroTitle));
   }
   appendIfPresent(content, renderAbout(aboutWasOpen));
   restoreFocus(container, focusSnapshot);

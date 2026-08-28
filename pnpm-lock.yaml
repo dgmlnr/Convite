@@ -94,6 +94,9 @@ importers:
       '@hexdev/platform-core':
         specifier: workspace:*
         version: link:../../packages/platform-core
+      '@hexdev/spanish-deck-ui':
+        specifier: workspace:*
+        version: link:../../packages/spanish-deck-ui
       '@hexdev/transport-colyseus-client':
         specifier: workspace:*
         version: link:../../packages/transport-colyseus-client

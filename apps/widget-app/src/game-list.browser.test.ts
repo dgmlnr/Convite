@@ -90,7 +90,7 @@ describe("renderGameList — screen one", () => {
 describe("the back control — absent, never disabled", () => {
   it("screen two renders no back control when the caller passes no onBack", () => {
     const el = fresh();
-    renderGameSelection(el, TRUCO.entries, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, TRUCO.entries, TRUCO.id, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector(".hexdev-chrome-back"), "a tenant with one game never saw a list to return to").toBeNull();
   });
@@ -98,7 +98,7 @@ describe("the back control — absent, never disabled", () => {
   it("renders it, and returns, when there is somewhere to go back to", () => {
     const el = fresh();
     const onBack = vi.fn();
-    renderGameSelection(el, TRUCO.entries, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop, onBack });
+    renderGameSelection(el, TRUCO.entries, TRUCO.id, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop, onBack });
 
     const back = el.querySelector<HTMLElement>(".hexdev-chrome-back")!;
     expect(back.tagName).toBe("BUTTON");
@@ -113,7 +113,7 @@ describe("the back control — absent, never disabled", () => {
    * error, no failing test, and no way to notice except by playing. */
   it("the picked modality survives a trip out to the list and back into the game", () => {
     const el = fresh();
-    renderGameSelection(el, TRUCO.entries, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, TRUCO.entries, TRUCO.id, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const pressed = (): string | undefined => el.querySelector<HTMLElement>(".hexdev-modality-option[aria-pressed='true']")?.textContent ?? undefined;
 
@@ -130,7 +130,7 @@ describe("the back control — absent, never disabled", () => {
     expect(picked, "the click has to have moved the selection before there is anything to preserve").not.toBe(before);
 
     renderGameList(el, [TRUCO, ESCOBA], { onOpenGame: noop });
-    renderGameSelection(el, TRUCO.entries, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(el, TRUCO.entries, TRUCO.id, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     expect(el.querySelector<HTMLElement>(".hexdev-modality-option[aria-pressed='true']")?.textContent, "same container, so the pick is still there").toBe(picked);
   });
