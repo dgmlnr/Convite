@@ -814,3 +814,67 @@ describe("the lobby's own copy fits and does not repeat itself", () => {
     expect(new Set(headings).size, `the cards must stay distinguishable: ${headings.join(" | ")}`).toBe(headings.length);
   });
 });
+
+/* THE ROW HAS TO LIVE IN THE HEADER'S BAND, and until now it did not.
+ *
+ * Measured on the committed wide baseline at a 1024px container: the header
+ * sat at 341px wide, centred on 512, while `.hexdev-chrome-games` ran the
+ * full 960 and its single card ran 960 with its `h2` flush against x:48. A
+ * centred hero above a card sprawling under it, which is what a reader
+ * notices before they can say why.
+ *
+ * THE FIX IS NOT "MATCH THE HEADER'S WIDTH". The header renders 341px because
+ * that is its own content's width under a `max-width: 46rem` cap it never
+ * reaches — 341 is a measurement, never a target, and a 341px card would be
+ * narrower than the title above it. What both elements must share is the
+ * BAND: the same cap and the same centre. The header then centres its text
+ * inside that band and the row centres its cards inside the same one.
+ *
+ * Bounded tracks (`minmax(320px, 22rem)`) rather than `1fr` are what stop one
+ * card from eating the whole band, and `justify-content: center` is what
+ * keeps two of them centred on the same axis instead of packed left. */
+describe("the games row shares the header's band (measured, at 1024px)", () => {
+  const box = (root: HTMLElement, selector: string): DOMRect => root.querySelector(selector)!.getBoundingClientRect();
+  function mountAt1024(entries: readonly CatalogEntry[]): HTMLElement {
+    const el = freshContainer();
+    el.style.width = "1024px";
+    renderGameSelection(el, entries, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    return el;
+  }
+
+  it("one card is bounded and centred instead of running the full width", () => {
+    const el = mountAt1024([TRUCO_ENTRY]);
+    const header = box(el, ".hexdev-chrome-header");
+    const games = box(el, ".hexdev-chrome-games");
+    const card = box(el, ".hexdev-game-card");
+
+    expect(Math.round(card.width), "a single card takes the bounded track, not the whole row (was 960)").toBe(352);
+    expect(Math.round(card.left + card.width / 2), "centred on the same axis as the header").toBe(Math.round(header.left + header.width / 2));
+    expect(games.width, "and the row itself never outgrows the band the header is capped to").toBeLessThanOrEqual(46 * 16);
+  });
+
+  it("two cards stay even and stay centred on the same axis", () => {
+    const el = mountAt1024([TRUCO_ENTRY, TRUCO_2V2_ENTRY]);
+    const header = box(el, ".hexdev-chrome-header");
+    const [first, second] = [...el.querySelectorAll<HTMLElement>(".hexdev-game-card")].map((card) => card.getBoundingClientRect());
+
+    expect(Math.round(first!.width), "same bounded track as one card — the row does not restretch").toBe(352);
+    expect(Math.round(second!.width)).toBe(352);
+    expect(
+      Math.round((first!.left + second!.right) / 2),
+      "their midpoint is the header's centre: centred as a pair, never packed left",
+    ).toBe(Math.round(header.left + header.width / 2));
+  });
+
+  /* The card's own copy stays LEFT-ALIGNED against its own edge. That is not
+   * an oversight being preserved: a title and a blurb are read, and centred
+   * prose in a card is harder to scan than flush-left prose. What was wrong
+   * was the CARD's width, never its text's alignment. */
+  it("the card's title still starts at the card's own left edge", () => {
+    const el = mountAt1024([TRUCO_ENTRY]);
+    const card = box(el, ".hexdev-game-card");
+    const title = box(el, ".hexdev-game-card h2");
+
+    expect(title.left - card.left, "flush left inside the card, by its padding only").toBeLessThan(24);
+  });
+});

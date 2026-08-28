@@ -419,8 +419,20 @@ export function buildChromeStylesheet(): string {
  * heading and the choices to read as two things, and the gap is what does it —
  * --hx-space-xl, one step above the gap BETWEEN cards, so the hierarchy is in
  * the spacing and not only in the type. */
+/* THE SAME BAND THE HEADER LIVES IN. .hexdev-chrome-header above is capped
+ * at 46rem and centred with an auto margin; this row had neither, so at wide
+ * widths a centred hero sat above content that ran the full container. What a
+ * reader sees is the mismatch, before they can say what it is.
+ *
+ * NOT "the same width as the header" -- that renders at its own content's
+ * width (341px measured at a 1024px container), which is a measurement and
+ * never a target: a card narrower than the title above it would be worse than
+ * the sprawl. What the two share is the CAP and the CENTRE. Each then centres
+ * its own content inside the one band. */
 .hexdev-chrome-games {
   margin-top: var(--hx-space-lg);
+  max-width: 46rem;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: var(--hx-space-lg);
@@ -429,7 +441,15 @@ export function buildChromeStylesheet(): string {
 @container hexdev-chrome (min-width: 720px) {
   .hexdev-chrome-games {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    /* BOUNDED, not 1fr. auto-fit collapses the tracks it does not fill,
+     * so with 1fr a lone card inherited the entire row -- 960px beside a
+     * 341px header. A 22rem ceiling makes one card the same size as one of
+     * two, which is also what keeps the screen from re-laying-out the moment
+     * a second game ships. justify-content:center is the other half: with
+     * bounded tracks the row now has spare space, and without this the cards
+     * would pack against its left edge instead of centring in the band. */
+    grid-template-columns: repeat(auto-fit, minmax(320px, 22rem));
+    justify-content: center;
     /* PR-EST: cards size to their own content instead of stretching to the
      * tallest sibling. A game with one modality was being given the height of
      * a game with two, and the empty half read as something failing to load. */
