@@ -136,13 +136,109 @@ To update a baseline on purpose:
    the point: a baseline written from your own browser bakes your machine's
    font rasterizer into the repo, which is the exact problem the container
    exists to remove. The host runner is for looking, never for writing.
-2. Open `git diff --stat` and the actual changed PNG(s) — a reviewer must be
-   able to look at the new baseline and tell whether it is *right*, not just
-   different. If you cannot explain in the commit message what changed and
-   why, do not commit it.
+2. Open the actual changed PNG(s) — a reviewer must be able to look at the
+   new baseline and tell whether it is *right*, not just different. If you
+   cannot explain in the commit message what changed and why, do not commit
+   it. Note that `git diff` shows you a POINTER, not an image, because the
+   baselines are in Git LFS; see *The baselines live in Git LFS* below for how
+   to actually compare one.
 3. Commit the PNG together with whatever code change caused it, in the same
    commit — a baseline update with no accompanying code change is a red
    flag, not routine maintenance.
+
+## The baselines live in Git LFS
+
+The 20 PNGs under `__screenshots__/` are tracked with [Git LFS](https://git-lfs.com/).
+What git stores is a three-line text pointer; the bytes live on a separate
+store, and a filter swaps one for the other on checkout. The rule is in
+`/.gitattributes` and matches the `-chromium-linux.png` suffix only, so a
+failure attachment sitting in the same directory can never be swept in.
+
+### You need it installed, once per machine
+
+```
+git lfs install
+```
+
+Exactly that — **not `git lfs install --local`**. The local form writes into
+`.git/config`, which never travels, so every fresh clone would arrive with the
+filter unregistered and would have to remember this step again. Global writes
+it once and covers every clone you will ever make.
+
+It writes filter config into your **global `~/.gitconfig`**, which is a change
+outside this repository. That is not as broad as it sounds: the filters are
+driven by `.gitattributes`, so in a repo with no LFS rules they never run on
+anything. Global makes them *available*, not *active*. To undo it, `git lfs
+uninstall` — and note the global entry **outlives a revert of this repo**,
+because it was never stored here in the first place.
+
+### When it is missing, this is what you see
+
+```
+Error: unrecognised content at end of stream
+Caused by: Error: Matcher did not succeed in time.
+```
+
+That is the PNG decoder being handed 130 bytes of pointer text and refusing.
+It names no cause, which is why it is written down here: the run failed because
+the LFS content was never fetched, not because the page rendered wrong.
+
+The fix is both halves:
+
+```
+git lfs install     # register the filter (affects future checkouts)
+git lfs pull        # fetch the objects into the clone you already have
+```
+
+`install` alone is not enough on an existing clone. It changes what happens on
+the NEXT checkout; it does not go and get the bytes you are already missing.
+
+Note the suite does not report this as a missing reference — the file exists,
+it is simply not an image. It fails loudly either way, and that was verified by
+substituting a pointer for a real baseline and running the suite: exit 1,
+`Tests 1 failed | 19 passed (20)`.
+
+### Reviewing a baseline change got harder, on purpose
+
+GitHub renders a rich 2-up/swipe/onion-skin diff for an ordinary committed
+image. It does **not** do that for an LFS-tracked one — the pull request shows
+the pointer's text changing and nothing else. That cost was weighed and
+accepted when this moved to LFS.
+
+To actually compare, pull the branch and open the two versions yourself:
+
+```
+git show main:<path to the baseline> > /tmp/before.png
+open <path to the baseline> /tmp/before.png
+```
+
+### CI caches the objects instead of fetching them every run
+
+`.github/workflows/ci.yml`'s visual job does a plain checkout and then restores
+`.git/lfs` from an Actions cache keyed on the object OIDs, fetching only on a
+miss. Do not "simplify" this back to `lfs: true` on the checkout.
+
+The arithmetic is why: the baselines weigh **4.2 MB**, LFS bandwidth is
+**1 GB/month**, and this repo ran 23 CI jobs in its first two days. At a fetch
+per run that is roughly **1.45 GB a month** — over quota before the games still
+to come add baselines of their own. Keyed on OIDs, the cache changes only when
+a baseline's content changes, so the ordinary run costs nothing.
+
+Actions cache storage is free and does not draw on the LFS quota. The cache
+sits in FRONT of the real store, never in place of it: on a miss, `git lfs pull`
+goes to origin. It evicts after 7 days unused and is read-only for pull requests
+from forks — both simply fetch instead, and neither can produce a false pass.
+
+### The history was not rewritten
+
+Only new commits store pointers. Every PNG committed before this change is
+still an ordinary blob in history, on purpose: rewriting it would have meant
+force-pushing a protected `main` and breaking every existing clone, to reclaim
+4.2 MB.
+
+So **the repository did not get smaller — it stopped growing.** A checkout of
+an old commit still works without git-lfs; a checkout of a commit inside the
+LFS window does not.
 
 ## What this suite can and cannot catch
 

@@ -68,7 +68,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      # NO `lfs: true` HERE, ON PURPOSE -- see the cache block below. A plain
+      # checkout brings down the POINTERS, which cost nothing, and the pointers
+      # are what the cache key is computed from.
       - uses: actions/checkout@v4
+
+      # THE BASELINES ARE IN GIT LFS, AND FETCHING THEM EVERY RUN DOES NOT FIT
+      # THE BUDGET. The 20 baselines weigh 4.2 MB; this repo ran 23 CI jobs in
+      # its first two days, which annualises past 300 a month. At 4.2 MB a run
+      # that is ~1.45 GB against a 1 GB/month LFS bandwidth quota -- over budget
+      # in month one, before the games still to come add baselines of their own.
+      #
+      # So the objects are cached, and the key is the OIDs rather than the
+      # files: it changes only when a baseline's CONTENT changes, so the common
+      # run -- code moved, pixels did not -- is a hit and spends nothing.
+      #
+      # This is an ACCELERATOR IN FRONT OF THE REAL STORE, never a substitute
+      # for it. On a miss, `git lfs pull` goes to origin. A cache that answered
+      # in place of the store would let the suite compare a baseline against
+      # itself and pass green forever with a live regression underneath, which
+      # is why the cache-as-storage option was rejected outright.
+      #
+      # Two ways it degrades, both harmless: Actions evicts an entry unused for
+      # 7 days (costs one full fetch to re-warm), and a pull request from a fork
+      # gets a read-only cache token (so it fetches, and saves nothing). Both
+      # fall back to origin. Neither can manufacture a false pass.
+      #
+      # The key comes from a step OUTPUT rather than `hashFiles`, deliberately:
+      # `hashFiles` resolves its argument relative to the workspace, so pointing
+      # it at a scratch file outside would silently return the empty string. The
+      # key would then be the constant `lfs-`, every run would hit the same
+      # first-ever entry, and a changed baseline would quietly never be cached
+      # again -- a slow leak that still passes, which is the worst kind.
+      - name: LFS object key
+        id: lfs-key
+        run: echo "sha=$(git lfs ls-files -l | cut -d' ' -f1 | sort | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache LFS objects
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: lfs-${{ steps.lfs-key.outputs.sha }}
+          restore-keys: lfs-
+
+      - name: Fetch the baselines
+        run: git lfs pull
 
       - uses: pnpm/action-setup@v4
 
