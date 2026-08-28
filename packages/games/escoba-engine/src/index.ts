@@ -10,3 +10,4 @@ export type { HandView, OtherPlayerView, PlayerView } from "./view.js";
 export { getViewFor } from "./view.js";
 export type { ApplyResult, PlayCardAction, RuleViolation } from "./capture.js";
 export { applyAction } from "./capture.js";
+export { getLegalActions } from "./legal-actions.js";
