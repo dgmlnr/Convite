@@ -19,7 +19,8 @@
     "dev:host": "node scripts/dev-host.mjs",
     "dev:lan": "node scripts/dev-stack.mjs",
     "typecheck": "tsc -b",
-    "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs"
+    "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs",
+    "visual:review": "node scripts/visual-review.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
