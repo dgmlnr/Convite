@@ -405,13 +405,15 @@ export function renderGameSelection(
   presenceByGame: ReadonlyMap<GameId, readonly LobbyDisplayEntry[]>,
   callbacks: GameSelectionCallbacks,
 ): void {
-  // Resolved by the family the player already selected — NEVER the
-  // module-level `soleFamilyUi` constant. That constant answers "is there a
-  // single family on the whole platform", which degrades to no hero the
-  // moment a second family registers (see the MODIFIED requirement this
-  // function now satisfies); `familyUiFor` answers "what does THIS family
-  // look like", which this screen always has a real answer for regardless of
-  // how many other families exist.
+  // Resolved from the family the player already selected, and never from a
+  // lobby-wide winner. This screen used to read module constants derived from
+  // "the sole registered family", which answered a question this screen never
+  // asks — and degraded to no hero at all the moment a second family
+  // registered, silently (see the MODIFIED requirement this function now
+  // satisfies). `familyUiFor` answers "what does THIS family look like",
+  // which screen two always has a real answer for no matter how many other
+  // families exist. The constants were deleted with that fix rather than left
+  // exported, because their whole failure mode was looking correct.
   const familyUi = familyUiFor(family);
   const hero = familyUi?.hero ?? [];
   const heroTitle = familyUi?.heroTitle;

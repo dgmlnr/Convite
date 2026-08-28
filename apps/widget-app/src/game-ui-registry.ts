@@ -237,10 +237,6 @@ export function familyUiFor(familyId: GameFamilyId): GameFamilyUi | undefined {
   return FAMILIES.find((family) => family.id === familyId);
 }
 
-export function soleFamilyUi(families: readonly GameFamilyUi[]): GameFamilyUi | undefined {
-  return families.length === 1 ? families[0] : undefined;
-}
-
 const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
 /** The 2v2 game-ui entry — additive, registered under its own distinct
@@ -273,34 +269,6 @@ export function createGameUiRegistry(): GameUiRegistry {
     },
   };
 }
-
-/**
- * Every credit this widget owes, once each.
- *
- * DEDUPED BY LICENSE URL AND AUTHOR, which is what actually identifies an
- * obligation: both truco entries draw the same deck, and two identical
- * credits stacked on one screen reads as a bug rather than as diligence. The
- * moment a second game ships its own art the list grows on its own.
- *
- * A CONSTANT AND NOT A REGISTRY METHOD, deliberately: the credit surface
- * lives on the game-selection screen, which is rendered before any game is
- * chosen and receives no registry. Threading one through that signature to
- * reach a static fact would be a worse trade than exporting the fact.
- */
-/**
- * The front door's images and name, from the SOLE registered family or from
- * nobody — see `soleFamilyUi`. These stay module constants because the
- * screen that reads them renders before any game is chosen and receives no
- * registry; threading one through that signature to reach a static fact
- * would be a worse trade than exporting the fact.
- */
-const DOOR = soleFamilyUi(FAMILIES);
-
-/** The name over the door, from the same family that supplied its images —
- * so the title and the cards under it can never come from two games. */
-export const GAME_UI_HERO_TITLE: string | undefined = DOOR?.heroTitle;
-
-export const GAME_UI_HERO: readonly string[] = DOOR?.hero ?? [];
 
 /**
  * Every credit this widget owes, once each.

@@ -117,14 +117,14 @@ describe("renderGameSelection (spec: game-session — the widget's opening view)
  * MODIFIED requirement (spec: `lobby-chosen-game/Hero identity from the
  * selected game`, delta against `sdd/dos-pantallas-de-lobby/spec`).
  *
- * THE REGRESSION IS SILENT BY CONSTRUCTION. `GAME_UI_HERO`/`GAME_UI_HERO_TITLE`
- * (`game-ui-registry.ts`) derive from `soleFamilyUi(FAMILIES)`, which returns
- * `undefined` the moment `FAMILIES` holds more than one entry — no thrown
- * error, no broken type, just an empty fan and a title that falls back to the
- * generic instruction. Every OTHER test in this file uses its own
- * `CatalogEntry` fixtures, never `FAMILIES` itself, so none of them can catch
- * this on their own; only an assertion against the real, currently-registered
- * `FAMILIES` proves the fence bites.
+ * THE REGRESSION WAS SILENT BY CONSTRUCTION. Screen two used to read module
+ * constants in `game-ui-registry.ts` that were derived from "the sole
+ * registered family" and collapsed to `undefined`/`[]` the moment `FAMILIES`
+ * held more than one entry — no thrown error, no broken type, just an empty
+ * fan and a title falling back to the generic instruction. Every OTHER test
+ * in this file uses its own `CatalogEntry` fixtures, never `FAMILIES` itself,
+ * so none of them could catch it; only an assertion against the real,
+ * currently-registered `FAMILIES` proves this fence bites.
  *
  * This fence MUST be run and observed FAILING before the fix (threading
  * `family` through to `familyUiFor`) lands, and it fails for the reason named
