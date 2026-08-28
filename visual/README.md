@@ -218,11 +218,18 @@ open <path to the baseline> /tmp/before.png
 `.git/lfs` from an Actions cache keyed on the object OIDs, fetching only on a
 miss. Do not "simplify" this back to `lfs: true` on the checkout.
 
-The arithmetic is why: the baselines weigh **4.2 MB**, LFS bandwidth is
-**1 GB/month**, and this repo ran 23 CI jobs in its first two days. At a fetch
-per run that is roughly **1.45 GB a month** — over quota before the games still
-to come add baselines of their own. Keyed on OIDs, the cache changes only when
-a baseline's content changes, so the ordinary run costs nothing.
+It is worth being accurate about why, because the first version of this
+paragraph was not. It claimed the fetch-every-run cost blew the quota. It did
+not: it read the repo's busiest single day as the monthly average, and it used
+a 1 GB/month LFS allowance that GitHub has since raised to **10 GiB**. Even on
+that inflated rate the honest figure is ~1.45 GB against 10 GiB — roughly
+**14% of budget**, not over it.
+
+So the cache is headroom, not a rescue. What it buys is time on every run, and
+room for the games still to come to bring baselines of their own: 4.2 MB is
+comfortable, several times that on a busy month would stop being. Keyed on
+OIDs, it changes only when a baseline's content changes, so the ordinary run
+— code moved, pixels did not — costs nothing.
 
 Actions cache storage is free and does not draw on the LFS quota. The cache
 sits in FRONT of the real store, never in place of it: on a miss, `git lfs pull`

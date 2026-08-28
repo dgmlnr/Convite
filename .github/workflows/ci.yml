@@ -16,6 +16,15 @@ on:
 
 # A second push to the same branch cancels the first: the only run that matters
 # is the one for the code as it stands now.
+# PIN THE TOKEN SCOPE HERE, IN A FILE THAT SHOWS UP IN A DIFF. Without this
+# block the job inherits the repository's default workflow permission, which is
+# a checkbox in Settings -> Actions -- read today, and flippable to read/write
+# by one click that changes NOTHING in git. These jobs compile, lint and run
+# tests; none of them writes to the repository, so none of them needs a token
+# that can. Declared at workflow level so a job added later starts closed.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -73,15 +82,24 @@ jobs:
       # are what the cache key is computed from.
       - uses: actions/checkout@v4
 
-      # THE BASELINES ARE IN GIT LFS, AND FETCHING THEM EVERY RUN DOES NOT FIT
-      # THE BUDGET. The 20 baselines weigh 4.2 MB; this repo ran 23 CI jobs in
-      # its first two days, which annualises past 300 a month. At 4.2 MB a run
-      # that is ~1.45 GB against a 1 GB/month LFS bandwidth quota -- over budget
-      # in month one, before the games still to come add baselines of their own.
+      # THE BASELINES ARE IN GIT LFS, SO THIS CACHES THEM. Not because the
+      # quota is tight -- an earlier version of this comment claimed it was,
+      # and was wrong twice over. It read the repo's busiest single day (21 CI
+      # runs while a feature branched eight ways) as the monthly average, and
+      # it used a 1 GB/month LFS allowance that GitHub has since raised to
+      # 10 GiB. Even on the inflated rate the real figure is ~1.45 GB against
+      # 10 GiB: about 14% of budget, not over it.
       #
-      # So the objects are cached, and the key is the OIDs rather than the
-      # files: it changes only when a baseline's CONTENT changes, so the common
-      # run -- code moved, pixels did not -- is a hit and spends nothing.
+      # What the cache actually buys is time on every run, and headroom for
+      # when the games still to come bring baselines of their own -- 4.2 MB is
+      # comfortable, and a number several times that on a busy month would
+      # stop being. The key is the OIDs rather than the files, so it changes
+      # only when a baseline's CONTENT changes: the common run -- code moved,
+      # pixels did not -- is a hit and fetches nothing.
+      #
+      # Keep the numbers honest if you touch this. A comment that manufactures
+      # urgency gets the next decision made on a false premise, and this one
+      # already did.
       #
       # This is an ACCELERATOR IN FRONT OF THE REAL STORE, never a substitute
       # for it. On a miss, `git lfs pull` goes to origin. A cache that answered
