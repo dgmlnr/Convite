@@ -60,7 +60,7 @@ function fakeClient(id: string) {
 
 /** Same real registrations `apps/server` wires — `isHumanPriorityAction` so a
  * bot teammate (2a.2) stands down from a decision a live human shares. */
-function buildRoom(turnTimeoutSeconds: number) {
+function buildRoom(turnTimeoutSeconds: number, seedState: (state: MatchState) => MatchState = (state) => state) {
   const registry = createGameModuleRegistry([
     {
       module: trucoModule2v2,
@@ -79,7 +79,7 @@ function buildRoom(turnTimeoutSeconds: number) {
   controllers.set(1, { kind: "human", playerId: B, client: seats.B.client });
   controllers.set(2, { kind: "human", playerId: C, client: seats.C.client });
   controllers.set(3, { kind: "human", playerId: D, client: seats.D.client });
-  (room as unknown as { matchState: unknown }).matchState = pendingCallState();
+  (room as unknown as { matchState: unknown }).matchState = seedState(pendingCallState());
   (room as unknown as { broadcastViews(): void }).broadcastViews();
   return { room, seats };
 }
@@ -213,6 +213,87 @@ describe("MatchRoom pending consult — slice 2a", () => {
 
     expect(only(seats.A.sent, "consult-advice")).toHaveLength(0);
     expect((room as unknown as { pendingConsult: unknown }).pendingConsult).toBeNull();
+  });
+
+  /* THE TWO CANCELLATION PATHS THE VERIFICATION LEFT UNFENCED.
+   *
+   * Spec R2 lists four moments the question stops mattering — the asker's
+   * turn clock expiring, the HAND ENDING, the MATCH BEING DECIDED, and the
+   * room disposing. Only the first and last had fences (2a.5, 2a.8). The
+   * middle two ride the same funnel, but "rides the same funnel" is an
+   * argument about the code, not evidence about its behaviour, and this file
+   * has already paid for trusting one of those.
+   *
+   * Both go through `armTurnTimer`, which calls `clearTurnTimer` — and so
+   * `clearPendingConsult` — the moment the seat on the clock changes or
+   * `getOutcome` stops returning null. Neither needs its own bookkeeping, and
+   * that is exactly why neither is obviously covered from reading. */
+  it("the hand ends under an open consult (the partner declines the truco): cancelled, no advice, no answer arrives late", async () => {
+    const { room, seats } = buildRoom(60);
+    await askConsult(room, seats.A.client, A);
+    expect(last(seats.A.sent)).toMatchObject({ message: { pendingConsult: { askerSeat: 0 } } }); // open, on the record
+
+    // C is A's teammate and shares the obligation, so C can answer the truco
+    // while A is still consulting about it. Declining ENDS THE HAND.
+    await room.handleAction(seats.C.client, { type: "respond-truco", playerId: C, response: "no-quiero" });
+    await settle(room);
+
+    expect(only(seats.A.sent, "consult-advice"), "the question died with the hand").toHaveLength(0);
+    expect(last(seats.A.sent)).toMatchObject({ message: { pendingConsult: null } });
+    // THE HAND ended, the MATCH did not — this is what separates this fence
+    // from the one below, which would otherwise be the same test twice.
+    expect((last(seats.A.sent)!.message as { outcome: unknown }).outcome, "the match is still running").toBeNull();
+
+    // And it stays dead: the 30s cap must not fire into a hand that is over.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await settle(room);
+    expect(only(seats.A.sent, "consult-advice"), "no late fallback after the hand ended").toHaveLength(0);
+  });
+
+  it("the match is decided under an open consult: cancelled, no advice, and no clock survives the result", async () => {
+    // The engine's `pointsToWin` is a literal `15 | 30`, so a one-point match
+    // is not representable — seed D's team at 29 instead, where the single
+    // point a truco decline pays takes the match. Same path either way: the
+    // one `armTurnTimer` guards with `getOutcome`.
+    const { room, seats } = buildRoom(60, (state) => ({
+      ...state,
+      teams: state.teams.map((team) => (team.playerIds.includes(D) ? { ...team, score: 29 } : team)),
+    }));
+    await askConsult(room, seats.A.client, A);
+    expect(last(seats.A.sent)).toMatchObject({ message: { pendingConsult: { askerSeat: 0 } } });
+
+    await room.handleAction(seats.C.client, { type: "respond-truco", playerId: C, response: "no-quiero" });
+    await settle(room);
+
+    expect(only(seats.A.sent, "consult-advice"), "a decided match answers nobody").toHaveLength(0);
+    expect(last(seats.A.sent)).toMatchObject({ message: { pendingConsult: null } });
+    // The seed has to have TAKEN, or this is the hand-end fence wearing a
+    // different name: `getOutcome` is what `armTurnTimer` actually branches on.
+    expect((last(seats.A.sent)!.message as { outcome: unknown }).outcome, "the match really is decided").not.toBeNull();
+    expect(room.hasPendingTurnTimer(), "a finished match keeps no clock running").toBe(false);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await settle(room);
+    expect(only(seats.A.sent, "consult-advice"), "no late fallback after the match was decided").toHaveLength(0);
+  });
+
+  /* NO REFUND (spec R3, last clause). 2a.3 proves the quota is SPENT on open;
+   * nothing proved it is not handed back when the consult produces a fallback
+   * instead of a real answer. Those are different claims: a refund would be a
+   * generous-looking bug that costs the asker nothing today and lets them
+   * consult unlimited times per hand, which is the whole point of the cap. */
+  it("a consult that ends in the fallback does NOT refund the asker's spent quota", async () => {
+    const { room, seats } = buildRoom(90);
+    const before = (last(seats.A.sent)!.message as { view: { self: { senasRemaining: number } } }).view.self.senasRemaining;
+    await askConsult(room, seats.A.client, A);
+
+    await vi.advanceTimersByTimeAsync(30_000); // the cap fires: fallback, not a partner answer
+    await settle(room);
+
+    expect(last(only(seats.A.sent, "consult-advice"))).toMatchObject({ message: { from: "fallback" } });
+    const after = (last(seats.A.sent)!.message as { view: { self: { senasRemaining: number } } }).view.self.senasRemaining;
+    expect(before, "the fixture starts with the full quota").toBe(3);
+    expect(after, "asking is what costs — the fallback does not buy it back").toBe(2);
   });
 
   it("2a.9 a second consult while one is open is refused: first window unchanged", async () => {
