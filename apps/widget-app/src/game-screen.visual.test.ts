@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
-import { renderGameSelection } from "./game-selection.js";
+import { renderGameSelection } from "./game-screen.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
 const TRUCO_ID = "truco-argentino" as GameId;

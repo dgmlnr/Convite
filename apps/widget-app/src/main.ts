@@ -22,7 +22,7 @@ import { deriveWsEndpoint } from "./match-flow.js";
 import { renewSessionToken } from "./session-renewal.js";
 import { renderErrorWithRetry, renderStatusMessage } from "./status-view.js";
 import { applyThemeToRoot } from "./theme.js";
-import { renderGameSelection } from "./game-selection.js";
+import { renderGameSelection } from "./game-screen.js";
 import { renderUnsupportedGame } from "./unsupported-game-view.js";
 
 /**
