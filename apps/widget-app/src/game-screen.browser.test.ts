@@ -4,7 +4,7 @@ import type { GameId } from "@hexdev/platform-contract";
 import { CHROME_STYLE_ID, DEAL_DURATION_MS, DEAL_STAGGER_MS } from "./chrome-styles.js";
 import { GAME_UI_HERO } from "./game-ui-registry.js";
 import { captureFocus, restoreFocus } from "./focus-continuity.js";
-import { renderGameSelection } from "./game-selection.js";
+import { renderGameSelection } from "./game-screen.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
 const TRUCO_ID = "truco-argentino" as GameId;

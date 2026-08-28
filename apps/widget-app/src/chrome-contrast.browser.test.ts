@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { renderErrorWithRetry, renderStatusMessage } from "./status-view.js";
 import { renderUnsupportedGame } from "./unsupported-game-view.js";
-import { renderGameSelection } from "./game-selection.js";
+import { renderGameSelection } from "./game-screen.js";
 import type { GameId } from "@hexdev/platform-contract";
 import type { CatalogEntry } from "./bootstrap-data.js";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
