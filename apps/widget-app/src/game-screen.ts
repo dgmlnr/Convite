@@ -9,6 +9,20 @@ import { GAME_UI_CREDITS, GAME_UI_HERO, GAME_UI_HERO_TITLE } from "./game-ui-reg
 export interface GameSelectionCallbacks {
   onPlayVsPerson(gameId: GameId, modality: ModalityConfig): void;
   onPlayVsBot(gameId: GameId, modality: ModalityConfig, tier: BotTier): void;
+  /**
+   * Back to the list of games, when there IS a list to go back to.
+   *
+   * ABSENT, NEVER DISABLED, and the absence is how it is said: a tenant with
+   * one game never saw a list, so a greyed-out control would tell that player
+   * they are missing something that does not exist. `main.ts` passes this
+   * only when `lobby-screen.ts` says there is somewhere to return to, which
+   * keeps the decision out of this renderer and out of that file's own `if`s.
+   *
+   * A plain callback and not a route: the widget lives in an iframe and its
+   * protocol carries no history concept — the same seam
+   * `unsupported-game-view.ts` already uses for `onBackToLobby`.
+   */
+  onBack?: () => void;
 }
 
 const BOT_TIERS: readonly BotTier[] = ["easy", "normal", "hard"];
@@ -328,7 +342,7 @@ function renderGame(
  * is the term easiest to lose to a copy edit, and `DECK_ATTRIBUTION` splits
  * the facts apart for the same reason.
  */
-function renderAbout(open: boolean): HTMLElement | undefined {
+export function renderAbout(open: boolean): HTMLElement | undefined {
   if (GAME_UI_CREDITS.length === 0) return undefined;
   const details = document.createElement("details");
   details.className = "hexdev-about";
@@ -498,6 +512,17 @@ export function renderGameSelection(
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";
   title.textContent = GAME_UI_HERO_TITLE ?? STRINGS.selectionTitle;
+  // BEFORE the title, so a screen reader meets the way out before the
+  // heading rather than after everything under it.
+  if (callbacks.onBack !== undefined) {
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "hexdev-chrome-back";
+    back.textContent = STRINGS.backToGames;
+    back.addEventListener("click", callbacks.onBack);
+    header.appendChild(back);
+  }
+
   header.appendChild(title);
 
   if (GAME_UI_HERO_TITLE !== undefined) {
