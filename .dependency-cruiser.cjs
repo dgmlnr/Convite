@@ -16,12 +16,12 @@ module.exports = {
       to: { path: "^(packages|apps)/", pathNot: "^packages/widget-protocol/src" },
     },
     {
-      name: "l0-truco-engine-no-workspace-deps",
+      name: "l0-game-engine-no-workspace-deps",
       severity: "error",
       comment:
-        "truco-engine is pure L0 and must not depend on any other workspace package, platform-contract included: the domain must not know the platform exists.",
-      from: { path: "^packages/games/truco-engine/src" },
-      to: { path: "^(packages|apps)/", pathNot: "^packages/games/truco-engine/src" },
+        "A game engine (packages/games/*-engine) is pure L0 and must not depend on any other workspace package, platform-contract included: the domain must not know the platform exists. Generalized from a per-package rule (was truco-engine-only) so a new engine is fenced the day it is scaffolded, per gotchas/cercados-no-se-heredan-a-juego-nuevo.",
+      from: { path: "^packages/games/([^/]+-engine)/src" },
+      to: { path: "^(packages|apps)/", pathNot: "^packages/games/$1/src" },
     },
     {
       name: "l0-spanish-deck-ui-no-workspace-deps",

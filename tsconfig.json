@@ -6,6 +6,7 @@
     { "path": "packages/spanish-deck-ui" },
     { "path": "packages/platform-core" },
     { "path": "packages/games/truco-engine" },
+    { "path": "packages/games/escoba-engine" },
     { "path": "packages/games/truco-bot" },
     { "path": "packages/games/truco-ui" },
     { "path": "packages/games/truco-module" },
