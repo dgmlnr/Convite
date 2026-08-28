@@ -1,6 +1,7 @@
 import { ensureChromeStyles } from "./chrome-styles.js";
 import type { GameFamily } from "./game-families.js";
 import { renderAbout } from "./game-screen.js";
+import { familyUiFor } from "./game-ui-registry.js";
 import { STRINGS, translateGameName } from "./i18n.js";
 
 /**
@@ -28,6 +29,16 @@ export interface GameListCallbacks {
 
 export function renderGameList(container: HTMLElement, families: readonly GameFamily[], callbacks: GameListCallbacks): void {
   ensureChromeStyles(container.ownerDocument);
+  // THE SAME SHELL CLASS SCREEN TWO SETS, and it is not decoration: it
+  // carries the felt, the type scale, and the @container context every
+  // responsive rule below it is written against. Without it this rendered as
+  // black text on white with no panels -- which is exactly how the first
+  // scene of this screen came out, and why the scene exists.
+  container.className = "convite-chrome";
+  // Gates chrome-styles.ts's container-type declaration and keeps this screen
+  // top-anchored: the status/error views centre themselves vertically, and a
+  // list of games is not a message.
+  container.dataset.chromeView = "lobby";
   container.replaceChildren();
 
   const content = document.createElement("div");
@@ -74,6 +85,33 @@ export function renderGameList(container: HTMLElement, families: readonly GameFa
     card.className = "hexdev-game-card hexdev-game-card--choice";
     card.dataset.family = family.id;
 
+    // ITS OWN CARDS, ahead of its name: somebody who plays reads the faces
+    // before they read a word, and somebody who does not still sees a hand.
+    // Hidden from the accessibility tree because the heading below already
+    // says which game this is — three alt texts would be read out first and
+    // name nothing a player must act on.
+    //
+    // A family that declares none renders a title-only card, still full size
+    // and still a full activation target: a game with no art yet is a game,
+    // not a hole in the list.
+    const art = familyUiFor(family.id)?.cardArt ?? [];
+    if (art.length > 0) {
+      const fan = document.createElement("div");
+      fan.className = "hexdev-game-card-art";
+      fan.setAttribute("aria-hidden", "true");
+      fan.style.setProperty("--n", String(art.length));
+      for (const [index, src] of art.entries()) {
+        const face = document.createElement("img");
+        face.className = "hexdev-game-card-face";
+        face.src = src;
+        face.alt = "";
+        face.decoding = "async";
+        face.style.setProperty("--i", String(index));
+        fan.appendChild(face);
+      }
+      card.appendChild(fan);
+    }
+
     const name = document.createElement("h2");
     // The name comes from the family's FIRST entry, which is the catalog's
     // own first way of playing it. Both truco entries translate to names that
@@ -91,6 +129,19 @@ export function renderGameList(container: HTMLElement, families: readonly GameFa
   // always-reachable screen; that stopped being true the moment a
   // multi-family tenant could sit here instead. An obligation is owed on
   // whichever screen a player is actually looking at.
+  const foot = document.createElement("footer");
+  foot.className = "hexdev-chrome-foot";
+
+  // THE MARK, and it is deliberately the quietest thing on the screen. The
+  // games are the content; this only says where you are. It sits beside the
+  // credits rather than above the list because a front door that names itself
+  // louder than what it offers is an advertisement.
+  const brand = document.createElement("p");
+  brand.className = "hexdev-chrome-brand";
+  brand.textContent = STRINGS.brand;
+  foot.appendChild(brand);
+
   const about = renderAbout(false);
-  if (about !== undefined) content.appendChild(about);
+  if (about !== undefined) foot.appendChild(about);
+  content.appendChild(foot);
 }

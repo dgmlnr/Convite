@@ -1,7 +1,7 @@
 import type { GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
-import { DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
+import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -162,12 +162,27 @@ export interface GameFamilyUi {
    * shell is game-agnostic: a game says what represents it, the shell only
    * knows how to show it. */
   readonly hero?: readonly string[];
+  /**
+   * The two or three cards that name this game on its CARD in the list — a
+   * different job from `hero`, and deliberately its own field.
+   *
+   * NOT a slice of `hero`. `hero-cards.ts` says ORDER IS THE LAYOUT, with the
+   * best card at the fan's centre because that is the position nothing
+   * overlaps; taking the first three would put it at the edge, half hidden.
+   * And the shell must not be the one deciding which of a game's cards
+   * represent it.
+   *
+   * No `cardArt ?? hero` fallback either: a five-card fan shrunk into a list
+   * card is a texture, not a hand. A game with nothing declared renders a
+   * title-only card, still full size and still a full activation target.
+   */
+  readonly cardArt?: readonly string[];
   /** What rendering this game owes. Optional: a game that draws nothing
    * licensed owes nothing, and an empty list must not become a ceremony. */
   readonly credits?: readonly AssetCredit[];
 }
 
-const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, credits: [DECK_ATTRIBUTION] };
+const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_ATTRIBUTION] };
 
 const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY];
 
@@ -181,6 +196,19 @@ const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY];
  * degrades to no hero. A wrong game's art on the door would look deliberate,
  * which is the worst way for a bug to look.
  */
+/**
+ * A family's own identity, by family id.
+ *
+ * A MODULE FUNCTION rather than a registry method, for the same reason
+ * `GAME_UI_CREDITS` is a constant: the screen that reads this renders BEFORE
+ * any game is chosen and receives no registry. `registry.family()` takes a
+ * `GameId` because screen two starts from the game it is already showing;
+ * screen one starts from the family it is about to offer.
+ */
+export function familyUiFor(familyId: GameFamilyId): GameFamilyUi | undefined {
+  return FAMILIES.find((family) => family.id === familyId);
+}
+
 export function soleFamilyUi(families: readonly GameFamilyUi[]): GameFamilyUi | undefined {
   return families.length === 1 ? families[0] : undefined;
 }
