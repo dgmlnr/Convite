@@ -142,7 +142,16 @@ To update a baseline on purpose:
    it. Note that `git diff` shows you a POINTER, not an image, because the
    baselines are in Git LFS; see *The baselines live in Git LFS* below for how
    to actually compare one.
-3. Commit the PNG together with whatever code change caused it, in the same
+3. Squeeze it before committing. Vitest writes a PNG that has never been
+   optimized, and these live in LFS where every byte is fetched:
+   ```
+   oxipng -o max <the baseline you just wrote>
+   ```
+   Lossless — it rewrites the compression, never the pixels, so the suite
+   still passes against it without regenerating anything. Run over all 20 at
+   once it recovered **33%** (4.36 MB → 2.89 MB), which is where they sit
+   today. Skip this and the directory drifts back up one baseline at a time.
+4. Commit the PNG together with whatever code change caused it, in the same
    commit — a baseline update with no accompanying code change is a red
    flag, not routine maintenance.
 
