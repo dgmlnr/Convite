@@ -12,7 +12,7 @@ const TRUCO_ID = "truco-argentino" as GameId;
 function fakeTrucoModule(): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
   return {
     id: TRUCO_ID,
-    metadata: { seatCount: 2, displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
+    metadata: { seatCount: 2, gameFamily: "truco", displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
     configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
     createMatch: () => ({}),
     applyAction: () => ({ ok: true, state: {} }),
@@ -87,6 +87,10 @@ describe("handleEmbedRequest — catalog (spec: tenant-catalog — server-enforc
     expect(body.catalog).toEqual([
       {
         id: TRUCO_ID,
+        // The wire carries the family too — the client groups two ways of
+        // playing one game into one thing to choose, and cannot derive that
+        // from the id without guessing.
+        gameFamily: "truco",
         displayNameKey: "games.truco.name",
         seatCount: 2,
         configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],

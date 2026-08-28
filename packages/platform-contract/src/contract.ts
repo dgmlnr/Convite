@@ -1,4 +1,4 @@
-import type { GameId, PlayerId } from "./ids.js";
+import type { GameFamilyId, GameId, PlayerId } from "./ids.js";
 import type { JsonValue } from "./json.js";
 
 /** What a lobby/catalog UI needs to present a game. No team concept, no
@@ -8,6 +8,17 @@ export interface GameMetadata {
   readonly seatCount: number;
   readonly displayNameKey: string;
   readonly assetBase: string;
+  /**
+   * Which game this is, as a player would name it — see `GameFamilyId`.
+   *
+   * OPTIONAL HERE AND REQUIRED ON THE WAY OUT, on purpose. 26 of this repo's
+   * 28 `GameMetadata` construction sites are test fixtures that have no
+   * opinion about grouping, and a required field would have made every one of
+   * them declare something it does not care about. `buildCatalog` normalizes
+   * the absence to the game's own id, so no CLIENT ever handles `undefined`:
+   * a game that declares no family is simply a family of one.
+   */
+  readonly gameFamily?: GameFamilyId;
 }
 
 export type ConfigOptionValue = string | number | boolean;
