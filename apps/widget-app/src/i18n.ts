@@ -83,7 +83,13 @@ export const STRINGS = {
   // whole block of controls. Comma-joined rather than dash-joined so a screen
   // reader pauses instead of reading punctuation, and game-first because that
   // is the order a player already reads the card in.
-  modalityGroup: (gameName: string, description: string): string => `${gameName}, ${description}`,
+  //
+  // TOTAL over `description` (spec: `platform-empty-config-rendering`): a
+  // game with `configOptions: []` has nothing to describe, and joining an
+  // empty description left a dangling ", " with nothing after it — the
+  // group's own name, not just its heading, is a platform defect. `undefined`
+  // falls back to the game name alone, never a trailing separator.
+  modalityGroup: (gameName: string, description: string | undefined): string => (description === undefined ? gameName : `${gameName}, ${description}`),
   playVsPerson: "Jugar contra otra persona",
   /**
    * What a format IS, in one line, keyed off the only fact the platform

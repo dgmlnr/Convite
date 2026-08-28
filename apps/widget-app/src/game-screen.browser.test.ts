@@ -27,6 +27,26 @@ const TRUCO_2V2_ENTRY: CatalogEntry = {
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
 };
 
+const NO_CONFIG_ID = "fixture-no-config" as GameId;
+
+/**
+ * PLATFORM fixture (spec: `platform-empty-config-rendering`), deliberately
+ * NOT escoba. Any current or future game whose `configOptions` is exactly
+ * empty reaches this same code path — `deriveModalities([])` yields exactly
+ * one modality, the empty object `{}` (verified against
+ * `packages/platform-core/src/presence.ts`), so `describeModality` has
+ * nothing to join. Reuses truco's own `displayNameKey`/family purely so the
+ * rendered game name is predictable in an assertion; it carries no other
+ * truco or escoba meaning.
+ */
+const NO_CONFIG_ENTRY: CatalogEntry = {
+  id: NO_CONFIG_ID,
+  gameFamily: TRUCO_ENTRY.gameFamily,
+  displayNameKey: "games.truco.name",
+  seatCount: 2,
+  configOptions: [],
+};
+
 let container: HTMLElement;
 
 afterEach(() => {
@@ -478,6 +498,29 @@ describe("lobby structure and group naming (WCAG 1.3.1 / 2.4.6)", () => {
     expect(easyButtons).toHaveLength(2);
     const groupNames = easyButtons.map((button) => button.closest(".hexdev-modality")?.getAttribute("aria-label"));
     expect(new Set(groupNames).size, `repeated "Fácil" buttons under ${JSON.stringify(groupNames)}`).toBe(2);
+  });
+
+  /**
+   * Platform fix (spec: `platform-empty-config-rendering`), triggered by a
+   * game whose `configOptions` is exactly empty — NOT specific to escoba.
+   * Today `describeModality({}, [])` returns `""`, which lands as an EMPTY
+   * `<h3>` (WCAG 1.3.1/2.4.6) and, via `STRINGS.modalityGroup`, as a group
+   * name with a dangling ", " and nothing after it. This fence MUST be run
+   * and observed FAILING against the current, unfixed code before the total
+   * `describeModality`/`modalityGroup` fix lands.
+   */
+  it("omits the modality heading and keeps the group name free of a dangling separator for a game with empty configOptions", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [NO_CONFIG_ID, [{ modality: {}, waitingCount: undefined, promoteBotFallback: true }]],
+    ]);
+
+    renderGameSelection(el, [NO_CONFIG_ENTRY], NO_CONFIG_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    expect(el.querySelector(".hexdev-game-card .hexdev-modality-title"), "an empty modality heading must not render at all").toBeNull();
+    const group = el.querySelector<HTMLElement>(".hexdev-modality");
+    expect(group?.getAttribute("aria-label"), "a dangling separator with nothing after it").not.toMatch(/,\s*$/);
+    expect(group?.getAttribute("aria-label")).toBe("Truco Argentino");
   });
 });
 
