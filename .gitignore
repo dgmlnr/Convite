@@ -36,6 +36,23 @@ blob-report/
 # inside a PR before this line existed.
 **/__screenshots__/*.browser.test.ts/
 
+# AND THE THIRD HALF, found while moving the baselines into LFS. The rule above
+# ignores a whole BROWSER-test directory, which works because nothing in one is
+# ever worth keeping. A VISUAL test directory cannot be ignored that way: the
+# baselines live in it. So when a *.visual.test.ts fails, Vitest drops its
+# attachment right there, beside the real baselines, matched by no rule at all —
+# `git check-ignore -v` finds nothing, and it shows up in `git status` looking
+# committable. That is the exact defect the block above was written to fix,
+# in the one directory it could not cover.
+#
+# The discriminator is the NAME, and Vitest is consistent about it: an approved
+# baseline is always `<snapshot name>-chromium-linux.png`, while an attachment
+# is the full test title plus a retry index. So: ignore the directory's
+# contents, then take the baselines back. `.gitattributes` selects the LFS set
+# with the same suffix — one fact about Vitest's naming, enforced twice.
+**/__screenshots__/*.visual.test.ts/*
+!**/__screenshots__/*.visual.test.ts/*-chromium-linux.png
+
 # Environment
 .env
 .env.*
