@@ -229,6 +229,24 @@ sits in FRONT of the real store, never in place of it: on a miss, `git lfs pull`
 goes to origin. It evicts after 7 days unused and is read-only for pull requests
 from forks — both simply fetch instead, and neither can produce a false pass.
 
+**A cache miss on `main` right after a merge is expected, not a fault.** Actions
+scopes caches by ref: a run may restore one created on its own branch or on the
+default branch, never on a sibling. So the cache a pull request writes is
+invisible to `main`, and the first `main` run after a merge fetches from origin
+and writes its own. That entry is then the one every later pull request restores
+from, because a branch may always read the default branch's cache.
+
+Measured on the merge that introduced this, both refs ended up holding the same
+key:
+
+```
+refs/heads/main       3870 KB  lfs-31e61df8...
+refs/pull/50/merge    3871 KB  lfs-31e61df8...
+```
+
+So the steady state costs one fetch per baseline change, on `main`, and nothing
+on any pull request that follows.
+
 ### The history was not rewritten
 
 Only new commits store pointers. Every PNG committed before this change is
