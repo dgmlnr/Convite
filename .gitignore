@@ -53,6 +53,10 @@ blob-report/
 **/__screenshots__/*.visual.test.ts/*
 !**/__screenshots__/*.visual.test.ts/*-chromium-linux.png
 
+# `pnpm visual:review` renders every screen here for a person to look at.
+# Regenerated on demand, never reviewed as a diff, never committed.
+visual/review/
+
 # Environment
 .env
 .env.*
