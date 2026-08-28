@@ -148,9 +148,13 @@ export function applyAction(state: MatchState, action: PlayCardAction): ApplyRes
   const capturedIds = new Set(action.captured.map(cardId));
   const table = hand.table.filter((tableCard) => !capturedIds.has(cardId(tableCard)));
   const piles = { ...hand.piles, [player.teamId]: [...hand.piles[player.teamId], ...action.captured, action.card] };
+  // art. 14.1: a capture that empties the table entirely is an in-play
+  // escoba, worth one point — DISTINCT from escoba de muestra (16.1/16.2,
+  // `escoba.ts`), which fires on the opening table before any card is played.
+  const escobas = table.length === 0 ? { ...hand.escobas, [player.teamId]: hand.escobas[player.teamId] + 1 } : hand.escobas;
 
   return {
     ok: true,
-    state: { ...state, players, hand: { ...hand, table, piles, lastCapturer: player.teamId } },
+    state: { ...state, players, hand: { ...hand, table, piles, escobas, lastCapturer: player.teamId } },
   };
 }

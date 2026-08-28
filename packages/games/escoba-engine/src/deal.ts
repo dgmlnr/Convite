@@ -1,6 +1,7 @@
 import { buildDeck } from "./deck.js";
 import type { Card } from "./card.js";
 import type { HandState, MatchState, Team } from "./state.js";
+import { applyOpeningEscoba } from "./escoba.js";
 
 /**
  * Entropy in `[0, 1)`, `Math.random`-shaped — mirrors platform-contract's
@@ -86,7 +87,10 @@ export function deal(state: MatchState, rng: Rng): MatchState {
     outcome: null,
   };
 
-  return { ...state, players, hand };
+  // art. 16.1/16.2 (Unit G, `escoba.ts`): the opening table may already be
+  // an escoba de muestra (single 15, dealer sweeps) or a void double escoba
+  // (15+15 partition, no sweep, no score) before a single card is played.
+  return applyOpeningEscoba({ ...state, players, hand });
 }
 
 /**

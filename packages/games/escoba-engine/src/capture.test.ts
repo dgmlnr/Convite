@@ -204,3 +204,68 @@ describe("applyAction — capture validation (art. 21.2 / pagat, design §D4)", 
     expect(result.violation.code).toBe("not-in-hand");
   });
 });
+
+// The ORDINARY in-play escoba (art. 14.1) — distinct from escoba de muestra
+// (art. 16.1/16.2, `opening-escoba.test.ts`): whenever a capture empties the
+// table entirely, that capturing team scores ONE point, "poniendo una carta
+// boca arriba al recoger la baza".
+describe("applyAction — the in-play escoba (art. 14.1: a capture that empties the table scores one point)", () => {
+  it("scores ONE escoba when a capture takes every card left on the table", () => {
+    const state = fixtureMatch({
+      table: [card(5, "oro"), card(7, "copa")], // 5+7=12, +3=15
+      hand0: [card(3, "espada")],
+      hand1: [],
+    });
+    const action: PlayCardAction = {
+      type: "play-card",
+      playerId: PLAYER_0,
+      card: card(3, "espada"),
+      captured: [card(5, "oro"), card(7, "copa")],
+    };
+
+    const result = applyAction(state, action);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.hand!.table).toEqual([]);
+    expect(result.state.hand!.escobas[TEAM_A]).toBe(1);
+    expect(result.state.hand!.escobas[TEAM_B]).toBe(0);
+  });
+
+  it("does NOT score an escoba when a capture leaves other cards on the table", () => {
+    const state = fixtureMatch({
+      table: [card(5, "oro"), card(7, "copa"), card(2, "basto")],
+      hand0: [card(3, "espada")],
+      hand1: [],
+    });
+    const action: PlayCardAction = {
+      type: "play-card",
+      playerId: PLAYER_0,
+      card: card(3, "espada"),
+      captured: [card(5, "oro"), card(7, "copa")],
+    };
+
+    const result = applyAction(state, action);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.hand!.table).toEqual([card(2, "basto")]);
+    expect(result.state.hand!.escobas[TEAM_A]).toBe(0);
+  });
+
+  it("does not touch escobas when the played card merely joins the table (no capture at all)", () => {
+    const state = fixtureMatch({
+      table: [card(2, "oro")],
+      hand0: [card(7, "espada")],
+      hand1: [],
+    });
+    const action: PlayCardAction = { type: "play-card", playerId: PLAYER_0, card: card(7, "espada"), captured: [] };
+
+    const result = applyAction(state, action);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.hand!.escobas[TEAM_A]).toBe(0);
+    expect(result.state.hand!.escobas[TEAM_B]).toBe(0);
+  });
+});
