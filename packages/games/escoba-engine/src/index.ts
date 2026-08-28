@@ -13,3 +13,4 @@ export { applyAction } from "./capture.js";
 export { getLegalActions } from "./legal-actions.js";
 export { applyOpeningEscoba, settleLeftovers } from "./escoba.js";
 export { SETENTA_VALUE, scoreSetenta, setentaValue } from "./setenta.js";
+export { getMatchWinner, scoreHand } from "./scoring.js";
