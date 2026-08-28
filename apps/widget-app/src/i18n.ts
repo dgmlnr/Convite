@@ -45,6 +45,7 @@ export const STRINGS = {
    * is what it always was, printed at the size of a heading. */
   selectionTitle: "Elegí cómo jugar",
   backToGames: "Todos los juegos",
+  brand: "Convite",
   /**
    * The one line on this screen that is not an instruction: everything else
    * tells the player what to DO, this says what the place is. It also states

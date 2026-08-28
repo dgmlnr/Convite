@@ -135,3 +135,52 @@ describe("the back control — absent, never disabled", () => {
     expect(el.querySelector<HTMLElement>(".hexdev-modality-option[aria-pressed='true']")?.textContent, "same container, so the pick is still there").toBe(picked);
   });
 });
+
+/* THE ART AND THE MARK — what makes this a screen rather than a list. */
+describe("each game shows its own cards, and the place names itself quietly", () => {
+  it("a family with declared art fans it above the name, hidden from a screen reader", () => {
+    const el = fresh();
+    renderGameList(el, [TRUCO], { onOpenGame: noop });
+
+    const fan = el.querySelector<HTMLElement>(".hexdev-game-card-art")!;
+    expect(fan.querySelectorAll("img").length, "truco declares three").toBe(3);
+    expect(fan.getAttribute("aria-hidden"), "the heading below already names the game — three alt texts would be read out first and name nothing").toBe("true");
+  });
+
+  /* NOT `hero.slice(0, 3)`, which is the shortcut this guards against.
+   * `hero-cards.ts` says ORDER IS THE LAYOUT with the best card at the fan's
+   * centre; slicing the first three would put the as de espada at the right
+   * EDGE, half hidden, and a three of cups in the middle. */
+  it("the fan's own centre is the card the game is known by", () => {
+    const el = fresh();
+    renderGameList(el, [TRUCO], { onOpenGame: noop });
+
+    const faces = [...el.querySelectorAll<HTMLImageElement>(".hexdev-game-card-face")];
+    expect(faces[1]?.src, "the middle slot is the one nothing overlaps").toContain("1-espada");
+  });
+
+  /* A GAME WITH NO ART IS STILL A GAME. Escoba will land in the catalog
+   * before its faces are chosen, and the list must not grow a hole while that
+   * is true — the card stays a card, and stays pressable. */
+  it("a family with no declared art renders a full card with no empty gap", () => {
+    const el = fresh();
+    const opened: string[] = [];
+    renderGameList(el, [ESCOBA], { onOpenGame: (family) => opened.push(family.id) });
+
+    const card = el.querySelector<HTMLElement>('[data-family="escoba"]')!;
+    expect(el.querySelector(".hexdev-game-card-art"), "no empty art box left behind").toBeNull();
+    expect(card.textContent?.trim().length, "still named").toBeGreaterThan(0);
+    card.click();
+    expect(opened, "and still a full activation target").toEqual(["escoba"]);
+  });
+
+  it("the mark sits at the foot beside the credits, never over the games", () => {
+    const el = fresh();
+    renderGameList(el, [TRUCO, ESCOBA], { onOpenGame: noop });
+
+    const foot = el.querySelector<HTMLElement>(".hexdev-chrome-foot")!;
+    expect(foot.querySelector(".hexdev-chrome-brand")?.textContent).toBe("Convite");
+    expect(foot.querySelector(".hexdev-about"), "the credits live in the same foot").not.toBeNull();
+    expect(el.querySelector(".hexdev-chrome-header")?.textContent, "and the header says nothing about the place").not.toContain("Convite");
+  });
+});

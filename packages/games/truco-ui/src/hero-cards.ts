@@ -47,3 +47,30 @@ const FACES: readonly Card[] = [
 export const HERO_TITLE = "Truco Argentino";
 
 export const HERO_CARDS: readonly string[] = FACES.map((card) => getCardFrontUrl(card).href);
+
+/**
+ * The three cards that name this game on a CARD, as opposed to on a door.
+ *
+ * NOT `HERO_CARDS.slice(0, 3)`, and the reason is one line above this file's
+ * own rule: ORDER IS THE LAYOUT, and the fan's middle entry is the one
+ * nothing overlaps. Slicing the first three would put the as de espada — the
+ * best card in the game, and the reason that array is ordered the way it is —
+ * at the right EDGE, half hidden, while a three of cups took the centre.
+ *
+ * WHICH THREE: the two aces that decide most hands, plus the seven of swords
+ * between them. All three are matas; a player reads them before they read the
+ * name. The as de espada holds the middle for the same reason it holds the
+ * middle of the door.
+ *
+ * Three and not five because this sits inside a card in a list, where five
+ * fanned faces stop being a hand and become a texture. The odd count still
+ * buys a real centre, which is the half of the five-card reasoning that
+ * survives the size change.
+ */
+const CARD_FACES: readonly Card[] = [
+  { suit: "basto", rank: 1 },
+  { suit: "espada", rank: 1 },
+  { suit: "espada", rank: 7 },
+];
+
+export const CARD_ART: readonly string[] = CARD_FACES.map((card) => getCardFrontUrl(card).href);

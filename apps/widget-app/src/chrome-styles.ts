@@ -452,7 +452,9 @@ export function buildChromeStylesheet(): string {
     justify-content: center;
     /* PR-EST: cards size to their own content instead of stretching to the
      * tallest sibling. A game with one modality was being given the height of
-     * a game with two, and the empty half read as something failing to load. */
+     * a game with two, and the empty half read as something failing to load.
+     * Screen one opts back OUT of this below: there, an uneven row would only
+     * say one game has not picked its cards yet. */
     align-items: start;
     gap: var(--hx-space-lg);
   }
@@ -579,6 +581,127 @@ export function buildChromeStylesheet(): string {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* SCREEN ONE: a game card is a real button, so it starts by unlearning the
+   browser's button AND this file's own. .convite-chrome button, a few
+   hundred lines down is (0,1,1) and was winning outright: the card came out
+   with the pill radius and the 34px height of an action button. Measured, not
+   guessed -- getComputedStyle read back radius=999px on a card that should
+   have been 16. Hence the shell class in front of every selector here.
+   Original note follows.
+
+   A game card is a real button, so it starts by unlearning the
+ browser's button. Everything visual below is the same panel-on-felt
+ construction the modality cards use -- the fill is the felt plus a few per
+ cent of white and the hairline draws the edge -- because they are the same
+ kind of surface and should not read as two. */
+.hexdev-chrome-games:has(.hexdev-game-card--choice) {
+align-items: stretch;
+}
+
+.convite-chrome .hexdev-game-card--choice {
+appearance: none;
+border: 0;
+font: inherit;
+color: inherit;
+cursor: pointer;
+/* EXPLICIT, not inherited. A button carries a user-agent radius that
+   appearance:none does not reliably clear, and the first render of this
+   screen came out as stadium-shaped pills. The panel radius is the one the
+   modality cards already use. */
+border-radius: var(--gx-radius, 14px);
+/* Centred, and the same shape whatever a game declares: the art on top, the
+   name under it, both on the card's own axis. Left-aligned prose is right
+   for a blurb somebody reads; a name under a hand of cards is a label. */
+align-items: center;
+text-align: center;
+justify-content: flex-end;
+gap: 10px;
+padding: 20px 16px 18px;
+/* EQUAL HEIGHT ACROSS THE ROW, unlike the modality cards a tier up, which
+   deliberately size to their own content. There the difference means
+   something -- a game with one modality genuinely has less to show. Here it
+   would only mean one game has not chosen its cards yet, which is not a
+   fact about the game and should not make its card look unfinished. */
+min-height: 172px;
+}
+
+.convite-chrome .hexdev-game-card--choice:hover,
+.convite-chrome .hexdev-game-card--choice:focus-visible {
+/* Lifted with light, never with a second colour: the same move the panel
+   itself is made of, one step further. */
+background: color-mix(in srgb, var(--gx-color-surface, #14231d) 88%, #fff);
+}
+
+/* The game's own cards, fanned. Same geometry as the door's hand and a
+ smaller clamp: three faces inside a list card, where five would stop
+ reading as a hand and become a texture. */
+.hexdev-game-card-art {
+display: flex;
+justify-content: center;
+align-items: flex-end;
+overflow: visible;
+/* Pushes the name to the card's foot whether or not there is art above it,
+   so a game without faces keeps the same silhouette as one with them. */
+flex: 1 1 auto;
+min-height: 0;
+}
+
+.hexdev-game-card-face {
+--mid: calc((var(--n) - 1) / 2);
+--offset: calc(var(--i) - var(--mid));
+width: clamp(46px, 5.5vw, 62px);
+height: auto;
+margin: 0 calc(clamp(46px, 5.5vw, 62px) * -0.12);
+border-radius: 4px;
+/* SQUARED, NOT abs(), and z-index the same way -- both copied from the
+   door's own fan a few rules up, including its reasons. abs() is recent
+   enough that using it would drop the arc on the browsers least likely to
+   be tested, and DOM order alone would bury the leftmost face under every
+   neighbour: it cost a card there once without ever looking broken. */
+transform:
+  translateY(calc(var(--offset) * var(--offset) * 1.5px))
+  rotate(calc(var(--offset) * 6deg));
+z-index: calc(10 - var(--offset) * var(--offset));
+box-shadow: var(--hx-lift-contact), var(--hx-lift-ambient);
+}
+
+/* The way back out, and it is deliberately quiet: a player who wants it will
+ look for it, and one who does not should read the game's name first. */
+.convite-chrome .hexdev-chrome-back {
+appearance: none;
+border: 0;
+background: none;
+font: inherit;
+color: inherit;
+opacity: 0.7;
+cursor: pointer;
+padding: 4px 8px;
+margin-bottom: 8px;
+align-self: flex-start;
+}
+
+.convite-chrome .hexdev-chrome-back:hover,
+.convite-chrome .hexdev-chrome-back:focus-visible {
+opacity: 1;
+}
+
+/* The foot: where the place names itself, next to what it owes. */
+.hexdev-chrome-foot {
+margin-top: var(--hx-space-lg);
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 6px;
+}
+
+.hexdev-chrome-brand {
+margin: 0;
+font-size: 12px;
+letter-spacing: 0.18em;
+text-transform: lowercase;
+opacity: 0.55;
 }
 
 .hexdev-game-card {
