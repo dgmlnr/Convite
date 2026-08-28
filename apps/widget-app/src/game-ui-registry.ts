@@ -1,4 +1,4 @@
-import type { GameId } from "@hexdev/platform-contract";
+import type { GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
@@ -70,18 +70,10 @@ export interface AssetCredit {
 
 export interface GameUiEntry {
   readonly id: GameId;
-  /** What this game's rendering must credit. Optional: a game that draws
-   * nothing licensed owes nothing, and an empty list must not become a
-   * ceremony every future entry has to perform. */
-  readonly credits?: readonly AssetCredit[];
-  /** Image urls this game offers the front door, in the order to lay them
-   * out. Same seam and same reason as `credits`: the shell is game-agnostic,
-   * so a game says what represents it and the shell only knows how to show
-   * it. Optional — a game with nothing to show gets a lobby with no hero,
-   * which is a lobby and not a hole. */
-  readonly hero?: readonly string[];
-  /** What this game calls itself on the front door — see `hero`. */
-  readonly heroTitle?: string;
+  /** Which game this is a way of playing — the key into `GameFamilyUi`.
+   * Identity (art, name, credits) lives THERE and not here, so two entries of
+   * one game have no field to disagree in. */
+  readonly gameFamily: GameFamilyId;
   /** A fresh renderer per match: `createMatchTableRenderer` closes over
    * small per-mount state (the trick-outcome banner) that must not leak
    * between two different matches sharing one widget session. `onPlayAgain`
@@ -149,7 +141,51 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
   };
 }
 
-const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS, heroTitle: HERO_TITLE };
+/**
+ * WHAT A GAME IS, once, however many ways there are to play it.
+ *
+ * This exists because the thing it replaces did not. Art, name and credits
+ * used to sit on each `GameUiEntry`, which meant `truco-argentino` and
+ * `truco-argentino-2v2` each carried their own copy — the same constants,
+ * pasted twice — and the front door picked between them with a `.find()`.
+ * That was invisible precisely because the copies were identical.
+ *
+ * Moving identity here does not FIX that bug so much as make it
+ * unrepresentable: there is no longer a second place to put a game's art, so
+ * two ways of playing it cannot drift apart.
+ */
+export interface GameFamilyUi {
+  readonly id: GameFamilyId;
+  /** What this game calls itself on the front door. */
+  readonly heroTitle?: string;
+  /** Image urls it offers the front door, in the order to lay them out. The
+   * shell is game-agnostic: a game says what represents it, the shell only
+   * knows how to show it. */
+  readonly hero?: readonly string[];
+  /** What rendering this game owes. Optional: a game that draws nothing
+   * licensed owes nothing, and an empty list must not become a ceremony. */
+  readonly credits?: readonly AssetCredit[];
+}
+
+const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, credits: [DECK_ATTRIBUTION] };
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY];
+
+/**
+ * The family whose face the front door wears — or none.
+ *
+ * NOT "the first with art". Two games are a catalogue, and a catalogue is
+ * what the cards below the header already are; the hero's job is to say what
+ * KIND of place this is, once, before anybody reads a word. With two games
+ * there is no right answer to pick, so this picks nothing and the door
+ * degrades to no hero. A wrong game's art on the door would look deliberate,
+ * which is the worst way for a bug to look.
+ */
+export function soleFamilyUi(families: readonly GameFamilyUi[]): GameFamilyUi | undefined {
+  return families.length === 1 ? families[0] : undefined;
+}
+
+const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
 /** The 2v2 game-ui entry — additive, registered under its own distinct
  * `gameId` (matching `truco-module`'s own `trucoModule2v2.id`), never a
@@ -157,10 +193,14 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, createRendere
  * successfully over the wire but fall back to the generic "connection is
  * live" placeholder (`main.ts`'s own `enterMatch` fallback) instead of the
  * real table — found running an actual 2v2 match end to end, not assumed. */
-const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, createRenderer: createTrucoRenderer(), credits: [DECK_ATTRIBUTION], hero: HERO_CARDS, heroTitle: HERO_TITLE };
+const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
+  /** The identity behind a joinable id — see `GameFamilyUi`. Screen 2 asks
+   * this about the game the player actually chose, which is why it needs no
+   * lobby-wide winner. */
+  family(gameId: GameId): GameFamilyUi | undefined;
 }
 
 export function createGameUiRegistry(): GameUiRegistry {
@@ -168,7 +208,14 @@ export function createGameUiRegistry(): GameUiRegistry {
     [trucoEntry.id, trucoEntry],
     [trucoEntry2v2.id, trucoEntry2v2],
   ]);
-  return { get: (gameId) => byId.get(gameId) };
+  const byFamily = new Map<GameFamilyId, GameFamilyUi>(FAMILIES.map((entry) => [entry.id, entry]));
+  return {
+    get: (gameId) => byId.get(gameId),
+    family: (gameId) => {
+      const entry = byId.get(gameId);
+      return entry === undefined ? undefined : byFamily.get(entry.gameFamily);
+    },
+  };
 }
 
 /**
@@ -185,21 +232,32 @@ export function createGameUiRegistry(): GameUiRegistry {
  * reach a static fact would be a worse trade than exporting the fact.
  */
 /**
- * The front door's images: the first registered game that offers any.
- *
- * FIRST, not merged. Two games' hero art side by side is a catalogue, and a
- * catalogue is what the grid below the header already is — the hero's job is
- * to say what KIND of place this is, once, before anybody reads a word.
+ * The front door's images and name, from the SOLE registered family or from
+ * nobody — see `soleFamilyUi`. These stay module constants because the
+ * screen that reads them renders before any game is chosen and receives no
+ * registry; threading one through that signature to reach a static fact
+ * would be a worse trade than exporting the fact.
  */
-/** The name over the door, from the same game that supplied its images — so
- * the title and the cards under it can never come from two different games. */
-export const GAME_UI_HERO_TITLE: string | undefined = [trucoEntry, trucoEntry2v2].find((entry) => (entry.hero ?? []).length > 0)?.heroTitle;
+const DOOR = soleFamilyUi(FAMILIES);
 
-export const GAME_UI_HERO: readonly string[] = [trucoEntry, trucoEntry2v2].find((entry) => (entry.hero ?? []).length > 0)?.hero ?? [];
+/** The name over the door, from the same family that supplied its images —
+ * so the title and the cards under it can never come from two games. */
+export const GAME_UI_HERO_TITLE: string | undefined = DOOR?.heroTitle;
 
+export const GAME_UI_HERO: readonly string[] = DOOR?.hero ?? [];
+
+/**
+ * Every credit this widget owes, once each.
+ *
+ * DEDUPED BY LICENSE URL AND AUTHOR, which is what actually identifies an
+ * obligation: two identical credits stacked on one screen reads as a bug
+ * rather than as diligence. Unioned across FAMILIES rather than taken from
+ * the door's, because an obligation is owed whether or not that game's art
+ * won a place on the front page.
+ */
 export const GAME_UI_CREDITS: readonly AssetCredit[] = (() => {
   const seen = new Map<string, AssetCredit>();
-  for (const entry of [trucoEntry, trucoEntry2v2]) {
+  for (const entry of FAMILIES) {
     for (const credit of entry.credits ?? []) seen.set(`${credit.author}|${credit.licenseUrl}`, credit);
   }
   return [...seen.values()];
