@@ -874,8 +874,28 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     return started!;
   }
 
+  /* THE WINDOW HERE IS DELIBERATELY WIDE, and tightening it is how this test
+   * starts failing on other people's machines.
+   *
+   * Degradation fires on the age of the queue's OLDEST waiter (`enqueuedAt` of
+   * the first entry — see `presence-room.ts`'s own note that insertion order
+   * makes the first tracked entry the oldest). That clock starts the moment
+   * the FIRST client joins, and the two after it still have to mint a token
+   * and finish a websocket handshake. So the real race is: can three
+   * sequential connects finish before the window expires?
+   *
+   * At `0.05` they could not, on a loaded CI runner, and this failed with
+   *     expected [ 'degrade-p0', 'degrade-p1' ]
+   *       to deeply equal [ 'degrade-p0', 'degrade-p1', 'degrade-p2' ]
+   * — the sweep had degraded a group of TWO, because the third had not
+   * arrived yet. Correct product behaviour (degrade whoever is waiting),
+   * wrong test setup. It passed five times out of five locally, which is
+   * exactly what a race looks like from the machine that is fast enough.
+   *
+   * The sibling tests below keep a tiny window because they connect ONE
+   * client: with a single connect there is nothing to outrun. */
   it("degrades 3 humans waiting past botFillAfterSeconds in a 4-seat modality: all 3 get 'paired' (roster = the 3 humans) and the match starts as 3 humans + 1 bot", async () => {
-    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 0.05, sweepTickMs: 25 });
+    const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 1, sweepTickMs: 25 });
     const paired: PairedGroupMessage[][] = [[], [], []];
     for (const [index, playerId] of HUMANS.entries()) {
       const token = await issuer.mint({ tenantId: TENANT_ID, playerId, entitlements: [GROUP_GAME_ID] }, 60);
@@ -883,7 +903,8 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
       client.onMessage("paired", (message: PairedGroupMessage) => paired[index]!.push(message));
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The window above plus room for a 25ms tick to land after it.
+    await new Promise((resolve) => setTimeout(resolve, 1400));
 
     // The 'paired' roster is the k humans in formation order — the bots get
     // their identities inside MatchRoom; they are never part of the lobby's
