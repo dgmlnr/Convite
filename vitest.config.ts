@@ -104,7 +104,7 @@ export default defineConfig({
           // `pnpm test:visual` project (`vitest.visual.config.ts`) — same
           // "not part of `pnpm test`" discipline as `.redis.test.ts` below,
           // for the reason documented in that config's own header comment.
-          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/*.visual.test.ts", "**/dist/**", "**/node_modules/**"],
+          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/*.visual.test.ts", "**/*.scene.test.ts", "**/dist/**", "**/node_modules/**"],
         },
       },
       {

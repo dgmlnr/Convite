@@ -102,7 +102,7 @@ export function imageRefFor(playwrightVersion) {
  * vitest reports failures with absolute paths, and a path that also exists
  * on the host is one a developer can click.
  */
-export function resolveContainerRun({ repoRoot, uid, gid, image, args }) {
+export function resolveContainerRun({ repoRoot, uid, gid, image, args, config = "vitest.visual.config.ts" }) {
   // BOTH halves or neither. On Linux and macOS this maps the container's
   // writes back to the caller, so a regenerated baseline is not root-owned
   // in their own working tree. On Windows the ids do not exist, and Docker
@@ -129,8 +129,13 @@ export function resolveContainerRun({ repoRoot, uid, gid, image, args }) {
       image,
       "node_modules/.bin/vitest",
       "run",
+      // Overridable ONLY so `pnpm visual:review` can render the render-only
+      // scenes through the same pinned container. Everything else -- the
+      // check gate, the host runner's refusal, the baseline discipline --
+      // keeps the default, which is the one config that owns committed
+      // baselines.
       "--config",
-      "vitest.visual.config.ts",
+      config,
       ...args,
     ],
   };
@@ -189,12 +194,18 @@ export function posixUserFor(processLike) {
 /* c8 ignore start — the spawn, deliberately thin; the decisions above are what is tested. */
 if (isEntryPoint(import.meta.url, process.argv[1])) {
   const { uid, gid } = posixUserFor(process);
+  // `--config <file>` is consumed HERE rather than forwarded, so vitest never
+  // sees it twice: the container run always supplies exactly one.
+  const argv = process.argv.slice(2);
+  const at = argv.indexOf("--config");
+  const config = at === -1 ? undefined : argv[at + 1];
   const { command, args } = resolveContainerRun({
     repoRoot: process.cwd(),
     uid,
     gid,
     image: imageRefFor(PINNED_PLAYWRIGHT_VERSION),
-    args: process.argv.slice(2),
+    args: at === -1 ? argv : [...argv.slice(0, at), ...argv.slice(at + 2)],
+    ...(config === undefined ? {} : { config }),
   });
 
   const child = spawn(command, args, { stdio: "inherit" });

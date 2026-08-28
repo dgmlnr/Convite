@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser/matchers" />
 import { afterEach, describe, expect, it } from "vitest";
 import { applyAction, createHeadToHeadMatch, getLegalActions, getViewFor, startHand } from "@hexdev/truco-engine";
-import type { DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
+import type { Card, DealInput, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "./table.js";
 
 const SELF = "visual-self" as PlayerId;
@@ -25,7 +25,30 @@ const FIXED_DEAL: DealInput = [
   ],
 ];
 
+/** T-12 (piles-only slice, PR-3): the exact split-then-decided-at-trick-3
+ * deck already proven by `card-play.test.ts`'s own end-to-end fixture and
+ * reused by `table-height-stability.browser.test.ts`'s T-7 fence — the same
+ * reachable state, so this baseline and that fence describe the identical
+ * hand. Both hands are dealt 3 cards, unlike `FIXED_DEAL` above, so every
+ * seat ends the hand with a real 3-card pile to screenshot. */
+const PILED_DEAL: DealInput = [
+  [
+    { suit: "espada", rank: 1 },
+    { suit: "basto", rank: 4 },
+    { suit: "espada", rank: 7 },
+  ],
+  [
+    { suit: "espada", rank: 4 },
+    { suit: "basto", rank: 1 },
+    { suit: "oro", rank: 4 },
+  ],
+];
 
+function play(state: MatchState, playerId: PlayerId, card: Card): MatchState {
+  const result = applyAction(state, { type: "play-card", playerId, card });
+  if (!result.ok) throw new Error(`visual fixture setup: illegal action — ${result.violation}`);
+  return result.state;
+}
 
 /** A non-trivial, asymmetric score (spec: "the matchstick scoreboard at a
  * non-trivial score") set directly on the constructed state — the same
@@ -44,6 +67,16 @@ function dealtMatch(): MatchState {
   return withNonTrivialScore(startHand(base, FIXED_DEAL));
 }
 
+/** The same deal with the OPPONENT as mano, for the pending-call shot alone.
+ * Opening a call is taking the floor and the floor starts with the mano
+ * (truco-engine's `getLegalTrucoActions`), so a table where the rival's truco
+ * is WAITING ON the local player needs the rival seated as mano. Every other
+ * baseline here keeps `dealtMatch`'s own dealer, because they are about the
+ * local player holding the turn. */
+function dealtMatchOpponentMano(): MatchState {
+  const base = createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 0 });
+  return withNonTrivialScore(startHand(base, FIXED_DEAL));
+}
 
 /** Containers this file has mounted, removed after EVERY test. Without this
  * cleanup, each test's table stays in the page and pushes the next test's
@@ -119,6 +152,18 @@ function mountedContainer(): HTMLElement {
   return container;
 }
 
+/** The zone under test for the card shots: the felt element itself. The
+ * locked-card opacity bug this suite exists to catch (visual/README.md)
+ * lives in the RELATIONSHIP between a card and the surface underneath it,
+ * and every card — own hand, the played trick card, opponent backs — plus
+ * the turn badge and the floating banner/call chrome all render inside the
+ * felt, so cropping the screenshot to the felt keeps every piece of context
+ * those shots assert on while dropping chrome they do not. */
+function feltOf(container: HTMLElement): HTMLElement {
+  const felt = container.querySelector<HTMLElement>(".hexdev-truco-table");
+  if (felt === null) throw new Error("visual fixture setup: felt element not rendered");
+  return felt;
+}
 
 /** Card art (`<img>`, `hand.ts`/`played-cards.ts`) loads asynchronously —
  * the built-in `toMatchScreenshot` stable-screenshot retry would eventually
@@ -130,6 +175,21 @@ async function waitForArt(container: HTMLElement): Promise<void> {
 }
 
 describe("visual: the game table (design: 'linda y cómoda')", () => {
+  it("mid-hand: cards in hand (playable + locked), a card already played, and whose turn it is", async () => {
+    const container = mountedContainer();
+    // One real play-card action via the actual reducer, not a hand-authored
+    // view — the trick-in-progress card and the resulting turn handoff are
+    // exactly what the engine itself produced.
+    const played = applyAction(dealtMatch(), { type: "play-card", playerId: SELF, card: FIXED_DEAL[0]![0]! });
+    if (!played.ok) throw new Error(`visual fixture setup: illegal action — ${played.violation}`);
+    const view = getViewFor(played.state, SELF);
+    const legalActions = getLegalActions(played.state, SELF);
+
+    createMatchTableRenderer()(container, view, legalActions, () => {});
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-mid-hand");
+  });
 
   /**
    * The per-turn countdown, and the one baseline in this suite whose subject
@@ -148,45 +208,60 @@ describe("visual: the game table (design: 'linda y cómoda')", () => {
    * Every OTHER baseline in this suite passes no deadline at all, which is
    * why none of them changed: an untimed table renders no clock node.
    */
+  it("the turn countdown: the active seat's badge carries the time left on its turn", async () => {
+    const container = mountedContainer();
+    const played = applyAction(dealtMatch(), { type: "play-card", playerId: SELF, card: FIXED_DEAL[0]![0]! });
+    if (!played.ok) throw new Error(`visual fixture setup: illegal action — ${played.violation}`);
+    const view = getViewFor(played.state, SELF);
+    const legalActions = getLegalActions(played.state, SELF);
+
+    const FROZEN_NOW = 1_700_000_000_000;
+    const render = createMatchTableRenderer({ now: () => FROZEN_NOW, turnClockTickMs: 10 * 60 * 1000 });
+    render(container, view, legalActions, () => {}, undefined, FROZEN_NOW + 47_000);
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-turn-clock");
+  });
 
   // Also the first log-affected baseline (T-12 part 2): the call-truco
   // action below is this fixture's only CallEvent, so once the call-log
   // panel is mounted (P4-T3) it renders exactly one entry, bottom-left,
   // never affecting `table-mid-hand`/`table-themed`/`table-hand-full-piles`
   // above (none of those three fixtures ever calls anything).
-
-  it("a themed tenant: the chrome (scoreboard panel, calls, pending banner) takes the brand; the felt and cards do not", async () => {
+  it("a pending truco call: the banner is shown and the whole hand is locked until it is answered", async () => {
     const container = mountedContainer();
-    const root = document.documentElement;
-    // Set directly — mechanically this IS what `applyThemeToRoot` does
-    // (`apps/widget-app/src/theme.ts`): `style.setProperty` for a token, on
-    // the document root, so `var(--gx-*, fallback)` resolves to it wherever
-    // it is read. A distinct, unmistakably non-default palette, so a
-    // reviewer can tell at a glance whether theming actually reached the
-    // table (design §10) without reading any CSS.
-    root.style.setProperty("--gx-color-surface", "#141233");
-    root.style.setProperty("--gx-color-on-surface", "#f4f1ff");
-    root.style.setProperty("--gx-color-primary", "#7c3aed");
-    root.style.setProperty("--gx-color-on-primary", "#ffffff");
-    root.style.setProperty("--gx-color-accent", "#22d3ee");
-    root.style.setProperty("--gx-radius", "2px");
-
-    const played = applyAction(dealtMatch(), { type: "play-card", playerId: SELF, card: FIXED_DEAL[0]![0]! });
-    if (!played.ok) throw new Error(`visual fixture setup: illegal action — ${played.violation}`);
-    const view = getViewFor(played.state, SELF);
-    const legalActions = getLegalActions(played.state, SELF);
+    const called = applyAction(dealtMatchOpponentMano(), { type: "call-truco", playerId: OPPONENT, level: "truco" });
+    if (!called.ok) throw new Error(`visual fixture setup: illegal action — ${called.violation}`);
+    const view = getViewFor(called.state, SELF);
+    const legalActions = getLegalActions(called.state, SELF);
 
     createMatchTableRenderer()(container, view, legalActions, () => {});
     await waitForArt(container);
 
-    // The whole shell — felt AND scoreboard panel — never just the felt:
-    // this is the one shot that proves theme tokens reach the chrome
-    // (visual/README.md names the panel's background as its verified
-    // regression), so the panel surface must be in frame. The auto-height
-    // container is what makes that true — the panel, with the fixture's
-    // 12:8 matchsticks, sits fully visible below the felt here, where the
-    // old fixed-height container silently clipped it out.
-    await expect.element(container).toMatchScreenshot("table-themed");
+    await expect.element(feltOf(container)).toMatchScreenshot("table-truco-pending");
   });
 
+
+  it("three tricks resolved: each seat shows a persistent, offset pile of its own played cards, most recent on top (spec: Persistent Per-Seat Card Piles)", async () => {
+    const container = mountedContainer();
+    let state = startHand(createHeadToHeadMatch({ playerAId: SELF, playerBId: OPPONENT, pointsToWin: 30, dealerSeat: 1 }), PILED_DEAL);
+
+    // Trick 1: SELF (mano) wins 1-espada over 4-espada.
+    state = play(state, SELF, PILED_DEAL[0]![0]!);
+    state = play(state, OPPONENT, PILED_DEAL[1]![0]!);
+    // Trick 2: SELF leads again, OPPONENT wins 1-basto over 4-basto — split so far.
+    state = play(state, SELF, PILED_DEAL[0]![1]!);
+    state = play(state, OPPONENT, PILED_DEAL[1]![1]!);
+    // Trick 3: OPPONENT leads, SELF wins 7-espada over 4-oro, deciding the hand.
+    state = play(state, OPPONENT, PILED_DEAL[1]![2]!);
+    state = play(state, SELF, PILED_DEAL[0]![2]!);
+
+    const view = getViewFor(state, SELF);
+    const legalActions = getLegalActions(state, SELF);
+
+    createMatchTableRenderer()(container, view, legalActions, () => {});
+    await waitForArt(container);
+
+    await expect.element(feltOf(container)).toMatchScreenshot("table-hand-full-piles");
+  });
 });

@@ -57,14 +57,25 @@ function shots() {
   return found.sort();
 }
 
-const run = spawnSync("node", ["scripts/visual-container.mjs", "--update"], {
-  cwd: ROOT,
-  stdio: "inherit",
-  env: { ...process.env, CI: "1" },
-});
-if (run.status !== 0) {
-  process.stderr.write("\nThe render did not finish, so there is nothing to review.\n");
-  process.exit(run.status ?? 1);
+// TWO PASSES, because the screens live in two places for two reasons.
+// `*.visual.test.ts` are the four a MEASUREMENT cannot assert; they own
+// committed baselines and this regenerates them, so a real change shows up in
+// `git diff`. `*.scene.test.ts` are everything else worth looking at; their
+// images are gitignored and rewritten every run, so they never appear in a
+// diff and never need approving. Both render in the pinned container.
+for (const [label, config] of [
+  ["screens with committed baselines", "vitest.visual.config.ts"],
+  ["scenes (render-only)", "vitest.scenes.config.ts"],
+]) {
+  const run = spawnSync("node", ["scripts/visual-container.mjs", "--config", config, "--update"], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: { ...process.env, CI: "1" },
+  });
+  if (run.status !== 0) {
+    process.stderr.write(`\nThe ${label} did not finish, so there is nothing to review.\n`);
+    process.exit(run.status ?? 1);
+  }
 }
 
 const files = shots();
