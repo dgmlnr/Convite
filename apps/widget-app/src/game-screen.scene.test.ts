@@ -60,7 +60,7 @@ describe("visual: the game-selection screen (spec: game-session — the widget's
       ],
     ]);
 
-    renderGameSelection(container, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(container, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     await expect.element(container).toMatchScreenshot("game-selection-mixed-presence");
   });
@@ -85,7 +85,7 @@ describe("visual: the game-selection screen (spec: game-session — the widget's
       ],
     ]);
 
-    renderGameSelection(container, [TRUCO_ENTRY], presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    renderGameSelection(container, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     await expect.element(container).toMatchScreenshot("lobby-wide-grid");
   });

@@ -1,7 +1,22 @@
 import type { GameFamilyId, GameId } from "@hexdev/platform-contract";
+import type { Card } from "@hexdev/spanish-deck-ui";
+import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
+import type { HandOutcome as EscobaHandOutcome, PlayCardAction as EscobaPlayCardAction, PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
+import {
+  createMarkThenPlay,
+  describeHandBreakdown,
+  ensureMatchOverStyles,
+  ensurePilesStyles,
+  ensureScoreboardStyles,
+  ensureTableStyles,
+  renderEscobaHandBreakdown,
+  renderEscobaPiles,
+  renderEscobaScoreboard,
+  renderMatchOverOverlay,
+} from "@hexdev/escoba-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -184,7 +199,53 @@ export interface GameFamilyUi {
 
 const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_ATTRIBUTION] };
 
-const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY];
+/**
+ * The three cards that name escoba, not just any three faces (see
+ * `escoba/cartas-insignia-del-lobby`): art must say the MECHANIC, and escoba
+ * is named by a number, so it shows three cards that sum to fifteen. Order is
+ * the layout, same rule as truco's own `hero-cards.ts` — the middle entry is
+ * the one fully visible, so el 7 de oro (the capture's own badge card, worth
+ * a point of its own at hand end) holds the centre.
+ *
+ * ONE ARRAY, TWO JOBS. `escoba/decisiones-de-ui-del-lobby` settled that
+ * screen one's card and screen two's hero show the SAME three cards, unlike
+ * truco (whose `hero`/`cardArt` come from two distinct arrays in
+ * `truco-ui`): recognition across the trip matters more than a second art
+ * set nobody asked for. So `hero` and `cardArt` below read the identical
+ * array — not two calls that happen to agree today.
+ */
+const ESCOBA_HERO_FACES: readonly Card[] = [
+  { suit: "copa", rank: 3 },
+  { suit: "oro", rank: 7 },
+  { suit: "espada", rank: 5 },
+];
+
+const ESCOBA_FACES: readonly string[] = ESCOBA_HERO_FACES.map((card) => getCardFrontUrl(card).href);
+
+/**
+ * Lobby-second-family, completed (spec: `lobby-second-family`). `heroTitle`
+ * and `hero` landed with Slice A, solely to prove and fix the screen-two
+ * regression a second family triggers; Unit M added `cardArt` — screen
+ * one's own card, the spec's "Escoba's hero art matches its lobby card art"
+ * requirement — and the modality row's content (`MODALITY_SUMMARY`, i18n.ts).
+ *
+ * NO `GameUiEntry` HERE, DELIBERATELY. `createGameUiRegistry`'s `byId` map
+ * below is the MATCH renderer, reachable only once a game is actually
+ * joined — no lobby screen reads it: every card here still renders entirely
+ * from `familyUiFor` plus the server's own catalog. The `GameUiEntry`
+ * records this identity feeds are declared separately, next to `trucoEntry`
+ * below (`escobaEntry`/`escobaEntry2v2`), the same split truco's own
+ * `TRUCO_FAMILY`/`trucoEntry` already keep.
+ */
+const ESCOBA_FAMILY: GameFamilyUi = {
+  id: "escoba",
+  heroTitle: "Escoba de 15",
+  hero: ESCOBA_FACES,
+  cardArt: ESCOBA_FACES,
+  credits: [DECK_ATTRIBUTION],
+};
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY];
 
 /**
  * The family whose face the front door wears — or none.
@@ -209,10 +270,6 @@ export function familyUiFor(familyId: GameFamilyId): GameFamilyUi | undefined {
   return FAMILIES.find((family) => family.id === familyId);
 }
 
-export function soleFamilyUi(families: readonly GameFamilyUi[]): GameFamilyUi | undefined {
-  return families.length === 1 ? families[0] : undefined;
-}
-
 const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
 /** The 2v2 game-ui entry — additive, registered under its own distinct
@@ -222,6 +279,102 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: T
  * live" placeholder (`main.ts`'s own `enterMatch` fallback) instead of the
  * real table — found running an actual 2v2 match end to end, not assumed. */
 const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
+
+/**
+ * Unit P — mark-then-play (decision 4). Every persistent element below is
+ * built ONCE and reused — an `aria-live` announcement is a CHANGE to a node
+ * already in the tree (`truco-ui/src/table.ts`'s own announcers).
+ *
+ * R2a mounted the scoreboard and hand-end breakdown; R2b closes the other
+ * half of Slice Q's own gap: `payload.outcome`/`onPlayAgain`/`onLeaveMatch`
+ * now reach a real match-over overlay — same departure `createTrucoRenderer`
+ * above documents (a rematch and a return to the lobby are not one callback).
+ */
+function createEscobaRenderer(): GameUiEntry["createRenderer"] {
+  return () => {
+    const markThenPlay = createMarkThenPlay();
+    let mounted: {
+      scoreboardEl: HTMLElement;
+      tableEl: HTMLElement;
+      handEl: HTMLElement;
+      pilesEl: HTMLElement;
+      sumEl: HTMLElement;
+      breakdownEl: HTMLElement;
+      breakdownAnnouncer: HTMLElement;
+      matchOverEl: HTMLElement;
+    } | null = null;
+    // Whether the LATEST hand outcome is a transition worth announcing, and
+    // whether the overlay already claimed focus once this mount — mirrors
+    // createMatchTableRenderer's own previousView/timer fields.
+    let previousHandDecided = false;
+    let matchOverShown = false;
+
+    return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
+      ensureTableStyles(document);
+      ensurePilesStyles(document);
+      ensureScoreboardStyles(document);
+      ensureMatchOverStyles(document);
+
+      if (mounted === null || mounted.tableEl.parentElement !== container) {
+        container.replaceChildren();
+        container.className = "hexdev-escoba-match";
+        const scoreboardEl = document.createElement("div");
+        const tableEl = document.createElement("div");
+        const handEl = document.createElement("div");
+        const pilesEl = document.createElement("div");
+        const sumEl = document.createElement("div");
+        sumEl.className = "hexdev-escoba-sum";
+        sumEl.setAttribute("aria-live", "polite");
+        const breakdownEl = document.createElement("div");
+        // Mounted once, mutated after — same reason as sumEl above.
+        const breakdownAnnouncer = document.createElement("p");
+        breakdownAnnouncer.className = "hexdev-escoba-breakdown-announcer";
+        breakdownAnnouncer.setAttribute("aria-live", "polite");
+        breakdownAnnouncer.setAttribute("aria-atomic", "true");
+        const matchOverEl = document.createElement("div");
+        container.append(scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl);
+        mounted = { scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl };
+      }
+
+      const view = payload.view as EscobaPlayerView;
+      const legalActions = payload.legalActions as readonly EscobaPlayCardAction[];
+
+      renderEscobaScoreboard(mounted.scoreboardEl, view.teams, view.self.teamId);
+      markThenPlay({ tableEl: mounted.tableEl, handEl: mounted.handEl, sumEl: mounted.sumEl }, view.hand?.table ?? [], view.self.hand, legalActions, (card, captured) =>
+        dispatch({ type: "play-card", playerId: view.self.playerId, card, captured } satisfies EscobaPlayCardAction),
+      );
+      renderEscobaPiles(mounted.pilesEl, view.teams, view.hand?.piles ?? {});
+
+      const handOutcome: EscobaHandOutcome | null = view.hand?.outcome ?? null;
+      renderEscobaHandBreakdown(mounted.breakdownEl, handOutcome, view.self.teamId);
+      if (handOutcome !== null && handOutcome.decided && !previousHandDecided) {
+        mounted.breakdownAnnouncer.textContent = describeHandBreakdown(handOutcome, view.self.teamId);
+      } else if (handOutcome === null || !handOutcome.decided) {
+        mounted.breakdownAnnouncer.textContent = "";
+      }
+      previousHandDecided = handOutcome !== null && handOutcome.decided;
+
+      const outcome = (payload.outcome ?? null) as { readonly winnerIds: readonly EscobaPlayerId[] } | null;
+      const focusOnOpen = outcome !== null && !matchOverShown;
+      matchOverShown = outcome !== null;
+      renderMatchOverOverlay(
+        mounted.matchOverEl,
+        outcome === null
+          ? null
+          : { outcome, selfPlayerId: view.self.playerId, teams: view.teams, selfTeamId: view.self.teamId, onPlayAgain: onPlayAgain ?? ((): void => undefined), onLeaveMatch, focusOnOpen },
+      );
+    };
+  };
+}
+
+const escobaEntry: GameUiEntry = { id: "escoba-de-15" as GameId, gameFamily: ESCOBA_FAMILY.id, createRenderer: createEscobaRenderer() };
+
+/** The 4-seat entry — additive, its own `GameId`, matching `trucoEntry2v2`'s
+ * own precedent: both escoba entries share ONE renderer factory because
+ * `renderEscobaPiles` is already team-count generic (design §D2: a pair's
+ * piles are one entry under the shared team id), the same way
+ * `createMatchTableRenderer` is already seat-count generic for truco. */
+const escobaEntry2v2: GameUiEntry = { id: "escoba-de-15-2v2" as GameId, gameFamily: ESCOBA_FAMILY.id, createRenderer: createEscobaRenderer() };
 
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
@@ -235,6 +388,8 @@ export function createGameUiRegistry(): GameUiRegistry {
   const byId = new Map<GameId, GameUiEntry>([
     [trucoEntry.id, trucoEntry],
     [trucoEntry2v2.id, trucoEntry2v2],
+    [escobaEntry.id, escobaEntry],
+    [escobaEntry2v2.id, escobaEntry2v2],
   ]);
   const byFamily = new Map<GameFamilyId, GameFamilyUi>(FAMILIES.map((entry) => [entry.id, entry]));
   return {
@@ -245,34 +400,6 @@ export function createGameUiRegistry(): GameUiRegistry {
     },
   };
 }
-
-/**
- * Every credit this widget owes, once each.
- *
- * DEDUPED BY LICENSE URL AND AUTHOR, which is what actually identifies an
- * obligation: both truco entries draw the same deck, and two identical
- * credits stacked on one screen reads as a bug rather than as diligence. The
- * moment a second game ships its own art the list grows on its own.
- *
- * A CONSTANT AND NOT A REGISTRY METHOD, deliberately: the credit surface
- * lives on the game-selection screen, which is rendered before any game is
- * chosen and receives no registry. Threading one through that signature to
- * reach a static fact would be a worse trade than exporting the fact.
- */
-/**
- * The front door's images and name, from the SOLE registered family or from
- * nobody — see `soleFamilyUi`. These stay module constants because the
- * screen that reads them renders before any game is chosen and receives no
- * registry; threading one through that signature to reach a static fact
- * would be a worse trade than exporting the fact.
- */
-const DOOR = soleFamilyUi(FAMILIES);
-
-/** The name over the door, from the same family that supplied its images —
- * so the title and the cards under it can never come from two games. */
-export const GAME_UI_HERO_TITLE: string | undefined = DOOR?.heroTitle;
-
-export const GAME_UI_HERO: readonly string[] = DOOR?.hero ?? [];
 
 /**
  * Every credit this widget owes, once each.

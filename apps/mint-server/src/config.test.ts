@@ -66,6 +66,17 @@ describe("loadMintConfig", () => {
   });
 
   /**
+   * Slice L.2/L.3 — ONE test for THIS composition root, deliberately not a
+   * fixture shared with `apps/server`'s own `config.test.ts`: see that
+   * file's identical fence for why the two roots are proven independently.
+   */
+  it("entitles the dev tenant to BOTH escoba ids (slice L: the minting role's own composition root)", () => {
+    const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY });
+    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15");
+    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15-2v2");
+  });
+
+  /**
    * A numeric env var that is not a number is the failure mode this repo
    * already learned the hard way on HEXDEV_QUEUE_BOT_FILL_SECONDS: `Number()`
    * yields NaN, NaN slips straight through `??` because it is not nullish,

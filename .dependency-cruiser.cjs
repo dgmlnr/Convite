@@ -16,12 +16,12 @@ module.exports = {
       to: { path: "^(packages|apps)/", pathNot: "^packages/widget-protocol/src" },
     },
     {
-      name: "l0-truco-engine-no-workspace-deps",
+      name: "l0-game-engine-no-workspace-deps",
       severity: "error",
       comment:
-        "truco-engine is pure L0 and must not depend on any other workspace package, platform-contract included: the domain must not know the platform exists.",
-      from: { path: "^packages/games/truco-engine/src" },
-      to: { path: "^(packages|apps)/", pathNot: "^packages/games/truco-engine/src" },
+        "A game engine (packages/games/*-engine) is pure L0 and must not depend on any other workspace package, platform-contract included: the domain must not know the platform exists. Generalized from a per-package rule (was truco-engine-only) so a new engine is fenced the day it is scaffolded, per gotchas/cercados-no-se-heredan-a-juego-nuevo.",
+      from: { path: "^packages/games/([^/]+-engine)/src" },
+      to: { path: "^(packages|apps)/", pathNot: "^packages/games/$1/src" },
     },
     {
       name: "l0-spanish-deck-ui-no-workspace-deps",
@@ -34,15 +34,17 @@ module.exports = {
     {
       name: "l1-no-l2-l3",
       severity: "error",
-      comment: "L1 packages (platform-core, truco-bot, truco-ui) must not depend on L2 adapters or L3 apps.",
-      from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui)/src" },
-      to: { path: "^(packages/(games/truco-module|transport-colyseus|widget-frontdoor|widget-sdk)|apps)/" },
+      comment:
+        "L1 packages (platform-core, truco-bot, truco-ui, escoba-bot, escoba-ui) must not depend on L2 adapters or L3 apps. `transport-colyseus-client` added to the `to` list: it was in NO layer rule at all — an omission, not a decision — while its sibling `transport-colyseus` already appeared in both this rule's `to` and `l2-no-l3`'s `from`.",
+      from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui|games/escoba-bot|games/escoba-ui)/src" },
+      to: { path: "^(packages/(games/truco-module|games/escoba-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)|apps)/" },
     },
     {
       name: "l2-no-l3",
       severity: "error",
-      comment: "L2 adapters (truco-module, transport-colyseus, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps.",
-      from: { path: "^packages/(games/truco-module|transport-colyseus|widget-frontdoor|widget-sdk)/src" },
+      comment:
+        "L2 adapters (truco-module, escoba-module, transport-colyseus, transport-colyseus-client, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps. `transport-colyseus-client` depends only on platform-contract/platform-core and is consumed only by apps/widget-app (L3) — the same shape as its sibling `transport-colyseus`, which this rule already covered.",
+      from: { path: "^packages/(games/truco-module|games/escoba-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)/src" },
       to: { path: "^apps/" },
     },
     {
@@ -55,6 +57,14 @@ module.exports = {
     },
   ],
   options: {
+    // Every rule above matches on `path: "^(packages|apps)/"`. Without this,
+    // dependency-cruiser cannot resolve `@hexdev/*` at all (its `exportsFields: []`
+    // default vs. these `exports`-only ESM packages), leaves 127 edges as raw
+    // `@hexdev/...` specifiers that no `^(packages|apps)/` regex can ever match, and
+    // reports a green run while enforcing nothing. `webpackConfig` is the only
+    // config surface that accepts an enhanced-resolve `alias` — the schema for
+    // `enhancedResolveOptions` rejects it. See the header of the file it points at.
+    webpackConfig: { fileName: ".dependency-cruiser-resolve.mjs" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
     doNotFollow: { path: "node_modules" },

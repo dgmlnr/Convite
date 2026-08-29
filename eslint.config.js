@@ -21,7 +21,13 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ["packages/games/truco-engine/src/**/*.ts"],
+    // Generalized to any `packages/games/*-engine` package (was
+    // `truco-engine`-only) — a hand-picked `files` list is exactly the
+    // enforcement gap `gotchas/cercados-no-se-heredan-a-juego-nuevo`
+    // describes: a game engine born under this glob is fenced from the
+    // start, with no per-package edit required. One block, every engine, no
+    // drift between copies.
+    files: ["packages/games/*-engine/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -32,14 +38,14 @@ export default tseslint.config(
       ],
       "no-restricted-properties": [
         "error",
-        { object: "Math", property: "random", message: "truco-engine must be deterministic: pass randomness in as input." },
-        { object: "Date", property: "now", message: "truco-engine must be deterministic: no wall-clock reads." },
+        { object: "Math", property: "random", message: "a game engine must be deterministic: pass randomness in as input." },
+        { object: "Date", property: "now", message: "a game engine must be deterministic: no wall-clock reads." },
       ],
       "no-restricted-syntax": [
         "error",
         {
           selector: "NewExpression[callee.name='Date']",
-          message: "truco-engine must be deterministic: no `new Date()`.",
+          message: "a game engine must be deterministic: no `new Date()`.",
         },
       ],
     },
