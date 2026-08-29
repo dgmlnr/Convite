@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "tsc -b && node scripts/run-vitest.mjs run",
+    "test": "tsc -b && tsc --noEmit -p scripts && node scripts/run-vitest.mjs run",
     "test:watch": "node scripts/run-vitest.mjs watch",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:redis": "vitest run --config vitest.redis.config.ts",
@@ -20,10 +20,12 @@
     "dev:lan": "node scripts/dev-stack.mjs",
     "typecheck": "tsc -b",
     "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs",
-    "visual:review": "node scripts/visual-review.mjs"
+    "visual:review": "node scripts/visual-review.mjs",
+    "check:scripts": "tsc --noEmit -p scripts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.2",
     "@vitest/browser-playwright": "^4.1.10",
     "dependency-cruiser": "^18.1.1",
     "eslint": "^10.8.0",
