@@ -27,6 +27,21 @@ const TRUCO_2V2_ENTRY: CatalogEntry = {
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
 };
 
+const ESCOBA_ID = "escoba-de-15" as GameId;
+
+/**
+ * The REAL escoba entry, not a fixture — the deck-credit fence below must
+ * exercise the actual registered `ESCOBA_FAMILY` (`game-ui-registry.ts`),
+ * the same way the hero-identity fence above does for `TRUCO_FAMILY`.
+ */
+const ESCOBA_ENTRY: CatalogEntry = {
+  id: ESCOBA_ID,
+  gameFamily: "escoba",
+  displayNameKey: "games.escoba.name",
+  seatCount: 2,
+  configOptions: [],
+};
+
 const NO_CONFIG_ID = "fixture-no-config" as GameId;
 
 /**
@@ -601,6 +616,22 @@ describe("the deck credit reaches the player", () => {
     // Both truco entries declare the same artwork. Two identical credits
     // stacked on one screen reads as a bug, not as diligence.
     expect(container.querySelectorAll(".hexdev-about-credit")).toHaveLength(1);
+  });
+
+  /**
+   * THE LICENSING ONE FOR ESCOBA, and it is the reason this test exists
+   * rather than a nicety. Every OTHER test in this describe block renders
+   * with `TRUCO_ENTRY` — none of them can prove the credit still reaches a
+   * player looking at escoba's own screen two, which is exactly the screen
+   * `escoba/cartas-insignia-del-lobby` names as "the one nobody used to
+   * visit, so it is the one that silently loses credits in a refactor."
+   * Renders the REAL `ESCOBA_FAMILY` (via `familyUiFor`), no fixture credit.
+   */
+  it("credits the deck on escoba's own screen two, not only truco's", () => {
+    renderGameSelection(freshContainer(), [ESCOBA_ENTRY], ESCOBA_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+
+    expect(container.querySelector(".hexdev-about-panel")?.textContent ?? "").toContain("Basquetteur");
   });
 
   it("stays open across a re-render — a live lobby repaints every few seconds", () => {

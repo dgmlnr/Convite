@@ -35,6 +35,19 @@ export function buildTableStylesheet(): string {
   width: 100%;
   box-sizing: border-box;
   padding: var(--escoba-table-padding, 8px);
+  /* THE HOST'S FONT, NOT THE BROWSER'S DEFAULT. \`createEscobaRenderer\`
+   * replaces the match container's className wholesale (game-ui-registry.ts),
+   * so this element does not sit under widget-app's own \`.convite-chrome\`
+   * (which is where \`--gx-font-family\` is otherwise applied) once a match is
+   * live — without its own declaration here this table silently fell back to
+   * the UA default font instead of the embedding host's, the same class of
+   * bug \`table-height-stability.browser.test.ts\` fences for truco-ui's own
+   * table shell. Card art carries no text, so nothing here actually shifts
+   * size under a differing font -- see font-independence.browser.test.ts --
+   * but \`.hexdev-escoba-sum\`'s live announcement does, and it must not be
+   * the one piece of this surface that looks like it belongs to someone
+   * else's page. */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 
 .hexdev-escoba-card {
@@ -67,6 +80,10 @@ export function buildTableStylesheet(): string {
   width: 100%;
   box-sizing: border-box;
   padding: var(--escoba-table-padding, 8px);
+  /* Same fix as .hexdev-escoba-table above, its own container-query root and
+   * therefore its own declaration -- a sibling, never a descendant, of the
+   * table (game-ui-registry.ts mounts table/hand/piles/sum side by side). */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 
 .hexdev-escoba-card--markable,
@@ -103,6 +120,10 @@ export function buildTableStylesheet(): string {
   text-align: center;
   padding: 4px 8px;
   font-size: 0.9rem;
+  /* The only element on this whole surface that renders TEXT -- the running
+   * "Suma N" announcement -- so it is the one place a missing font-family
+   * would actually be visible, not merely theoretical. */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 `;
 }
