@@ -217,3 +217,21 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
     expect(result.state.teams[1].score).toBe(created.teams[1].score);
   });
 });
+
+describe("escoba-module: module identity — decisions 1 and 3 (patrones/config-que-enumera-a-mano-falla-en-verde)", () => {
+  it("declares configOptions EXACTLY empty on both entries — decision 3: 30 points is a literal, never a lobby knob", () => {
+    expect(escobaModule.configOptions).toEqual([]);
+    expect(escobaModule2v2.configOptions).toEqual([]);
+  });
+
+  it('declares gameFamily: "escoba" on both entries — decision 1: two GameIds, one family', () => {
+    expect(escobaModule.metadata.gameFamily).toBe("escoba");
+    expect(escobaModule2v2.metadata.gameFamily).toBe("escoba");
+  });
+
+  it("keeps seatCount and id distinct between the 2-seat and 4-seat entries", () => {
+    expect(escobaModule.metadata.seatCount).toBe(2);
+    expect(escobaModule2v2.metadata.seatCount).toBe(4);
+    expect(escobaModule.id).not.toBe(escobaModule2v2.id);
+  });
+});
