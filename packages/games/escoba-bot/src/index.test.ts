@@ -16,12 +16,8 @@ import { card, fixtureMatch } from "./fixtures.js";
  * reaches it) and leaves the table at {4,5,6,1}=16, needing a nonexistent
  * value-(-1) card — safe. easy and normal both grab the capture; hard
  * plays the dead card instead.
- *
- * K2: only easy and normal are wired to their real implementations here —
- * hard still maps to normal (see index.ts) and gets its own divergent
- * assertion in K3, once it can actually price the escoba risk.
  */
-describe("createBotStrategy — easy and normal both capture (K.2 fixture; hard diverges in K3)", () => {
+describe("createBotStrategy — the three tiers genuinely diverge (K.2, mutation row 19)", () => {
   const CAPTURING_CARD = card(11, "espada"); // caballo, value 9
   const DEAD_CARD = card(1, "copa"); // value 1
   const { state, player0 } = fixtureMatch({
@@ -44,6 +40,11 @@ describe("createBotStrategy — easy and normal both capture (K.2 fixture; hard 
   it("normal captures (one-ply value: any capture beats a 0-value stay)", () => {
     const chosen = createBotStrategy("normal", fixedRng).chooseAction(view, legalActions, 1000);
     expect(chosen).toEqual(legalActions[0]);
+  });
+
+  it("hard plays the dead card instead — it prices the escoba it would hand the opponent", () => {
+    const chosen = createBotStrategy("hard", fixedRng).chooseAction(view, legalActions, 1000);
+    expect(chosen).toEqual(legalActions[1]);
   });
 });
 
