@@ -99,59 +99,68 @@ describe("Slice L.6 checkpoint — a full escoba hand played end to end (registr
   });
 
   /**
-   * BLOCKED — a genuine, previously-undetected engine defect, found while
-   * writing this checkpoint (not fixed silently, per the briefing):
-   * `escoba-engine`'s `applyAction` (packages/games/escoba-engine/src/
-   * capture.ts) validates `hand.turn !== action.playerId` on every play,
-   * but NOTHING in the engine ever advances `hand.turn` afterwards — not
-   * `capture.ts`, not `legal-actions.ts`, not `escoba.ts`, not
-   * `escoba-module`'s own `settleHandIfNeeded`. `deal()` sets it once
-   * (`players[(dealerSeat + 1) % seatCount].id`) and it is then carried
-   * through EVERY subsequent state completely unchanged.
-   *
-   * PRACTICAL CONSEQUENCE, reproduced directly below: once the ONE seat
-   * `deal()` happened to name gets its first turn, `getLegalActions` for
-   * every OTHER seat returns an EMPTY list forever, and any action they
-   * attempt is rejected `not-on-turn`. No hand can ever be played out past
-   * the very first player's own three cards — every existing engine/module/
-   * bot test (Slices C-K) hand-built its fixtures with a FIXED `turn` and
-   * drove at most one real play per fixture, so nothing ever chained two
-   * genuine turns together to catch this.
-   *
-   * Per the briefing ("STOP and report it. Do not paper over it." / "do not
-   * modify the engine, module or bot packages... report it rather than
-   * fixing it silently"), `capture.ts` is UNTOUCHED here. This is written
-   * as `it.fails` (Vitest's own mechanism for "expected to fail today"),
-   * asserting the CORRECT, spec-required behavior rather than the current
-   * broken one: it keeps `pnpm test` green now, and the moment a future
-   * slice adds real turn advancement, this assertion starts PASSING for
-   * real — which flips `it.fails` itself to a failure, forcing whoever
-   * lands that fix to come delete the `.fails` here. Nothing about this
-   * defect is asserted as correct anywhere else in this file.
-   *
-   * Mid-hand re-deal and hand-end scoring (below) are therefore driven from
-   * a HAND-BUILT near-terminal state, through the real reducer, rather than
-   * from an organically-played-out hand — the same technique
-   * `escoba-module/src/index.test.ts`'s own "re-deals mid-hand"/"settles
-   * hand end" tests already use, because an organic multi-turn hand cannot
-   * reach that point until this defect is fixed.
+   * Turn-fix follow-up (was BLOCKED / `it.fails` — see `escoba/el-turno-no-
+   * avanzaba`): `escoba-engine`'s `applyAction` (packages/games/escoba-
+   * engine/src/capture.ts) now advances `hand.turn` to the next seat on
+   * EVERY accepted play (art. 6.1's dealing direction — see
+   * `nextTurnPlayerId` in `capture.ts`). This is an ordinary `it` again,
+   * asserting the same CORRECT behavior the old `it.fails` already
+   * documented; it fails loudly if the fence ever regresses.
    */
-  it.fails(
-    "hand.turn hands off to the OTHER seat once the acting player's card is resolved — CURRENTLY FALSE, see the block comment above",
-    () => {
-      const dealt = dealtMatch();
-      const first = dealt.hand!.turn;
-      const legal = escobaModule.getLegalActions(dealt, first);
-      const anyAction = legal.find((action): action is PlayCardAction => action.type === "play-card")!;
+  it("hand.turn hands off to the OTHER seat once the acting player's card is resolved", () => {
+    const dealt = dealtMatch();
+    const first = dealt.hand!.turn;
+    const legal = escobaModule.getLegalActions(dealt, first);
+    const anyAction = legal.find((action): action is PlayCardAction => action.type === "play-card")!;
 
-      const after = escobaModule.applyAction(dealt, anyAction);
-      if (!after.ok) throw new Error("fixture setup: the first play was rejected — cannot exercise the turn hand-off at all");
-      const other = dealt.players.find((player) => player.id !== first)!.id;
+    const after = escobaModule.applyAction(dealt, anyAction);
+    if (!after.ok) throw new Error("fixture setup: the first play was rejected — cannot exercise the turn hand-off at all");
+    const other = dealt.players.find((player) => player.id !== first)!.id;
 
-      expect(after.state.hand!.turn, "hand.turn must change once the acting player's card is resolved").not.toBe(first);
-      expect(escobaModule.getLegalActions(after.state, other).length, `${other}'s legal-action list must be non-empty once it is genuinely their turn`).toBeGreaterThan(0);
-    },
-  );
+    expect(after.state.hand!.turn, "hand.turn must change once the acting player's card is resolved").not.toBe(first);
+    expect(escobaModule.getLegalActions(after.state, other).length, `${other}'s legal-action list must be non-empty once it is genuinely their turn`).toBeGreaterThan(0);
+  });
+
+  /**
+   * THE SHAPE THAT WAS MISSING (`escoba/el-turno-no-avanzaba`): every
+   * pre-existing engine/module/bot test hand-built its fixture with a FIXED
+   * `hand.turn` and drove at most one real play per fixture — none of them
+   * chained two real turns, so none could have caught the turn-advancement
+   * defect. This test plays a WHOLE hand through the real reducer,
+   * `applyAction`, letting every seat take its own turns in order (never
+   * setting `turn` by hand past the initial deal), and asserts every seat
+   * genuinely got to act at least once before the hand ends.
+   */
+  it("a whole hand plays out through every seat via the real reducer, never setting hand.turn by hand", () => {
+    const dealt = dealtMatch();
+    const seatCount = dealt.players.length;
+    const actedSeats = new Set<PlayerId>();
+    let state = dealt;
+    let guard = 0;
+    const GUARD_LIMIT = 200; // generous upper bound: 6 cards dealt + up to a few re-deals
+
+    while (state.hand !== null && !state.hand.outcome?.decided) {
+      guard += 1;
+      if (guard > GUARD_LIMIT) throw new Error("fixture setup: the hand never reached an outcome — possible infinite loop");
+
+      const acting = state.hand.turn;
+      const legal = escobaModule.getLegalActions(state, acting);
+      expect(legal.length, `${acting} has cards but no legal action was offered — turn/hand desync`).toBeGreaterThan(0);
+      actedSeats.add(acting);
+
+      const chosen = legal[0]!;
+      const result = escobaModule.applyAction(state, chosen);
+      expect(result.ok, "every action drawn from getLegalActions must be accepted").toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      state = result.state;
+    }
+
+    expect(state.hand!.outcome).toEqual({ decided: true });
+    expect(actedSeats.size, "every seat must have gotten to act at least once across the whole hand").toBe(seatCount);
+    for (const player of dealt.players) {
+      expect(actedSeats.has(player.id), `${player.id} never got a turn`).toBe(true);
+    }
+  });
 
   it("the mid-hand re-deal fires (through the real registered module) when hands empty and stock remains", () => {
     const registry = buildGameRegistry();

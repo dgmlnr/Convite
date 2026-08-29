@@ -80,13 +80,19 @@ describe("getLegalActions — the M bound (design §M, measured worst case 942)"
     // capture actually REMOVES both the captured subset and the played
     // card from the table (capture.ts). A capture that failed to do so
     // would let the table grow PAST its structural 20-card ceiling within
-    // a couple of plays instead of shrinking (design §D9 row 9).
+    // a couple of plays instead of shrinking (design §D9 row 9). This test
+    // is purely about the TABLE's bound, not turn order, so it forces
+    // `turn` back to PLAYER_0 after each real capture (`applyAction` now
+    // hands it to PLAYER_1 per `escoba/el-turno-no-avanzaba` — but PLAYER_1
+    // here holds no cards at all and exists only to satisfy `MatchState`'s
+    // 2-player shape) rather than alternating two consecutive real captures
+    // between a card-holding and a card-less seat.
     for (const ace of THREE_ACES.slice(0, 2)) {
       const offer = getLegalActions(state, PLAYER_0).find((action) => cardId(action.card) === cardId(ace));
       if (offer === undefined) throw new Error("fixture error: an ace must have a capturing subset against this table");
       const result = applyAction(state, offer);
       if (!result.ok) throw new Error("fixture error: the subset getLegalActions offered must itself be legal");
-      state = result.state;
+      state = { ...result.state, hand: { ...result.state.hand!, turn: PLAYER_0 } };
     }
 
     expect(state.hand!.table.length).toBeLessThanOrEqual(19);
