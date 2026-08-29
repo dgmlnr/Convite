@@ -86,6 +86,18 @@ function reject(code: RuleViolation["code"], message: string): ApplyResult {
 }
 
 /**
+ * The next seat to act (`escoba/el-turno-no-avanzaba` — this direction was
+ * an unowned deferral until now). Art. 6.1 has the dealer distribute "de a
+ * una" moving to the RIGHT; play continues in that SAME direction, seat ->
+ * seat+1 (mod seatCount) — the identical rotation `deal.ts` already uses
+ * for the very first turn of a hand (`(dealerSeat + 1) % seatCount`).
+ */
+function nextTurnPlayerId(state: MatchState, currentSeat: number): PlayerId {
+  const nextSeat = (currentSeat + 1) % state.players.length;
+  return state.players.find((candidate) => candidate.seat === nextSeat)!.id;
+}
+
+/**
  * Pure reducer for a played card (design §D4). VALIDATES the declared
  * `captured` subset; never chooses one. Under art. 21.2 / pagat, capture and
  * stay-on-table are MUTUALLY EXCLUSIVE per played card:
@@ -101,9 +113,23 @@ function reject(code: RuleViolation["code"], message: string): ApplyResult {
  * not a foul; nothing here inspects the REST of the hand, only the played
  * card and the declared subset.
  *
- * Turn advancement, mid-hand re-deal (design §D3), escoba detection
- * (Unit G) and scoring (Unit I) are deliberately OUT of this slice's scope
- * — `hand.turn`/`hand.escobas` are carried through unchanged.
+ * Turn advancement (`nextTurnPlayerId` above) fires on EVERY accepted play
+ * — capture or stay-on-table alike, no exceptions. Two more decisions this
+ * makes explicit, past the direction documented above:
+ *   - Mid-hand re-deal: rotation continues UNBROKEN across it. Nothing
+ *     here special-cases "hands just emptied" — `turn` is advanced exactly
+ *     the same way regardless of whether the module's own
+ *     `settleHandIfNeeded` goes on to re-deal or not.
+ *   - Hand end: `turn` is still advanced one last time even into a hand
+ *     that is about to be declared over. That is harmless by construction:
+ *     hand end means every player's hand is empty, and an empty hand
+ *     rejects any submitted play as `not-in-hand` regardless of whose
+ *     `turn` it is — so no special-case is needed to keep a decided hand
+ *     unplayable.
+ *
+ * Mid-hand re-deal itself (design §D3) and scoring (Unit I) remain out of
+ * this file's scope — those stay `escoba-module`'s job
+ * (`settleHandIfNeeded`), not this reducer's.
  */
 export function applyAction(state: MatchState, action: PlayCardAction): ApplyResult {
   const hand: HandState | null = state.hand;
@@ -136,12 +162,13 @@ export function applyAction(state: MatchState, action: PlayCardAction): ApplyRes
   const players = state.players.map((candidate) =>
     candidate.id === player.id ? { ...candidate, hand: candidate.hand.filter((c) => cardId(c) !== cardId(action.card)) } : candidate,
   );
+  const turn = nextTurnPlayerId(state, player.seat);
 
   if (action.captured.length === 0) {
     // no subset forms 15 with this card: it joins the table, face up.
     return {
       ok: true,
-      state: { ...state, players, hand: { ...hand, table: [...hand.table, action.card] } },
+      state: { ...state, players, hand: { ...hand, table: [...hand.table, action.card], turn } },
     };
   }
 
@@ -155,6 +182,6 @@ export function applyAction(state: MatchState, action: PlayCardAction): ApplyRes
 
   return {
     ok: true,
-    state: { ...state, players, hand: { ...hand, table, piles, escobas, lastCapturer: player.teamId } },
+    state: { ...state, players, hand: { ...hand, table, piles, escobas, lastCapturer: player.teamId, turn } },
   };
 }

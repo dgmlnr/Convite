@@ -59,9 +59,9 @@ export function deal(state: MatchState, deck: readonly Card[]): MatchState {
     stock,
     piles: emptyPiles(state.teams),
     escobas: emptyEscobas(state.teams),
-    // Provisional: the seat to the dealer's right acts first. Turn ADVANCE
-    // is Unit E/F's concern — this slice only needs a valid starting
-    // `PlayerId`; nothing in D.1-D.5 reads or asserts this value.
+    // Art. 6.1: the seat to the dealer's right acts first. Same rightward
+    // rotation `capture.ts`'s `nextTurnPlayerId` continues turn by turn
+    // once play begins (`escoba/el-turno-no-avanzaba`).
     turn: players[(state.dealerSeat + 1) % seatCount]!.id,
     lastCapturer: null,
     outcome: null,
