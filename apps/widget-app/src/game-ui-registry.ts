@@ -9,6 +9,7 @@ import {
   createMarkThenPlay,
   describeHandBreakdown,
   ensureMatchOverStyles,
+  ensureMatchStyles,
   ensurePilesStyles,
   ensureScoreboardStyles,
   ensureTableStyles,
@@ -310,6 +311,7 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
     let matchOverShown = false;
 
     return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
+      ensureMatchStyles(document);
       ensureTableStyles(document);
       ensurePilesStyles(document);
       ensureScoreboardStyles(document);
