@@ -31,14 +31,21 @@ const BOT_TIER_LABELS: Readonly<Record<BotTier, string>> = { easy: STRINGS.botEa
 /** `{pointsToWin: 15}` + truco's own `configOptions` -> "Puntos para ganar: 15",
  * driven entirely by the platform-level `labelKey`, never a hardcoded
  * per-game phrase — the same genericity `deriveLobbyDisplay` already commits
- * to server-side. */
-function describeModality(modality: ModalityConfig, configOptions: CatalogEntry["configOptions"]): string {
+ * to server-side.
+ *
+ * PLATFORM-GENERAL, not escoba-specific (spec: `platform-empty-config-
+ * rendering`): `deriveModalities([])` yields exactly one modality, the empty
+ * object `{}`, for ANY game whose `configOptions` is empty — today or in a
+ * future game nobody has written yet. `undefined` MEANS "this modality has
+ * nothing to say", so its two callers can render nothing rather than an
+ * empty heading or a dangling group name. */
+function describeModality(modality: ModalityConfig, configOptions: CatalogEntry["configOptions"]): string | undefined {
   const parts = Object.entries(modality).map(([key, value]) => {
     const option = configOptions.find((candidate) => candidate.key === key);
     const label = option !== undefined ? translateConfigLabel(option.labelKey) : key;
     return `${label}: ${String(value)}`;
   });
-  return parts.join(", ");
+  return parts.length === 0 ? undefined : parts.join(", ");
 }
 
 function botButtonsRow(gameId: GameId, modality: ModalityConfig, callbacks: GameSelectionCallbacks): HTMLElement {
@@ -69,7 +76,12 @@ function renderModality(
   configOptions: CatalogEntry["configOptions"],
   callbacks: GameSelectionCallbacks,
 ): HTMLElement {
-  const description = describeModality(entry.modality, configOptions);
+  // `?? STRINGS.modalitySummary(gameId)`: the platform-general fallback (spec
+  // `platform-empty-config-rendering`) — a game with nothing for
+  // `describeModality` to compute may still declare a fixed, true summary
+  // line (escoba's own "Partida a 30", design D7). Absent for a `gameId`
+  // with no declared summary, which renders no heading at all (slice B).
+  const description = describeModality(entry.modality, configOptions) ?? STRINGS.modalitySummary(gameId);
 
   const wrapper = document.createElement("div");
   wrapper.className = "hexdev-modality";
@@ -100,10 +112,17 @@ function renderModality(
   // copy list) select the `p` TAG, and a promoted heading would silently drop
   // out of both; chrome-styles.ts styles the class instead, so paint is
   // byte-identical (fenced in game-selection.browser.test.ts).
-  const heading = document.createElement("h3");
-  heading.className = "hexdev-modality-title";
-  heading.textContent = description;
-  wrapper.appendChild(heading);
+  //
+  // OMITTED ENTIRELY when there is nothing to say (spec:
+  // `platform-empty-config-rendering`), rather than appended empty: a game
+  // with `configOptions: []` has no modality description, and an empty <h3>
+  // is a WCAG 1.3.1/2.4.6 violation nobody can hear — it names nothing.
+  if (description !== undefined) {
+    const heading = document.createElement("h3");
+    heading.className = "hexdev-modality-title";
+    heading.textContent = description;
+    wrapper.appendChild(heading);
+  }
 
   const botLabel = document.createElement("p");
   // A LABEL, not a line of prose (PR-EST). "Jugar contra la máquina" sits
@@ -235,7 +254,11 @@ function renderModalityPicker(
     option.type = "button";
     option.className = "hexdev-modality-option";
     option.dataset.modality = signature;
-    option.textContent = describeModality(entry.modality, configOptions);
+    // Never undefined in practice: the picker only renders when there is more
+    // than one modality to choose between, and a game with `configOptions: []`
+    // has exactly one (deriveModalities([]) === [{}]). The fallback keeps this
+    // assignment total without reintroducing an empty label anywhere reachable.
+    option.textContent = describeModality(entry.modality, configOptions) ?? "";
     // aria-pressed and not a radio group: these are buttons that change what
     // the panel below shows, and a screen reader should hear the state
     // change rather than a form control that was never submitted.

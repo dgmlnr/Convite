@@ -60,6 +60,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@hexdev/escoba-module':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -79,6 +82,9 @@ importers:
         specifier: ^5.11.1
         version: 5.11.1
     devDependencies:
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-engine
       '@hexdev/truco-engine':
         specifier: workspace:*
         version: link:../../packages/games/truco-engine
@@ -88,6 +94,12 @@ importers:
 
   apps/widget-app:
     dependencies:
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-engine
+      '@hexdev/escoba-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-ui
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -119,6 +131,49 @@ importers:
       vite:
         specifier: ^8.2.0
         version: 8.2.0(@types/node@26.1.2)
+
+  packages/games/escoba-bot:
+    dependencies:
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../escoba-engine
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
+
+  packages/games/escoba-engine: {}
+
+  packages/games/escoba-module:
+    dependencies:
+      '@hexdev/escoba-bot':
+        specifier: workspace:*
+        version: link:../escoba-bot
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../escoba-engine
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
+  packages/games/escoba-ui:
+    dependencies:
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../escoba-engine
+      '@hexdev/spanish-deck-ui':
+        specifier: workspace:*
+        version: link:../../spanish-deck-ui
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      '@vitest/browser':
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.0(@types/node@26.1.2))(vitest@4.1.10)
 
   packages/games/truco-bot:
     dependencies:

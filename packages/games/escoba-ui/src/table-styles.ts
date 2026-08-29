@@ -1,0 +1,140 @@
+export const TABLE_STYLE_ID = "hexdev-escoba-table-styles";
+
+/**
+ * The face-up table's own stylesheet, generated as a string (not a .css
+ * file) for the same reason truco-ui's table-styles.ts is: this package
+ * builds via plain tsc -b, with no bundler to resolve a stylesheet import.
+ * Injected once via ensureTableStyles. Slice P added the player's own hand
+ * and the interactive (markable/marked/playable) card states on top of the
+ * same base rules -- one stylesheet for the whole surface, not two.
+ *
+ * Container-query only, per this project's own rule: an embedded widget's
+ * available width is its container's, never the viewport's, so no
+ * ResizeObserver/matchMedia/innerWidth may appear here. flex-wrap is the
+ * actual containment mechanism against the 20-card structural ceiling
+ * (escoba/invariante-de-paridad-de-la-mesa) -- a fixed column count sized
+ * for the common 3-8 card case is exactly the failure this guards against;
+ * a card's own width shrinks at narrower container widths so more of them
+ * still read comfortably per row, but wrapping alone is what keeps every
+ * card inside the container regardless of count.
+ *
+ * WCAG 1.4.1 (marked state): never colour alone -- `aria-pressed` carries
+ * it for assistive tech, and a marked card also gets a solid border AND a
+ * lift, two non-colour cues together.
+ */
+export function buildTableStylesheet(): string {
+  return `
+.hexdev-escoba-table {
+  container-type: inline-size;
+  container-name: hexdev-escoba-table;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  gap: var(--escoba-card-gap, 6px);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--escoba-table-padding, 8px);
+  /* THE HOST'S FONT, NOT THE BROWSER'S DEFAULT. \`createEscobaRenderer\`
+   * replaces the match container's className wholesale (game-ui-registry.ts),
+   * so this element does not sit under widget-app's own \`.convite-chrome\`
+   * (which is where \`--gx-font-family\` is otherwise applied) once a match is
+   * live — without its own declaration here this table silently fell back to
+   * the UA default font instead of the embedding host's, the same class of
+   * bug \`table-height-stability.browser.test.ts\` fences for truco-ui's own
+   * table shell. Card art carries no text, so nothing here actually shifts
+   * size under a differing font -- see font-independence.browser.test.ts --
+   * but \`.hexdev-escoba-sum\`'s live announcement does, and it must not be
+   * the one piece of this surface that looks like it belongs to someone
+   * else's page. */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
+}
+
+.hexdev-escoba-card {
+  --escoba-card-width: 72px;
+  flex: 0 0 auto;
+  width: var(--escoba-card-width);
+}
+
+.hexdev-escoba-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@container hexdev-escoba-table (width < 400px) {
+  .hexdev-escoba-card { --escoba-card-width: 44px; }
+  .hexdev-escoba-table { gap: 4px; }
+}
+
+@container hexdev-escoba-table (min-width: 400px) and (width < 640px) {
+  .hexdev-escoba-card { --escoba-card-width: 56px; }
+}
+
+.hexdev-escoba-hand {
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--escoba-card-gap, 6px);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--escoba-table-padding, 8px);
+  /* Same fix as .hexdev-escoba-table above, its own container-query root and
+   * therefore its own declaration -- a sibling, never a descendant, of the
+   * table (game-ui-registry.ts mounts table/hand/piles/sum side by side). */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
+}
+
+.hexdev-escoba-card--markable,
+.hexdev-escoba-card--playable {
+  appearance: none;
+  background: transparent;
+  font: inherit;
+  padding: 0;
+  border: 2px dashed transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hexdev-escoba-card--markable:focus-visible,
+.hexdev-escoba-card--playable:focus-visible {
+  outline: 3px solid var(--escoba-focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+.hexdev-escoba-card--marked {
+  border-style: solid;
+  border-color: var(--escoba-mark-color, #f59e0b);
+  transform: translateY(-6px);
+}
+
+.hexdev-escoba-card--playable:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.hexdev-escoba-sum {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  /* The only element on this whole surface that renders TEXT -- the running
+   * "Suma N" announcement -- so it is the one place a missing font-family
+   * would actually be visible, not merely theoretical. */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
+}
+`;
+}
+
+/** Injects the stylesheet at most once per document -- same idempotence as
+ * truco-ui's own ensureTableStyles, so re-mounting the table in a test never
+ * duplicates the <style> element. */
+export function ensureTableStyles(doc: Document): void {
+  if (doc.getElementById(TABLE_STYLE_ID) !== null) return;
+  const style = doc.createElement("style");
+  style.id = TABLE_STYLE_ID;
+  style.textContent = buildTableStylesheet();
+  doc.head.appendChild(style);
+}
