@@ -7,12 +7,23 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
   });
 
   it("falls back to the raw key for an unknown display-name key, rather than showing nothing", () => {
-    expect(translateGameName("games.escoba.name")).toBe("games.escoba.name");
+    expect(translateGameName("games.unknown-game.name")).toBe("games.unknown-game.name");
   });
 
   it("translates the 2v2 truco display-name key distinctly from the 1v1 one", () => {
     expect(translateGameName("games.truco2v2.name")).toBe("Truco Argentino 2v2");
     expect(translateGameName("games.truco2v2.name")).not.toBe(translateGameName("games.truco.name"));
+  });
+
+  /**
+   * Slice L.5. Unlike truco's pair above, escoba's two keys translate to the
+   * SAME string — the family name, not a per-entry title (i18n.ts's own
+   * comment on `GAME_NAME_LABELS`: the two formats are distinguished by
+   * `STRINGS.formatName(seatCount)` instead, not by a second name string).
+   */
+  it("translates both escoba display-name keys to the family name, 'Escoba de 15'", () => {
+    expect(translateGameName("games.escoba.name")).toBe("Escoba de 15");
+    expect(translateGameName("games.escoba2v2.name")).toBe("Escoba de 15");
   });
 
   it("translates a known config-option label key", () => {

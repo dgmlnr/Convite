@@ -1,6 +1,7 @@
 import { createGameModuleRegistry } from "@hexdev/platform-core";
 import type { ConsultAdviceProvider, ConsultAskProvider, GameModuleRegistry, SystemActionRequester } from "@hexdev/platform-core";
 import { getConsultAdvice, getConsultAsk, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
+import { escobaModule, escobaModule2v2, requestEscobaSystemAction } from "@hexdev/escoba-module";
 
 // The registry erases per-module state types (same documented boundary as
 // `platform-core/registry.ts` itself); this is that one spot for the pairing.
@@ -33,7 +34,7 @@ const isTrucoResponseHumanFirst = (action: unknown): boolean => {
 const isTrucoPaidQuestion = (action: unknown): boolean => typeof action === "object" && action !== null && (action as { type?: unknown }).type === "consult-partner";
 
 /**
- * The composition root's own truco registry — EXTRACTED from `index.ts`
+ * The composition root's own game registry — EXTRACTED from `index.ts`
  * (sdd-verify CRITICAL-3: deleting either `getConsultAsk` registration line
  * below left the whole suite green while every consult silently reverted to
  * the synchronous bot path in production, because `index.ts` itself carried
@@ -52,8 +53,22 @@ const isTrucoPaidQuestion = (action: unknown): boolean => typeof action === "obj
  * prove itself wired versus unwired from ITS OWN return value alone —
  * `registry.test.ts` fences the 2v2 entry instead, the only one where a
  * live teammate can make the difference observable.
+ *
+ * Renamed from `buildTrucoRegistry` (slice L): a SINGLE `GameModuleRegistry`
+ * covers every game family this process serves, not just truco — there is
+ * no way to compose two separate registries into one `createMatchServer`
+ * call, so escoba's two entries join truco's here rather than in a second
+ * function. Escoba registers in the OBJECT FORM too, but with
+ * `requestSystemAction` ONLY: design §D3 / slice J settled that escoba has
+ * no señas and no partner-consult mechanic at all (arts. 20.4/20.5 forbid
+ * tipping a partner off in person, and a game that registers no consult
+ * channel gives the engine no surface for it), so
+ * `isNonBlockingAction`/`isHumanPriorityAction`/`getConsultAdvice`/
+ * `getConsultAsk`/`isPaidQuestion` are correctly OMITTED, not merely
+ * defaulted — `createGameModuleRegistry`'s own fail-closed defaults already
+ * do the right thing for an entry that supplies none of them.
  */
-export function buildTrucoRegistry(): GameModuleRegistry {
+export function buildGameRegistry(): GameModuleRegistry {
   return createGameModuleRegistry([
     {
       module: trucoModule,
@@ -75,6 +90,16 @@ export function buildTrucoRegistry(): GameModuleRegistry {
       getConsultAdvice: getConsultAdvice as ConsultAdviceProvider,
       getConsultAsk: getConsultAsk as ConsultAskProvider,
       isPaidQuestion: isTrucoPaidQuestion,
+    },
+    {
+      module: escobaModule,
+      requestSystemAction: requestEscobaSystemAction as SystemActionRequester,
+    },
+    // The 2v2 escoba entry — additive, same relationship escoba's 1v1 entry
+    // has to escobaModule2v2 truco's own pairs already model above.
+    {
+      module: escobaModule2v2,
+      requestSystemAction: requestEscobaSystemAction as SystemActionRequester,
     },
   ]);
 }
