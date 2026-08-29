@@ -24,8 +24,21 @@ function teamLabel(teamId: TeamId, selfTeamId: TeamId): string {
  * (WCAG 1.1.1/1.4.1): readable by assistive tech and never conveyed by
  * position or colour alone. Reads straight off `PlayerView.teams` — the
  * engine already keeps that current, so this never re-derives a score.
+ *
+ * `escobas` is `HandView.escobas` — THIS hand's escobas, per team (slice R3).
+ * Optional, and omitted between hands (`PlayerView.hand` is `null` then):
+ * a "0" beside a score while the closing panel below still reads "Escobas
+ * Nosotros: 1" would be two different true statements that look like a
+ * contradiction. During the hand it is the only place an escoba is visible at
+ * all — `score` does not move until the hand closes, so the most exciting
+ * thing in this game used to leave no trace on screen until it was over.
  */
-export function renderEscobaScoreboard(container: HTMLElement, teams: readonly TeamScore[], selfTeamId: TeamId): void {
+export function renderEscobaScoreboard(
+  container: HTMLElement,
+  teams: readonly TeamScore[],
+  selfTeamId: TeamId,
+  escobas?: Readonly<Record<TeamId, number>>,
+): void {
   container.replaceChildren();
   container.className = "hexdev-escoba-scoreboard";
 
@@ -44,6 +57,17 @@ export function renderEscobaScoreboard(container: HTMLElement, teams: readonly T
     score.dataset.score = String(team.score);
     score.textContent = `${String(team.score)} / ${String(POINTS_TO_WIN)}`;
     group.appendChild(score);
+
+    if (escobas !== undefined) {
+      const made = escobas[team.id] ?? 0;
+      const line = document.createElement("span");
+      line.className = "hexdev-escoba-scoreboard-escobas";
+      line.dataset.escobas = String(made);
+      // Real text, like the score above it: never a bare digit beside a
+      // broom glyph, and never the count conveyed by colour (WCAG 1.4.1).
+      line.textContent = `Escobas: ${String(made)}`;
+      group.appendChild(line);
+    }
 
     container.appendChild(group);
   }

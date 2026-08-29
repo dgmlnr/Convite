@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { OtherPlayerView, PlayerId, PlayerView, TeamId } from "@hexdev/escoba-engine";
-import { describeTurn, renderEscobaStatus, seatRole } from "./status.js";
+import { describeStock, describeTurn, renderEscobaStatus, seatRole } from "./status.js";
 import type { EscobaStatusElements } from "./status.js";
 
 /**
- * The two facts the table used to carry and never render (slice R3a): whose
- * turn it is, and what every other seat still holds. Every assertion below
- * reads a value the ENGINE put on the view; nothing here recomputes one,
- * which is exactly the property these tests exist to lock.
+ * The facts the table used to carry and never render: whose turn it is and
+ * what every other seat holds (slice R3a), and what is left in the stock
+ * (R3b). Every assertion below reads a value the ENGINE put on the view;
+ * nothing here recomputes one, which is exactly the property these tests
+ * exist to lock.
  */
 
 const SELF = "self" as PlayerId;
@@ -51,15 +52,16 @@ let elements: EscobaStatusElements | undefined;
 
 afterEach(() => {
   if (elements === undefined) return;
-  for (const el of [elements.turnEl, elements.seatsEl]) el.remove();
+  for (const el of [elements.turnEl, elements.stockEl, elements.seatsEl]) el.remove();
   elements = undefined;
 });
 
 function freshElements(): EscobaStatusElements {
   const turnEl = document.createElement("p");
+  const stockEl = document.createElement("p");
   const seatsEl = document.createElement("ul");
-  for (const el of [turnEl, seatsEl]) document.body.appendChild(el);
-  elements = { turnEl, seatsEl };
+  for (const el of [turnEl, stockEl, seatsEl]) document.body.appendChild(el);
+  elements = { turnEl, stockEl, seatsEl };
   return elements;
 }
 
@@ -99,6 +101,14 @@ describe("describeTurn — whose turn it is, in words rather than only implied b
 
   it("says nothing between hands, when the view carries no hand at all", () => {
     expect(describeTurn(viewWith(FOUR_SEATS, null))).toBe("");
+  });
+});
+
+describe("describeStock — what is left to deal", () => {
+  it("pluralizes, and names an empty stock as a state rather than as a zero", () => {
+    expect(describeStock(24)).toBe("Mazo: 24 cartas");
+    expect(describeStock(1)).toBe("Mazo: 1 carta");
+    expect(describeStock(0)).toBe("Mazo vacío");
   });
 });
 
@@ -142,12 +152,14 @@ describe("renderEscobaStatus — the row a player actually reads", () => {
     expect(els.turnEl.isConnected, "the region itself is never remounted").toBe(true);
   });
 
-  it("empties the turn line between hands, when the view carries no hand to report on", () => {
+  it("reports the stock straight off the view, and empties both lines between hands", () => {
     const els = freshElements();
     renderEscobaStatus(els, viewWith(HEAD_TO_HEAD, handWith(SELF, 30)));
+    expect(els.stockEl.textContent).toBe("Mazo: 30 cartas");
     expect(els.turnEl.dataset.self).toBe("true");
 
     renderEscobaStatus(els, viewWith(HEAD_TO_HEAD, null));
+    expect(els.stockEl.textContent).toBe("");
     expect(els.turnEl.textContent).toBe("");
     expect(els.turnEl.dataset.self).toBe("false");
   });

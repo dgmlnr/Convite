@@ -1,7 +1,7 @@
 export const STATUS_STYLE_ID = "hexdev-escoba-status-styles";
 
 /**
- * The turn line and the row of other seats (slice R3a).
+ * The turn line, the stock counter and the row of other seats (R3a/R3b).
  *
  * Container-query only, same rule as table-styles.ts/piles-styles.ts/
  * scoreboard-styles.ts: an embedded widget's available width is its
@@ -46,10 +46,17 @@ export function buildStatusStylesheet(): string {
   box-shadow: inset 0 0 0 1px currentColor;
 }
 
-/* Between hands there is no turn to report, so the line collapses instead of
-   leaving an empty box holding vertical space -- the same :empty convention
-   renderEscobaHandBreakdown already relies on. */
-.hexdev-escoba-turn:empty {
+.hexdev-escoba-stock {
+  margin: 0;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Between hands there is no turn and no stock to report, so the whole row
+   collapses instead of leaving two empty boxes holding vertical space --
+   the same :empty convention renderEscobaHandBreakdown already relies on. */
+.hexdev-escoba-turn:empty,
+.hexdev-escoba-stock:empty {
   display: none;
 }
 

@@ -45,6 +45,21 @@ describe("renderEscobaScoreboard (slice R1, part 1 — the running score, TEAM-k
     renderEscobaScoreboard(el, [{ id: TEAM_A, score: 0 }, { id: TEAM_B, score: 0 }], TEAM_B);
     expect(el.querySelectorAll("[data-team]")).toHaveLength(2);
   });
+
+  it("shows THIS hand's escobas beside each score — the one thing the score cannot say until the hand closes", () => {
+    const el = freshContainer();
+    renderEscobaScoreboard(el, [{ id: TEAM_A, score: 12 }, { id: TEAM_B, score: 8 }], TEAM_A, { [TEAM_A]: 2, [TEAM_B]: 0 });
+
+    const lines = [...el.querySelectorAll<HTMLElement>(".hexdev-escoba-scoreboard-escobas")];
+    expect(lines.map((line) => line.textContent)).toEqual(["Escobas: 2", "Escobas: 0"]);
+    expect(lines[0]?.dataset.escobas).toBe("2");
+  });
+
+  it("omits the escobas line entirely between hands, so it can never contradict the closing panel", () => {
+    const el = freshContainer();
+    renderEscobaScoreboard(el, [{ id: TEAM_A, score: 12 }, { id: TEAM_B, score: 8 }], TEAM_A);
+    expect(el.querySelectorAll(".hexdev-escoba-scoreboard-escobas")).toHaveLength(0);
+  });
 });
 
 describe("renderEscobaHandBreakdown (slice R1, part 2 — the five categories, including the ones nobody won)", () => {

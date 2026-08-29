@@ -299,6 +299,7 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
     let mounted: {
       scoreboardEl: HTMLElement;
       turnEl: HTMLElement;
+      stockEl: HTMLElement;
       seatsEl: HTMLElement;
       tableEl: HTMLElement;
       handEl: HTMLElement;
@@ -326,14 +327,15 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
         container.replaceChildren();
         container.className = "hexdev-escoba-match";
         const scoreboardEl = document.createElement("div");
-        // The turn line is an aria-live region: mounted once and mutated
-        // after, same reason as sumEl below. Its own row, so the counter the
-        // next slice puts beside it needs no re-mount.
+        // Turn and stock share one row; the turn line is the aria-live half
+        // (mounted once, mutated after — same reason as sumEl below), the
+        // stock counter beside it changes only when a re-deal happens.
         const statusEl = document.createElement("div");
         statusEl.className = "hexdev-escoba-status";
         const turnEl = document.createElement("p");
         turnEl.setAttribute("aria-live", "polite");
-        statusEl.appendChild(turnEl);
+        const stockEl = document.createElement("p");
+        statusEl.append(turnEl, stockEl);
         // A real list, so each seat's aria-label is actually exposed: on a
         // bare div it would be dropped for want of a role.
         const seatsEl = document.createElement("ul");
@@ -351,14 +353,14 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
         breakdownAnnouncer.setAttribute("aria-atomic", "true");
         const matchOverEl = document.createElement("div");
         container.append(scoreboardEl, statusEl, seatsEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl);
-        mounted = { scoreboardEl, turnEl, seatsEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl };
+        mounted = { scoreboardEl, turnEl, stockEl, seatsEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl };
       }
 
       const view = payload.view as EscobaPlayerView;
       const legalActions = payload.legalActions as readonly EscobaPlayCardAction[];
 
-      renderEscobaScoreboard(mounted.scoreboardEl, view.teams, view.self.teamId);
-      renderEscobaStatus({ turnEl: mounted.turnEl, seatsEl: mounted.seatsEl }, view);
+      renderEscobaScoreboard(mounted.scoreboardEl, view.teams, view.self.teamId, view.hand?.escobas);
+      renderEscobaStatus({ turnEl: mounted.turnEl, stockEl: mounted.stockEl, seatsEl: mounted.seatsEl }, view);
       markThenPlay({ tableEl: mounted.tableEl, handEl: mounted.handEl, sumEl: mounted.sumEl }, view.hand?.table ?? [], view.self.hand, legalActions, (card, captured) =>
         dispatch({ type: "play-card", playerId: view.self.playerId, card, captured } satisfies EscobaPlayCardAction),
       );

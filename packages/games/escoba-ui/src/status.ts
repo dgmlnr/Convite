@@ -1,21 +1,20 @@
 import type { OtherPlayerView, PlayerView } from "@hexdev/escoba-engine";
 
 /**
- * WHAT THE TABLE WAS NOT SAYING, first half (slice R3a): whose turn it is,
- * and how many cards every other seat still holds.
+ * WHAT THE TABLE WAS NOT SAYING: whose turn it is and what every other seat
+ * holds (slice R3a), and what is left in the stock (R3b).
  *
- * `PlayerView` already carried both — `hand.turn` and
- * `others[].cardsRemaining` — and no UI file read either. Nothing here
- * DERIVES a number: every value below is read straight off the view, the same
- * discipline `scoreboard.ts` states for the running score and
- * `renderEscobaHandBreakdown` states for the hand's categories.
+ * `PlayerView` already carried all three — `hand.turn`,
+ * `others[].cardsRemaining`, `hand.stockCount` — and no UI file read any of
+ * them. Nothing here DERIVES a number: every value below is read straight off
+ * the view, the same discipline `scoreboard.ts` states for the running score
+ * and `renderEscobaHandBreakdown` states for the hand's categories.
  *
  * WHY ESCOBA NEEDS THIS MORE THAN TRUCO DOES: the score only moves when a
  * whole hand resolves, so mid-hand the scoreboard is frozen and a player
- * could see nothing at all of what they were achieving. Truco at least states
- * the turn in a badge and shows the opponents' card backs; escoba said
- * nothing at all, leaving the turn implied only by which buttons were
- * disabled.
+ * could see nothing at all of what they were achieving or of how close the
+ * mid-hand re-deal was. Truco at least states the turn in a badge and shows
+ * the opponents' card backs; escoba said nothing at all.
  */
 
 /**
@@ -97,7 +96,19 @@ export function describeCards(count: number): string {
 }
 
 /**
- * The persistent nodes, built ONCE per match by the composition root
+ * What is left to deal. Real strategic information in escoba and in no other
+ * game in this repo: while the stock holds, three more cards come to every
+ * player (art. 6.2), and the hand ends when it does not. Zero gets its own
+ * phrase because "0 cartas" reads as a counter that happens to be empty,
+ * where "Mazo vacío" reads as the state the hand is actually in — the same
+ * argument `truco-ui`'s own "Sin señas" makes.
+ */
+export function describeStock(stockCount: number): string {
+  return stockCount === 0 ? "Mazo vacío" : `Mazo: ${describeCards(stockCount)}`;
+}
+
+/**
+ * The three persistent nodes, built ONCE per match by the composition root
  * (`game-ui-registry.ts`) and only ever mutated here.
  *
  * `turnEl` carries the `aria-live` region: announcing needs a CHANGE to a
@@ -107,6 +118,7 @@ export function describeCards(count: number): string {
  */
 export interface EscobaStatusElements {
   readonly turnEl: HTMLElement;
+  readonly stockEl: HTMLElement;
   readonly seatsEl: HTMLElement;
 }
 
@@ -135,7 +147,7 @@ function renderSeat(other: OtherPlayerView, view: PlayerView): HTMLElement {
 }
 
 /**
- * The turn line, and every other seat's remaining cards.
+ * Turn, stock and every other seat's remaining cards.
  *
  * The row is laid out in TABLE order rather than in `others` order: highest
  * turn-offset first, so the 4-seat game reads left rival, partner, right
@@ -143,7 +155,7 @@ function renderSeat(other: OtherPlayerView, view: PlayerView): HTMLElement {
  * thing a player is looking at.
  */
 export function renderEscobaStatus(elements: EscobaStatusElements, view: PlayerView): void {
-  const { turnEl, seatsEl } = elements;
+  const { turnEl, stockEl, seatsEl } = elements;
 
   turnEl.className = "hexdev-escoba-turn";
   turnEl.dataset.self = String(view.hand !== null && view.hand.turn === view.self.playerId);
@@ -151,6 +163,9 @@ export function renderEscobaStatus(elements: EscobaStatusElements, view: PlayerV
   // Only on a real change: rewriting the same text into a live region makes
   // some readers repeat themselves on every single broadcast.
   if (turnEl.textContent !== turn) turnEl.textContent = turn;
+
+  stockEl.className = "hexdev-escoba-stock";
+  stockEl.textContent = view.hand === null ? "" : describeStock(view.hand.stockCount);
 
   seatsEl.replaceChildren();
   seatsEl.className = "hexdev-escoba-seats";

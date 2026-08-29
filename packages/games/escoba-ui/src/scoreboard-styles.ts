@@ -40,6 +40,12 @@ export function buildScoreboardStylesheet(): string {
   font-variant-numeric: tabular-nums;
 }
 
+.hexdev-escoba-scoreboard-escobas {
+  font-size: 0.8em;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
 .hexdev-escoba-hand-breakdown {
   container-type: inline-size;
   container-name: hexdev-escoba-hand-breakdown;
