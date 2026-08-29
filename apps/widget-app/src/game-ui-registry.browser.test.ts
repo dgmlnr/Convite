@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
 import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
-import type { PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView, TeamId as EscobaTeamId } from "@hexdev/escoba-engine";
+import type { PlayCardAction as EscobaPlayCardAction, PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView, TeamId as EscobaTeamId } from "@hexdev/escoba-engine";
 import { createGameUiRegistry } from "./game-ui-registry.js";
 
 let container: HTMLElement;
@@ -105,10 +105,10 @@ describe("truco's registered renderer — the real wiring boundary from a generi
 
 /** Unit O — closes the deviation note Slice M left on ESCOBA_FAMILY: escoba
  * now has a real GameUiEntry, and enterMatch resolves it instead of
- * falling back to renderUnsupportedGame. No interaction fences here —
- * mark-then-play is Unit P's own scope; this only proves the wiring
- * boundary Unit N's static table and this unit's own piles component are
- * reachable from the exact registry path enterMatch calls. */
+ * falling back to renderUnsupportedGame. Proves the wiring boundary Unit
+ * N's static table and this unit's own piles component are reachable from
+ * the exact registry path enterMatch calls. Unit P's own interaction fence
+ * follows immediately below, inside this same describe block. */
 describe("escoba's registered renderer — the real wiring boundary from a generic { view } payload to the table and piles (Unit O)", () => {
   const ESCOBA_SELF = "player-a" as EscobaPlayerId;
   const ESCOBA_TEAM_A = "team-a" as EscobaTeamId;
@@ -150,5 +150,25 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
     expect(container.querySelector('.hexdev-escoba-table [data-card="5-oro"]'), "the table renders the payload's own view").not.toBeNull();
     const pile = container.querySelector<HTMLElement>('.hexdev-escoba-pile[data-team="team-a"]');
     expect(pile?.dataset.count, "the piles render the payload's own view too, not a placeholder").toBe("1");
+  });
+
+  /** Unit P — the real wiring boundary `enterMatch` now exercises: mark the
+   * table's own 5-oro, then play a hand card, in ONE gesture, through the
+   * EXACT `createRenderer()` entry-point live matches use. */
+  it("marking the table's forming card then playing the hand card dispatches ONE real PlayCardAction, no intermediate dialog", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("escoba-de-15" as GameId)!.createRenderer();
+    const dispatch = vi.fn();
+    const REY_ESPADA = { suit: "espada", rank: 12 } as const; // value 10, target 15-10=5 -> the table's own 5-oro
+    const view: EscobaPlayerView = { ...escobaView, self: { ...escobaView.self, hand: [REY_ESPADA] } };
+    const legalActions: readonly EscobaPlayCardAction[] = [{ type: "play-card", playerId: ESCOBA_SELF, card: REY_ESPADA, captured: [{ suit: "oro", rank: 5 }] }];
+
+    render(container, { view, legalActions }, dispatch);
+    container.querySelector<HTMLButtonElement>('.hexdev-escoba-table [data-card="5-oro"]')!.click();
+    container.querySelector<HTMLButtonElement>('.hexdev-escoba-hand [data-card="12-espada"]')!.click();
+
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "play-card", playerId: ESCOBA_SELF, card: REY_ESPADA, captured: [{ suit: "oro", rank: 5 }] });
   });
 });

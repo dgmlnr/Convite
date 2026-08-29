@@ -4,8 +4,8 @@ import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
-import type { PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
-import { ensurePilesStyles, ensureTableStyles, renderEscobaPiles, renderEscobaTable } from "@hexdev/escoba-ui";
+import type { PlayCardAction as EscobaPlayCardAction, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
+import { createMarkThenPlay, ensurePilesStyles, ensureTableStyles, renderEscobaPiles } from "@hexdev/escoba-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -270,29 +270,42 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: T
 const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
 /**
- * Unit O — the match-time renderer `ESCOBA_FAMILY`'s own comment above
- * points at: a fresh mount per match, called again on every `onView`
- * repaint `main.ts`'s own `paint()` drives, the same shape
- * `createTrucoRenderer` returns. No mark-then-play interaction yet (Unit
- * P's own scope) — the returned function accepts fewer parameters than
- * `GameUiEntry["createRenderer"]` declares, which a function may always do
- * (`Array.prototype.map`'s own callback signature relies on the same
- * rule): `dispatch`/`onPlayAgain`/`onLeaveMatch` have nothing to drive yet.
+ * Unit P — mark-then-play, the core UX (decision 4). `createMarkThenPlay()`
+ * runs ONCE per match mount so the marked-cards set survives re-renders;
+ * the table/hand/sum elements are built ONCE and reused, never wiped — an
+ * `aria-live` announcement is a CHANGE to a region already in the tree
+ * (`truco-ui/src/table.ts`'s own announcers, same argument). `onPlayAgain`/
+ * `onLeaveMatch` still have nothing to drive.
  */
 function createEscobaRenderer(): GameUiEntry["createRenderer"] {
-  return () => (container, payload) => {
-    ensureTableStyles(document);
-    ensurePilesStyles(document);
-    container.replaceChildren();
-    container.className = "hexdev-escoba-match";
+  return () => {
+    const markThenPlay = createMarkThenPlay();
+    let mounted: { tableEl: HTMLElement; handEl: HTMLElement; pilesEl: HTMLElement; sumEl: HTMLElement } | null = null;
 
-    const tableEl = document.createElement("div");
-    const pilesEl = document.createElement("div");
-    container.append(tableEl, pilesEl);
+    return (container, payload, dispatch) => {
+      ensureTableStyles(document);
+      ensurePilesStyles(document);
 
-    const view = payload.view as EscobaPlayerView;
-    renderEscobaTable(tableEl, view.hand?.table ?? []);
-    renderEscobaPiles(pilesEl, view.teams, view.hand?.piles ?? {});
+      if (mounted === null || mounted.tableEl.parentElement !== container) {
+        container.replaceChildren();
+        container.className = "hexdev-escoba-match";
+        const tableEl = document.createElement("div");
+        const handEl = document.createElement("div");
+        const pilesEl = document.createElement("div");
+        const sumEl = document.createElement("div");
+        sumEl.className = "hexdev-escoba-sum";
+        sumEl.setAttribute("aria-live", "polite");
+        container.append(tableEl, handEl, pilesEl, sumEl);
+        mounted = { tableEl, handEl, pilesEl, sumEl };
+      }
+
+      const view = payload.view as EscobaPlayerView;
+      const legalActions = payload.legalActions as readonly EscobaPlayCardAction[];
+      markThenPlay({ tableEl: mounted.tableEl, handEl: mounted.handEl, sumEl: mounted.sumEl }, view.hand?.table ?? [], view.self.hand, legalActions, (card, captured) =>
+        dispatch({ type: "play-card", playerId: view.self.playerId, card, captured } satisfies EscobaPlayCardAction),
+      );
+      renderEscobaPiles(mounted.pilesEl, view.teams, view.hand?.piles ?? {});
+    };
   };
 }
 
