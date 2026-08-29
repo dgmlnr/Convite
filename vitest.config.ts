@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
 
+import { BROWSER_TEST_INCLUDE } from "./scripts/browser-test-include.mjs";
 import { resolveDisplayRedirect, socketPathFor } from "./scripts/virtual-display.mjs";
 
 /**
@@ -110,13 +111,12 @@ export default defineConfig({
       {
         test: {
           name: "browser",
-          include: [
-            "packages/games/truco-engine/**/*.browser.test.ts",
-            "packages/games/truco-ui/**/*.browser.test.ts",
-            "packages/games/escoba-ui/**/*.browser.test.ts",
-            "packages/widget-sdk/**/*.browser.test.ts",
-            "apps/widget-app/**/*.browser.test.ts",
-          ],
+          // Generalized from a literal, per-package list to two globs —
+          // see `scripts/browser-test-include.mjs` for why, and
+          // `scripts/browser-test-include.test.ts` for the fence that
+          // proves this actually covers every `.browser.test.ts` file on
+          // disk, not just today's five packages.
+          include: BROWSER_TEST_INCLUDE,
           exclude: ["**/node_modules/**"],
           browser: {
             enabled: true,
