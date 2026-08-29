@@ -11,3 +11,6 @@ export type { TeamIdentity } from "./piles.js";
 export { ensurePilesStyles, PILES_STYLE_ID } from "./piles-styles.js";
 export { createMarkThenPlay } from "./mark-then-play.js";
 export type { MarkThenPlayElements } from "./mark-then-play.js";
+export { describeHandBreakdown, renderEscobaHandBreakdown, renderEscobaScoreboard } from "./scoreboard.js";
+export type { TeamScore } from "./scoreboard.js";
+export { ensureScoreboardStyles, SCOREBOARD_STYLE_ID } from "./scoreboard-styles.js";
