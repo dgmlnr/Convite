@@ -69,8 +69,28 @@ const MODALITY_SUMMARY: Readonly<Record<GameId, string>> = {
 export const STRINGS = {
   /** The instruction, now that the game's own name carries the screen. It
    * stopped being the title and became the line that says what to do — which
-   * is what it always was, printed at the size of a heading. */
+   * is what it always was, printed at the size of a heading.
+   *
+   * SCREEN TWO'S QUESTION, and only screen two's. It is also that screen's
+   * fallback heading when a family declares no `heroTitle` (game-screen.ts),
+   * where it is still the right words: the player already chose the game and
+   * is being asked how to play it. */
   selectionTitle: "Elegí cómo jugar",
+  /**
+   * SCREEN ONE'S QUESTION, and it exists as its own string because the two
+   * screens ask different things.
+   *
+   * Screen one (`game-list.ts`) offers a choice of GAMES; screen two
+   * (`game-screen.ts`) offers a choice of ways to play the one already
+   * chosen. Both headings used to read `selectionTitle`, so the front door
+   * asked "Elegí cómo jugar" above a row of games — a question about a
+   * choice that screen is not offering. One string serving two jobs is how
+   * they came to be the same, and nothing could tell them apart.
+   *
+   * Same voseo as its sibling above, so the pair reads as one voice: the
+   * front door asks which, the game's own screen asks how.
+   */
+  gameListTitle: "Elegí un juego",
   backToGames: "Todos los juegos",
   brand: "Convite",
   /**
