@@ -26,8 +26,9 @@ export interface Player {
 
 /**
  * design §D2. `stock` is the SECRET remainder kept "para los repartos
- * sucesivos" (art. 6.1) after the opening deal, and NO player-facing view
- * may ever expose one — a constraint the view layer enforces by type. `piles`/`escobas` are keyed by `TeamId`, never
+ * sucesivos" (art. 6.1) after the opening deal — `getViewFor` (view.ts)
+ * must never let a stock card reach a `PlayerView`; see that file's own
+ * redaction discipline. `piles`/`escobas` are keyed by `TeamId`, never
  * `PlayerId`, so end-of-hand scoring (a later slice) is ONE code path for
  * both the 2-seat and 4-seat modality (art. 5.1: the regulation is written
  * for the pairs game; a 1v1 team is simply a team of one — see
