@@ -22,6 +22,11 @@ export function buildPilesStylesheet(): string {
   width: 100%;
   box-sizing: border-box;
   padding: var(--escoba-piles-padding, 8px);
+  /* Same reasoning as table-styles.ts's own .hexdev-escoba-table: this is a
+   * sibling container-query root under createEscobaRenderer's mount, not a
+   * descendant of anything that already pins the host's font, so it pins its
+   * own -- font-independence.browser.test.ts covers both. */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 
 .hexdev-escoba-pile {

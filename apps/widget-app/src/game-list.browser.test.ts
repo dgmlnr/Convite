@@ -112,6 +112,22 @@ describe("renderGameList — screen one", () => {
     renderGameList(el, [TRUCO, ESCOBA], { onOpenGame: noop });
     expect(el.querySelector(".hexdev-about"), "the same disclosure screen two renders").not.toBeNull();
   });
+
+  /**
+   * THE LICENSING ONE FOR ESCOBA, screen one's own half. `GAME_UI_CREDITS`
+   * is unioned across the module's whole `FAMILIES` list (`game-ui-
+   * registry.ts`), never scoped to what a caller passes in — so the test
+   * above alone would keep passing even if a future refactor made the
+   * credit panel conditional on WHICH family is on screen and simply forgot
+   * escoba. Rendering with escoba as the ONLY family on screen is the fence
+   * against exactly that: the panel, and Basquetteur's name in it, must
+   * still reach a player here even when truco is nowhere in the list.
+   */
+  it("carries the deck's credits when escoba is the ONLY family on screen", () => {
+    const el = fresh();
+    renderGameList(el, [ESCOBA], { onOpenGame: noop });
+    expect(el.querySelector(".hexdev-about-panel")?.textContent ?? "").toContain("Basquetteur");
+  });
 });
 
 describe("the back control — absent, never disabled", () => {

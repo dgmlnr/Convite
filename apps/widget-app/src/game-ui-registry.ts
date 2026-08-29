@@ -274,8 +274,16 @@ const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFa
  * runs ONCE per match mount so the marked-cards set survives re-renders;
  * the table/hand/sum elements are built ONCE and reused, never wiped — an
  * `aria-live` announcement is a CHANGE to a region already in the tree
- * (`truco-ui/src/table.ts`'s own announcers, same argument). `onPlayAgain`/
- * `onLeaveMatch` still have nothing to drive.
+ * (`truco-ui/src/table.ts`'s own announcers, same argument).
+ *
+ * KNOWN GAP, found in Slice Q's own sweep, reported rather than fixed here
+ * (scope is a maintainer decision): `payload.outcome`, `onPlayAgain`, and
+ * `onLeaveMatch` are all still dropped on the floor below — unlike truco's
+ * own match-over overlay (`createTrucoRenderer`, above), a finished escoba
+ * match shows no score, no "you won", and no way back to the lobby from the
+ * table itself. There is also no scoreboard anywhere in escoba-ui: `Team.
+ * score` is tracked correctly by the engine (proven in
+ * `escoba-full-hand.browser.test.ts`) but nothing on screen ever reads it.
  */
 function createEscobaRenderer(): GameUiEntry["createRenderer"] {
   return () => {
