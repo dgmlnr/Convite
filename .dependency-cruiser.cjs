@@ -34,15 +34,17 @@ module.exports = {
     {
       name: "l1-no-l2-l3",
       severity: "error",
-      comment: "L1 packages (platform-core, truco-bot, truco-ui, escoba-bot, escoba-ui) must not depend on L2 adapters or L3 apps.",
+      comment:
+        "L1 packages (platform-core, truco-bot, truco-ui, escoba-bot, escoba-ui) must not depend on L2 adapters or L3 apps. `transport-colyseus-client` added to the `to` list: it was in NO layer rule at all — an omission, not a decision — while its sibling `transport-colyseus` already appeared in both this rule's `to` and `l2-no-l3`'s `from`.",
       from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui|games/escoba-bot|games/escoba-ui)/src" },
-      to: { path: "^(packages/(games/truco-module|games/escoba-module|transport-colyseus|widget-frontdoor|widget-sdk)|apps)/" },
+      to: { path: "^(packages/(games/truco-module|games/escoba-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)|apps)/" },
     },
     {
       name: "l2-no-l3",
       severity: "error",
-      comment: "L2 adapters (truco-module, escoba-module, transport-colyseus, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps.",
-      from: { path: "^packages/(games/truco-module|games/escoba-module|transport-colyseus|widget-frontdoor|widget-sdk)/src" },
+      comment:
+        "L2 adapters (truco-module, escoba-module, transport-colyseus, transport-colyseus-client, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps. `transport-colyseus-client` depends only on platform-contract/platform-core and is consumed only by apps/widget-app (L3) — the same shape as its sibling `transport-colyseus`, which this rule already covered.",
+      from: { path: "^packages/(games/truco-module|games/escoba-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)/src" },
       to: { path: "^apps/" },
     },
     {
