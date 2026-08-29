@@ -1,6 +1,7 @@
 import { applyAction as engineApplyAction, getLegalActions as engineGetLegalActions, getMatchWinner, getViewFor, redeal, scoreHand, settleLeftovers } from "@hexdev/escoba-engine";
 import type { MatchState, PlayCardAction, PlayerView, TeamId } from "@hexdev/escoba-engine";
-import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { DEFAULT_THINKING_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/escoba-bot";
+import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { SYSTEM_ACTOR_ID, requestEscobaSystemAction, startHand } from "./deal.js";
 import type { StartHandAction } from "./deal.js";
 
@@ -125,21 +126,30 @@ function getOutcome(state: MatchState): MatchOutcome | null {
   return { winnerIds: winner === undefined ? [] : winner.playerIds };
 }
 
+/** `EscobaModuleAction` is `PlayCardAction | StartHandAction`, but a bot is
+ * never offered `start-hand` — `getLegalActions` only ever returns the
+ * engine's own `PlayCardAction`s (`SYSTEM_ACTOR_ID` is the only actor that
+ * ever sees `start-hand`) — so this narrowing is total in practice, the
+ * same shape truco-module's own `toEngineActions` uses. */
+function toPlayCardActions(actions: readonly EscobaModuleAction[]): readonly PlayCardAction[] {
+  return actions.filter((action): action is PlayCardAction => action.type === "play-card");
+}
+
+/** Real crypto entropy for the hard tier's tie-breaks only (design §D8:
+ * `rng` "used ONLY to break ties among equally-valued actions") — mirrors
+ * `truco-module/src/index.ts`'s own `defaultRng`. */
+const defaultRng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+
 /**
- * PLACEHOLDER ONLY. `createBot` is REQUIRED on `GameModule`
- * (`contract.ts:132`, no `?`), but escoba's three REAL, genuinely distinct
- * tiers (design §D8) are Slice K's job (`escoba-bot`), never this module's.
- * Picks the first legal action in canonical table-index order — Slice K
- * replaces this with `createBotStrategy(tier, rng)` from `@hexdev/escoba-bot`,
- * exactly the way `truco-module/src/index.ts:126` wires its own real tiers.
+ * design §D8: the three genuinely distinct tiers from `@hexdev/escoba-bot`,
+ * wrapped in that package's own thinking delay — escoba has no "spoken"
+ * moves (no calls, no señas), so unlike `truco-module`'s own `createBot`
+ * this needs no `delayForAction` classifier, just the base pause.
  */
 function createBot(tier: BotTier): BotStrategy<PlayerView, EscobaModuleAction> {
+  const strategy = withThinkingDelay(createBotStrategy(tier, defaultRng), DEFAULT_THINKING_DELAY_MS);
   return {
-    chooseAction: (_view, legalActions) => {
-      const first = legalActions[0];
-      if (first === undefined) throw new Error(`escoba-module createBot placeholder (${tier}): no legal actions were offered`);
-      return first;
-    },
+    chooseAction: (view, legalActions, budgetMs, answer) => strategy.chooseAction(view, toPlayCardActions(legalActions), budgetMs, answer),
   };
 }
 

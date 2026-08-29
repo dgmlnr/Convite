@@ -1,5 +1,5 @@
 {
-  "name": "@hexdev/escoba-module",
+  "name": "@hexdev/escoba-bot",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,6 @@
   },
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
-    "@hexdev/escoba-engine": "workspace:*",
-    "@hexdev/escoba-bot": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/node": "^26.1.2"
+    "@hexdev/escoba-engine": "workspace:*"
   }
 }

@@ -106,7 +106,7 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
     expect(state.teams[1].playerIds).toEqual([player1, player3]);
   });
 
-  it("createBot's PLACEHOLDER (slice K replaces this) picks the first legal action in canonical order", async () => {
+  it("createBot wires the real easy tier (@hexdev/escoba-bot, slice K) — first legal action in canonical order", async () => {
     const state = reachable2p();
     const legal = escobaModule.getLegalActions(state, playerB);
     const view = escobaModule.getViewFor(state, playerB);

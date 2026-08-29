@@ -3,9 +3,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "lib": ["ES2022", "DOM"],
-    "types": ["node"]
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
     "src"
@@ -16,9 +14,6 @@
     },
     {
       "path": "../escoba-engine"
-    },
-    {
-      "path": "../escoba-bot"
     }
   ]
 }
