@@ -1,5 +1,5 @@
-import { applyOpeningEscoba, buildDeck, getMatchWinner } from "@hexdev/escoba-engine";
-import type { Card, HandState, MatchState } from "@hexdev/escoba-engine";
+import { buildDeck, deal, getMatchWinner } from "@hexdev/escoba-engine";
+import type { Card, MatchState } from "@hexdev/escoba-engine";
 import type { PlayerId, RandomSource } from "@hexdev/platform-contract";
 
 /** No human actor submits this — mirrors `truco-module/src/deal.ts`'s own sentinel. */
@@ -11,16 +11,13 @@ export interface StartHandAction {
   readonly deck: readonly Card[];
 }
 
-const CARDS_PER_PLAYER = 3;
-const TABLE_OPENING_SIZE = 4;
-
 /**
- * Fisher-Yates, mirrors `truco-module/src/deal.ts:26-33`. escoba-engine's
- * own `deal(state, rng)` shuffles AND materializes in one step with no seam
- * for a pre-built deck (design §D3 wants the WHOLE permutation carried as
- * replayable DATA on the action), so this module owns its own shuffle
- * instead — the same relationship `truco-module` already has with
- * `truco-engine`, not a new one.
+ * Fisher-Yates, mirrors `truco-module/src/deal.ts:26-33`. Shuffling belongs
+ * HERE, not in the engine: this module owns the entropy (`RandomSource`
+ * comes from the host) and design §D3 wants the whole 40-card permutation
+ * carried as replayable DATA on the `start-hand` action. The engine's own
+ * `deal(state, deck)` only MATERIALIZES an already-shuffled deck — the same
+ * split `truco-module` already has with `truco-engine`, not a new one.
  */
 function shuffledDeck(rng: RandomSource): Card[] {
   const deck = [...buildDeck()];
@@ -45,34 +42,15 @@ export function requestEscobaSystemAction(state: MatchState, rng: RandomSource):
 }
 
 /**
- * Materializes a hand from an already-shuffled `deck` (art. 6.1: 3/player
- * round-robin, 4 to the table, remainder to stock) and applies the opening
- * escoba de muestra check via the engine's OWN exported `applyOpeningEscoba`
- * — only the split-by-index step is duplicated here, never the rules logic.
- * The engine's `deal()` shuffles internally and accepts no external deck, so
- * it cannot back a replayable system action (engine stays untouched). Dealer
- * rotates one seat per hand after the first, mirroring `truco-module`'s own
- * `rotateDealer` call site.
+ * Materializes a hand from an already-shuffled `deck` by delegating to the
+ * engine's own `deal(state, deck)` — art. 6.1's round-robin split, the
+ * table/stock cut, and the opening escoba de muestra check (16.1/16.2) all
+ * live in exactly ONE place, escoba-engine, never duplicated here. This
+ * module rotates the dealer seat first (one seat per hand, after the first
+ * — mirroring `truco-module`'s own `rotateDealer` call site) and lets the
+ * engine do everything else.
  */
 export function startHand(state: MatchState, action: StartHandAction): MatchState {
-  const seatCount = state.players.length;
-  const dealerSeat = state.hand === null ? state.dealerSeat : (state.dealerSeat + 1) % seatCount;
-  const hands: Card[][] = Array.from({ length: seatCount }, () => []);
-  for (let round = 0; round < CARDS_PER_PLAYER; round += 1) {
-    for (let seat = 0; seat < seatCount; seat += 1) hands[seat]!.push(action.deck[round * seatCount + seat]!);
-  }
-  const rest = action.deck.slice(seatCount * CARDS_PER_PLAYER);
-  const players = state.players.map((player, seat) => ({ ...player, hand: hands[seat]! }));
-  const table = rest.slice(0, TABLE_OPENING_SIZE);
-  const stock = rest.slice(TABLE_OPENING_SIZE);
-  const hand: HandState = {
-    table,
-    stock,
-    piles: { [state.teams[0].id]: [], [state.teams[1].id]: [] },
-    escobas: { [state.teams[0].id]: 0, [state.teams[1].id]: 0 },
-    turn: players[(dealerSeat + 1) % seatCount]!.id,
-    lastCapturer: null,
-    outcome: null,
-  };
-  return applyOpeningEscoba({ ...state, players, dealerSeat, hand });
+  const dealerSeat = state.hand === null ? state.dealerSeat : (state.dealerSeat + 1) % state.players.length;
+  return deal({ ...state, dealerSeat }, action.deck);
 }
