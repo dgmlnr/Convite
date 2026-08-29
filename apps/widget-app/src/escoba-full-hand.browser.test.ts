@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
-import { applyAction, buildDeck, cardId, deal, getLegalActions, getViewFor, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
+import { applyAction, buildDeck, cardId, deal, getLegalActions, getMatchWinner, getViewFor, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
 import type { Card, MatchState, PlayCardAction, Player, PlayerId, Team, TeamId } from "@hexdev/escoba-engine";
 import { createGameUiRegistry } from "./game-ui-registry.js";
 
@@ -123,5 +123,60 @@ describe("Slice Q.4 checkpoint — a full escoba hand played end to end through 
     const breakdownPanel = container.querySelector<HTMLElement>(".hexdev-escoba-hand-breakdown");
     expect(breakdownPanel?.dataset.decided, "why the score moved must be visible too, not just the total").toBe("true");
     expect(breakdownPanel?.textContent).toContain("Oros");
+  });
+
+  /** Slice R2b — the scenario the original 17-slice plan never covered: a
+   * match actually reaching its end, through the REAL renderer. Team A
+   * starts one hand from 30 (art. 8.1), so THIS hand's own scoring decides
+   * the match (`getMatchWinner`). `outcome` mirrors `escoba-module`'s own
+   * `getOutcome`, kept local per this file's header (no `*-module` import). */
+  it("a match that reaches 30 names the winner and lets the player leave", () => {
+    const teamAPile: readonly Card[] = [
+      { suit: "oro", rank: 1 },
+      { suit: "oro", rank: 2 },
+      { suit: "oro", rank: 3 },
+      { suit: "oro", rank: 4 },
+      { suit: "oro", rank: 5 },
+      { suit: "oro", rank: 6 },
+      { suit: "oro", rank: 7 },
+    ];
+    const leftover: Card = { suit: "espada", rank: 4 };
+    const lastCard: Card = { suit: "copa", rank: 2 };
+    const created = freshMatch();
+    const almostDone: MatchState = {
+      ...created,
+      teams: [{ ...created.teams[0], score: 27 }, created.teams[1]], // this hand's own +3 reaches 30
+      players: created.players.map((player) => (player.id === PLAYER_B ? { ...player, hand: [lastCard] } : player)),
+      hand: { table: [leftover], stock: [], piles: { [TEAM_A]: teamAPile, [TEAM_B]: [] }, escobas: { [TEAM_A]: 0, [TEAM_B]: 0 }, turn: PLAYER_B, lastCapturer: TEAM_A, outcome: { decided: false } },
+    };
+
+    const result = applyAction(almostDone, { type: "play-card", playerId: PLAYER_B, card: lastCard, captured: [] });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const settled = settleLeftovers(result.state);
+    const breakdown = scoreHandBreakdown(settled.hand!, [TEAM_A, TEAM_B]);
+    const decided: MatchState = {
+      ...settled,
+      teams: [{ ...settled.teams[0], score: settled.teams[0].score + breakdown.points[TEAM_A]! }, { ...settled.teams[1], score: settled.teams[1].score + breakdown.points[TEAM_B]! }],
+      hand: { ...settled.hand!, outcome: { decided: true, breakdown } },
+    };
+    expect(getMatchWinner(decided), "fixture setup: this hand must actually decide the match").toBe(TEAM_A);
+    const outcome = { winnerIds: [PLAYER_A] };
+
+    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer();
+    const container = mount();
+    const onPlayAgain = vi.fn();
+    const onLeaveMatch = vi.fn();
+    render(container, { view: getViewFor(decided, PLAYER_A), legalActions: [], outcome }, () => {}, onPlayAgain, onLeaveMatch);
+
+    const overlay = container.querySelector<HTMLElement>(".hexdev-escoba-match-over");
+    expect(overlay?.textContent, "the winner must be stated in text, never implied by colour or position").toContain("Ganaste");
+    expect(overlay?.dataset.result).toBe("won");
+    expect(document.activeElement, "focus must move to the overlay — the most disruptive thing this UI does").toBe(overlay);
+
+    overlay!.querySelector<HTMLButtonElement>('button[data-action="play-again"]')!.click();
+    expect(onPlayAgain).toHaveBeenCalledOnce();
+    overlay!.querySelector<HTMLButtonElement>('button[data-action="leave-match"]')!.click();
+    expect(onLeaveMatch).toHaveBeenCalledOnce();
   });
 });

@@ -14,3 +14,6 @@ export type { MarkThenPlayElements } from "./mark-then-play.js";
 export { describeHandBreakdown, renderEscobaHandBreakdown, renderEscobaScoreboard } from "./scoreboard.js";
 export type { TeamScore } from "./scoreboard.js";
 export { ensureScoreboardStyles, SCOREBOARD_STYLE_ID } from "./scoreboard-styles.js";
+export { describeMatchOutcome, renderMatchOverOverlay } from "./match-outcome.js";
+export type { MatchOutcomeInfo, MatchOverProps } from "./match-outcome.js";
+export { ensureMatchOverStyles, MATCH_OVER_STYLE_ID } from "./match-over-styles.js";

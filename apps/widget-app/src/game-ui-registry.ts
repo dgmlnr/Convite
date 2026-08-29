@@ -4,16 +4,18 @@ import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
-import type { HandOutcome as EscobaHandOutcome, PlayCardAction as EscobaPlayCardAction, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
+import type { HandOutcome as EscobaHandOutcome, PlayCardAction as EscobaPlayCardAction, PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
 import {
   createMarkThenPlay,
   describeHandBreakdown,
+  ensureMatchOverStyles,
   ensurePilesStyles,
   ensureScoreboardStyles,
   ensureTableStyles,
   renderEscobaHandBreakdown,
   renderEscobaPiles,
   renderEscobaScoreboard,
+  renderMatchOverOverlay,
 } from "@hexdev/escoba-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
@@ -283,10 +285,10 @@ const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFa
  * built ONCE and reused — an `aria-live` announcement is a CHANGE to a node
  * already in the tree (`truco-ui/src/table.ts`'s own announcers).
  *
- * Slice R2a closes half the gap Slice Q's own sweep reported: the scoreboard
- * and hand-end breakdown are mounted below, both computed by the engine and
- * never re-derived here. `payload.outcome`/`onPlayAgain`/`onLeaveMatch` are
- * the OTHER half — match-over — the natural next seam (R2b).
+ * R2a mounted the scoreboard and hand-end breakdown; R2b closes the other
+ * half of Slice Q's own gap: `payload.outcome`/`onPlayAgain`/`onLeaveMatch`
+ * now reach a real match-over overlay — same departure `createTrucoRenderer`
+ * above documents (a rematch and a return to the lobby are not one callback).
  */
 function createEscobaRenderer(): GameUiEntry["createRenderer"] {
   return () => {
@@ -299,15 +301,19 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
       sumEl: HTMLElement;
       breakdownEl: HTMLElement;
       breakdownAnnouncer: HTMLElement;
+      matchOverEl: HTMLElement;
     } | null = null;
-    // Whether the LATEST hand outcome is a transition worth announcing —
-    // mirrors createMatchTableRenderer's own previousView/timer fields.
+    // Whether the LATEST hand outcome is a transition worth announcing, and
+    // whether the overlay already claimed focus once this mount — mirrors
+    // createMatchTableRenderer's own previousView/timer fields.
     let previousHandDecided = false;
+    let matchOverShown = false;
 
-    return (container, payload, dispatch) => {
+    return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
       ensureTableStyles(document);
       ensurePilesStyles(document);
       ensureScoreboardStyles(document);
+      ensureMatchOverStyles(document);
 
       if (mounted === null || mounted.tableEl.parentElement !== container) {
         container.replaceChildren();
@@ -325,8 +331,9 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
         breakdownAnnouncer.className = "hexdev-escoba-breakdown-announcer";
         breakdownAnnouncer.setAttribute("aria-live", "polite");
         breakdownAnnouncer.setAttribute("aria-atomic", "true");
-        container.append(scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer);
-        mounted = { scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer };
+        const matchOverEl = document.createElement("div");
+        container.append(scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl);
+        mounted = { scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl };
       }
 
       const view = payload.view as EscobaPlayerView;
@@ -346,6 +353,16 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
         mounted.breakdownAnnouncer.textContent = "";
       }
       previousHandDecided = handOutcome !== null && handOutcome.decided;
+
+      const outcome = (payload.outcome ?? null) as { readonly winnerIds: readonly EscobaPlayerId[] } | null;
+      const focusOnOpen = outcome !== null && !matchOverShown;
+      matchOverShown = outcome !== null;
+      renderMatchOverOverlay(
+        mounted.matchOverEl,
+        outcome === null
+          ? null
+          : { outcome, selfPlayerId: view.self.playerId, teams: view.teams, selfTeamId: view.self.teamId, onPlayAgain: onPlayAgain ?? ((): void => undefined), onLeaveMatch, focusOnOpen },
+      );
     };
   };
 }
