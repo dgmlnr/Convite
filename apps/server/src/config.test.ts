@@ -27,6 +27,20 @@ describe("loadServerConfig", () => {
     expect(config.tenants[0]?.entitledGames).toContain("truco-argentino");
   });
 
+  /**
+   * Slice L.2/L.3 — ONE test for THIS composition root, deliberately not a
+   * fixture shared with `apps/mint-server`'s own `config.test.ts`: the two
+   * roots are independently configured `DEV_TENANT`s, and mutation row 20
+   * (below, `registry.entitled-games.mutation.test.ts` — see also this
+   * file's own coverage) proves they can drift apart from each other without
+   * either fence noticing the other's breakage.
+   */
+  it("entitles the dev tenant to BOTH escoba ids (slice L: the match role's own composition root)", () => {
+    const config = loadServerConfig(DEV_OPT_IN);
+    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15");
+    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15-2v2");
+  });
+
   it("parses tenant records from HEXDEV_TENANTS_JSON when set", () => {
     const tenants = [{ id: "t1", embedKey: "pk_x", allowedOrigins: ["https://a.example"], entitledGames: ["truco-argentino"] }];
     const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });
