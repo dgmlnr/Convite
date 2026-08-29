@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
-import { applyAction, buildDeck, cardId, deal, getLegalActions, getViewFor, scoreHand, settleLeftovers } from "@hexdev/escoba-engine";
+import { applyAction, buildDeck, cardId, deal, getLegalActions, getViewFor, scoreHand, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
 import type { Card, MatchState, PlayCardAction, Player, PlayerId, Team, TeamId } from "@hexdev/escoba-engine";
 import { createGameUiRegistry } from "./game-ui-registry.js";
 
@@ -124,7 +124,7 @@ describe("Slice Q.4 checkpoint — a full escoba hand played end to end through 
     const decided: MatchState = {
       ...settled,
       teams: [{ ...settled.teams[0], score: settled.teams[0].score + gained[TEAM_A] }, { ...settled.teams[1], score: settled.teams[1].score + gained[TEAM_B] }],
-      hand: { ...settled.hand!, outcome: { decided: true } },
+      hand: { ...settled.hand!, outcome: { decided: true, breakdown: scoreHandBreakdown(settled.hand!, [TEAM_A, TEAM_B]) } },
     };
 
     expect(decided.teams[0].score, "cartas + oros + setenta + siete de oro must all resolve for team A's stacked pile").toBeGreaterThan(0);

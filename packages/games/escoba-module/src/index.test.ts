@@ -134,7 +134,18 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
   it("requestEscobaSystemAction returns null once the match already has a winner, even with a decided hand", () => {
     const state = reachable2p();
     const [teamA, teamB] = state.teams;
-    const won: MatchState = { ...state, teams: [{ ...teamA, score: 30 }, teamB], hand: { ...state.hand!, outcome: { decided: true } } };
+    const decidedHand = state.hand!;
+    const won: MatchState = {
+      ...state,
+      teams: [{ ...teamA, score: 30 }, teamB],
+      hand: {
+        ...decidedHand,
+        outcome: {
+          decided: true,
+          breakdown: { cartas: { winner: null }, oros: { winner: null }, setenta: { winner: null }, sieteDeOro: { winner: null }, escobas: decidedHand.escobas, points: { [teamA.id]: 0, [teamB.id]: 0 } },
+        },
+      },
+    };
     expect(requestEscobaSystemAction(won, () => 0.5)).toBeNull();
   });
 
@@ -165,6 +176,14 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
     expect(result.state.teams[0].score).toBe(created.teams[0].score + 1);
     expect(result.state.teams[1].score).toBe(created.teams[1].score);
     expect(result.state.hand?.outcome?.decided).toBe(true);
+    // slice R1: the breakdown behind that +1 is carried, not just the total —
+    // the leftover oro-2 makes team A's pile the only non-empty one, so
+    // cartas is the ONLY category anyone won.
+    if (result.state.hand?.outcome?.decided !== true) return;
+    expect(result.state.hand.outcome.breakdown.cartas.winner).toBe(teamA.id);
+    expect(result.state.hand.outcome.breakdown.oros.winner).toBeNull();
+    expect(result.state.hand.outcome.breakdown.points[teamA.id]).toBe(1);
+    expect(result.state.hand.outcome.breakdown.points[teamB.id]).toBe(0);
   });
 
   it("re-deals mid-hand (pure engine step) instead of settling, when the stock still has cards", () => {

@@ -1,15 +1,8 @@
 import type { Card } from "./card.js";
+import type { HandOutcome } from "./hand-outcome.js";
 import type { PlayerId, TeamId } from "./ids.js";
 
-/**
- * A hand's outcome once escoba/leftover/scoring detection exist (Unit
- * G/H/I). This slice (deal, stock, redaction) never produces anything but
- * `null` here — `deal()`/`redeal()` only ever start or continue a hand,
- * never decide one.
- */
-export interface HandOutcome {
-  readonly decided: boolean;
-}
+export type { HandOutcome } from "./hand-outcome.js";
 
 export interface Team {
   readonly id: TeamId;

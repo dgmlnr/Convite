@@ -1,4 +1,5 @@
 import type { Card } from "./card.js";
+import type { HandOutcome } from "./hand-outcome.js";
 import type { PlayerId, TeamId } from "./ids.js";
 import type { MatchState } from "./state.js";
 
@@ -28,6 +29,10 @@ export interface HandView {
   readonly escobas: Readonly<Record<TeamId, number>>;
   readonly turn: PlayerId;
   readonly stockCount: number;
+  /** `null` while the hand is still being played; once decided, carries the
+   * full five-category breakdown (slice R1) — a UI reads this, it never
+   * re-derives who won which category from `piles`/`escobas` itself. */
+  readonly outcome: HandOutcome | null;
 }
 
 export interface PlayerView {
@@ -75,6 +80,7 @@ export function getViewFor(state: MatchState, playerId: PlayerId): PlayerView {
             // array. A leak through some OTHER field is what
             // `view.test.ts`'s JSON scan additionally guards against.
             stockCount: state.hand.stock.length,
+            outcome: state.hand.outcome,
           },
     dealerSeat: state.dealerSeat,
   };

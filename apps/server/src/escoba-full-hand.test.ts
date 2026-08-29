@@ -155,7 +155,7 @@ describe("Slice L.6 checkpoint — a full escoba hand played end to end (registr
       state = result.state;
     }
 
-    expect(state.hand!.outcome).toEqual({ decided: true });
+    expect(state.hand!.outcome?.decided).toBe(true);
     expect(actedSeats.size, "every seat must have gotten to act at least once across the whole hand").toBe(seatCount);
     for (const player of dealt.players) {
       expect(actedSeats.has(player.id), `${player.id} never got a turn`).toBe(true);
@@ -246,7 +246,7 @@ describe("Slice L.6 checkpoint — a full escoba hand played end to end (registr
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const state = result.state;
-    expect(state.hand!.outcome).toEqual({ decided: true });
+    expect(state.hand!.outcome?.decided).toBe(true);
     // the leftover cards (the pre-existing one plus PLAYER_B's own
     // non-forming last play) are swept to team A, the last capturer — and
     // the escoba count is UNCHANGED by that sweep (pagat by absence of a

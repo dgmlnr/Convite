@@ -1,4 +1,5 @@
 import type { Card, Suit } from "./card.js";
+import type { HandScoreBreakdown } from "./hand-outcome.js";
 import type { HandState, MatchState } from "./state.js";
 import type { TeamId } from "./ids.js";
 import { scoreSetenta } from "./setenta.js";
@@ -60,19 +61,27 @@ function scoreSieteDeOro(pileA: readonly Card[], pileB: readonly Card[], teamAId
   return scores;
 }
 
+/** Reads a 0/1 category `Record` (every comparator above already returns
+ * one) back into "who won it, or nobody" — a category result never has both
+ * teams at 1, so the first (only) team found at 1 is the winner. */
+function winnerOf(scores: Readonly<Record<TeamId, number>>, teamAId: TeamId, teamBId: TeamId): TeamId | null {
+  if (scores[teamAId] === 1) return teamAId;
+  if (scores[teamBId] === 1) return teamBId;
+  return null;
+}
+
 /**
- * The aggregate per-hand score (design §D5, art. 8.1's category order):
- * cartas + oros + setenta (Unit H, `setenta.ts`) + siete de oro + escobas.
- * `hand.escobas` is read straight through, never re-detected here:
- * `capture.ts`'s in-play escobas and `escoba.ts`'s escoba de muestra both
- * already accumulate it as they happen, one point each (art. 14.1).
- *
- * Puntaje menor (art. 19.1) falls out of these five rules with NO special
- * case: when nobody swept (escobas 0-0) and cartas/oros/setenta all tie,
- * the only point left standing is siete de oro's — see `scoring.test.ts`'s
- * own dedicated fixture, the board most likely to expose an off-by-one.
+ * The full per-hand breakdown (design §D5, art. 8.1's category order): who
+ * won cartas, oros, setenta (Unit H, `setenta.ts`), and siete de oro — each
+ * `null` when nobody did (art. 17.1) — plus the escoba tally and the
+ * resulting point total per team. Slice R1's own reason to exist: a UI
+ * showing ONLY the aggregate total cannot explain WHY the score moved, and
+ * re-deriving these comparators client-side would be a second
+ * implementation of the same rules (see `escoba/decisiones-de-producto`).
+ * `scoreHand` below is now a thin projection of this — one computation, two
+ * shapes, never two implementations.
  */
-export function scoreHand(hand: HandState, teamIds: readonly [TeamId, TeamId]): Readonly<Record<TeamId, number>> {
+export function scoreHandBreakdown(hand: HandState, teamIds: readonly [TeamId, TeamId]): HandScoreBreakdown {
   const [teamAId, teamBId] = teamIds;
   const pileA = hand.piles[teamAId];
   const pileB = hand.piles[teamBId];
@@ -83,9 +92,32 @@ export function scoreHand(hand: HandState, teamIds: readonly [TeamId, TeamId]): 
   const sieteDeOro = scoreSieteDeOro(pileA, pileB, teamAId, teamBId);
 
   return {
-    [teamAId]: cartas[teamAId]! + oros[teamAId]! + setenta[teamAId]! + sieteDeOro[teamAId]! + hand.escobas[teamAId],
-    [teamBId]: cartas[teamBId]! + oros[teamBId]! + setenta[teamBId]! + sieteDeOro[teamBId]! + hand.escobas[teamBId],
+    cartas: { winner: winnerOf(cartas, teamAId, teamBId) },
+    oros: { winner: winnerOf(oros, teamAId, teamBId) },
+    setenta: { winner: winnerOf(setenta, teamAId, teamBId) },
+    sieteDeOro: { winner: winnerOf(sieteDeOro, teamAId, teamBId) },
+    escobas: hand.escobas,
+    points: {
+      [teamAId]: cartas[teamAId]! + oros[teamAId]! + setenta[teamAId]! + sieteDeOro[teamAId]! + hand.escobas[teamAId],
+      [teamBId]: cartas[teamBId]! + oros[teamBId]! + setenta[teamBId]! + sieteDeOro[teamBId]! + hand.escobas[teamBId],
+    },
   };
+}
+
+/**
+ * The aggregate per-hand score, unchanged for every existing caller —
+ * `scoreHandBreakdown`'s `points` projection. `hand.escobas` is read
+ * straight through, never re-detected here: `capture.ts`'s in-play escobas
+ * and `escoba.ts`'s escoba de muestra both already accumulate it as they
+ * happen, one point each (art. 14.1).
+ *
+ * Puntaje menor (art. 19.1) falls out of these five rules with NO special
+ * case: when nobody swept (escobas 0-0) and cartas/oros/setenta all tie,
+ * the only point left standing is siete de oro's — see `scoring.test.ts`'s
+ * own dedicated fixture, the board most likely to expose an off-by-one.
+ */
+export function scoreHand(hand: HandState, teamIds: readonly [TeamId, TeamId]): Readonly<Record<TeamId, number>> {
+  return scoreHandBreakdown(hand, teamIds).points;
 }
 
 /**

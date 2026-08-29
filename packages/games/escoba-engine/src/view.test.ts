@@ -62,6 +62,22 @@ describe("getViewFor (design §D2 — stockCount, never stock)", () => {
     expect(view.dealerSeat).toBe(state.dealerSeat);
   });
 
+  it("exposes outcome null for a hand still in progress, and the full breakdown once decided (slice R1)", () => {
+    const state = deal(fixtureMatch(2), buildDeck());
+    const inProgress = getViewFor(state, state.players[0]!.id);
+    expect(inProgress.hand?.outcome).toBeNull();
+
+    const teamAId = state.teams[0].id;
+    const decidedState: MatchState = {
+      ...state,
+      hand: { ...state.hand!, outcome: { decided: true, breakdown: { cartas: { winner: teamAId }, oros: { winner: null }, setenta: { winner: null }, sieteDeOro: { winner: null }, escobas: state.hand!.escobas, points: { [teamAId]: 1, [state.teams[1].id]: 0 } } } },
+    };
+    const decided = getViewFor(decidedState, state.players[0]!.id);
+    expect(decided.hand?.outcome?.decided).toBe(true);
+    if (decided.hand?.outcome?.decided !== true) return;
+    expect(decided.hand.outcome.breakdown.cartas.winner).toBe(teamAId);
+  });
+
   it("throws for an unknown player id", () => {
     const state = deal(fixtureMatch(2), buildDeck());
     expect(() => getViewFor(state, "nobody" as PlayerId)).toThrow();

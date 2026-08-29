@@ -1,4 +1,4 @@
-import { applyAction as engineApplyAction, getLegalActions as engineGetLegalActions, getMatchWinner, getViewFor, redeal, scoreHand, settleLeftovers } from "@hexdev/escoba-engine";
+import { applyAction as engineApplyAction, getLegalActions as engineGetLegalActions, getMatchWinner, getViewFor, redeal, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
 import type { MatchState, PlayCardAction, PlayerView, TeamId } from "@hexdev/escoba-engine";
 import { DEFAULT_THINKING_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/escoba-bot";
 import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
@@ -74,10 +74,15 @@ function buildMatch2v2(seats: readonly SeatAssignment[]): MatchState {
 
 /**
  * design §D3 data-flow: "hands all empty AND stock>0 -> refill (PURE);
- * hands all empty AND stock==0 -> leftovers -> scoreHand -> teams[].score".
- * Runs in the SAME reduction that empties the last hand, so a mid-hand
- * re-deal never surfaces as a state where no seat can act mid-hand — the
- * invariant `requestEscobaSystemAction`'s gate depends on.
+ * hands all empty AND stock==0 -> leftovers -> scoreHandBreakdown ->
+ * teams[].score". Runs in the SAME reduction that empties the last hand, so
+ * a mid-hand re-deal never surfaces as a state where no seat can act
+ * mid-hand — the invariant `requestEscobaSystemAction`'s gate depends on.
+ *
+ * `hand.outcome` now carries the FULL breakdown (slice R1), not just
+ * `decided: true` — a UI needs to explain WHY the score moved, and
+ * `scoreHandBreakdown` is the engine's single source of truth for that,
+ * never re-derived here or in any renderer.
  */
 function settleHandIfNeeded(state: MatchState): MatchState {
   const hand = state.hand;
@@ -86,14 +91,15 @@ function settleHandIfNeeded(state: MatchState): MatchState {
 
   const settled = settleLeftovers(state);
   const settledHand = settled.hand!;
-  const gained = scoreHand(settledHand, [settled.teams[0].id, settled.teams[1].id]);
+  const teamIds: readonly [TeamId, TeamId] = [settled.teams[0].id, settled.teams[1].id];
+  const breakdown = scoreHandBreakdown(settledHand, teamIds);
   return {
     ...settled,
     teams: [
-      { ...settled.teams[0], score: settled.teams[0].score + gained[settled.teams[0].id] },
-      { ...settled.teams[1], score: settled.teams[1].score + gained[settled.teams[1].id] },
+      { ...settled.teams[0], score: settled.teams[0].score + breakdown.points[teamIds[0]]! },
+      { ...settled.teams[1], score: settled.teams[1].score + breakdown.points[teamIds[1]]! },
     ],
-    hand: { ...settledHand, outcome: { decided: true } },
+    hand: { ...settledHand, outcome: { decided: true, breakdown } },
   };
 }
 

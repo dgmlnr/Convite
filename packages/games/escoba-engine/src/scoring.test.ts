@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMatchWinner, scoreHand } from "./scoring.js";
+import { getMatchWinner, scoreHand, scoreHandBreakdown } from "./scoring.js";
 import type { Card, Rank, Suit } from "./card.js";
 import type { HandState, MatchState, Player, Team } from "./state.js";
 import type { PlayerId, TeamId } from "./ids.js";
@@ -122,6 +122,40 @@ describe("scoreHand — the five per-hand categories (art. 8.1)", () => {
     expect(result[TEAM_A]).toBe(1);
     expect(result[TEAM_B]).toBe(0);
     expect(result[TEAM_A] + result[TEAM_B]).toBe(1); // exactly ONE point in the whole hand
+  });
+});
+
+describe("scoreHandBreakdown — the five categories, per team (slice R1: the UI's data source)", () => {
+  it("names the winning team per category, and null for a category nobody won (art. 17.1)", () => {
+    const breakdown = scoreHandBreakdown(handWith(filler(12), filler(8)), TEAM_IDS);
+    expect(breakdown.cartas.winner).toBe(TEAM_A);
+    expect(breakdown.oros.winner).toBeNull();
+    expect(breakdown.setenta.winner).toBeNull();
+    expect(breakdown.sieteDeOro.winner).toBeNull();
+  });
+
+  it("a tied category reads winner: null on BOTH sides — never omitted, never guessed", () => {
+    const breakdown = scoreHandBreakdown(handWith(filler(20), filler(20)), TEAM_IDS);
+    expect(breakdown.cartas.winner).toBeNull();
+  });
+
+  it("carries the escoba tally straight through and the SAME point total scoreHand returns", () => {
+    const hand = handWith(filler(4), filler(4), 2, 1);
+    const breakdown = scoreHandBreakdown(hand, TEAM_IDS);
+    const aggregate = scoreHand(hand, TEAM_IDS);
+    expect(breakdown.escobas).toEqual(hand.escobas);
+    expect(breakdown.points).toEqual(aggregate);
+  });
+
+  it("puntaje menor (19.1): every tied category reads null, siete de oro is the lone winner", () => {
+    const pileA = [card(7, "oro"), card(2, "espada")];
+    const pileB = [card(3, "copa"), card(4, "basto")];
+    const breakdown = scoreHandBreakdown(handWith(pileA, pileB, 0, 0), TEAM_IDS);
+    expect(breakdown.cartas.winner).toBeNull();
+    expect(breakdown.oros.winner).toBeNull();
+    expect(breakdown.setenta.winner).toBeNull();
+    expect(breakdown.sieteDeOro.winner).toBe(TEAM_A);
+    expect(breakdown.points[TEAM_A]).toBe(1);
   });
 });
 

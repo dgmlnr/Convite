@@ -126,6 +126,7 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
       escobas: { [ESCOBA_TEAM_A]: 0, [ESCOBA_TEAM_B]: 0 },
       turn: ESCOBA_SELF,
       stockCount: 20,
+      outcome: { decided: false },
     },
     dealerSeat: 0,
   };
