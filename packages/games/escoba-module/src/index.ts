@@ -1,14 +1,15 @@
-import { applyAction as engineApplyAction, getLegalActions as engineGetLegalActions, getMatchWinner, getViewFor } from "@hexdev/escoba-engine";
+import { applyAction as engineApplyAction, getLegalActions as engineGetLegalActions, getMatchWinner, getViewFor, redeal, scoreHand, settleLeftovers } from "@hexdev/escoba-engine";
 import type { MatchState, PlayCardAction, PlayerView, TeamId } from "@hexdev/escoba-engine";
 import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { SYSTEM_ACTOR_ID, requestEscobaSystemAction, startHand } from "./deal.js";
+import type { StartHandAction } from "./deal.js";
 
-/**
- * design §D3 widens this to `PlayCardAction | StartHandAction` once
- * system-action dealing lands (this unit's own follow-up, `./deal.ts`) —
- * kept as its own alias from the start so that widening is a type-only
- * change, never a call-site rewrite.
- */
-export type EscobaModuleAction = PlayCardAction;
+export { SYSTEM_ACTOR_ID, requestEscobaSystemAction };
+export type { StartHandAction };
+
+/** design §D3: escoba's own dealing seam, the same shape `truco-module`'s
+ * `TrucoModuleAction` uses for `start-hand`. */
+export type EscobaModuleAction = PlayCardAction | StartHandAction;
 
 /** decision 3: `configOptions` is exactly EMPTY — 30 points is a literal on
  * `MatchState.pointsToWin`, never a lobby knob — so this module's `TConfig`
@@ -70,12 +71,47 @@ function buildMatch2v2(seats: readonly SeatAssignment[]): MatchState {
   };
 }
 
+/**
+ * design §D3 data-flow: "hands all empty AND stock>0 -> refill (PURE);
+ * hands all empty AND stock==0 -> leftovers -> scoreHand -> teams[].score".
+ * Runs in the SAME reduction that empties the last hand, so a mid-hand
+ * re-deal never surfaces as a state where no seat can act mid-hand — the
+ * invariant `requestEscobaSystemAction`'s gate depends on.
+ */
+function settleHandIfNeeded(state: MatchState): MatchState {
+  const hand = state.hand;
+  if (hand === null || !state.players.every((player) => player.hand.length === 0)) return state;
+  if (hand.stock.length > 0) return redeal(state);
+
+  const settled = settleLeftovers(state);
+  const settledHand = settled.hand!;
+  const gained = scoreHand(settledHand, [settled.teams[0].id, settled.teams[1].id]);
+  return {
+    ...settled,
+    teams: [
+      { ...settled.teams[0], score: settled.teams[0].score + gained[settled.teams[0].id] },
+      { ...settled.teams[1], score: settled.teams[1].score + gained[settled.teams[1].id] },
+    ],
+    hand: { ...settledHand, outcome: { decided: true } },
+  };
+}
+
 function applyAction(state: MatchState, action: EscobaModuleAction): ApplyResult<MatchState> {
+  if (action.type === "start-hand") {
+    if (getMatchWinner(state) !== null) {
+      return { ok: false, violation: { code: "match-over", message: "the match already has a winner" } };
+    }
+    if (state.hand !== null && (state.hand.outcome === null || !state.hand.outcome.decided)) {
+      return { ok: false, violation: { code: "hand-in-progress", message: "the current hand has not ended yet" } };
+    }
+    return { ok: true, state: startHand(state, action) };
+  }
+
   const result = engineApplyAction(state, action);
   if (!result.ok) {
     return { ok: false, violation: { code: result.violation.code, message: result.violation.message } };
   }
-  return { ok: true, state: result.state };
+  return { ok: true, state: settleHandIfNeeded(result.state) };
 }
 
 function getLegalActions(state: MatchState, playerId: PlayerId): readonly EscobaModuleAction[] {

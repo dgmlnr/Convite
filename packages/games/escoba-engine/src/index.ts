@@ -4,7 +4,6 @@ export { cardValue } from "./values.js";
 export type { PlayerId, TeamId } from "./ids.js";
 export { buildDeck } from "./deck.js";
 export type { HandOutcome, HandState, MatchState, Player, Team } from "./state.js";
-export type { Rng } from "./deal.js";
 export { deal, redeal } from "./deal.js";
 export type { HandView, OtherPlayerView, PlayerView } from "./view.js";
 export { getViewFor } from "./view.js";

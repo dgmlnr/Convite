@@ -5,21 +5,6 @@ import { cardId } from "./card.js";
 import type { MatchState, Player, Team } from "./state.js";
 import type { PlayerId, TeamId } from "./ids.js";
 
-/** Deterministic stand-in for a CSPRNG: cycles through fixed values so the
- * shuffle is reproducible in a test — mirrors `truco-module/src/deal.test.ts`'s
- * own `fixedRng` helper exactly. */
-function fixedRng(values: readonly number[]) {
-  let i = 0;
-  return () => values[i++ % values.length]!;
-}
-
-/** `rng()` always returns a value just under 1, so `Math.floor(rng() * (i +
- * 1))` equals `i` at every Fisher-Yates step — every "swap" trades a card
- * with itself, leaving the deck byte-identical to `buildDeck()`'s own
- * order. Not a claim the shuffle is broken: a deliberately hand-computable
- * fixture for the round-robin-vs-consecutive-block assertions below. */
-const noSwapRng = () => 1 - 1e-9;
-
 function fixtureMatch(seatCount: 2 | 4): MatchState {
   const teamAId = "team-a" as TeamId;
   const teamBId = "team-b" as TeamId;
@@ -45,7 +30,7 @@ function fixtureMatch(seatCount: 2 | 4): MatchState {
 
 describe("deal (art. 6.1 — the opening deal)", () => {
   it("gives 3 cards to each of 2 players, 4 to the table, and the rest to stock — all 40 cards accounted for exactly once", () => {
-    const dealt = deal(fixtureMatch(2), fixedRng([0.31, 0.62, 0.05, 0.77, 0.44, 0.9, 0.13, 0.22, 0.55, 0.66, 0.08, 0.99]));
+    const dealt = deal(fixtureMatch(2), buildDeck());
     expect(dealt.players[0]!.hand).toHaveLength(3);
     expect(dealt.players[1]!.hand).toHaveLength(3);
     expect(dealt.hand?.table).toHaveLength(4);
@@ -56,14 +41,14 @@ describe("deal (art. 6.1 — the opening deal)", () => {
   });
 
   it("gives 3 cards to each of 4 players, 4 to the table, and the rest to stock", () => {
-    const dealt = deal(fixtureMatch(4), fixedRng([0.31, 0.62, 0.05, 0.77, 0.44, 0.9, 0.13, 0.22, 0.55, 0.66, 0.08, 0.99, 0.17, 0.38]));
+    const dealt = deal(fixtureMatch(4), buildDeck());
     for (const player of dealt.players) expect(player.hand).toHaveLength(3);
     expect(dealt.hand?.stock).toHaveLength(40 - 12 - 4);
   });
 
   it('deals ONE CARD AT A TIME, round-robin by seat (art. 6.1: "tres a cada uno, DE A UNA") — not three consecutive cards to the same player', () => {
-    const dealt = deal(fixtureMatch(2), noSwapRng);
-    const deck = buildDeck(); // unshuffled: espada 1..7,10,11,12, then basto, then oro, then copa
+    const deck = buildDeck(); // espada 1..7,10,11,12, then basto, then oro, then copa — passed straight to `deal`, no shuffle involved
+    const dealt = deal(fixtureMatch(2), deck);
     // round-robin: seat0 <- deck[0], deck[2], deck[4]; seat1 <- deck[1], deck[3], deck[5]
     expect(dealt.players[0]!.hand).toEqual([deck[0], deck[2], deck[4]]);
     expect(dealt.players[1]!.hand).toEqual([deck[1], deck[3], deck[5]]);
@@ -80,7 +65,7 @@ describe("deal (art. 6.1 — the opening deal)", () => {
 
 describe("redeal (art. 6.1 — successive deals: 3 per player, never more to the table)", () => {
   it("gives 3 more cards to each player and adds NOTHING to the table when hands are empty and stock remains", () => {
-    const opened = deal(fixtureMatch(2), fixedRng([0.31, 0.62, 0.05, 0.77, 0.44, 0.9, 0.13, 0.22, 0.55, 0.66, 0.08, 0.99]));
+    const opened = deal(fixtureMatch(2), buildDeck());
     const emptied: MatchState = { ...opened, players: opened.players.map((player) => ({ ...player, hand: [] })) };
     const tableBefore = emptied.hand!.table;
     const stockBefore = emptied.hand!.stock;
@@ -94,7 +79,7 @@ describe("redeal (art. 6.1 — successive deals: 3 per player, never more to the
   });
 
   it("draws from the stock round-robin by seat too, in the SAME order the opening deal used", () => {
-    const opened = deal(fixtureMatch(2), noSwapRng);
+    const opened = deal(fixtureMatch(2), buildDeck());
     const emptied: MatchState = { ...opened, players: opened.players.map((player) => ({ ...player, hand: [] })) };
     const stock = emptied.hand!.stock; // deck.slice(10), unshuffled
 
