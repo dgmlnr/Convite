@@ -3,6 +3,14 @@ export const STATUS_STYLE_ID = "hexdev-escoba-status-styles";
 /**
  * The turn line, the stock counter and the row of other seats (R3a/R3b).
  *
+ * THESE THREE NO LONGER LIVE TOGETHER, and the split is deliberate. The turn
+ * badge stays on the felt beside the cards, because you have to know whether
+ * it is your turn without tapping anything; the stock and the seat chips moved
+ * into the side rail (rail-styles.ts), which is what took the narrow table
+ * from six chrome rows down to one. The rules below therefore have to hold in
+ * BOTH places: nothing here assumes a full-width band, and the rail supplies
+ * the column layout the seats take inside it.
+ *
  * Container-query only, same rule as table-styles.ts/piles-styles.ts/
  * scoreboard-styles.ts: an embedded widget's available width is its
  * container's, never the viewport's — no ResizeObserver/matchMedia/

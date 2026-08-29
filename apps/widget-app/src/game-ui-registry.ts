@@ -6,11 +6,13 @@ import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
 import type { HandOutcome as EscobaHandOutcome, PlayCardAction as EscobaPlayCardAction, PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
 import {
+  createEscobaRail,
   createMarkThenPlay,
   describeHandBreakdown,
   ensureMatchOverStyles,
   ensureMatchStyles,
   ensurePilesStyles,
+  ensureRailStyles,
   ensureScoreboardStyles,
   ensureStatusStyles,
   ensureTableStyles,
@@ -297,6 +299,7 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
   return () => {
     const markThenPlay = createMarkThenPlay();
     let mounted: {
+      layoutEl: HTMLElement;
       scoreboardEl: HTMLElement;
       turnEl: HTMLElement;
       stockEl: HTMLElement;
@@ -321,21 +324,24 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
       ensurePilesStyles(document);
       ensureScoreboardStyles(document);
       ensureStatusStyles(document);
+      ensureRailStyles(document);
       ensureMatchOverStyles(document);
 
-      if (mounted === null || mounted.tableEl.parentElement !== container) {
+      if (mounted === null || mounted.layoutEl.parentElement !== container) {
         container.replaceChildren();
         container.className = "hexdev-escoba-match";
         const scoreboardEl = document.createElement("div");
-        // Turn and stock share one row; the turn line is the aria-live half
-        // (mounted once, mutated after — same reason as sumEl below), the
-        // stock counter beside it changes only when a re-deal happens.
+        // THE TURN IS THE ONE FACT THAT STAYS ON THE FELT. Everything else
+        // this screen reports between decisions — both scores, this hand's
+        // escobas, the stock, every seat's count — went into the rail below,
+        // but whether it is YOUR move has to be answerable without opening a
+        // drawer. Still the aria-live half, mounted once and mutated after.
         const statusEl = document.createElement("div");
         statusEl.className = "hexdev-escoba-status";
         const turnEl = document.createElement("p");
         turnEl.setAttribute("aria-live", "polite");
         const stockEl = document.createElement("p");
-        statusEl.append(turnEl, stockEl);
+        statusEl.append(turnEl);
         // A real list, so each seat's aria-label is actually exposed: on a
         // bare div it would be dropped for want of a role.
         const seatsEl = document.createElement("ul");
@@ -352,8 +358,25 @@ function createEscobaRenderer(): GameUiEntry["createRenderer"] {
         breakdownAnnouncer.setAttribute("aria-live", "polite");
         breakdownAnnouncer.setAttribute("aria-atomic", "true");
         const matchOverEl = document.createElement("div");
-        container.append(scoreboardEl, statusEl, seatsEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl);
-        mounted = { scoreboardEl, turnEl, stockEl, seatsEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl };
+
+        // THE FELT AND THE RAIL, side by side — the shape `truco-ui`'s table
+        // already uses, built from `escoba-ui`'s own pieces because that
+        // package is L1. Narrow, the rail is a drawer behind a handle; from
+        // 640 container-px up a real column (rail-styles.ts). Either way the
+        // cards get back the vertical space four status rows used to spend.
+        const layoutEl = document.createElement("div");
+        layoutEl.className = "hexdev-escoba-layout";
+        const feltEl = document.createElement("div");
+        feltEl.className = "hexdev-escoba-felt";
+        const rail = createEscobaRail();
+        feltEl.append(statusEl, tableEl, handEl, pilesEl, sumEl, breakdownEl);
+        rail.bodyEl.append(scoreboardEl, stockEl, seatsEl);
+        layoutEl.append(feltEl, rail.railEl);
+        // Announcer and overlay stay OUT of the layout: one has no geometry
+        // at all, the other covers the whole match box (match-over-styles.ts
+        // anchors it to `.hexdev-escoba-match`).
+        container.append(layoutEl, breakdownAnnouncer, matchOverEl);
+        mounted = { layoutEl, scoreboardEl, turnEl, stockEl, seatsEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer, matchOverEl };
       }
 
       const view = payload.view as EscobaPlayerView;

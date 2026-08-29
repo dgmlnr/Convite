@@ -32,6 +32,13 @@ function teamLabel(teamId: TeamId, selfTeamId: TeamId): string {
  * contradiction. During the hand it is the only place an escoba is visible at
  * all — `score` does not move until the hand closes, so the most exciting
  * thing in this game used to leave no trace on screen until it was over.
+ *
+ * BESIDE THE SCORE, NEVER UNDER IT. The escobas count first shipped as a
+ * third line in this column, and "Escobas: 0" — the value it holds for most
+ * of most hands — bought a whole row of the screen to say nothing had
+ * happened yet. Sharing one row with the score costs no line when the count
+ * is zero and, just as importantly, makes the first escoba of a hand change
+ * a digit instead of growing the scoreboard and pushing the cards down.
  */
 export function renderEscobaScoreboard(
   container: HTMLElement,
@@ -52,21 +59,28 @@ export function renderEscobaScoreboard(
     label.textContent = teamLabel(team.id, selfTeamId);
     group.appendChild(label);
 
+    // The one row the two numbers share. It exists even when there are no
+    // escobas to put in it, so the row's own height is the same during a hand
+    // and between hands and nothing below it ever moves.
+    const tally = document.createElement("span");
+    tally.className = "hexdev-escoba-scoreboard-tally";
+    group.appendChild(tally);
+
     const score = document.createElement("span");
     score.className = "hexdev-escoba-scoreboard-score";
     score.dataset.score = String(team.score);
     score.textContent = `${String(team.score)} / ${String(POINTS_TO_WIN)}`;
-    group.appendChild(score);
+    tally.appendChild(score);
 
     if (escobas !== undefined) {
       const made = escobas[team.id] ?? 0;
       const line = document.createElement("span");
       line.className = "hexdev-escoba-scoreboard-escobas";
       line.dataset.escobas = String(made);
-      // Real text, like the score above it: never a bare digit beside a
+      // Real text, like the score beside it: never a bare digit next to a
       // broom glyph, and never the count conveyed by colour (WCAG 1.4.1).
       line.textContent = `Escobas: ${String(made)}`;
-      group.appendChild(line);
+      tally.appendChild(line);
     }
 
     container.appendChild(group);

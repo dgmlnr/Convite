@@ -35,6 +35,17 @@ export function buildScoreboardStylesheet(): string {
   opacity: 0.8;
 }
 
+/* THE SCORE AND THIS HAND'S ESCOBAS SHARE ONE ROW. Stacked, the escobas count
+   spent a whole line of a phone screen saying "Escobas: 0" for most of most
+   hands, and the first escoba of a hand grew the scoreboard and pushed the
+   cards down. Baseline-aligned so two different type sizes still sit on one
+   line rather than looking like a heading and a caption. */
+.hexdev-escoba-scoreboard-tally {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .hexdev-escoba-scoreboard-score {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
