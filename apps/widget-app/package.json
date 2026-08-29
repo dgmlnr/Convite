@@ -9,6 +9,7 @@
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
+    "@hexdev/spanish-deck-ui": "workspace:*",
     "@hexdev/transport-colyseus-client": "workspace:*",
     "@hexdev/truco-engine": "workspace:*",
     "@hexdev/truco-ui": "workspace:*",

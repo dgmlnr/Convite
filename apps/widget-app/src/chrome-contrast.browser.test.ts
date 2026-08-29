@@ -185,7 +185,7 @@ describe("the lobby's secondary copy stays legible however quiet the design want
 
   function lobby(): HTMLElement {
     const el = freshContainer();
-    renderGameSelection(el, [TRUCO], new Map([[TRUCO.id, MODALITIES]]), { onPlayVsPerson: () => undefined, onPlayVsBot: () => undefined });
+    renderGameSelection(el, [TRUCO], TRUCO.gameFamily, new Map([[TRUCO.id, MODALITIES]]), { onPlayVsPerson: () => undefined, onPlayVsBot: () => undefined });
     return el;
   }
 

@@ -347,7 +347,7 @@ function main(): void {
         });
         return;
       }
-      renderGameSelection(app!, view.family.entries, presenceByGame, {
+      renderGameSelection(app!, view.family.entries, view.family.id, presenceByGame, {
         // Passed only when there is a list to return to. A tenant with one
         // game gets no control at all rather than a disabled one -- see
         // `GameSelectionCallbacks.onBack`.

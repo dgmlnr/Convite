@@ -16,6 +16,9 @@
       "path": "../../packages/platform-core"
     },
     {
+      "path": "../../packages/spanish-deck-ui"
+    },
+    {
       "path": "../../packages/transport-colyseus-client"
     },
     {
