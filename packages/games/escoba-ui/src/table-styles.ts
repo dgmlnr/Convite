@@ -4,7 +4,9 @@ export const TABLE_STYLE_ID = "hexdev-escoba-table-styles";
  * The face-up table's own stylesheet, generated as a string (not a .css
  * file) for the same reason truco-ui's table-styles.ts is: this package
  * builds via plain tsc -b, with no bundler to resolve a stylesheet import.
- * Injected once via ensureTableStyles.
+ * Injected once via ensureTableStyles. Slice P added the player's own hand
+ * and the interactive (markable/marked/playable) card states on top of the
+ * same base rules -- one stylesheet for the whole surface, not two.
  *
  * Container-query only, per this project's own rule: an embedded widget's
  * available width is its container's, never the viewport's, so no
@@ -15,6 +17,10 @@ export const TABLE_STYLE_ID = "hexdev-escoba-table-styles";
  * a card's own width shrinks at narrower container widths so more of them
  * still read comfortably per row, but wrapping alone is what keeps every
  * card inside the container regardless of count.
+ *
+ * WCAG 1.4.1 (marked state): never colour alone -- `aria-pressed` carries
+ * it for assistive tech, and a marked card also gets a solid border AND a
+ * lift, two non-colour cues together.
  */
 export function buildTableStylesheet(): string {
   return `
@@ -50,6 +56,53 @@ export function buildTableStylesheet(): string {
 
 @container hexdev-escoba-table (min-width: 400px) and (width < 640px) {
   .hexdev-escoba-card { --escoba-card-width: 56px; }
+}
+
+.hexdev-escoba-hand {
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--escoba-card-gap, 6px);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--escoba-table-padding, 8px);
+}
+
+.hexdev-escoba-card--markable,
+.hexdev-escoba-card--playable {
+  appearance: none;
+  background: transparent;
+  font: inherit;
+  padding: 0;
+  border: 2px dashed transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hexdev-escoba-card--markable:focus-visible,
+.hexdev-escoba-card--playable:focus-visible {
+  outline: 3px solid var(--escoba-focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+.hexdev-escoba-card--marked {
+  border-style: solid;
+  border-color: var(--escoba-mark-color, #f59e0b);
+  transform: translateY(-6px);
+}
+
+.hexdev-escoba-card--playable:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.hexdev-escoba-sum {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  padding: 4px 8px;
+  font-size: 0.9rem;
 }
 `;
 }
