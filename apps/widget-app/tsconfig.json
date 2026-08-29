@@ -22,6 +22,12 @@
       "path": "../../packages/transport-colyseus-client"
     },
     {
+      "path": "../../packages/games/escoba-engine"
+    },
+    {
+      "path": "../../packages/games/escoba-ui"
+    },
+    {
       "path": "../../packages/games/truco-engine"
     },
     {
