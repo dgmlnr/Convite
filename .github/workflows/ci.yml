@@ -57,6 +57,13 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc -b
 
+      # `scripts/` sits OUTSIDE the `tsc -b` project graph (nothing references
+      # it), so its fences went unchecked until this step existed -- and six
+      # real type errors had accumulated in one of them. They are the tests
+      # that guard the other configs; they need guarding too.
+      - name: Typecheck scripts
+        run: pnpm exec tsc --noEmit -p scripts
+
       - name: Lint
         run: pnpm exec eslint . --max-warnings 0
 

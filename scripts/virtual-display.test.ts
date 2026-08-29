@@ -4,6 +4,27 @@ import { resolveDisplayRedirect, socketPathFor } from "./virtual-display.mjs";
 import { resolveRunner } from "./vitest-runner.mjs";
 
 /**
+ * `expect(decision.action).toBe("use")` ASSERTS but does not NARROW: to
+ * TypeScript the value stays the full union, so every `decision.env` and
+ * `decision.display` below was invisible to the compiler while `scripts/`
+ * sat outside the type-check graph. Six of them were genuinely unchecked.
+ *
+ * This narrows at the source instead. A decision that did not redirect fails
+ * the test with a message that says so, rather than a property access on a
+ * variant that has no such property.
+ */
+type DisplayDecision = ReturnType<typeof resolveDisplayRedirect>;
+type RedirectingDecision = Extract<DisplayDecision, { action: "use" | "spawn" }>;
+
+function redirecting(decision: DisplayDecision): RedirectingDecision {
+  if (decision.action === "none") {
+    throw new Error('expected a redirecting decision, got action "none"');
+  }
+  return decision;
+}
+
+
+/**
  * `resolveDisplayRedirect` is a pure function for the same reason
  * `resolveRunner` is: the side effects around it (spawning `Xvfb`, mutating
  * `process.env` at config load) are a handful of lines in `vitest.config.ts`
@@ -99,7 +120,7 @@ describe("resolveDisplayRedirect", () => {
     it("REDIRECTS a genuine X11 desktop session — its shape proves nothing about the wrapper", () => {
       const nativeX11 = { XDG_SESSION_TYPE: "x11", DISPLAY: ":0", PATH: "/usr/bin" };
 
-      const decision = resolveDisplayRedirect({ platform: "linux", env: nativeX11, socketExists: socketUp });
+      const decision = redirecting(resolveDisplayRedirect({ platform: "linux", env: nativeX11, socketExists: socketUp }));
 
       expect(decision.action).toBe("use");
       expect(decision.env.DISPLAY).toBe(":99");
@@ -133,7 +154,7 @@ describe("resolveDisplayRedirect", () => {
 
   describe("linux, unsanitized session, persistent display already up", () => {
     it("reuses it rather than spawning a second server", () => {
-      const decision = resolveDisplayRedirect({ platform: "linux", env: waylandEnv, socketExists: socketUp });
+      const decision = redirecting(resolveDisplayRedirect({ platform: "linux", env: waylandEnv, socketExists: socketUp }));
 
       expect(decision.action).toBe("use");
       expect(decision.display).toBe(":99");
@@ -156,7 +177,7 @@ describe("resolveDisplayRedirect", () => {
 
   describe("linux, unsanitized session, no persistent display yet", () => {
     it("asks for a spawn first, against the same display", () => {
-      const decision = resolveDisplayRedirect({ platform: "linux", env: waylandEnv, socketExists: socketDown });
+      const decision = redirecting(resolveDisplayRedirect({ platform: "linux", env: waylandEnv, socketExists: socketDown }));
 
       expect(decision.action).toBe("spawn");
       expect(decision.display).toBe(":99");
@@ -168,7 +189,7 @@ describe("resolveDisplayRedirect", () => {
       ["use", socketUp],
       ["spawn", socketDown],
     ] as const)("points DISPLAY at :99 and removes the compositor from reach (%s)", (action, socketExists) => {
-      const decision = resolveDisplayRedirect({ platform: "linux", env: waylandEnv, socketExists });
+      const decision = redirecting(resolveDisplayRedirect({ platform: "linux", env: waylandEnv, socketExists }));
 
       expect(decision.action).toBe(action);
       expect(decision.env.DISPLAY).toBe(":99");
