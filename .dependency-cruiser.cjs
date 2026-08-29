@@ -55,6 +55,14 @@ module.exports = {
     },
   ],
   options: {
+    // Every rule above matches on `path: "^(packages|apps)/"`. Without this,
+    // dependency-cruiser cannot resolve `@hexdev/*` at all (its `exportsFields: []`
+    // default vs. these `exports`-only ESM packages), leaves 127 edges as raw
+    // `@hexdev/...` specifiers that no `^(packages|apps)/` regex can ever match, and
+    // reports a green run while enforcing nothing. `webpackConfig` is the only
+    // config surface that accepts an enhanced-resolve `alias` — the schema for
+    // `enhancedResolveOptions` rejects it. See the header of the file it points at.
+    webpackConfig: { fileName: ".dependency-cruiser-resolve.mjs" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
     doNotFollow: { path: "node_modules" },
