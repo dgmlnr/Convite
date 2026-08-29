@@ -170,7 +170,7 @@ const DEV_TENANT: TenantRecord = {
   id: "dev-tenant" as TenantId,
   embedKey: "pk_dev_local",
   allowedOrigins: ["http://localhost:5173", "http://localhost:3000"],
-  entitledGames: ["truco-argentino" as GameId, "truco-argentino-2v2" as GameId],
+  entitledGames: ["truco-argentino" as GameId, "truco-argentino-2v2" as GameId, "escoba-de-15" as GameId, "escoba-de-15-2v2" as GameId],
 };
 
 /**

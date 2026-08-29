@@ -28,6 +28,12 @@
       "path": "../../packages/games/truco-module"
     },
     {
+      "path": "../../packages/games/escoba-engine"
+    },
+    {
+      "path": "../../packages/games/escoba-module"
+    },
+    {
       "path": "../../packages/widget-protocol"
     }
   ]

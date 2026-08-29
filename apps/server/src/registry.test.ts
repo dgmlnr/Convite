@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyAction, createTeamMatch, getLegalActions, startHand } from "@hexdev/truco-engine";
 import type { Action, MatchState, PlayerId } from "@hexdev/truco-engine";
-import { buildTrucoRegistry } from "./registry.js";
+import type { SeatAssignment } from "@hexdev/platform-contract";
+import { buildGameRegistry } from "./registry.js";
 
 /**
  * sdd-verify CRITICAL-3: `apps/server/src/index.ts`'s own `getConsultAsk`
@@ -42,9 +43,9 @@ function pendingCallState(): MatchState {
   return apply(state, { type: "call-truco", playerId: D, level: "truco" });
 }
 
-describe("buildTrucoRegistry — the REAL composition root's own registration (sdd-verify CRITICAL-3)", () => {
+describe("buildGameRegistry — the REAL composition root's own registration (sdd-verify CRITICAL-3)", () => {
   it("wires getConsultAsk on the 2v2 entry: a live teammate is named, not null", () => {
-    const registry = buildTrucoRegistry();
+    const registry = buildGameRegistry();
     const state = pendingCallState();
 
     const ask = registry.getConsultAsk("truco-argentino-2v2", state, C);
@@ -57,5 +58,62 @@ describe("buildTrucoRegistry — the REAL composition root's own registration (s
     expect(ask, "null here means the getConsultAsk REGISTRATION itself is missing").not.toBeNull();
     expect(ask!.partnerId).toBe(A);
     expect(new Set(ask!.options)).toEqual(new Set(["quiero", "no-quiero"]));
+  });
+});
+
+/**
+ * Slice L.1: escoba's own registration on this SAME real composition-root
+ * function — not a hand-copied stand-in. `requestEscobaSystemAction` firing
+ * for real, through `registry.getSystemAction`, is the proof the object-form
+ * entry is genuinely wired (mutation: deleting the entry would make this
+ * `null`, same "registration itself is missing" failure mode the truco
+ * fence above already documents).
+ */
+describe("buildGameRegistry — escoba's registration (slice L.1)", () => {
+  const seats: readonly SeatAssignment[] = [
+    { seat: 0, playerId: "escoba-srv-a" as PlayerId },
+    { seat: 1, playerId: "escoba-srv-b" as PlayerId },
+  ];
+
+  it("wires requestEscobaSystemAction on the 1v1 entry: a real start-hand deal, not null", () => {
+    const registry = buildGameRegistry();
+    const module = registry.get("escoba-de-15");
+    expect(module, "null here means the module itself is missing from the registry").toBeDefined();
+    const fresh = module!.createMatch({}, seats);
+
+    const action = registry.getSystemAction("escoba-de-15", fresh, () => 0.25);
+
+    expect(action, "null here means the requestSystemAction REGISTRATION itself is missing").not.toBeNull();
+    expect(JSON.parse(JSON.stringify(action)).type).toBe("start-hand");
+  });
+
+  it("wires requestEscobaSystemAction on the 2v2 entry too, under its own separate gameId", () => {
+    const registry = buildGameRegistry();
+    const seats4p: readonly SeatAssignment[] = [
+      { seat: 0, playerId: "escoba-srv-0" as PlayerId },
+      { seat: 1, playerId: "escoba-srv-1" as PlayerId },
+      { seat: 2, playerId: "escoba-srv-2" as PlayerId },
+      { seat: 3, playerId: "escoba-srv-3" as PlayerId },
+    ];
+    const module = registry.get("escoba-de-15-2v2");
+    expect(module).toBeDefined();
+    const fresh = module!.createMatch({}, seats4p);
+
+    expect(registry.getSystemAction("escoba-de-15-2v2", fresh, () => 0.25)).not.toBeNull();
+  });
+
+  // design §D3 / slice J: escoba registers NO consult hooks at all — asserted
+  // here on the REAL registry rather than assumed, so a future accidental
+  // registration (e.g. copy-pasting truco's consult lines onto escoba's
+  // entry) fails this test instead of shipping a channel escoba's own
+  // engine has no surface for.
+  it("registers NO consult hooks for escoba — no señas, no partner-consult mechanic (design §D3, slice J)", () => {
+    const registry = buildGameRegistry();
+    const fresh = registry.get("escoba-de-15")!.createMatch({}, seats);
+
+    expect(registry.isNonBlockingAction("escoba-de-15", { type: "play-card" })).toBe(false);
+    expect(registry.isHumanPriorityAction("escoba-de-15", { type: "play-card" })).toBe(false);
+    expect(registry.isPaidQuestion("escoba-de-15", { type: "play-card" })).toBe(false);
+    expect(registry.getConsultAsk("escoba-de-15", fresh, seats[0]!.playerId)).toBeNull();
   });
 });

@@ -7,6 +7,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@hexdev/escoba-module": "workspace:*",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "@hexdev/transport-colyseus": "workspace:*",
@@ -15,6 +16,7 @@
     "ioredis": "^5.11.1"
   },
   "devDependencies": {
+    "@hexdev/escoba-engine": "workspace:*",
     "@hexdev/truco-engine": "workspace:*",
     "@types/node": "^26.1.2"
   }

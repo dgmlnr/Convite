@@ -13,6 +13,13 @@
 const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   "games.truco.name": "Truco Argentino",
   "games.truco2v2.name": "Truco Argentino 2v2",
+  // Escoba's two entries share ONE name, unlike truco's pair above: the
+  // FAMILY is "Escoba de 15" regardless of seat count, and the two formats
+  // are told apart by `STRINGS.formatName(seatCount)` ("Mano a mano" /
+  // "En parejas") instead — no per-entry title string exists for escoba on
+  // purpose (design §D6/§D7, slice M finalizes the card titles from this).
+  "games.escoba.name": "Escoba de 15",
+  "games.escoba2v2.name": "Escoba de 15",
 };
 
 const CONFIG_LABELS: Readonly<Record<string, string>> = {
