@@ -10,6 +10,8 @@
  * literal strings: the widget owns translation, not the game module.
  */
 
+import type { GameId } from "@hexdev/platform-contract";
+
 const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   "games.truco.name": "Truco Argentino",
   "games.truco2v2.name": "Truco Argentino 2v2",
@@ -45,6 +47,24 @@ export function translateGameName(displayNameKey: string): string {
 export function translateConfigLabel(labelKey: string): string {
   return CONFIG_LABELS[labelKey] ?? labelKey;
 }
+
+/**
+ * A fixed summary line for a game whose `configOptions` is empty and
+ * therefore has nothing for `describeModality` to compute (spec:
+ * `platform-empty-config-rendering`). A PLATFORM MECHANISM, not an escoba
+ * special case: any current or future empty-`configOptions` game MAY declare
+ * one true, useful line here. Slice B already shipped the general half —
+ * nothing to say renders no heading at all; this is the way to HAVE
+ * something to say. A `GameId` with no entry here still renders no heading,
+ * never a placeholder string (`STRINGS.modalitySummary`, below).
+ */
+const MODALITY_SUMMARY: Readonly<Record<GameId, string>> = {
+  // Art. 8.1 (Reglamento Oficial, Juegos Bonaerenses 2026): the match is to
+  // 30 points, for BOTH escoba entries — corrected from an earlier, wrong
+  // "21" (see `escoba/decisiones-de-ui-del-lobby`).
+  "escoba-de-15": "Partida a 30",
+  "escoba-de-15-2v2": "Partida a 30",
+};
 
 export const STRINGS = {
   /** The instruction, now that the game's own name carries the screen. It
@@ -97,6 +117,12 @@ export const STRINGS = {
   // group's own name, not just its heading, is a platform defect. `undefined`
   // falls back to the game name alone, never a trailing separator.
   modalityGroup: (gameName: string, description: string | undefined): string => (description === undefined ? gameName : `${gameName}, ${description}`),
+  /** The empty-`configOptions` fallback (spec: `platform-empty-config-
+   * rendering`): a game with nothing for `describeModality` to compute MAY
+   * still have something true to say — see `MODALITY_SUMMARY` above.
+   * `undefined` when the game declared none, which leaves `renderModality`
+   * rendering no heading at all (slice B's own fix). */
+  modalitySummary: (gameId: GameId): string | undefined => MODALITY_SUMMARY[gameId],
   playVsPerson: "Jugar contra otra persona",
   /**
    * What a format IS, in one line, keyed off the only fact the platform

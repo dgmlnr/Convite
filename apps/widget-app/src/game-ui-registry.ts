@@ -194,10 +194,12 @@ const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: H
  * the one fully visible, so el 7 de oro (the capture's own badge card, worth
  * a point of its own at hand end) holds the centre.
  *
- * Minimal on purpose for this slice: only `heroTitle`/`hero`/`credits` — no
- * `cardArt`, no `GameUiEntry`, no server registration. This entry exists
- * solely to prove and fix the screen-two regression a second family triggers;
- * the completed lobby card lands with the lobby-second-family unit.
+ * ONE ARRAY, TWO JOBS. `escoba/decisiones-de-ui-del-lobby` settled that
+ * screen one's card and screen two's hero show the SAME three cards, unlike
+ * truco (whose `hero`/`cardArt` come from two distinct arrays in
+ * `truco-ui`): recognition across the trip matters more than a second art
+ * set nobody asked for. So `hero` and `cardArt` below read the identical
+ * array — not two calls that happen to agree today.
  */
 const ESCOBA_HERO_FACES: readonly Card[] = [
   { suit: "copa", rank: 3 },
@@ -205,10 +207,31 @@ const ESCOBA_HERO_FACES: readonly Card[] = [
   { suit: "espada", rank: 5 },
 ];
 
+const ESCOBA_FACES: readonly string[] = ESCOBA_HERO_FACES.map((card) => getCardFrontUrl(card).href);
+
+/**
+ * Lobby-second-family, completed (spec: `lobby-second-family`). `heroTitle`
+ * and `hero` landed with Slice A, solely to prove and fix the screen-two
+ * regression a second family triggers; this unit adds `cardArt` — screen
+ * one's own card, the spec's "Escoba's hero art matches its lobby card art"
+ * requirement — and the modality row's content (`MODALITY_SUMMARY`, i18n.ts).
+ *
+ * NO `GameUiEntry` HERE, DELIBERATELY. `createGameUiRegistry`'s `byId` map
+ * below is the MATCH renderer, reachable only once a game is actually
+ * joined — and no lobby screen reads it: every card here renders entirely
+ * from `familyUiFor` plus the server's own catalog. Registering escoba
+ * there before `escoba-ui` exists (Units N-Q) would wire a table this unit
+ * has no renderer for; that wiring is Unit O's own step ("`main.ts`'s
+ * `enterMatch` now resolves a real escoba entry instead of falling back to
+ * `renderUnsupportedGame`"). Until then escoba stays exactly where Slice
+ * L's checkpoint (L.6) already verified it playable: through the generic
+ * fallback screen.
+ */
 const ESCOBA_FAMILY: GameFamilyUi = {
   id: "escoba",
   heroTitle: "Escoba de 15",
-  hero: ESCOBA_HERO_FACES.map((card) => getCardFrontUrl(card).href),
+  hero: ESCOBA_FACES,
+  cardArt: ESCOBA_FACES,
   credits: [DECK_ATTRIBUTION],
 };
 

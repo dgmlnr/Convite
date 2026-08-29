@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
-import { createGameUiRegistry } from "./game-ui-registry.js";
+import { createGameUiRegistry, familyUiFor } from "./game-ui-registry.js";
 
 describe("createGameUiRegistry (design §5: rendering is deliberately outside the platform contract)", () => {
   it("has an entry for truco-argentino", () => {
@@ -30,5 +30,32 @@ describe("the registry keys identity by FAMILY, not by the id you join with", ()
 
     expect(a, "the same record, not two equal ones — there is nowhere left to copy-paste art into").toBe(b);
     expect(a?.id).toBe("truco");
+  });
+});
+
+/** Unit M — lobby second family, completed (spec: `lobby-second-family`).
+ * `familyUiFor`, not `createGameUiRegistry`: no lobby screen reads the match
+ * registry above, and escoba has no `GameUiEntry` there yet on purpose (see
+ * `game-ui-registry.ts`'s own note on `ESCOBA_FAMILY` — that wiring is
+ * Unit O's, once `escoba-ui` exists). */
+describe("familyUiFor(\"escoba\") — the lobby's finished second family", () => {
+  it("declares the family name \"Escoba de 15\" as its heroTitle", () => {
+    expect(familyUiFor("escoba")?.heroTitle).toBe("Escoba de 15");
+  });
+
+  /* Spec requirement "Escoba's hero art matches its lobby card art": screen
+   * one's card and screen two's hero MUST show the identical three cards, no
+   * separate art set. Proven here at the data level; game-list.browser.test.ts
+   * proves the same fact rendered into both screens' actual DOM. */
+  it("screen one's cardArt is the SAME three cards as screen two's hero — no separate art set", () => {
+    const family = familyUiFor("escoba");
+
+    expect(family?.cardArt, "reuses the identical array hero already declares").toEqual(family?.hero);
+  });
+
+  it("the 7 de oro sits at the centre — the position nothing overlaps (escoba/cartas-insignia-del-lobby)", () => {
+    const family = familyUiFor("escoba");
+
+    expect(family?.hero?.[1]).toContain("7-oro");
   });
 });

@@ -39,4 +39,18 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
     expect(STRINGS.joinFailed).toBe("No pudimos conectarte a la partida. Probá de nuevo.");
     expect(STRINGS.retry).toBe("Reintentar");
   });
+
+  /**
+   * Unit M / design D7. Art. 8.1 (Reglamento Oficial, Juegos Bonaerenses
+   * 2026) fixes the match at 30 points — corrected from an earlier, wrong
+   * "21" — for BOTH escoba entries, mano a mano and en parejas alike.
+   */
+  it("modalitySummary resolves both escoba ids to \"Partida a 30\"", () => {
+    expect(STRINGS.modalitySummary("escoba-de-15")).toBe("Partida a 30");
+    expect(STRINGS.modalitySummary("escoba-de-15-2v2")).toBe("Partida a 30");
+  });
+
+  it("modalitySummary is undefined for a game that declared none — no placeholder string", () => {
+    expect(STRINGS.modalitySummary("truco-argentino")).toBeUndefined();
+  });
 });

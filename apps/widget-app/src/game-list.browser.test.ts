@@ -25,6 +25,33 @@ const entry = (id: string, gameFamily: string, seatCount = 2): CatalogEntry => (
 const TRUCO: GameFamily = { id: "truco", entries: [entry("truco-argentino", "truco"), entry("truco-argentino-2v2", "truco", 4)] };
 const ESCOBA: GameFamily = { id: "escoba", entries: [entry("escoba-de-15", "escoba")] };
 
+/* A fixture family id that is NOT `ESCOBA_FAMILY`'s real "escoba" — needed
+ * because Unit M gave the real family a `cardArt` (spec: "Escoba's hero art
+ * matches its lobby card art"), so `ESCOBA` above now resolves real art via
+ * `familyUiFor` regardless of what this fixture's own fields say. The
+ * "no declared art" case below needs a family id `familyUiFor` truly has
+ * nothing for. */
+const noArtEntry = (id: string): CatalogEntry => ({ id: id as GameId, gameFamily: "no-art-fixture", displayNameKey: "games.truco.name", seatCount: 2, configOptions: [] });
+const NO_ART_FAMILY: GameFamily = { id: "no-art-fixture", entries: [noArtEntry("no-art-fixture-game")] };
+
+/* Unit M's finished escoba entries — REAL ids, REAL empty `configOptions`,
+ * exactly as `apps/server`'s registration (Slice L) and `escoba-module`
+ * (Slice J) declare them. */
+const escobaEntry = (id: string, displayNameKey: string, seatCount: number): CatalogEntry => ({
+  id: id as GameId,
+  gameFamily: "escoba",
+  displayNameKey,
+  seatCount,
+  configOptions: [],
+});
+const ESCOBA_ENTRIES: readonly CatalogEntry[] = [escobaEntry("escoba-de-15", "games.escoba.name", 2), escobaEntry("escoba-de-15-2v2", "games.escoba2v2.name", 4)];
+// `deriveModalities([])` yields exactly one modality, `{}` — the platform
+// fact `MODALITY_SUMMARY`'s whole existence rests on (design D7/M3).
+const ESCOBA_PRESENCE = new Map<GameId, readonly LobbyDisplayEntry[]>([
+  ["escoba-de-15" as GameId, [{ modality: {}, waitingCount: 0, promoteBotFallback: false }]],
+  ["escoba-de-15-2v2" as GameId, [{ modality: {}, waitingCount: 0, promoteBotFallback: false }]],
+]);
+
 let container: HTMLElement;
 afterEach(() => {
   container.remove();
@@ -159,19 +186,33 @@ describe("each game shows its own cards, and the place names itself quietly", ()
     expect(faces[1]?.src, "the middle slot is the one nothing overlaps").toContain("1-espada");
   });
 
-  /* A GAME WITH NO ART IS STILL A GAME. Escoba will land in the catalog
+  /* A GAME WITH NO ART IS STILL A GAME. A family can land in the catalog
    * before its faces are chosen, and the list must not grow a hole while that
-   * is true — the card stays a card, and stays pressable. */
+   * is true — the card stays a card, and stays pressable. (Escoba itself no
+   * longer exercises this path — Unit M gave it real `cardArt` — so this uses
+   * a dedicated fixture family instead.) */
   it("a family with no declared art renders a full card with no empty gap", () => {
     const el = fresh();
     const opened: string[] = [];
-    renderGameList(el, [ESCOBA], { onOpenGame: (family) => opened.push(family.id) });
+    renderGameList(el, [NO_ART_FAMILY], { onOpenGame: (family) => opened.push(family.id) });
 
-    const card = el.querySelector<HTMLElement>('[data-family="escoba"]')!;
+    const card = el.querySelector<HTMLElement>('[data-family="no-art-fixture"]')!;
     expect(el.querySelector(".hexdev-game-card-art"), "no empty art box left behind").toBeNull();
     expect(card.textContent?.trim().length, "still named").toBeGreaterThan(0);
     card.click();
-    expect(opened, "and still a full activation target").toEqual(["escoba"]);
+    expect(opened, "and still a full activation target").toEqual(["no-art-fixture"]);
+  });
+
+  /* Unit M / spec "Escoba's hero art matches its lobby card art": screen
+   * one's own card now shows the real three cards, same as the truco
+   * assertions above — the same fan mechanism, a different family's faces. */
+  it("escoba's own card fan shows its three badge cards, 7 de oro at the centre — same as its screen-two hero", () => {
+    const el = fresh();
+    renderGameList(el, [ESCOBA], { onOpenGame: noop });
+
+    const faces = [...el.querySelectorAll<HTMLImageElement>(".hexdev-game-card-face")];
+    expect(faces.length).toBe(3);
+    expect(faces[1]?.src, "the middle slot is the one nothing overlaps").toContain("7-oro");
   });
 
   it("the mark sits at the foot beside the credits, never over the games", () => {
@@ -182,5 +223,42 @@ describe("each game shows its own cards, and the place names itself quietly", ()
     expect(foot.querySelector(".hexdev-chrome-brand")?.textContent).toBe("Convite");
     expect(foot.querySelector(".hexdev-about"), "the credits live in the same foot").not.toBeNull();
     expect(el.querySelector(".hexdev-chrome-header")?.textContent, "and the header says nothing about the place").not.toContain("Convite");
+  });
+});
+
+/* Unit M — lobby second family, completed (spec: `lobby-second-family`,
+ * design D6/D7). Both escoba `GameId`s, through `renderGameSelection`
+ * (screen two), with their REAL empty `configOptions`. */
+describe("escoba's finished game cards (Unit M)", () => {
+  it("titles the 2-seat and 4-seat cards with the existing seat-count formatting — no escoba-specific title strings", () => {
+    const el = fresh();
+    renderGameSelection(el, ESCOBA_ENTRIES, "escoba", ESCOBA_PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const titles = [...el.querySelectorAll<HTMLElement>(".hexdev-game-card h2")].map((h2) => h2.textContent);
+    expect(titles).toEqual(["Mano a mano", "En parejas"]);
+  });
+
+  /* The platform defect Slice B fixed (empty `<h3>`, dangling aria-label
+   * comma) is verifiable on ANY empty-`configOptions` fixture; THIS is the
+   * proof escoba itself never reaches that defect once MODALITY_SUMMARY (M3)
+   * exists — see i18n.test.ts for the platform-general mechanism directly. */
+  it("renders no empty modality heading and reads \"Partida a 30\" for both entries", () => {
+    const el = fresh();
+    renderGameSelection(el, ESCOBA_ENTRIES, "escoba", ESCOBA_PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const headings = el.querySelectorAll(".hexdev-modality-title");
+    expect(headings, "one per card, never an empty heading").toHaveLength(2);
+    for (const heading of headings) expect(heading.textContent).toBe("Partida a 30");
+  });
+
+  it("the modality group's aria-label carries the summary with no dangling separator", () => {
+    const el = fresh();
+    renderGameSelection(el, ESCOBA_ENTRIES, "escoba", ESCOBA_PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+
+    const groups = el.querySelectorAll<HTMLElement>(".hexdev-modality[role=\"group\"]");
+    expect(groups).toHaveLength(2);
+    for (const group of groups) {
+      expect(group.getAttribute("aria-label")).toBe("Escoba de 15, Partida a 30");
+    }
   });
 });

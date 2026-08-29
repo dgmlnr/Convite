@@ -76,7 +76,12 @@ function renderModality(
   configOptions: CatalogEntry["configOptions"],
   callbacks: GameSelectionCallbacks,
 ): HTMLElement {
-  const description = describeModality(entry.modality, configOptions);
+  // `?? STRINGS.modalitySummary(gameId)`: the platform-general fallback (spec
+  // `platform-empty-config-rendering`) — a game with nothing for
+  // `describeModality` to compute may still declare a fixed, true summary
+  // line (escoba's own "Partida a 30", design D7). Absent for a `gameId`
+  // with no declared summary, which renders no heading at all (slice B).
+  const description = describeModality(entry.modality, configOptions) ?? STRINGS.modalitySummary(gameId);
 
   const wrapper = document.createElement("div");
   wrapper.className = "hexdev-modality";
