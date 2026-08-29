@@ -34,8 +34,8 @@ module.exports = {
     {
       name: "l1-no-l2-l3",
       severity: "error",
-      comment: "L1 packages (platform-core, truco-bot, truco-ui, escoba-bot) must not depend on L2 adapters or L3 apps.",
-      from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui|games/escoba-bot)/src" },
+      comment: "L1 packages (platform-core, truco-bot, truco-ui, escoba-bot, escoba-ui) must not depend on L2 adapters or L3 apps.",
+      from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui|games/escoba-bot|games/escoba-ui)/src" },
       to: { path: "^(packages/(games/truco-module|games/escoba-module|transport-colyseus|widget-frontdoor|widget-sdk)|apps)/" },
     },
     {

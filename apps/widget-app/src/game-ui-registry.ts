@@ -4,6 +4,8 @@ import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
+import type { PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
+import { ensurePilesStyles, ensureTableStyles, renderEscobaPiles, renderEscobaTable } from "@hexdev/escoba-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -212,20 +214,17 @@ const ESCOBA_FACES: readonly string[] = ESCOBA_HERO_FACES.map((card) => getCardF
 /**
  * Lobby-second-family, completed (spec: `lobby-second-family`). `heroTitle`
  * and `hero` landed with Slice A, solely to prove and fix the screen-two
- * regression a second family triggers; this unit adds `cardArt` — screen
+ * regression a second family triggers; Unit M added `cardArt` — screen
  * one's own card, the spec's "Escoba's hero art matches its lobby card art"
  * requirement — and the modality row's content (`MODALITY_SUMMARY`, i18n.ts).
  *
  * NO `GameUiEntry` HERE, DELIBERATELY. `createGameUiRegistry`'s `byId` map
  * below is the MATCH renderer, reachable only once a game is actually
- * joined — and no lobby screen reads it: every card here renders entirely
- * from `familyUiFor` plus the server's own catalog. Registering escoba
- * there before `escoba-ui` exists (Units N-Q) would wire a table this unit
- * has no renderer for; that wiring is Unit O's own step ("`main.ts`'s
- * `enterMatch` now resolves a real escoba entry instead of falling back to
- * `renderUnsupportedGame`"). Until then escoba stays exactly where Slice
- * L's checkpoint (L.6) already verified it playable: through the generic
- * fallback screen.
+ * joined — no lobby screen reads it: every card here still renders entirely
+ * from `familyUiFor` plus the server's own catalog. The `GameUiEntry`
+ * records this identity feeds are declared separately, next to `trucoEntry`
+ * below (`escobaEntry`/`escobaEntry2v2`), the same split truco's own
+ * `TRUCO_FAMILY`/`trucoEntry` already keep.
  */
 const ESCOBA_FAMILY: GameFamilyUi = {
   id: "escoba",
@@ -270,6 +269,42 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: T
  * real table — found running an actual 2v2 match end to end, not assumed. */
 const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
+/**
+ * Unit O — the match-time renderer `ESCOBA_FAMILY`'s own comment above
+ * points at: a fresh mount per match, called again on every `onView`
+ * repaint `main.ts`'s own `paint()` drives, the same shape
+ * `createTrucoRenderer` returns. No mark-then-play interaction yet (Unit
+ * P's own scope) — the returned function accepts fewer parameters than
+ * `GameUiEntry["createRenderer"]` declares, which a function may always do
+ * (`Array.prototype.map`'s own callback signature relies on the same
+ * rule): `dispatch`/`onPlayAgain`/`onLeaveMatch` have nothing to drive yet.
+ */
+function createEscobaRenderer(): GameUiEntry["createRenderer"] {
+  return () => (container, payload) => {
+    ensureTableStyles(document);
+    ensurePilesStyles(document);
+    container.replaceChildren();
+    container.className = "hexdev-escoba-match";
+
+    const tableEl = document.createElement("div");
+    const pilesEl = document.createElement("div");
+    container.append(tableEl, pilesEl);
+
+    const view = payload.view as EscobaPlayerView;
+    renderEscobaTable(tableEl, view.hand?.table ?? []);
+    renderEscobaPiles(pilesEl, view.teams, view.hand?.piles ?? {});
+  };
+}
+
+const escobaEntry: GameUiEntry = { id: "escoba-de-15" as GameId, gameFamily: ESCOBA_FAMILY.id, createRenderer: createEscobaRenderer() };
+
+/** The 4-seat entry — additive, its own `GameId`, matching `trucoEntry2v2`'s
+ * own precedent: both escoba entries share ONE renderer factory because
+ * `renderEscobaPiles` is already team-count generic (design §D2: a pair's
+ * piles are one entry under the shared team id), the same way
+ * `createMatchTableRenderer` is already seat-count generic for truco. */
+const escobaEntry2v2: GameUiEntry = { id: "escoba-de-15-2v2" as GameId, gameFamily: ESCOBA_FAMILY.id, createRenderer: createEscobaRenderer() };
+
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
   /** The identity behind a joinable id — see `GameFamilyUi`. Screen 2 asks
@@ -282,6 +317,8 @@ export function createGameUiRegistry(): GameUiRegistry {
   const byId = new Map<GameId, GameUiEntry>([
     [trucoEntry.id, trucoEntry],
     [trucoEntry2v2.id, trucoEntry2v2],
+    [escobaEntry.id, escobaEntry],
+    [escobaEntry2v2.id, escobaEntry2v2],
   ]);
   const byFamily = new Map<GameFamilyId, GameFamilyUi>(FAMILIES.map((entry) => [entry.id, entry]));
   return {

@@ -35,9 +35,9 @@ describe("the registry keys identity by FAMILY, not by the id you join with", ()
 
 /** Unit M — lobby second family, completed (spec: `lobby-second-family`).
  * `familyUiFor`, not `createGameUiRegistry`: no lobby screen reads the match
- * registry above, and escoba has no `GameUiEntry` there yet on purpose (see
- * `game-ui-registry.ts`'s own note on `ESCOBA_FAMILY` — that wiring is
- * Unit O's, once `escoba-ui` exists). */
+ * registry, which is why these assertions target identity data rather than
+ * the `GameUiEntry` records Unit O later added next to `trucoEntry` (see
+ * `game-ui-registry.browser.test.ts`'s own escoba wiring tests for those). */
 describe("familyUiFor(\"escoba\") — the lobby's finished second family", () => {
   it("declares the family name \"Escoba de 15\" as its heroTitle", () => {
     expect(familyUiFor("escoba")?.heroTitle).toBe("Escoba de 15");

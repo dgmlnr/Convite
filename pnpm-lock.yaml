@@ -94,6 +94,12 @@ importers:
 
   apps/widget-app:
     dependencies:
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-engine
+      '@hexdev/escoba-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-ui
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract

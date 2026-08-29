@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GameId } from "@hexdev/platform-contract";
 import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
+import type { PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView, TeamId as EscobaTeamId } from "@hexdev/escoba-engine";
 import { createGameUiRegistry } from "./game-ui-registry.js";
 
 let container: HTMLElement;
@@ -98,5 +100,55 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     container.querySelector<HTMLButtonElement>('[data-answer="quiero"]')!.click();
 
     expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "consult-answer", about: "pending-call", answer: "quiero" });
+  });
+});
+
+/** Unit O — closes the deviation note Slice M left on ESCOBA_FAMILY: escoba
+ * now has a real GameUiEntry, and enterMatch resolves it instead of
+ * falling back to renderUnsupportedGame. No interaction fences here —
+ * mark-then-play is Unit P's own scope; this only proves the wiring
+ * boundary Unit N's static table and this unit's own piles component are
+ * reachable from the exact registry path enterMatch calls. */
+describe("escoba's registered renderer — the real wiring boundary from a generic { view } payload to the table and piles (Unit O)", () => {
+  const ESCOBA_SELF = "player-a" as EscobaPlayerId;
+  const ESCOBA_TEAM_A = "team-a" as EscobaTeamId;
+  const ESCOBA_TEAM_B = "team-b" as EscobaTeamId;
+  const escobaView: EscobaPlayerView = {
+    self: { playerId: ESCOBA_SELF, teamId: ESCOBA_TEAM_A, seat: 0, hand: [] },
+    others: [],
+    teams: [
+      { id: ESCOBA_TEAM_A, score: 0 },
+      { id: ESCOBA_TEAM_B, score: 0 },
+    ],
+    hand: {
+      table: [{ suit: "oro", rank: 5 }],
+      piles: { [ESCOBA_TEAM_A]: [{ suit: "espada", rank: 3 }], [ESCOBA_TEAM_B]: [] },
+      escobas: { [ESCOBA_TEAM_A]: 0, [ESCOBA_TEAM_B]: 0 },
+      turn: ESCOBA_SELF,
+      stockCount: 20,
+    },
+    dealerSeat: 0,
+  };
+
+  it("has entries for BOTH escoba GameIds, sharing the one family", () => {
+    const registry = createGameUiRegistry();
+
+    expect(registry.get("escoba-de-15" as GameId)).not.toBeUndefined();
+    expect(registry.get("escoba-de-15-2v2" as GameId)).not.toBeUndefined();
+    expect(registry.family("escoba-de-15" as GameId)).toBe(registry.family("escoba-de-15-2v2" as GameId));
+  });
+
+  it("renders the real table and piles into the container from an opaque payload", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("escoba-de-15" as GameId)!.createRenderer();
+
+    render(container, { view: escobaView, legalActions: [] }, () => {});
+
+    expect(container.className).toBe("hexdev-escoba-match");
+    expect(container.querySelector('.hexdev-escoba-table [data-card="5-oro"]'), "the table renders the payload's own view").not.toBeNull();
+    const pile = container.querySelector<HTMLElement>('.hexdev-escoba-pile[data-team="team-a"]');
+    expect(pile?.dataset.count, "the piles render the payload's own view too, not a placeholder").toBe("1");
   });
 });
