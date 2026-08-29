@@ -4,8 +4,17 @@ import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
 import type { Action, PlayerId, PlayerView } from "@hexdev/truco-engine";
 import { CARD_ART, DECK_ATTRIBUTION, HERO_CARDS, HERO_TITLE, createMatchTableRenderer } from "@hexdev/truco-ui";
-import type { PlayCardAction as EscobaPlayCardAction, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
-import { createMarkThenPlay, ensurePilesStyles, ensureTableStyles, renderEscobaPiles } from "@hexdev/escoba-ui";
+import type { HandOutcome as EscobaHandOutcome, PlayCardAction as EscobaPlayCardAction, PlayerView as EscobaPlayerView } from "@hexdev/escoba-engine";
+import {
+  createMarkThenPlay,
+  describeHandBreakdown,
+  ensurePilesStyles,
+  ensureScoreboardStyles,
+  ensureTableStyles,
+  renderEscobaHandBreakdown,
+  renderEscobaPiles,
+  renderEscobaScoreboard,
+} from "@hexdev/escoba-ui";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -270,49 +279,73 @@ const trucoEntry: GameUiEntry = { id: "truco-argentino" as GameId, gameFamily: T
 const trucoEntry2v2: GameUiEntry = { id: "truco-argentino-2v2" as GameId, gameFamily: TRUCO_FAMILY.id, createRenderer: createTrucoRenderer() };
 
 /**
- * Unit P — mark-then-play, the core UX (decision 4). `createMarkThenPlay()`
- * runs ONCE per match mount so the marked-cards set survives re-renders;
- * the table/hand/sum elements are built ONCE and reused, never wiped — an
- * `aria-live` announcement is a CHANGE to a region already in the tree
- * (`truco-ui/src/table.ts`'s own announcers, same argument).
+ * Unit P — mark-then-play (decision 4). Every persistent element below is
+ * built ONCE and reused — an `aria-live` announcement is a CHANGE to a node
+ * already in the tree (`truco-ui/src/table.ts`'s own announcers).
  *
- * KNOWN GAP, found in Slice Q's own sweep, reported rather than fixed here
- * (scope is a maintainer decision): `payload.outcome`, `onPlayAgain`, and
- * `onLeaveMatch` are all still dropped on the floor below — unlike truco's
- * own match-over overlay (`createTrucoRenderer`, above), a finished escoba
- * match shows no score, no "you won", and no way back to the lobby from the
- * table itself. There is also no scoreboard anywhere in escoba-ui: `Team.
- * score` is tracked correctly by the engine (proven in
- * `escoba-full-hand.browser.test.ts`) but nothing on screen ever reads it.
+ * Slice R2a closes half the gap Slice Q's own sweep reported: the scoreboard
+ * and hand-end breakdown are mounted below, both computed by the engine and
+ * never re-derived here. `payload.outcome`/`onPlayAgain`/`onLeaveMatch` are
+ * the OTHER half — match-over — the natural next seam (R2b).
  */
 function createEscobaRenderer(): GameUiEntry["createRenderer"] {
   return () => {
     const markThenPlay = createMarkThenPlay();
-    let mounted: { tableEl: HTMLElement; handEl: HTMLElement; pilesEl: HTMLElement; sumEl: HTMLElement } | null = null;
+    let mounted: {
+      scoreboardEl: HTMLElement;
+      tableEl: HTMLElement;
+      handEl: HTMLElement;
+      pilesEl: HTMLElement;
+      sumEl: HTMLElement;
+      breakdownEl: HTMLElement;
+      breakdownAnnouncer: HTMLElement;
+    } | null = null;
+    // Whether the LATEST hand outcome is a transition worth announcing —
+    // mirrors createMatchTableRenderer's own previousView/timer fields.
+    let previousHandDecided = false;
 
     return (container, payload, dispatch) => {
       ensureTableStyles(document);
       ensurePilesStyles(document);
+      ensureScoreboardStyles(document);
 
       if (mounted === null || mounted.tableEl.parentElement !== container) {
         container.replaceChildren();
         container.className = "hexdev-escoba-match";
+        const scoreboardEl = document.createElement("div");
         const tableEl = document.createElement("div");
         const handEl = document.createElement("div");
         const pilesEl = document.createElement("div");
         const sumEl = document.createElement("div");
         sumEl.className = "hexdev-escoba-sum";
         sumEl.setAttribute("aria-live", "polite");
-        container.append(tableEl, handEl, pilesEl, sumEl);
-        mounted = { tableEl, handEl, pilesEl, sumEl };
+        const breakdownEl = document.createElement("div");
+        // Mounted once, mutated after — same reason as sumEl above.
+        const breakdownAnnouncer = document.createElement("p");
+        breakdownAnnouncer.className = "hexdev-escoba-breakdown-announcer";
+        breakdownAnnouncer.setAttribute("aria-live", "polite");
+        breakdownAnnouncer.setAttribute("aria-atomic", "true");
+        container.append(scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer);
+        mounted = { scoreboardEl, tableEl, handEl, pilesEl, sumEl, breakdownEl, breakdownAnnouncer };
       }
 
       const view = payload.view as EscobaPlayerView;
       const legalActions = payload.legalActions as readonly EscobaPlayCardAction[];
+
+      renderEscobaScoreboard(mounted.scoreboardEl, view.teams, view.self.teamId);
       markThenPlay({ tableEl: mounted.tableEl, handEl: mounted.handEl, sumEl: mounted.sumEl }, view.hand?.table ?? [], view.self.hand, legalActions, (card, captured) =>
         dispatch({ type: "play-card", playerId: view.self.playerId, card, captured } satisfies EscobaPlayCardAction),
       );
       renderEscobaPiles(mounted.pilesEl, view.teams, view.hand?.piles ?? {});
+
+      const handOutcome: EscobaHandOutcome | null = view.hand?.outcome ?? null;
+      renderEscobaHandBreakdown(mounted.breakdownEl, handOutcome, view.self.teamId);
+      if (handOutcome !== null && handOutcome.decided && !previousHandDecided) {
+        mounted.breakdownAnnouncer.textContent = describeHandBreakdown(handOutcome, view.self.teamId);
+      } else if (handOutcome === null || !handOutcome.decided) {
+        mounted.breakdownAnnouncer.textContent = "";
+      }
+      previousHandDecided = handOutcome !== null && handOutcome.decided;
     };
   };
 }
