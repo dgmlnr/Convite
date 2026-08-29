@@ -31,12 +31,15 @@ import type { GameUiEntry } from "./game-ui-registry.js";
  * `createHeadToHeadMatch` factory), so teams and seats are declared here, the
  * same way `escoba-full-hand.browser.test.ts` already declares them.
  *
- * PLAIN BACKGROUND, ON PURPOSE. `createEscobaRenderer` replaces the
- * container's class outright with `hexdev-escoba-match`, so a live match does
- * NOT sit inside `.convite-chrome`'s felt — it sits on the widget document's
- * own surface, which `embed-shell.ts` paints `var(--gx-color-surface, #ffffff)`.
- * These scenes reproduce that rather than dressing it up: what a person sees
- * here is what a player sees.
+ * WHAT A PERSON SEES HERE IS WHAT A PLAYER SEES — nothing is dressed up for
+ * the picture, and that is the whole value of these scenes.
+ *
+ * The first render proved it: escoba's table came out on bare white while
+ * truco's sat on felt, because `createEscobaRenderer` replaces the container's
+ * class outright and so never inherited `.convite-chrome`'s ground. No test
+ * caught it — every escoba fence measures geometry, and a background has no
+ * geometry. Only looking at a whole screen did. `escoba-ui` now paints its own
+ * felt, the same way `truco-ui` does and for the same reason.
  */
 
 const SELF = "escoba-scene-self" as PlayerId;
