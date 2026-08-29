@@ -1,5 +1,6 @@
 /// <reference types="@vitest/browser/matchers" />
 import { afterEach, describe, expect, it } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { applyAction, buildDeck, cardId, deal, getLegalActions, getViewFor } from "@hexdev/escoba-engine";
 import type { Card, MatchState, Player, PlayerId, Team, TeamId } from "@hexdev/escoba-engine";
 import type { GameId } from "@hexdev/platform-contract";
@@ -7,7 +8,8 @@ import { createGameUiRegistry } from "./game-ui-registry.js";
 import type { GameUiEntry } from "./game-ui-registry.js";
 
 /**
- * THE ESCOBA TABLE, MID-HAND, IN BOTH SEAT COUNTS.
+ * THE ESCOBA TABLE, MID-HAND, IN BOTH SEAT COUNTS — AND IN EVERY SHAPE THE
+ * SIDE RAIL TAKES.
  *
  * Scenes, never baselines: the images are gitignored and `pnpm visual:review`
  * rewrites them every run (`visual/decision-de-capturas-y-mediciones`).
@@ -229,23 +231,113 @@ afterEach(() => {
 });
 
 /**
- * 375px — a phone, which is where this widget is embedded and the only width
- * at which the table's own container query picks its narrow card size. Width
- * only, never height: the real widget document declares no height on
+ * The container's width IS the subject of half this file, so it is an
+ * argument rather than the constant it used to be: `.hexdev-escoba-layout`
+ * is `container-type: inline-size`, so 375px and 768px are not the same
+ * screen at two zoom levels — they are two different rails (`rail-styles.ts`
+ * switches shape at 640 container-px) and two different card sizes
+ * (`table-styles.ts` switches at 400 and 640).
+ *
+ * Width only, never height: the real widget document declares no height on
  * `html`/`body` either, so an auto-height container is the FAITHFUL fixture
- * and nothing can clip.
+ * and nothing can clip. That is also precisely why the landscape scenes
+ * below are worth looking at — an auto-height box does not clip, it GROWS,
+ * and what it grows past is the fold.
  *
  * An INLINE width, not a class: `createEscobaRenderer` assigns
  * `container.className` outright, so a class set here would be gone by the
  * time anything is painted.
  */
-function mountedContainer(): HTMLElement {
+function mountedContainer(width: number): HTMLElement {
   const container = document.createElement("div");
-  container.style.width = "375px";
+  container.style.width = `${String(width)}px`;
   document.body.appendChild(container);
   mounted.push(container);
   return container;
 }
+
+/**
+ * THE VIEWPORT IS SET BEFORE EVERY MOUNT, INCLUDING THE 375px ONES.
+ *
+ * Chromium never PAINTS what falls outside the viewport, and Browser Mode's
+ * default is 414x896 — so a container wider than that renders correct CSS
+ * (`getBoundingClientRect()` agrees) and photographs as solid white past
+ * x≈414. `truco-ui/src/table-wide.scene.test.ts` found that the hard way and
+ * documents it in full; this file inherits the lesson rather than the bug.
+ *
+ * Setting it EVERY time, not only in the wide scenes, is the second half:
+ * `page.viewport(...)` is document state, and within one Browser Mode file
+ * every test shares one real document — a viewport left at 888x700 by an
+ * earlier test would silently redefine what a later "phone" scene means.
+ * The narrow scenes therefore ask for 414x896 explicitly. It is the default,
+ * so they photograph exactly as they always did; it is written down, so
+ * their meaning no longer depends on where they sit in this file.
+ *
+ * The extra width over the container (`+120`) is truco's own margin, and it
+ * is not decoration: `<body>` keeps its 8px UA margin here and a scrollbar
+ * takes more, so a viewport merely EQUAL to the container still clips.
+ *
+ * THE VIEWPORT HEIGHT ALSO DECIDES HOW SHARP THE PICTURE IS, which is not
+ * obvious and was measured, not assumed. Browser Mode renders the test
+ * document in a window roughly 1280x720 and SCALES the iframe down to fit
+ * whatever viewport was asked for, so the capture comes out at
+ * `min(1, 1280 / width, 720 / height)` of life size: a 1200px-tall viewport
+ * photographs everything at 0.6, and a 768px column of small text at 0.6 is
+ * a picture that cannot answer the question it was taken to answer. Nothing
+ * below asks for more height than its own content plus headroom.
+ *
+ * Which is only safe because NO stylesheet in `escoba-ui` contains a single
+ * viewport-height unit — `rg 'dvh|svh|vh'` over the package comes back
+ * empty. Its layout is a pure function of the CONTAINER's inline size, so
+ * two runs at the same width and different viewport heights lay out
+ * identically and only the capture differs. The same substitution against
+ * `truco-ui` would be a lie: its `--truco-card-width` really does read
+ * `100dvh`.
+ */
+const PHONE = { width: 414, height: 896 } as const;
+
+/**
+ * A tablet in portrait — comfortably past the rail's 640 container-px switch
+ * and comfortably short of the 1280 one, so what this photographs is the
+ * 168px column and not the 200px one.
+ *
+ * 700px of viewport, not 1200: the whole widget measures 364px tall here, so
+ * 700 paints all of it twice over, and it is the number that keeps the
+ * capture at 1:1 rather than 0.6 (see above). At 0.6 a 168px column of 12px
+ * text is 100px of mush.
+ */
+const TABLET = { container: 768, width: 768 + 120, height: 700 } as const;
+
+/**
+ * A phone ROTATED: 844 wide, and — the part that matters — 390 tall.
+ *
+ * The width is the boring half. An embedded widget lays out from its
+ * CONTAINER (this repo bans `matchMedia` and `innerWidth` for exactly that
+ * reason), so 828 container-px is the same wide branch the tablet scenes
+ * already cover, and rotation changes the layout not at all through that
+ * door. 828 and not 844 because `<body>`'s 8px UA margin is real on both
+ * sides, and a container that overflowed horizontally would photograph a
+ * horizontal problem on top of the vertical one under examination.
+ *
+ * THE HEIGHT IS WHY THESE EXIST. 390px is all a rotated phone has, and
+ * `escoba-ui` stacks a status line, the face-up table, the hand, both piles,
+ * the running sum and the hand-end breakdown down that axis with no cap of
+ * any kind: `truco-ui/src/table-styles.ts` derives `--truco-card-width` as
+ * `min(the width tier's choice, the height that actually fits)`, and nothing
+ * in `escoba-ui/src/table-styles.ts` does anything of the sort.
+ *
+ * SO WHY IS THE VIEWPORT 640 TALL AND NOT 390. Because a viewport of exactly
+ * 390 is the one setting under which this scene could not answer its own
+ * question. Chromium paints nothing past the fold, so a layout that fits
+ * photographs as a 390px image and a layout that overflows by 200px ALSO
+ * photographs as a 390px image — the failure and the success are the same
+ * picture. At 640 the capture is the whole widget however tall it turns out
+ * to be, so the PNG's own height is the measurement: 390 means it fits, and
+ * anything more is exactly how far past the fold escoba has gone, with the
+ * offending rows visible rather than cropped away. The layout is identical
+ * either way, for the reason `PHONE` above sets out.
+ */
+const LANDSCAPE = { container: 828, width: 844, height: 640 } as const;
 
 /** The exact seam `main.ts` crosses to draw a live match: registry lookup,
  * then one fresh renderer per match. An unregistered id is a failed fixture,
@@ -256,29 +348,191 @@ function escobaRenderer(gameId: GameId): ReturnType<GameUiEntry["createRenderer"
   return entry.createRenderer();
 }
 
+/** One screen, drawn exactly the way `main.ts` draws one: the registry's
+ * renderer, this seat's redacted view, this seat's legal actions, and a
+ * dispatch nothing here ever calls. */
+function renderScreen(container: HTMLElement, gameId: GameId, state: MatchState): void {
+  escobaRenderer(gameId)(container, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
+}
+
 async function waitForArt(container: HTMLElement): Promise<void> {
   const images = [...container.querySelectorAll("img")];
   await Promise.all(images.map((img) => img.decode()));
 }
 
+/**
+ * The handle, on a rail that is really still SHUT.
+ *
+ * `[aria-expanded="false"]` is in the selector on purpose, and it is the
+ * whole reason this is a function: a scene that photographs an open drawer
+ * has to have opened it, and a fixture that found an already-open rail and
+ * clicked it would photograph a CLOSED one and never say a word. Missing
+ * handle, or a handle that no longer reports itself shut, is a failed
+ * fixture here rather than a picture of the wrong state.
+ */
+function closedRailTab(container: HTMLElement): HTMLButtonElement {
+  const tab = container.querySelector<HTMLButtonElement>('button.hexdev-escoba-rail-tab[aria-expanded="false"]');
+  if (tab === null) throw new Error("scene fixture setup: no closed rail handle on this screen");
+  return tab;
+}
+
 describe("scene: the escoba table, mid-hand", () => {
   it("1v1: our turn, cards face up on the table, both capture piles started, the score mid-match", async () => {
-    const container = mountedContainer();
-    const state = headToHeadMidHand();
+    await page.viewport(PHONE.width, PHONE.height);
+    const container = mountedContainer(375);
 
-    escobaRenderer("escoba-de-15")(container, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
+    renderScreen(container, "escoba-de-15", headToHeadMidHand());
     await waitForArt(container);
 
     await expect.element(container).toMatchScreenshot("escoba-table-mid-hand");
   });
 
   it("2v2: the same screen with four players — and the pair's ONE combined pile, holding what both partners took", async () => {
-    const container = mountedContainer();
-    const state = teamMidHand();
+    await page.viewport(PHONE.width, PHONE.height);
+    const container = mountedContainer(375);
 
-    escobaRenderer("escoba-de-15-2v2")(container, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
+    renderScreen(container, "escoba-de-15-2v2", teamMidHand());
     await waitForArt(container);
 
     await expect.element(container).toMatchScreenshot("escoba-table-2v2-mid-hand");
+  });
+});
+
+/**
+ * THE RAIL, IN THE TWO SHAPES THE SCENES ABOVE CANNOT SHOW.
+ *
+ * The two screens above photograph the rail SHUT — a 26px handle down the
+ * right edge, which is one of the three states it has and the least
+ * interesting of them. The other two are the ones that were hard, and both
+ * of them were already rendered once, looked at, and thrown away: the run
+ * that produced them is what found the drawer reading the score THROUGH a
+ * sota at `rgba(0,0,0,.34)` (`rail-styles.ts` now says "a drawer covers what
+ * it covers") and what found `space-between` at 220px pulling a team's score
+ * away from its own escoba count as though the two numbers were unrelated.
+ * Both corrections are permanent; the only way to SEE either was not.
+ *
+ * That is the whole argument for this block. A state that had to be rendered
+ * once to make a decision will have to be rendered again the next time
+ * anyone touches the rail, and a scene is the cheapest possible way of
+ * making that true forever — it asserts nothing, so it can never be a false
+ * alarm, and it costs one screenshot.
+ *
+ * NO ASSERTIONS, DELIBERATELY, and the geometry is genuinely covered
+ * elsewhere: `rail.browser.test.ts` fences the control (the aria pair, the
+ * unique body ids, the container-query-not-media-query rule) and says in its
+ * own words that the two SHAPES "belong to the scenes and to the eye". What
+ * no `getBoundingClientRect()` fences is whether a drawer that provably
+ * covers 64cqw covers the wrong 64cqw — that is a judgement, and judgements
+ * need a picture (`visual/decision-de-capturas-y-mediciones`).
+ */
+describe("scene: the escoba side rail, opened and unfolded", () => {
+  it("1v1, phone: the tanteador drawer OPEN over the felt — really pressed, never a hand-set data-open", async () => {
+    await page.viewport(PHONE.width, PHONE.height);
+    const container = mountedContainer(375);
+
+    renderScreen(container, "escoba-de-15", headToHeadMidHand());
+    await waitForArt(container);
+    // A REAL POINTER, not `tabEl.click()`. The difference is not ceremony:
+    // `.hexdev-escoba-side-rail` is `pointer-events: none` so the markable
+    // cards under it stay tappable, and only `> *` gets them back. A
+    // synthetic `.click()` calls the listener regardless of who would
+    // actually have received the tap and would photograph an open drawer on
+    // a handle nobody could open; a driver click has to hit-test its way
+    // there first. Setting `data-open` by hand would prove even less — the
+    // CSS, and none of the control.
+    await userEvent.click(closedRailTab(container));
+
+    await expect.element(container).toMatchScreenshot("escoba-table-rail-open");
+  });
+
+  it("2v2, phone: the same drawer with four seats in it — the tallest this thing ever gets on a phone", async () => {
+    await page.viewport(PHONE.width, PHONE.height);
+    const container = mountedContainer(375);
+
+    // The denser of the two drawers, and the reason this is not a redundant
+    // copy of the shot above: `renderEscobaStatus` lists every OTHER seat,
+    // so a pairs match puts three chips in the column where mano a mano puts
+    // one. If an open drawer is ever going to bury the cards, it buries them
+    // here first.
+    renderScreen(container, "escoba-de-15-2v2", teamMidHand());
+    await waitForArt(container);
+    await userEvent.click(closedRailTab(container));
+
+    await expect.element(container).toMatchScreenshot("escoba-table-2v2-rail-open");
+  });
+
+  it("1v1, tablet: the rail as a permanent 168px COLUMN, handle gone, nothing to open", async () => {
+    await page.viewport(TABLET.width, TABLET.height);
+    const container = mountedContainer(TABLET.container);
+
+    // NO CLICK HERE, and that is the state under examination: the rail is
+    // still `data-open="false"` (nothing ever opened it), and past 640
+    // container-px `rail-styles.ts` shows the body anyway and hides the
+    // handle — "a drawer shut on a phone must not stay shut where there is
+    // no drawer". A scene that clicked first would photograph the same
+    // pixels and prove that rule was never exercised.
+    //
+    // 1v1 on purpose: the LEAST populated column this rail can be handed —
+    // two scores and one seat chip in 168px — and therefore the one where
+    // "a permanent column" is most at risk of reading as empty furniture.
+    renderScreen(container, "escoba-de-15", headToHeadMidHand());
+    await waitForArt(container);
+
+    await expect.element(container).toMatchScreenshot("escoba-table-rail-column");
+  });
+
+  it("2v2, tablet: the same column with something in it — four seats, two scores, the stock", async () => {
+    await page.viewport(TABLET.width, TABLET.height);
+    const container = mountedContainer(TABLET.container);
+
+    renderScreen(container, "escoba-de-15-2v2", teamMidHand());
+    await waitForArt(container);
+
+    await expect.element(container).toMatchScreenshot("escoba-table-2v2-rail-column");
+  });
+});
+
+/**
+ * THE PHONE, ROTATED — the one axis every other scene in this repo leaves
+ * unexamined.
+ *
+ * Rotation changes NOTHING about this layout directly, and that is worth
+ * stating plainly because it is the reason these are not duplicates of the
+ * tablet pair above: the widget lays out from its container's inline size,
+ * so 828 landscape-px and 768 portrait-px pick the same rail and the same
+ * card tier. What rotation actually takes away is HEIGHT — 390px, against
+ * the 896 every other scene here has enjoyed.
+ *
+ * And escoba spends that axis freely: status, table, hand, both piles, the
+ * running sum, the breakdown, stacked. `truco-ui` met this exact problem and
+ * capped its card width at `min(the width tier, the height that fits)`;
+ * `escoba-ui/src/table-styles.ts` has no such clause, so its 72px cards at
+ * the wide tier are 72px whatever room is left below them.
+ *
+ * These scenes do not decide whether that is wrong. They make it visible,
+ * which is the only thing a scene is for — and because the capture viewport
+ * is deliberately taller than the fold (`LANDSCAPE` above), the visible form
+ * it takes is the PNG's own height. 390 is a screen that fits. Anything
+ * taller is the overflow, drawn.
+ */
+describe("scene: the escoba table on a phone in landscape — 828 container-px, 390 of height to spend", () => {
+  it("1v1: everything the table stacks, against the 390px a rotated phone actually has", async () => {
+    await page.viewport(LANDSCAPE.width, LANDSCAPE.height);
+    const container = mountedContainer(LANDSCAPE.container);
+
+    renderScreen(container, "escoba-de-15", headToHeadMidHand());
+    await waitForArt(container);
+
+    await expect.element(container).toMatchScreenshot("escoba-table-landscape");
+  });
+
+  it("2v2: the same rotation with four seats and two four-card piles — more to stack, the same 390px", async () => {
+    await page.viewport(LANDSCAPE.width, LANDSCAPE.height);
+    const container = mountedContainer(LANDSCAPE.container);
+
+    renderScreen(container, "escoba-de-15-2v2", teamMidHand());
+    await waitForArt(container);
+
+    await expect.element(container).toMatchScreenshot("escoba-table-2v2-landscape");
   });
 });
