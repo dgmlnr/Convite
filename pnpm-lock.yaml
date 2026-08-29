@@ -120,6 +120,8 @@ importers:
         specifier: ^8.2.0
         version: 8.2.0(@types/node@26.1.2)
 
+  packages/games/escoba-engine: {}
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':

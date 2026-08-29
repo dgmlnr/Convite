@@ -16,12 +16,12 @@ module.exports = {
       to: { path: "^(packages|apps)/", pathNot: "^packages/widget-protocol/src" },
     },
     {
-      name: "l0-truco-engine-no-workspace-deps",
+      name: "l0-game-engine-no-workspace-deps",
       severity: "error",
       comment:
-        "truco-engine is pure L0 and must not depend on any other workspace package, platform-contract included: the domain must not know the platform exists.",
-      from: { path: "^packages/games/truco-engine/src" },
-      to: { path: "^(packages|apps)/", pathNot: "^packages/games/truco-engine/src" },
+        "A game engine (packages/games/*-engine) is pure L0 and must not depend on any other workspace package, platform-contract included: the domain must not know the platform exists. Generalized from a per-package rule (was truco-engine-only) so a new engine is fenced the day it is scaffolded, per gotchas/cercados-no-se-heredan-a-juego-nuevo.",
+      from: { path: "^packages/games/([^/]+-engine)/src" },
+      to: { path: "^(packages|apps)/", pathNot: "^packages/games/$1/src" },
     },
     {
       name: "l0-spanish-deck-ui-no-workspace-deps",
@@ -55,6 +55,14 @@ module.exports = {
     },
   ],
   options: {
+    // Every rule above matches on `path: "^(packages|apps)/"`. Without this,
+    // dependency-cruiser cannot resolve `@hexdev/*` at all (its `exportsFields: []`
+    // default vs. these `exports`-only ESM packages), leaves 127 edges as raw
+    // `@hexdev/...` specifiers that no `^(packages|apps)/` regex can ever match, and
+    // reports a green run while enforcing nothing. `webpackConfig` is the only
+    // config surface that accepts an enhanced-resolve `alias` — the schema for
+    // `enhancedResolveOptions` rejects it. See the header of the file it points at.
+    webpackConfig: { fileName: ".dependency-cruiser-resolve.mjs" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.json" },
     doNotFollow: { path: "node_modules" },
