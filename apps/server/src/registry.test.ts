@@ -9,8 +9,9 @@ import { buildGameRegistry } from "./registry.js";
  * registration had no fence — `match-room.consult.test.ts` builds its OWN
  * hand-authored registry (commented "same real registrations apps/server
  * wires"), which is a copy, not the composition root itself. This file
- * imports `buildTrucoRegistry`, the EXACT function `index.ts` now calls
- * (registry.ts), so deleting either `getConsultAsk` registration line fails
+ * imports `buildGameRegistry` (renamed from `buildTrucoRegistry` in slice
+ * L, see that function's own docstring), the EXACT function `index.ts` now
+ * calls (registry.ts), so deleting either `getConsultAsk` registration line fails
  * this test rather than shipping silently — the identical class of gap
  * Slice 4b already closed one layer down in `game-ui-registry.ts`.
  */
