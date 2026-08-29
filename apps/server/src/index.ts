@@ -16,7 +16,7 @@ import type { JtiReplayGuard, MatchmakingPool, RateLimiter } from "@hexdev/platf
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
 import { loadServerConfig } from "./config.js";
-import { buildTrucoRegistry } from "./registry.js";
+import { buildGameRegistry } from "./registry.js";
 
 
 // The composition root: wires existing pieces (registry, auth primitives,
@@ -62,7 +62,7 @@ const joinIpLimiter: RateLimiter =
 // lives in one side-effect-free function `registry.test.ts` can import and
 // call directly, rather than only ever being exercised through a
 // hand-copied stand-in registry inside a transport-layer test.
-const registry = buildTrucoRegistry();
+const registry = buildGameRegistry();
 // The server is where entropy lives (design §4): the engine never
 // randomizes itself. A real CSPRNG, not `Math.random`.
 const rng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
