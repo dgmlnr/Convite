@@ -122,6 +122,19 @@ importers:
 
   packages/games/escoba-engine: {}
 
+  packages/games/escoba-module:
+    dependencies:
+      '@hexdev/escoba-engine':
+        specifier: workspace:*
+        version: link:../escoba-engine
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':

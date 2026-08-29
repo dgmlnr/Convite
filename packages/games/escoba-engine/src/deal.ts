@@ -1,32 +1,9 @@
-import { buildDeck } from "./deck.js";
 import type { Card } from "./card.js";
 import type { HandState, MatchState, Team } from "./state.js";
 import { applyOpeningEscoba } from "./escoba.js";
 
-/**
- * Entropy in `[0, 1)`, `Math.random`-shaped — mirrors platform-contract's
- * `RandomSource` byte-for-byte, re-declared LOCALLY because escoba-engine
- * is L0 and cannot import it (`l0-game-engine-no-workspace-deps`, Slice C).
- * Calling an INJECTED parameter is still pure: ESLint bans calling
- * `Math.random` itself, not accepting a substitute as an argument.
- */
-export type Rng = () => number;
-
 const CARDS_PER_PLAYER = 3;
 const TABLE_OPENING_SIZE = 4;
-
-/** Fisher-Yates over the real 40-card deck, driven entirely by the injected
- * `rng` — mirrors `truco-module/src/deal.ts:26-33`. This engine never calls
- * `Math.random`/`crypto` itself (ESLint-enforced); a later slice's module
- * layer supplies entropy the same way truco-module's own factory does. */
-function shuffledDeck(rng: Rng): Card[] {
-  const deck = [...buildDeck()];
-  for (let i = deck.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rng() * (i + 1));
-    [deck[i], deck[j]] = [deck[j]!, deck[i]!];
-  }
-  return deck;
-}
 
 /**
  * Deals `cardsPerSeat` cards to each of `seatCount` seats ONE AT A TIME,
@@ -61,15 +38,18 @@ function emptyEscobas(teams: readonly [Team, Team]): HandState["escobas"] {
 }
 
 /**
- * The opening deal (art. 6.1): ONE shuffle with the injected `rng`, 3 cards
- * per player round-robin, 4 face up on the table, remainder to stock —
+ * The opening deal (art. 6.1): 3 cards per player round-robin from an
+ * already-shuffled `deck`, 4 face up on the table, remainder to stock —
  * design §D3's "one shuffle per hand ... a pure function of one
- * permutation".
+ * permutation". Shuffling is NOT this engine's job: the caller owns the
+ * entropy (`RandomSource` comes from the host, per platform-contract) and
+ * design §D3 wants the whole 40-card permutation carried as replayable DATA
+ * on the `start-hand` action — so `deal` only materializes a deck the
+ * caller already shuffled, it never shuffles one itself.
  */
-export function deal(state: MatchState, rng: Rng): MatchState {
+export function deal(state: MatchState, deck: readonly Card[]): MatchState {
   const seatCount = state.players.length;
-  const shuffled = shuffledDeck(rng);
-  const { hands, rest } = dealHandsRoundRobin(shuffled, seatCount, CARDS_PER_PLAYER);
+  const { hands, rest } = dealHandsRoundRobin(deck, seatCount, CARDS_PER_PLAYER);
   const players = state.players.map((player, seat) => ({ ...player, hand: hands[seat]! }));
   const table = rest.slice(0, TABLE_OPENING_SIZE);
   const stock = rest.slice(TABLE_OPENING_SIZE);
