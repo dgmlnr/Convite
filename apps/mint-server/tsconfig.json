@@ -22,6 +22,9 @@
       "path": "../../packages/games/truco-module"
     },
     {
+      "path": "../../packages/games/escoba-module"
+    },
+    {
       "path": "../../packages/widget-frontdoor"
     }
   ]

@@ -1,6 +1,7 @@
 import { createGameModuleRegistry } from "@hexdev/platform-core";
 import type { GameModuleRegistry } from "@hexdev/platform-core";
 import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
+import { escobaModule, escobaModule2v2 } from "@hexdev/escoba-module";
 
 /**
  * The MINTING role's own game registry — EXTRACTED from `index.ts` for the
@@ -19,9 +20,12 @@ import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
  * are the match role's concern and are deliberately absent — the registry
  * factory accepts either shape.
  *
- * Behaviour-preserving on extraction: the same two modules, in the same
- * order, that `index.ts` registered inline.
+ * Escoba's two entries were MISSING here while `config.ts`'s dev tenant was
+ * already entitled to both ids, so `/embed` served a catalog without them:
+ * `buildCatalog` drops an entitled id with no module and never throws. That
+ * is what `registry.test.ts` now fences, on the invariant rather than on
+ * these two lines — see its own docstring.
  */
 export function buildMintGameRegistry(): GameModuleRegistry {
-  return createGameModuleRegistry([trucoModule, trucoModule2v2]);
+  return createGameModuleRegistry([trucoModule, trucoModule2v2, escobaModule, escobaModule2v2]);
 }
