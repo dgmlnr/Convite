@@ -1,9 +1,8 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { createGameModuleRegistry, createRateLimiter, createRedisRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
+import { createRateLimiter, createRedisRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
 import { connectRedis } from "@hexdev/platform-core/node";
 import type { RateLimiter } from "@hexdev/platform-core";
-import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import {
   handleEmbedRequest,
   handleSessionRenewRequest,
@@ -15,6 +14,7 @@ import {
   type EmbedBootstrap,
 } from "@hexdev/widget-frontdoor";
 import { loadMintConfig } from "./config.js";
+import { buildMintGameRegistry } from "./registry.js";
 import { prefersHtml, resolveRoute } from "./routing.js";
 
 /**
@@ -64,12 +64,9 @@ const embedIpLimiter: RateLimiter =
 const embedKeyLimiter: RateLimiter =
   redis !== undefined ? createRedisRateLimiter({ redis, ...config.embedKeyRateLimit, keyPrefix: "rl:embed-key" }) : createRateLimiter(config.embedKeyRateLimit);
 
-// Registered as BARE modules: this role reads only `metadata` and
-// `configOptions`, to build the tenant-scoped catalog `/embed` returns. The
-// bot-driving collaborators (`requestSystemAction`, `isNonBlockingAction`)
-// are the match role's concern and are deliberately absent — the registry
-// factory accepts either shape.
-const registry = createGameModuleRegistry([trucoModule, trucoModule2v2]);
+// The registrations themselves live in `registry.ts` — see that function's
+// own docstring for why they had to leave this file to be testable at all.
+const registry = buildMintGameRegistry();
 
 // `apps/mint-server/dist/index.js` -> the same targets the match role
 // resolves, at the same relative depth because both are `apps/<name>/dist`.
