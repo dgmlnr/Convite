@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildTableStylesheet } from "@hexdev/truco-ui";
+import { buildMatchStylesheet } from "@hexdev/escoba-ui";
 import { buildChromeStylesheet } from "./chrome-styles.js";
 
 /**
@@ -92,6 +93,47 @@ const EXPECTED_HX_TOKEN_NAMES = [
   "--hx-felt-outline",
 ] as const;
 
+/**
+ * THE THIRD COPY, and it is deliberately a SUBSET — the only part of this
+ * suite where the three declared sets are not meant to be identical.
+ *
+ * `escoba-ui`'s `match-styles.ts` paints a live escoba match's own surface (a
+ * second L1 game package, so it may no more reach into the app shell than
+ * `truco-ui` can) and reads exactly these values. It declares those and no
+ * others on purpose: a copy of the whole layer, fifty tokens this package
+ * never reads, would be a liability THIS guard would then have to maintain
+ * forever.
+ *
+ * The first five are the CLOTH's. The eight after them are the platform's
+ * shared VOCABULARY, and they were added the day escoba's table started
+ * speaking it: the turn ring's gold, the ink that reads on a gold chip, the
+ * two elevation steps and the relief that lift a panel off the felt, and the
+ * label type. Each has a named consumer in `escoba-ui` — dropping one
+ * silently unpaints part of the table, exactly as dropping a cloth token
+ * unpaints the felt.
+ *
+ * So the contract for escoba is two-sided rather than one: it must declare
+ * every name below (dropping one silently unpaints part of the felt), and
+ * every `--hx-*` it declares must be one of the shared names at the shared
+ * value (inventing a private one, or drifting a green by a shade, is exactly
+ * how two surfaces end up almost matching).
+ */
+const ESCOBA_HX_TOKEN_NAMES = [
+  "--hx-cloth-lit",
+  "--hx-cloth",
+  "--hx-cloth-deep",
+  "--hx-rim",
+  "--hx-felt-text",
+  "--hx-gold",
+  "--hx-gold-edge",
+  "--hx-ink",
+  "--hx-elev-1",
+  "--hx-elev-2",
+  "--hx-relief",
+  "--hx-text-meta",
+  "--hx-tracking-label",
+] as const;
+
 function extractDeclarationBlock(css: string, selectorPattern: RegExp): string {
   return css.match(selectorPattern)?.[1] ?? "";
 }
@@ -112,6 +154,10 @@ function tableRootTokens(): Record<string, string> {
 
 function chromeSurfaceTokens(): Record<string, string> {
   return extractHxTokens(extractDeclarationBlock(buildChromeStylesheet(), /\.convite-chrome\s*\{([^}]*)\}/));
+}
+
+function escobaFeltTokens(): Record<string, string> {
+  return extractHxTokens(extractDeclarationBlock(buildMatchStylesheet(), /\.hexdev-escoba-match\s*\{([^}]*)\}/));
 }
 
 describe("design-token-parity (VDS-1: the --hx-* token layer is identical in both stylesheets)", () => {
@@ -137,6 +183,26 @@ describe("design-token-parity (VDS-1: the --hx-* token layer is identical in bot
 
     for (const name of EXPECTED_HX_TOKEN_NAMES) {
       expect(chromeTokens[name], `${name} drifted between table-styles.ts and chrome-styles.ts`).toBe(rootTokens[name]);
+    }
+  });
+
+  it("declares every felt token escoba-ui's match-styles.ts is supposed to carry", () => {
+    const escobaTokens = escobaFeltTokens();
+
+    for (const name of ESCOBA_HX_TOKEN_NAMES) {
+      expect(escobaTokens[name], `escoba-ui match-styles.ts .hexdev-escoba-match is missing ${name}`).toBeDefined();
+    }
+  });
+
+  it("gives every token escoba-ui declares the value the other two stylesheets already agree on", () => {
+    const rootTokens = tableRootTokens();
+    const escobaTokens = escobaFeltTokens();
+
+    // Every token it DECLARES, not only the expected list: a private --hx-*
+    // invented here would be a fourth vocabulary nothing else knows about.
+    for (const [name, value] of Object.entries(escobaTokens)) {
+      expect(rootTokens[name], `escoba-ui match-styles.ts declares ${name}, which is not part of the shared --hx-* layer`).toBeDefined();
+      expect(value, `${name} drifted between escoba-ui's match-styles.ts and the other two stylesheets`).toBe(rootTokens[name]);
     }
   });
 });

@@ -24,8 +24,28 @@ function teamLabel(teamId: TeamId, selfTeamId: TeamId): string {
  * (WCAG 1.1.1/1.4.1): readable by assistive tech and never conveyed by
  * position or colour alone. Reads straight off `PlayerView.teams` — the
  * engine already keeps that current, so this never re-derives a score.
+ *
+ * `escobas` is `HandView.escobas` — THIS hand's escobas, per team (slice R3).
+ * Optional, and omitted between hands (`PlayerView.hand` is `null` then):
+ * a "0" beside a score while the closing panel below still reads "Escobas
+ * Nosotros: 1" would be two different true statements that look like a
+ * contradiction. During the hand it is the only place an escoba is visible at
+ * all — `score` does not move until the hand closes, so the most exciting
+ * thing in this game used to leave no trace on screen until it was over.
+ *
+ * BESIDE THE SCORE, NEVER UNDER IT. The escobas count first shipped as a
+ * third line in this column, and "Escobas: 0" — the value it holds for most
+ * of most hands — bought a whole row of the screen to say nothing had
+ * happened yet. Sharing one row with the score costs no line when the count
+ * is zero and, just as importantly, makes the first escoba of a hand change
+ * a digit instead of growing the scoreboard and pushing the cards down.
  */
-export function renderEscobaScoreboard(container: HTMLElement, teams: readonly TeamScore[], selfTeamId: TeamId): void {
+export function renderEscobaScoreboard(
+  container: HTMLElement,
+  teams: readonly TeamScore[],
+  selfTeamId: TeamId,
+  escobas?: Readonly<Record<TeamId, number>>,
+): void {
   container.replaceChildren();
   container.className = "hexdev-escoba-scoreboard";
 
@@ -39,11 +59,52 @@ export function renderEscobaScoreboard(container: HTMLElement, teams: readonly T
     label.textContent = teamLabel(team.id, selfTeamId);
     group.appendChild(label);
 
+    // The one row the two numbers share. It exists even when there are no
+    // escobas to put in it, so the row's own height is the same during a hand
+    // and between hands and nothing below it ever moves.
+    const tally = document.createElement("span");
+    tally.className = "hexdev-escoba-scoreboard-tally";
+    group.appendChild(tally);
+
     const score = document.createElement("span");
     score.className = "hexdev-escoba-scoreboard-score";
     score.dataset.score = String(team.score);
     score.textContent = `${String(team.score)} / ${String(POINTS_TO_WIN)}`;
-    group.appendChild(score);
+    tally.appendChild(score);
+
+    if (escobas !== undefined) {
+      const made = escobas[team.id] ?? 0;
+      const line = document.createElement("span");
+      line.className = "hexdev-escoba-scoreboard-escobas";
+      line.dataset.escobas = String(made);
+
+      // ART. 14.1, IN THE UI'S OWN HAND: "cada escoba se marcará colocando
+      // una carta boca arriba en el momento de recoger la baza". At a real
+      // table an escoba is not written down — it is a card turned FACE UP in
+      // the pile, and you count them by looking. That is escoba's own
+      // notation, the way matchstick squares are truco's, so this draws the
+      // marks rather than the sentence.
+      //
+      // The sentence stays anyway, clipped to nothing: a row of marks is a
+      // picture of a number, and a picture-only count reads as nothing at all
+      // (WCAG 1.1.1) — the same bargain `status.ts` makes for the seat counts.
+      const spoken = document.createElement("span");
+      spoken.className = "hexdev-escoba-escoba-count";
+      spoken.textContent = `Escobas: ${String(made)}`;
+      line.appendChild(spoken);
+
+      for (let index = 0; index < made; index += 1) {
+        const mark = document.createElement("span");
+        mark.className = "hexdev-escoba-escoba-mark";
+        mark.dataset.escobaMark = String(index);
+        // Decorative: `spoken` above already says how many, and a mark that
+        // announced itself would say it a second time, once per escoba.
+        mark.setAttribute("aria-hidden", "true");
+        line.appendChild(mark);
+      }
+
+      tally.appendChild(line);
+    }
 
     container.appendChild(group);
   }

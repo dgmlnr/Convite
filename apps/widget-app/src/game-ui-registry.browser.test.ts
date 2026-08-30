@@ -11,6 +11,8 @@ afterEach(() => {
   container.remove();
   document.getElementById("hexdev-truco-matchstick-defs")?.remove();
   document.getElementById("hexdev-truco-table-styles")?.remove();
+  document.getElementById("hexdev-escoba-match-styles")?.remove();
+  document.getElementById("hexdev-escoba-status-styles")?.remove();
 });
 
 const SELF = "player-a" as PlayerId;
@@ -151,6 +153,68 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
     expect(container.querySelector('.hexdev-escoba-table [data-card="5-oro"]'), "the table renders the payload's own view").not.toBeNull();
     const pile = container.querySelector<HTMLElement>('.hexdev-escoba-pile[data-team="team-a"]');
     expect(pile?.dataset.count, "the piles render the payload's own view too, not a placeholder").toBe("1");
+  });
+
+  /**
+   * The threading fence for all four facts. `createEscobaRenderer` is the
+   * ONLY place these view fields become elements, and this repo has already
+   * shipped a component wired into a signature that no caller ever fed
+   * (truco's consult badge, slice 4a): every unit test kept passing because
+   * they all called the component directly. So this asserts the REGISTRY
+   * path.
+   */
+  it("threads the turn, the stock, every other seat's count and this hand's escobas out of the same payload", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const rival = "player-b" as EscobaPlayerId;
+    const view: EscobaPlayerView = {
+      ...escobaView,
+      others: [{ playerId: rival, teamId: ESCOBA_TEAM_B, seat: 1, cardsRemaining: 2 }],
+      hand: { ...escobaView.hand!, turn: rival, escobas: { [ESCOBA_TEAM_A]: 1, [ESCOBA_TEAM_B]: 0 } },
+    };
+    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer();
+
+    render(container, { view, legalActions: [] }, () => {});
+
+    expect(container.querySelector(".hexdev-escoba-turn")?.textContent).toBe("Turno del rival");
+    expect(container.querySelector(".hexdev-escoba-turn")?.getAttribute("aria-live"), "the turn has to be announced, not only painted").toBe("polite");
+    expect(container.querySelector(".hexdev-escoba-stock")?.textContent).toBe("Mazo: 20 cartas");
+    expect(container.querySelector('.hexdev-escoba-seat[data-seat="1"]')?.getAttribute("aria-label")).toBe("El rival: 2 cartas");
+    expect(container.querySelector<HTMLElement>('[data-team="team-a"] .hexdev-escoba-scoreboard-escobas')?.dataset.escobas).toBe("1");
+  });
+
+  /**
+   * THE FELT, and this is the assertion whose absence was the whole defect.
+   *
+   * The renderer assigns the container's className outright, so the match
+   * surface never inherits the shell's `.convite-chrome` ground — truco
+   * survives that because it paints its own cloth, and escoba painted
+   * nothing, so a live escoba match rendered on the widget document's bare
+   * white while truco's rendered on green. Switching games inside one widget
+   * changed the entire background, and every existing assertion here passed
+   * throughout: it was only ever visible by looking at a rendered screen.
+   *
+   * Rendered through the REGISTRY on purpose — `escoba-ui`'s own stylesheet
+   * can be perfectly correct while nothing injects it. What broke was the
+   * wiring, so the wiring is what this measures.
+   */
+  it("paints the match surface with the felt, rather than leaving it on the document's bare background", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("escoba-de-15" as GameId)!.createRenderer();
+
+    render(container, { view: escobaView, legalActions: [] }, () => {});
+
+    const painted = getComputedStyle(container);
+    // --hx-cloth-lit, the same green the chrome and truco's own felt resolve
+    // to — a THIRD, nearly-matching green would be the failure this suite's
+    // sibling (design-token-parity.test.ts) exists to prevent.
+    expect(painted.backgroundColor, "the flat fallback under the gradient layers").toBe("rgb(29, 106, 77)");
+    expect(painted.backgroundImage, "a table under a light, never a flat fill").toContain("radial-gradient");
+    // Light on the cloth. Every child inherits this; none of them declares a
+    // colour of its own, so before the felt they were all UA-default black.
+    expect(painted.color).toBe("rgb(242, 242, 242)");
   });
 
   /** Unit P — the real wiring boundary `enterMatch` now exercises: mark the

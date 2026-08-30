@@ -49,9 +49,14 @@ export function renderGameList(container: HTMLElement, families: readonly GameFa
   header.className = "hexdev-chrome-header";
   content.appendChild(header);
 
+  // THIS SCREEN'S OWN QUESTION, never screen two's. What is being chosen here
+  // is WHICH GAME; how to play it is the next screen's job and has its own
+  // string (`STRINGS.selectionTitle`, i18n.ts). This heading read that one
+  // for a while, so the front door asked "Elegí cómo jugar" over a row of
+  // games it was not offering a way to play yet.
   const title = document.createElement("h1");
   title.className = "hexdev-chrome-title";
-  title.textContent = STRINGS.selectionTitle;
+  title.textContent = STRINGS.gameListTitle;
   header.appendChild(title);
 
   const tagline = document.createElement("p");
