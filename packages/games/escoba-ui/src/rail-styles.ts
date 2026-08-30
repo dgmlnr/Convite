@@ -78,7 +78,27 @@ export function buildRailStylesheet(): string {
 
 .hexdev-escoba-side-rail > * { pointer-events: auto; }
 .hexdev-escoba-rail-body {
-  align-self: center;
+  /* THE DRAWER HANGS FROM THE BOTTOM EDGE, and it is the turn badge that
+     decides it. Centred, at 2v2 on a 375px phone the panel opened at y=14.55
+     in a 304px felt and cut "TU TURNO" in half — rendered, and read as a pill
+     someone had sliced. This file's own rule is that whose turn it is never
+     enters the rail precisely so it stays answerable without tapping
+     anything, and a drawer that covers it is that rule failing in the one
+     state it was written for.
+
+     IT CANNOT UNCOVER THE TABLE, and pretending otherwise would be the wrong
+     fix: at 2v2 the panel is 275px of a 304px felt, so no position exists
+     that clears the cards. What an edge CHOOSES is which bands it spends its
+     overhang on, and the bottom is the cheap end of this felt — the piles are
+     a record of what was already taken and the sum is a total you cannot add
+     to while a drawer is over the cards, while the status band above is the
+     one thing you opened the drawer without meaning to lose. At 1v1, where
+     the panel is far shorter than the felt, the same edge hands the whole
+     face-up table back as well.
+
+     The handle keeps its own centring (its rule below): it is the way back
+     out, and it should be where a thumb already is. */
+  align-self: flex-end;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -222,9 +242,9 @@ export function buildRailStylesheet(): string {
      used to say), so a column shorter than the panel scrolls it exactly as the
      phone drawer does rather than growing the table.
 
-     align-self back to stretch, undoing the drawer's centring: as a ROW that
-     centring works down the edge, as a column it works ACROSS and would shrink
-     the body to its content width. Same property, opposite axis. */
+     align-self back to stretch, undoing the drawer's bottom anchor: as a ROW
+     that anchor works down the edge, as a column it works ACROSS and would
+     shrink the body to its content width. Same property, opposite axis. */
   .hexdev-escoba-rail-body { width: auto; flex: 0 1 auto; align-self: stretch; min-height: 0; border-radius: var(--gx-radius, 10px); }
 }
 /* AFTER the 640 block, never before: same specificity, so source order is the
