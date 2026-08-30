@@ -34,6 +34,16 @@ export function buildRailStylesheet(): string {
   font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 
+/* THE FELT'S PLACE IN THE LAYOUT is this file's; the felt's other half -- it
+   is also the container-query root every card on it is sized against -- is
+   declared in table-styles.ts, beside the queries that ask it. Neither file
+   sets a property the other does.
+
+   flex-grow IS WHAT SIZES IT, and that stopped being a formality the day the
+   container declaration landed: inline-size containment zeroes the felt's own
+   intrinsic width, so flex-basis auto now resolves to zero and the growth is
+   the only thing left handing it the room the rail did not take. It arrives at
+   the same width it always did, by a different route. */
 .hexdev-escoba-felt {
   /* min-width: 0 is load-bearing: min-width auto refuses to shrink below the
      content, here a card row that would rather overflow than wrap. */
@@ -135,13 +145,41 @@ export function buildRailStylesheet(): string {
   padding: 0;
 }
 
-.hexdev-escoba-side-rail .hexdev-escoba-scoreboard-team { align-items: stretch; }
-.hexdev-escoba-side-rail .hexdev-escoba-stock { text-align: center; }
+/* EXCEPT THE CHIPS, WHICH ARE THE SIZE OF WHAT THEY SAY. A seat chip is a
+   bordered tile, so stretching it to the column's width and starting its
+   content at the leading edge (see the rule below) left half a tile of ruled
+   emptiness after every rival's cards -- rendered, and it read as three boxes
+   somebody forgot to fill. A score has no border and loses nothing by
+   stretching; a chip does. Ragged on the trailing edge is what a chip IS. */
+.hexdev-escoba-side-rail .hexdev-escoba-seats { align-items: flex-start; }
 
-/* Only the seat chips get pushed apart, so label and count line up across the
-   column. Score and escobas stay adjacent: 220px of drawer between them made
-   two related numbers look unrelated. */
-.hexdev-escoba-side-rail .hexdev-escoba-seat { justify-content: space-between; }
+.hexdev-escoba-side-rail .hexdev-escoba-scoreboard-team { align-items: stretch; }
+
+/* ONE EDGE FOR THE WHOLE COLUMN, and it is the leading one. This panel used to
+   mix three alignments in three consecutive rows -- the scores flush left, the
+   stock centred, the seat chips pushed to both edges by space-between -- so a
+   column 168px wide had nothing you could read straight down. Every row now
+   starts on the same line and ends where its content ends, which is what a
+   tanteador written by hand looks like.
+
+   THE STOCK IS WHY IT IS THIS TREATMENT RATHER THAN THE OPPOSITE. Label-left /
+   figure-right is the other coherent answer and it is arguably the better one,
+   but "Mazo: 12 cartas" is ONE text node (status.ts writes it whole, and
+   "Mazo vacio" has no figure to push anywhere at all), so a split-edge column
+   would have had to leave that row behind or invent a second node purely to
+   satisfy the alignment. A treatment every row can actually keep beats a nicer
+   one that two rows out of three keep.
+
+   Score and escobas stay adjacent inside their own row: 220px of drawer
+   between them made two related numbers look unrelated.
+
+   BOTH DECLARATIONS ARE THE INITIAL VALUES, WRITTEN DOWN. They replace a
+   text-align: center and a justify-content: space-between that really were
+   doing something, and the column's treatment is now the thing a reader has
+   to be able to find -- stated here rather than left as the absence of two
+   rules somebody has to know were deleted. */
+.hexdev-escoba-side-rail .hexdev-escoba-stock,
+.hexdev-escoba-side-rail .hexdev-escoba-seat { text-align: start; justify-content: flex-start; }
 
 /* FROM 640 UP IT IS A COLUMN: in flow, always open, handle gone -- the same
    drawer, unfolded. The width lives on the rail and not on anything inside it,
@@ -162,10 +200,32 @@ export function buildRailStylesheet(): string {
   /* A drawer shut on a phone must not stay shut where there is no drawer. */
   .hexdev-escoba-side-rail[data-open="false"] > .hexdev-escoba-rail-body { display: flex; }
 
-  /* align-self back to stretch, undoing the drawer's centring: as a ROW that
+  /* THE PANEL IS THE SIZE OF WHAT IT HOLDS, NOT THE SIZE OF THE COLUMN, and
+     that is the whole of this correction. flex: 1 1 auto grew the body down
+     the full height of the felt while its content -- two scores, a stock line
+     and between one and three seat chips -- occupied the top third of it, so
+     a 1v1 tablet drew roughly 62% of the column as an empty dark slab and the
+     rail read as furniture rather than as a thing with something in it.
+
+     THE TECHNIQUE IS TRUCO'S, THE ANSWER IS THE OPPOSITE ONE, because the
+     content is. Truco's rail earns its full column honestly: it hands its two
+     children proportional shares (flex: 3 1 0 to the call log, 2 1 0 to the
+     tantos) so a run that grows without limit takes the room and a scoreboard
+     centres in the rest. The principle underneath is that the box's height
+     comes from what the design needs. Escoba's rail holds nothing that grows
+     -- there are two teams and at most three rivals, forever -- so applying
+     the same principle here gives back the room instead of dividing it, and
+     what is left of the column is felt rather than panel.
+
+     STILL YIELDS BEFORE IT PUSHES: flex-shrink stays at 1 and the base rule's
+     max-height/overflow stay in force (max-height: none is what this block
+     used to say), so a column shorter than the panel scrolls it exactly as the
+     phone drawer does rather than growing the table.
+
+     align-self back to stretch, undoing the drawer's centring: as a ROW that
      centring works down the edge, as a column it works ACROSS and would shrink
      the body to its content width. Same property, opposite axis. */
-  .hexdev-escoba-rail-body { width: auto; flex: 1 1 auto; align-self: stretch; max-height: none; min-height: 0; border-radius: var(--gx-radius, 10px); }
+  .hexdev-escoba-rail-body { width: auto; flex: 0 1 auto; align-self: stretch; min-height: 0; border-radius: var(--gx-radius, 10px); }
 }
 /* AFTER the 640 block, never before: same specificity, so source order is the
    only thing letting this win -- the exact correction truco's table-styles.ts
