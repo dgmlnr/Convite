@@ -460,6 +460,69 @@ export function buildChromeStylesheet(): string {
   }
 }
 
+/* A SHELF: a label, and the band of games under it. Screen one only, and only
+ * when there is more than one shelf to tell apart -- one shelf renders no
+ * wrapper at all (game-list.ts).
+ *
+ * IT WRAPS THE BAND, IT DOES NOT REPLACE IT. .hexdev-chrome-games above is
+ * edited by zero lines by this whole feature, and that is deliberate: at
+ * >=720px it is an auto-fit grid of 22rem tracks, so a heading placed INSIDE
+ * it becomes a grid ITEM standing beside a card instead of a label over the
+ * row. The heading is a sibling of the band, and the wrapper is what makes
+ * them share an edge.
+ *
+ * The 46rem cap is the header's own (see .hexdev-chrome-header) and the
+ * band's own, restated here so the LABEL lands on the same left edge as the
+ * cards it names. The nested cap on the band inside is then a no-op, which is
+ * the point: neither element had to learn about the other. */
+.hexdev-chrome-section {
+  width: min(46rem, 100%);
+  margin-inline: auto;
+}
+/* THE SHELVES HANG OFF ONE EDGE, and this was found by looking at the render
+   rather than by any assertion. .hexdev-chrome-games is shrink-to-fit -- an
+   auto cross-axis margin on a flex item turns stretch off -- so a shelf of
+   two games came out 728px wide and a shelf of one came out 352px, each
+   centred on its own width. Every measurement passed, because each label DID
+   sit over its own cards; the two labels simply landed 138px apart and the
+   second shelf read as an accidental indent. A definite width is what makes
+   them share an edge. The band nested inside is then an ordinary block and
+   fills it, so no rule of its own had to change. */
+@container hexdev-chrome (min-width: 720px) {
+  /* AND THE CARDS START WHERE THEIR LABEL STARTS. The band centres its tracks
+     (see its own rule above) because a bandless screen has a centred title
+     over it and nothing else to line up with. A shelf label is exactly that
+     something else: with one anchored at the row's left edge, a lone card
+     centred 136px away from its own name reads as a gap rather than as a
+     group. Scoped to a shelf, so the unheaded one-shelf screen keeps
+     centring, untouched. */
+  .hexdev-chrome-section > .hexdev-chrome-games {
+    justify-content: start;
+  }
+}
+/* THE GROUPING IS IN THE SPACING, or it is only in the type -- the same
+   argument the header/games gap already makes one tier up. The content column
+   is a flex column with a --hx-space-lg gap of its own, so this ADDS to it:
+   shelves end up a clear step further apart than the cards inside one. */
+.hexdev-chrome-section + .hexdev-chrome-section {
+  margin-top: var(--hx-space-lg);
+}
+/* START-ALIGNED, NOT CENTRED like .hexdev-chrome-title. Centring everything
+   turns a lobby into a poster; a shelf label belongs at the edge its own
+   cards begin at, which is what makes it read as a label rather than as a
+   second title. One step below the game names under it (--hx-text-title vs
+   --hx-text-heading): a shelf names a group of games, it is not one. */
+.hexdev-chrome-section-title {
+  margin: 0;
+  font-family: var(--gx-font-family, var(--hx-font-display));
+  font-size: var(--hx-text-title);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: start;
+  color: var(--hx-felt-ink-soft);
+  text-shadow: var(--hx-ink-shadow);
+}
+
 @container hexdev-chrome (min-width: 1024px) {
   /* THE ONE THING THIS TIER CHANGES: more air around the whole screen when
    * there is room for it.
@@ -724,7 +787,21 @@ opacity: 0.55;
  * the modality lines under it, so a card announced itself in the same voice it
  * used for its options — every line on the card weighed the same and the eye
  * had nowhere to land first. */
-.hexdev-game-card h2 {
+/* TWO SELECTORS, BECAUSE THE NAME'S LEVEL MOVES AND ITS VOICE MUST NOT. Under
+ * a shelf heading, screen one steps the card name from <h2> to <h3> so the
+ * outline reads h1 -> h2 -> h3 (game-list.ts). Styled by TAG alone, that step
+ * silently dropped every declaration below — family, size, weight, tracking,
+ * colour, ink shadow — and left the browser's own bold 1.17em. Nothing typed,
+ * linted or structurally asserted would have said a word; the card simply
+ * came out in a different voice.
+ *
+ * The second selector is SCOPED to .hexdev-chrome-section rather than being a
+ * bare ".hexdev-game-card h3", and that scope is load-bearing: screen two's
+ * .hexdev-modality-title is ALSO an <h3> inside a .hexdev-game-card, styled
+ * by class a few hundred lines down, and a bare tag selector here would
+ * repaint it. Shelves exist on screen one only. */
+.hexdev-game-card h2,
+.hexdev-chrome-section .hexdev-game-card h3 {
   margin: 0;
   font-family: var(--gx-font-family, var(--hx-font-display));
   font-size: var(--hx-text-heading);
