@@ -40,10 +40,16 @@ export const MATCH_STYLE_ID = "hexdev-escoba-match-styles";
  * declaration, which is why the reasoning is up here and the rule itself
  * carries no token name in a comment.
  *
- * ONLY WHAT THE FELT READS. The cloth trio, the recessed rim and the felt's
- * text colour — five values, not the whole `--hx-*` layer. A copy of fifty
- * tokens this package never reads would be a liability the parity guard
- * would then have to maintain forever.
+ * ONLY WHAT THE SURFACE READS, and that is still the rule — not the whole
+ * `--hx-*` layer. A copy of fifty tokens this package never reads would be a
+ * liability the parity guard would then have to maintain forever. It began as
+ * the five the cloth alone needs; the eight below joined them when this table
+ * started speaking the platform's SHARED VOCABULARY — the turn ring's gold,
+ * the ink that reads on it, the two elevation steps and the relief that make
+ * a panel sit above the felt, and the label type. Every one of them has a
+ * named consumer in this package (status-styles.ts, scoreboard-styles.ts,
+ * rail-styles.ts, table-styles.ts), and every one of them is the SAME value
+ * `truco-ui` uses, which is the entire point: mirrored, never invented.
  *
  * NO TENANT TINT, unlike the chrome's otherwise identical gradient. Design
  * §10 puts the game table deliberately outside the tenant vocabulary — the
@@ -58,6 +64,14 @@ export function buildMatchStylesheet(): string {
   --hx-cloth-deep: #0d3325;
   --hx-rim: inset 0 0 0 1px rgba(255,255,255,.05), inset 0 2px 12px rgba(0,0,0,.35);
   --hx-felt-text: #f2f2f2;
+  --hx-gold: #e8c877;
+  --hx-gold-edge: #b8923f;
+  --hx-ink: #1a1a1a;
+  --hx-elev-1: 0 1px 2px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.22);
+  --hx-elev-2: 0 2px 4px rgba(0,0,0,.30), 0 6px 14px rgba(0,0,0,.26);
+  --hx-relief: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -1px 0 rgba(0,0,0,.25);
+  --hx-text-meta: 0.75rem;
+  --hx-tracking-label: 0.08em;
   box-sizing: border-box;
   /* Fills the widget when the host gives it a height, hugs its content when
    * it does not — the scenes mount an auto-height box on purpose, because
