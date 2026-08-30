@@ -17,7 +17,6 @@
 // the tenant-themeable surface, per the "hybrid theming by zone" decision
 // (obs 2955).
 import { cardId, type Card, type Rank, type Suit } from "./card.js";
-import { CARD_HEIGHT, CARD_WIDTH } from "./geometry.js";
 
 // `../assets/fronts/` from either `src/front-image.ts` (dev/test, via
 // Vitest's Node resolution of import.meta.url) or the compiled
@@ -113,16 +112,46 @@ export function getCardFrontUrl(card: Card): URL {
   return new URL(/* @vite-ignore */ `../assets/fronts/${cardId(card)}.webp`, import.meta.url);
 }
 
+/**
+ * The front artwork's OWN pixel dimensions — every one of the 40 `.webp`
+ * fronts is exactly this, with no per-card variation.
+ *
+ * Deliberately NOT `CARD_WIDTH`/`CARD_HEIGHT` (geometry.ts, 220x336). Those
+ * are the card BACK's SVG viewBox, and they correctly describe the real
+ * baraja española (~57x87mm, ratio ~0.655). The front is a raster of
+ * someone else's vector and lands on ratio ~0.633 instead. Declaring the
+ * back's ratio on the front's `<img>` made the browser reserve a box the
+ * artwork does not fill, so any consumer that lets height follow the
+ * intrinsic ratio (`height: auto`) reserved one box before the bytes
+ * arrived and a different one after decode.
+ *
+ * The uniformity is STRUCTURAL, not luck: `tools/process-svg-deck.mjs`
+ * rasterizes every card from vector at one hardcoded size. The artwork this
+ * docblock replaced was scanned, and scans really did vary per card
+ * (321-329px wide at a fixed 520px height, each trimmed independently), so
+ * a single declared box was the only thing that could align a hand back
+ * then. That premise died with the scans — but the comment describing it
+ * outlived them, and a stale rationale is why nobody re-derived the number
+ * when the artwork underneath it changed shape.
+ *
+ * These are asserted against the real files on disk, all 40, by
+ * front-image.test.ts. If the artwork is ever replaced again, that fence
+ * fails rather than this comment quietly going stale a second time; and if
+ * a future deck genuinely varies per card, the fence is where you will find
+ * out, because a single declared box will stop being derivable at all.
+ */
+export const CARD_FRONT_WIDTH = 329;
+export const CARD_FRONT_HEIGHT = 520;
+
 export interface CardFrontImage {
   /** Ready to assign to an <img src> or a CSS background-image. */
   readonly src: string;
   /**
-   * Logical display box, matching the real baraja española aspect ratio
-   * (~0.655) — NOT each WebP's native pixel size. Native width varies
-   * slightly per scan (321-329px at a fixed 520px height, since each source
-   * scan was trimmed independently before resizing). Render with
-   * `object-fit: contain` inside a box of this ratio, rather than relying on
-   * each image's own intrinsic size, so every card in a hand aligns.
+   * The artwork's real pixel box (`CARD_FRONT_WIDTH`x`CARD_FRONT_HEIGHT`),
+   * so the box a browser reserves from these attributes is the same box the
+   * decoded image goes on to paint — no reflow on load. Identical for all
+   * 40 cards, so a hand still aligns without any consumer having to pin a
+   * ratio of its own.
    */
   readonly width: number;
   readonly height: number;
@@ -133,8 +162,8 @@ export interface CardFrontImage {
 export function getCardArt(card: Card): CardFrontImage {
   return {
     src: getCardFrontUrl(card).href,
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
+    width: CARD_FRONT_WIDTH,
+    height: CARD_FRONT_HEIGHT,
     alt: cardLabel(card),
   };
 }
