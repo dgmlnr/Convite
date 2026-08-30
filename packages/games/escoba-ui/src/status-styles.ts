@@ -108,9 +108,19 @@ export function buildStatusStylesheet(): string {
   ${cssDeclarations(DECK_THEME_DEFAULTS)}
 }
 
+/* CENTRED, NOT ON A BASELINE, and the measurement is what settled it. A chip
+   is exactly as tall as the cards in it — 39.70px of back plus 4px of padding
+   at the rail's 26px tier — because a back cannot go under about 26px wide
+   without its gold filet (a 4px stroke on a 220 viewBox) scaling to a smudge.
+   So there is no height in here to give back; the label is the only thing that
+   can move. On a baseline it sat pinned to the chip's top edge with two thirds
+   of the tile empty beneath it, and three of those read as three boxes nobody
+   finished filling. Centred, the words sit at the optical middle of the cards
+   they are naming and the tile reads as one object at the size it has to be.
+   A chip whose seat holds no cards is still just its label, and is short. */
 .hexdev-escoba-seat {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   padding: 2px 8px;
   /* A TILE, NOT A PILL, since the day the chip started holding real cards: a
@@ -158,9 +168,6 @@ export function buildStatusStylesheet(): string {
 .hexdev-escoba-seat-backs {
   display: flex;
   flex: 0 0 auto;
-  /* Centred rather than on the chip's baseline: the backs carry no text, so a
-     baseline would be their own bottom edge and the chip would grow. */
-  align-self: center;
 }
 
 .hexdev-escoba-card-back {
