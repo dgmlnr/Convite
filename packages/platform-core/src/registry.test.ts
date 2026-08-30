@@ -111,6 +111,61 @@ describe("createGameModuleRegistry", () => {
     });
   });
 
+  /**
+   * A section key lives on ENTRIES; a section groups FAMILIES. Nothing in the
+   * type system stops two ways of playing one game from declaring different
+   * shelves — `GameFamilyId` and `CatalogSectionId` are both `string`, and TS
+   * cannot express "every element sharing field A shares field B" across a
+   * heterogeneous array. So it is a composition-time throw, exactly like the
+   * `seatCount` guard above and for the same reason: fail loud where the
+   * modules are assembled, naming them, rather than at whatever screen first
+   * notices the game appearing twice.
+   *
+   * NOT LEFT TO `buildCatalog`, which is where the sections reach a client.
+   * That check is tenant-scoped, so a tenant entitled to only ONE of the two
+   * straddling entries never sees the contradiction: green on the dev tenant,
+   * broken on a customer's. Two build-authored facts contradicting each other
+   * inside one binary is not the entitlement gap `/embed` deliberately
+   * tolerates — no external party's data can produce it, and unlike a missing
+   * module it has no correct degraded answer. The game appears twice, or one
+   * declaration is discarded; every resolution is a lie.
+   */
+  describe("rejects a family straddling two sections — at registration, not at whatever screen notices it", () => {
+    function grouped(id: string, gameFamily: string, section?: string): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
+      const module = fixtureModule(id);
+      return { ...module, metadata: { ...module.metadata, gameFamily, ...(section === undefined ? {} : { section }) } };
+    }
+
+    it("throws naming the family, both modules and both sections, so the operator needs no debugger", () => {
+      const compose = (): unknown => createGameModuleRegistry([grouped("a", "x", "cartas"), grouped("b", "x", "fichas")]);
+
+      // Quoted, so `"a"` cannot be satisfied by the letter inside "family".
+      for (const named of ["x", "a", "b", "cartas", "fichas"]) expect(compose, `the message has to name ${named}`).toThrowError(new RegExp(`"${named}"`));
+    });
+
+    /**
+     * THE CASE A WEAKER FENCE MISSES, and the likeliest authoring slip: a
+     * second way of playing a game added without repeating the section. A
+     * fence comparing only DECLARED sections sees one declaration and agrees
+     * with itself. This one compares NORMALIZED ones, so `b` resolves to its
+     * family `"x"`, `"x"` is not `"cartas"`, and the two disagree.
+     */
+    it("throws when only ONE module of a family declares a section, because the other normalizes to its family", () => {
+      const compose = (): unknown => createGameModuleRegistry([grouped("a", "x", "cartas"), grouped("b", "x")]);
+
+      expect(compose).toThrowError(/"cartas"/);
+      expect(compose, "and it names the section `b` was normalized INTO, which is the family itself").toThrowError(/"x"/);
+    });
+
+    it("accepts a family where nobody declares a section — today's four modules, unchanged", () => {
+      expect(() => createGameModuleRegistry([grouped("a", "x"), grouped("b", "x")])).not.toThrow();
+    });
+
+    it("accepts distinct families on distinct shelves, which is the arrangement this whole tier is for", () => {
+      expect(() => createGameModuleRegistry([grouped("truco-argentino", "truco", "cartas"), grouped("mahjong-solo", "mahjong", "fichas")])).not.toThrow();
+    });
+  });
+
   describe("getConsultAsk — paired with a module, mirrors ConsultAdviceProvider's fail-closed shape (design D7)", () => {
     it("returns null for a gameId nothing registered", () => {
       const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
