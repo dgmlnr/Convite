@@ -1,3 +1,4 @@
+import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Card } from "@hexdev/escoba-engine";
 import { buildDeck, cardValue } from "@hexdev/escoba-engine";
@@ -6,9 +7,11 @@ import { ensureTableStyles, TABLE_STYLE_ID } from "./table-styles.js";
 
 let container: HTMLElement;
 
-afterEach(() => {
+afterEach(async () => {
   container.remove();
   document.getElementById(TABLE_STYLE_ID)?.remove();
+  document.documentElement.removeAttribute("data-hexdev-layout");
+  await page.viewport(414, 896); // visual/README.md's own default
 });
 
 /**
@@ -93,5 +96,101 @@ describe("renderEscobaTable (spec: escoba-table-ui, static render)", () => {
     // edge — a fixed-column layout sized for the common 3-8 card case is
     // exactly the failure mode this asserts against.
     expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth + 1);
+  });
+});
+
+/**
+ * A CARD IS THE SHAPE OF A CARD, at every width and in every mode.
+ *
+ * NOTHING IN THIS REPO LOOKED AT PROPORTION. Every geometry fence escoba has
+ * measures where a box IS — inside its container, above the fold, not wrapped
+ * onto a second row — and a squashed card passes all of them. The one thing
+ * that makes an image of a baraja read as a baraja is the only property
+ * nobody was asserting.
+ *
+ * WHY IT WAS WORTH SUSPECTING RATHER THAN MERELY COVERING. `getCardArt`
+ * stamps width="220" height="336" on every img while the WebP behind it is
+ * 329x520 — 0.6548 against 0.6327, 3.5% apart — so the browser lays a card
+ * out at one shape and repaints it at another the moment its bytes decode.
+ * That is also 3.5% the fullscreen height budget spends on a row it has not
+ * measured yet. `table-styles.ts` now declares the art's real ratio on the
+ * img, which is what this asserts.
+ *
+ * THE RATIO IS THE IMG'S, NOT THE CARD BOX'S, and the distinction is load-
+ * bearing: a markable card is a <button> carrying a 2px dashed border, so its
+ * BOX is honestly 4px wider and taller than the art inside it (0.6488 rather
+ * than 0.6327 at the landscape tier — measured, not distortion). The card
+ * being drawn is the img.
+ *
+ * FULLSCREEN IS IN HERE because that is the only mode where a HEIGHT budget
+ * constrains anything, and therefore the only mode where an ancestor could
+ * ever squash an img instead of shrinking it.
+ */
+describe("a card keeps the art's own proportions (spec: escoba-table-ui)", () => {
+  /** The forty fronts in `spanish-deck-ui/assets/fronts` are every one of them
+   * 329x520 — measured, all forty. Not `CARD_WIDTH / CARD_HEIGHT`, which is
+   * the deck's LOGICAL box and the very number this fence exists to catch a
+   * layout for. */
+  const ART_RATIO = 329 / 520;
+
+  const THREE_CARDS: readonly Card[] = [
+    { suit: "oro", rank: 7 },
+    { suit: "copa", rank: 3 },
+    { suit: "espada", rank: 12 },
+  ];
+
+  async function ratios(el: HTMLElement): Promise<readonly number[]> {
+    const images = [...el.querySelectorAll("img")];
+    await Promise.all(images.map((img) => img.decode()));
+    return images.map((img) => {
+      const rect = img.getBoundingClientRect();
+      return rect.width / rect.height;
+    });
+  }
+
+  // One width per tier the sheet actually declares — under 400, the 400-640
+  // band, and past 640 — so a tier that quietly stopped preserving the ratio
+  // has a row of its own to fail in.
+  it.each([360, 500, 828])("inline at %ipx of felt: every card is drawn at the art's ratio", async (width) => {
+    ensureTableStyles(document);
+    const el = freshTable(width);
+
+    renderEscobaTable(el, THREE_CARDS);
+
+    const measured = await ratios(el);
+    expect(measured).toHaveLength(THREE_CARDS.length);
+    for (const ratio of measured) expect(ratio).toBeCloseTo(ART_RATIO, 3);
+  });
+
+  it("fullscreen on a rotated phone, where a height budget is the thing sizing the card", async () => {
+    await page.viewport(844, 390);
+    document.documentElement.setAttribute("data-hexdev-layout", "fullscreen");
+    ensureTableStyles(document);
+    const el = freshTable(676); // the felt's own width beside the 168px rail
+
+    renderEscobaTable(el, THREE_CARDS);
+
+    const measured = await ratios(el);
+    expect(measured).toHaveLength(THREE_CARDS.length);
+    for (const ratio of measured) expect(ratio).toBeCloseTo(ART_RATIO, 3);
+  });
+
+  /**
+   * THE SHIFT ITSELF, and it is the half a ratio assertion cannot see: an img
+   * that only ever gets its shape from a decoded bitmap is the right shape
+   * once the bitmap is there and the WRONG one for every frame before it.
+   * `aspect-ratio` is what makes the two the same, so this reads the computed
+   * value rather than waiting for a load nobody controls the timing of.
+   */
+  it("declares that ratio rather than waiting for the bytes to supply it", () => {
+    ensureTableStyles(document);
+    const el = freshTable(500);
+
+    renderEscobaTable(el, THREE_CARDS);
+
+    const img = el.querySelector("img");
+    expect(img).not.toBeNull();
+    // Chromium serialises the resolved ratio with spaces around the slash.
+    expect(getComputedStyle(img!).aspectRatio.replace(/\s+/gu, "")).toBe("329/520");
   });
 });

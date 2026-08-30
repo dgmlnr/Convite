@@ -73,10 +73,21 @@ export function buildPilesStylesheet(): string {
   margin-left: 0;
 }
 
+/* The art's real 329x520, declared rather than waited for -- table-styles.ts's
+   own img rule carries the argument in full: the width/height ATTRIBUTES
+   spanish-deck-ui stamps are the logical 220x336 box, a ratio 3.5% apart from
+   the file's, so an undeclared card is laid out short and then grows when its
+   bytes land. A pile is forty cards deep by the end of a hand and its band is
+   budgeted to the pixel, so it is the last row that should be measuring one
+   height before decode and another after. Literals here rather than
+   table-styles.ts's --escoba-art-*: a pile card is not a .hexdev-escoba-card
+   and inherits none of its properties. */
 .hexdev-escoba-pile-card img {
   display: block;
   width: 100%;
   height: auto;
+  aspect-ratio: 329 / 520;
+  object-fit: contain;
 }
 
 @container hexdev-escoba-piles (width < 400px) {

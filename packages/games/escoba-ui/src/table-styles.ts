@@ -101,6 +101,14 @@ export function buildTableStylesheet(): string {
    * hand, because the fit model at the bottom of this sheet has to read it too
    * -- the two card rows cost 1 + the scale of a row between them, and a
    * literal restated there could drift from this one. */
+  /* THE ART'S OWN PIXELS, named once and read three times: by the aspect
+   * ratio below, and by the fullscreen row model at the foot of this sheet.
+   * Every one of the forty fronts in spanish-deck-ui/assets/fronts is exactly
+   * 329x520 — measured, all forty, not sampled — and the number was already
+   * hard-coded in the budget, so this only gives the two readers one place to
+   * disagree in instead of two. */
+  --escoba-art-width: 329;
+  --escoba-art-height: 520;
   --escoba-hand-scale: 0.8;
   --escoba-card-scale: 1;
   --escoba-card-tier: 76px;
@@ -117,10 +125,32 @@ export function buildTableStylesheet(): string {
   --escoba-card-scale: var(--escoba-hand-scale);
 }
 
+/* THE BOX IS THE BITMAP'S SHAPE BEFORE THE BITMAP ARRIVES, and that is the
+   whole of this rule. \`getCardArt\` stamps width="220" height="336" on every
+   img — the baraja's LOGICAL box, spanish-deck-ui's own documented contract —
+   while the file behind it is 329x520. Those are different ratios: 0.6548
+   against 0.6327, 3.5% of height per unit of width. The attributes are what
+   the browser lays out with until the bytes land, so every card on this felt
+   was drawn 3.5% short and then GREW when its image decoded, twice over on a
+   screen that stacks two card rows. Declaring the ratio the art actually has
+   makes the first layout and the final one the same layout.
+
+   IT IS ALSO THE RATIO THE HEIGHT BUDGET ALREADY ASSUMED (the FULLSCREEN FIT
+   block below solves its rows against these same two numbers), so the box the
+   budget reserves and the box the browser paints are now provably one box
+   rather than two that happen to agree once loaded.
+
+   object-fit: contain is the belt to that braces: with height: auto nothing
+   can distort today, but the day any ancestor constrains this img's height —
+   a stretch, a grid row, a max-height — contain shrinks the art instead of
+   squashing it, which is what truco-ui's own card img rule buys for the same
+   reason. */
 .hexdev-escoba-card img {
   display: block;
   width: 100%;
   height: auto;
+  aspect-ratio: var(--escoba-art-width) / var(--escoba-art-height);
+  object-fit: contain;
 }
 
 @container hexdev-escoba-felt (width < 400px) {
@@ -289,11 +319,14 @@ export function buildTableStylesheet(): string {
  * assumption a budget rests on, so it is fenced rather than commented: see
  * the last describe block of escoba-viewport-fit.browser.test.ts.
  *
- * 329 / 520 IS THE ART'S OWN RATIO AS RENDERED, not spanish-deck-ui's
+ * --escoba-art-* IS THE ART'S OWN RATIO AS RENDERED, not spanish-deck-ui's
  * CARD_WIDTH/CARD_HEIGHT (220x336). A card here is an img at width: 100%,
  * height: auto, so its height resolves against the BITMAP -- every front is
  * 329x520 -- and the 220x336 attributes only supply the ratio before the
  * bytes arrive. Using the logical box would under-reserve every row by 3.5%.
+ * The card's own img now DECLARES that ratio rather than waiting to inherit
+ * it from a decoded bitmap, so this budget and the painted card can no longer
+ * be right at different moments.
  *
  * WHY ONLY IN FULLSCREEN, and it must stay that way -- the same scope and
  * the same reason as truco-ui's own cap. main.ts's enterMatch calls
@@ -320,8 +353,8 @@ export function buildTableStylesheet(): string {
   --escoba-card-width: calc(
     min(
       var(--escoba-card-tier),
-      (100dvh - var(--escoba-fit-status) - var(--escoba-fit-piles) - var(--escoba-fit-sum) - var(--escoba-table-padding, 8px) * 4 - var(--escoba-fit-residual)) * 329 / 520 /
-        var(--escoba-fit-rows)
+      (100dvh - var(--escoba-fit-status) - var(--escoba-fit-piles) - var(--escoba-fit-sum) - var(--escoba-table-padding, 8px) * 4 - var(--escoba-fit-residual)) *
+        var(--escoba-art-width) / var(--escoba-art-height) / var(--escoba-fit-rows)
     ) * var(--escoba-card-scale)
   );
 }
