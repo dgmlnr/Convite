@@ -179,6 +179,51 @@ describe("the back control — absent, never disabled", () => {
   });
 });
 
+/**
+ * ONE STRING WAS SERVING TWO SCREENS, and nothing here could tell.
+ *
+ * Screen one offers a choice of GAMES; screen two offers a choice of ways to
+ * play the one already chosen. Both headings read `STRINGS.selectionTitle`,
+ * so the front door asked "Elegí cómo jugar" over a row of games it was not
+ * yet offering any way to play. No assertion in this package distinguished
+ * the two headings, which is exactly how they came to be the same string.
+ *
+ * Both screens render into the SAME element below, on purpose: that is what
+ * the widget really does (the modality WeakMap is keyed by container), so
+ * these are the two headings a player actually sees one after the other.
+ */
+describe("each screen asks its own question", () => {
+  /* THE FALLBACK IS THE DANGEROUS CASE. A family that declares no
+   * `heroTitle` makes screen two fall back to the instruction AS its
+   * heading — slice A's own reasoning, and correct there — so this is
+   * precisely where the two headings would collide again if screen one ever
+   * borrowed screen two's string back. */
+  it("screen one's heading is not the question screen two asks", () => {
+    const el = fresh();
+    renderGameList(el, [TRUCO, ESCOBA], { onOpenGame: noop });
+    const listHeading = el.querySelector(".hexdev-chrome-title")?.textContent;
+
+    renderGameSelection(el, NO_ART_FAMILY.entries, NO_ART_FAMILY.id, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    const gameHeading = el.querySelector(".hexdev-chrome-title")?.textContent;
+
+    expect(gameHeading, "screen two legitimately falls back to the instruction when a family declares no hero title").toBe("Elegí cómo jugar");
+    expect(listHeading, "and screen one must not be asking screen two's question").not.toBe(gameHeading);
+  });
+
+  it("screen one asks WHICH game, where screen two asks HOW to play it", () => {
+    const el = fresh();
+    renderGameList(el, [TRUCO, ESCOBA], { onOpenGame: noop });
+    expect(el.querySelector(".hexdev-chrome-title")?.textContent).toBe("Elegí un juego");
+
+    // A family that DOES declare a hero title: its name becomes screen two's
+    // heading and the instruction moves to the line under it. Different
+    // element, same question — and still not screen one's.
+    renderGameSelection(el, TRUCO.entries, TRUCO.id, PRESENCE, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    expect(el.querySelector(".hexdev-chrome-title")?.textContent, "the game names itself once a game is chosen").toBe("Truco Argentino");
+    expect(el.querySelector(".hexdev-chrome-instruction")?.textContent).toBe("Elegí cómo jugar");
+  });
+});
+
 /* THE ART AND THE MARK — what makes this a screen rather than a list. */
 describe("each game shows its own cards, and the place names itself quietly", () => {
   it("a family with declared art fans it above the name, hidden from a screen reader", () => {

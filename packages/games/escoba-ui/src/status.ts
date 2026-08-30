@@ -1,0 +1,197 @@
+import { cardBackSvg } from "@hexdev/spanish-deck-ui";
+import type { OtherPlayerView, PlayerView } from "@hexdev/escoba-engine";
+
+/**
+ * WHAT THE TABLE WAS NOT SAYING: whose turn it is and what every other seat
+ * holds (slice R3a), and what is left in the stock (R3b).
+ *
+ * `PlayerView` already carried all three — `hand.turn`,
+ * `others[].cardsRemaining`, `hand.stockCount` — and no UI file read any of
+ * them. Nothing here DERIVES a number: every value below is read straight off
+ * the view, the same discipline `scoreboard.ts` states for the running score
+ * and `renderEscobaHandBreakdown` states for the hand's categories.
+ *
+ * WHY ESCOBA NEEDS THIS MORE THAN TRUCO DOES: the score only moves when a
+ * whole hand resolves, so mid-hand the scoreboard is frozen and a player
+ * could see nothing at all of what they were achieving or of how close the
+ * mid-hand re-deal was. Truco at least states the turn in a badge and shows
+ * the opponents' card backs; escoba said nothing at all.
+ */
+
+/**
+ * Who another seat is, from the local player's chair.
+ *
+ * PARTNER IS DECIDED BY `teamId`, NOT BY GEOMETRY. The 4-seat game does seat
+ * partners across (seat + 2), but the view already states the team, and a
+ * label that read the seat arithmetic instead would be a second, weaker copy
+ * of a fact the engine already sent.
+ *
+ * The two RIVALS are then distinguished by their offset in turn order, which
+ * is also the order `renderEscobaStatus` lays the row out in — so "izq."/
+ * "der." describe this row's own painted arrangement, not an imagined table
+ * geometry that escoba (unlike `truco-ui`, which really does anchor seats)
+ * never draws.
+ */
+export type SeatRole = "partner" | "rival" | "rival-left" | "rival-right";
+
+/** Compact, for the chip. Same abbreviations `truco-ui`'s call log already
+ * established for the identical distinction. */
+const SEAT_LABELS: Readonly<Record<SeatRole, string>> = {
+  partner: "Compañero",
+  rival: "Rival",
+  "rival-left": "Rival izq.",
+  "rival-right": "Rival der.",
+};
+
+/** Spelled out, for the chip's accessible name: a count is information, so it
+ * gets a name rather than being a digit next to an abbreviation nobody can
+ * hear ("izq." is read aloud as a word, not as "izquierda"). */
+const SEAT_SPOKEN: Readonly<Record<SeatRole, string>> = {
+  partner: "Tu compañero",
+  rival: "El rival",
+  "rival-left": "El rival de la izquierda",
+  "rival-right": "El rival de la derecha",
+};
+
+/** Whose turn it is, in words — never "de el rival", so this is its own map
+ * rather than a prefix concatenated onto `SEAT_SPOKEN`. Voseo, matching
+ * `i18n.ts`'s own voice and `truco-ui`'s "Tu turno". */
+const TURN_LABELS: Readonly<Record<SeatRole, string>> = {
+  partner: "Turno de tu compañero",
+  rival: "Turno del rival",
+  "rival-left": "Turno del rival de la izquierda",
+  "rival-right": "Turno del rival de la derecha",
+};
+
+const YOUR_TURN = "Tu turno";
+
+/** Seats ahead of the local player in turn order: 1 is whoever plays next,
+ * and in the 4-seat game 2 is the partner and 3 whoever plays just before. */
+function turnOffset(other: OtherPlayerView, view: PlayerView): number {
+  const seatCount = view.others.length + 1;
+  return (other.seat - view.self.seat + seatCount) % seatCount;
+}
+
+export function seatRole(other: OtherPlayerView, view: PlayerView): SeatRole {
+  if (other.teamId === view.self.teamId) return "partner";
+  if (view.others.length < 2) return "rival";
+  return turnOffset(other, view) === 1 ? "rival-right" : "rival-left";
+}
+
+/**
+ * Whose turn it is. `""` between hands (`PlayerView.hand` is `null` until the
+ * next one is dealt) — the caller's own `:empty` rule hides the line, the
+ * same convention `renderEscobaHandBreakdown` already uses for a panel with
+ * nothing to say.
+ */
+export function describeTurn(view: PlayerView): string {
+  if (view.hand === null) return "";
+  const { turn } = view.hand;
+  if (turn === view.self.playerId) return YOUR_TURN;
+  const other = view.others.find((candidate) => candidate.playerId === turn);
+  return other === undefined ? "" : TURN_LABELS[seatRole(other, view)];
+}
+
+export function describeCards(count: number): string {
+  return `${String(count)} ${count === 1 ? "carta" : "cartas"}`;
+}
+
+/**
+ * What is left to deal. Real strategic information in escoba and in no other
+ * game in this repo: while the stock holds, three more cards come to every
+ * player (art. 6.2), and the hand ends when it does not. Zero gets its own
+ * phrase because "0 cartas" reads as a counter that happens to be empty,
+ * where "Mazo vacío" reads as the state the hand is actually in — the same
+ * argument `truco-ui`'s own "Sin señas" makes.
+ */
+export function describeStock(stockCount: number): string {
+  return stockCount === 0 ? "Mazo vacío" : `Mazo: ${describeCards(stockCount)}`;
+}
+
+/**
+ * The three persistent nodes, built ONCE per match by the composition root
+ * (`game-ui-registry.ts`) and only ever mutated here.
+ *
+ * `turnEl` carries the `aria-live` region: announcing needs a CHANGE to a
+ * node ALREADY in the accessibility tree, so it can never be rebuilt — the
+ * exact precedent slice P set for `sumEl` and slice R1 for the breakdown
+ * announcer. `seatsEl` holds no live region and is rebuilt freely.
+ */
+export interface EscobaStatusElements {
+  readonly turnEl: HTMLElement;
+  readonly stockEl: HTMLElement;
+  readonly seatsEl: HTMLElement;
+}
+
+function renderSeat(other: OtherPlayerView, view: PlayerView): HTMLElement {
+  const role = seatRole(other, view);
+  const seat = document.createElement("li");
+  seat.className = "hexdev-escoba-seat";
+  seat.dataset.role = role;
+  seat.dataset.seat = String(other.seat);
+  // Marked in WORDS by the turn line above, which names this very seat; this
+  // attribute only drives a second, non-colour cue (WCAG 1.4.1).
+  seat.dataset.turn = String(view.hand?.turn === other.playerId);
+  seat.setAttribute("aria-label", `${SEAT_SPOKEN[role]}: ${describeCards(other.cardsRemaining)}`);
+
+  const label = document.createElement("span");
+  label.className = "hexdev-escoba-seat-label";
+  label.textContent = SEAT_LABELS[role];
+
+  // STILL SAID IN WORDS, only no longer drawn as them. The backs below are a
+  // PICTURE of the number, and a picture-only count reads as nothing at all
+  // (WCAG 1.1.1) — so the sentence stays, clipped to nothing so it costs the
+  // chip no width, exactly as `truco-ui`'s own `renderOpponentHand` keeps its.
+  const count = document.createElement("span");
+  count.className = "hexdev-escoba-seat-count";
+  count.dataset.cards = String(other.cardsRemaining);
+  count.textContent = describeCards(other.cardsRemaining);
+
+  // ONE REAL BACK PER CARD STILL IN THAT HAND. `cardBackSvg` comes from L0's
+  // `spanish-deck-ui` — the same deck `renderEscobaTable` draws its fronts
+  // from and the same call `truco-ui/src/opponent-hand.ts` makes — so both
+  // games' opponents are drawn from one deck rather than two lookalikes.
+  // Decorative: a back carries nothing the count above does not already say,
+  // and it must never say more (the identity is redacted engine-side; this
+  // function only ever receives a number).
+  const backs = document.createElement("span");
+  backs.className = "hexdev-escoba-seat-backs";
+  backs.setAttribute("aria-hidden", "true");
+  for (let index = 0; index < other.cardsRemaining; index += 1) {
+    const back = document.createElement("span");
+    back.className = "hexdev-escoba-card-back";
+    back.dataset.cardBack = String(index);
+    back.innerHTML = cardBackSvg();
+    backs.appendChild(back);
+  }
+
+  seat.append(label, count, backs);
+  return seat;
+}
+
+/**
+ * Turn, stock and every other seat's remaining cards.
+ *
+ * The row is laid out in TABLE order rather than in `others` order: highest
+ * turn-offset first, so the 4-seat game reads left rival, partner, right
+ * rival across the screen — which is what makes "izq."/"der." true of the
+ * thing a player is looking at.
+ */
+export function renderEscobaStatus(elements: EscobaStatusElements, view: PlayerView): void {
+  const { turnEl, stockEl, seatsEl } = elements;
+
+  turnEl.className = "hexdev-escoba-turn";
+  turnEl.dataset.self = String(view.hand !== null && view.hand.turn === view.self.playerId);
+  const turn = describeTurn(view);
+  // Only on a real change: rewriting the same text into a live region makes
+  // some readers repeat themselves on every single broadcast.
+  if (turnEl.textContent !== turn) turnEl.textContent = turn;
+
+  stockEl.className = "hexdev-escoba-stock";
+  stockEl.textContent = view.hand === null ? "" : describeStock(view.hand.stockCount);
+
+  seatsEl.replaceChildren();
+  seatsEl.className = "hexdev-escoba-seats";
+  const ordered = [...view.others].sort((a, b) => turnOffset(b, view) - turnOffset(a, view));
+  for (const other of ordered) seatsEl.appendChild(renderSeat(other, view));
+}

@@ -55,6 +55,31 @@ function freshContainer(widthPx: number): HTMLElement {
   return container;
 }
 
+/**
+ * THE TABLE'S WIDTH TIER IS THE FELT'S QUESTION NOW, so the width goes on a
+ * felt and the table is its child.
+ *
+ * `WIDTHS` above promises "one width inside each of table-styles.ts's three
+ * card-width tiers", and that promise is the only reason this file proves
+ * anything about tiers at all. Since the container-query root moved up to
+ * `.hexdev-escoba-felt` (so the player's own hand could be tiered by the same
+ * query instead of sitting at the untiered default), a table mounted bare has
+ * no container to ask and answers every width identically — 320, 500 and 700
+ * would all have drawn the same card and the three cases would have collapsed
+ * into one without a single assertion going red. Restoring the felt keeps the
+ * three cases three.
+ *
+ * The piles keep the bare box below: `.hexdev-escoba-piles` is still its own
+ * container-query root (piles-styles.ts), so nothing about them moved.
+ */
+function freshTable(widthPx: number): HTMLElement {
+  const felt = freshContainer(widthPx);
+  felt.className = "hexdev-escoba-felt";
+  const tableEl = document.createElement("div");
+  felt.appendChild(tableEl);
+  return tableEl;
+}
+
 /** Through `--gx-font-family`, which is the knob a host page really turns —
  * same technique as truco-ui's own font fence. */
 function setFace(selector: string, face: string): void {
@@ -78,7 +103,7 @@ describe("renderEscobaTable — layout does not depend on the host's font (spec:
     const widthsMeasured = new Map<string, number>();
 
     for (const face of FACES) {
-      const el = freshContainer(width);
+      const el = freshTable(width);
       renderEscobaTable(el, FOUR_CARDS);
       setFace(".hexdev-escoba-table", face);
 
@@ -89,7 +114,9 @@ describe("renderEscobaTable — layout does not depend on the host's font (spec:
       widthsMeasured.set(face, rect.width);
 
       probe?.remove();
-      el.remove();
+      // The FELT, not the table: `el` is a child now, and leaving its parent
+      // behind would stack an empty box per face on the document.
+      container.remove();
     }
 
     const [baselineHeight] = heights.values();
