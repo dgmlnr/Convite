@@ -256,7 +256,12 @@ export const trucoModule: GameModule<MatchState, TrucoModuleAction, PlayerView, 
   // calls the game, and both registrations below are ways of playing the SAME
   // one. Naming it after either id would make the 2v2 entry look like a
   // different game the day the lobby groups by this.
-  metadata: { seatCount: 2, gameFamily: "truco", displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
+  // `section: "cartas"` is the shelf, one tier above the family: truco and
+  // escoba are two games and one kind of game. Declared on BOTH ways of
+  // playing it because `createGameModuleRegistry` throws on a family whose
+  // entries resolve to different sections, and a silent one resolves to its
+  // own family rather than to whatever its sibling said.
+  metadata: { seatCount: 2, gameFamily: "truco", section: "cartas", displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
   createMatch,
   applyAction,
@@ -281,7 +286,7 @@ export const trucoModule: GameModule<MatchState, TrucoModuleAction, PlayerView, 
  */
 export const trucoModule2v2: GameModule<MatchState, TrucoModuleAction, PlayerView, MatchConfig> = {
   id: "truco-argentino-2v2",
-  metadata: { seatCount: 4, gameFamily: "truco", displayNameKey: "games.truco2v2.name", assetBase: "/games/truco-argentino" },
+  metadata: { seatCount: 4, gameFamily: "truco", section: "cartas", displayNameKey: "games.truco2v2.name", assetBase: "/games/truco-argentino" },
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
   createMatch: createMatch2v2,
   applyAction,

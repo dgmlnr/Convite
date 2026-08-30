@@ -1,4 +1,4 @@
-import type { GameFamilyId, GameId } from "@hexdev/platform-contract";
+import type { CatalogSectionId, GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { Card } from "@hexdev/spanish-deck-ui";
 import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
@@ -22,6 +22,7 @@ import {
   renderEscobaStatus,
   renderMatchOverOverlay,
 } from "@hexdev/escoba-ui";
+import { STRINGS } from "./i18n.js";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
  * "view" message (transport-colyseus) — opaque here on purpose, the same
@@ -159,6 +160,48 @@ function createTrucoRenderer(): GameUiEntry["createRenderer"] {
       );
     };
   };
+}
+
+/**
+ * WHAT A SHELF IS CALLED, one tier above a game's own name.
+ *
+ * The server declares WHICH shelf each entry sits on (`GameMetadata.section`,
+ * normalized onto every `CatalogEntry`); the widget decides what that shelf is
+ * called. No `displayNameKey` for sections crosses the wire, on the same
+ * grounds `GameFamilyUi` already keeps `heroTitle` here: naming is a
+ * presentation decision, and a game module has no business writing Spanish.
+ *
+ * Only `id` and `title`, deliberately. A shelf is a label over a row of cards,
+ * not a thing with art of its own — the games below it already carry that.
+ */
+export interface SectionUi {
+  readonly id: CatalogSectionId;
+  readonly title: string;
+}
+
+/** The one shelf the four registered modules declare today. "Fichas" is NOT
+ * declared alongside it: a row here that no module points at is an
+ * enumerating-config entry with no referent, and it belongs to the change
+ * that ships the game needing it. */
+const CARTAS_SECTION: SectionUi = { id: "cartas", title: STRINGS.sectionCartas };
+
+const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION];
+
+/**
+ * A shelf's own name, by section id — the exact mirror of `familyUiFor`
+ * below, and a module function for the same reason: screen one renders
+ * before any game is chosen and receives no registry.
+ *
+ * THIS IS THE FOURTH HAND-WRITTEN LIST IN THIS FILE, so what happens when it
+ * falls behind the catalog is load-bearing rather than incidental. It returns
+ * `undefined`, and the caller renders the raw section id — visible, ugly, and
+ * a bug report somebody files. The alternative, rendering no heading at all,
+ * would silently file those cards under the PREVIOUS shelf's label and
+ * mis-attribute them: a missing entry must not fail green, and it must not
+ * fail by lying about its neighbour.
+ */
+export function sectionUiFor(sectionId: CatalogSectionId): SectionUi | undefined {
+  return SECTIONS.find((section) => section.id === sectionId);
 }
 
 /**

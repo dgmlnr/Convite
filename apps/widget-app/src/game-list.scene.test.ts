@@ -3,21 +3,26 @@ import { page } from "vitest/browser";
 import type { GameId } from "@hexdev/platform-contract";
 import { renderGameList } from "./game-list.js";
 import type { GameFamily } from "./game-families.js";
+import type { GameSection } from "./game-sections.js";
 import type { CatalogEntry } from "./bootstrap-data.js";
 
 /**
  * SCREEN ONE, rendered so a person can look at it.
  *
  * These are scenes, not baselines: nothing here is compared against anything,
- * and `pnpm visual:review` rewrites them on every run. This screen needs them
- * more than most — a tenant entitled to one game opens straight onto that
- * game, and the only configured tenant today has exactly one. So this screen
- * renders for nobody in the running product until a second game ships, and
- * looking at it is the only way to see it at all.
+ * and `pnpm visual:review` rewrites them on every run. The paragraph that
+ * stood here said this screen "renders for nobody in the running product
+ * until a second game ships" — escoba shipped, both roots entitle four ids
+ * that collapse into two families, and this is now the first thing a player
+ * sees. The scenes matter more, not less: a heading, a background and a row
+ * that overflows are exactly what a `getBoundingClientRect()` assertion is
+ * blind to, and this is the only screen in the package where somebody has to
+ * look before it goes out.
  */
-const entry = (id: string, gameFamily: string, key: string, seatCount = 2): CatalogEntry => ({
+const entry = (id: string, gameFamily: string, key: string, seatCount = 2, section = "cartas"): CatalogEntry => ({
   id: id as GameId,
   gameFamily,
+  section,
   displayNameKey: key,
   seatCount,
   configOptions: [],
@@ -39,6 +44,21 @@ const TRUCO: GameFamily = {
  */
 const SIN_ARTE: GameFamily = { id: "escoba", entries: [entry("escoba-de-15", "escoba", "games.truco.name")] };
 
+/** ONE SHELF is what every configured tenant produces today — all four
+ * registered modules declare `section: "cartas"` — so this is the render the
+ * three scenes below are of, and it is the pre-shelf screen unchanged. */
+const oneSection = (families: readonly GameFamily[]): readonly GameSection[] => [{ id: "cartas", families }];
+
+/** TWO SHELVES: the arrangement no tenant has yet and every scene assertion
+ * is blind to. The second shelf's id is one `SECTIONS` has no copy for, so
+ * its heading renders raw — deliberately, because that is what a shelf added
+ * to the catalog before its Spanish name lands really looks like, and the
+ * point of a scene is to see it before a player does. */
+const DOS_ESTANTES: readonly GameSection[] = [
+  { id: "cartas", families: [TRUCO, SIN_ARTE] },
+  { id: "fichas", families: [{ id: "sin-copia", entries: [entry("sin-copia-game", "sin-copia", "games.escoba.name", 2, "fichas")] }] },
+];
+
 const mounted: HTMLElement[] = [];
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()!.remove();
@@ -58,19 +78,43 @@ describe("scene: the game list (screen one)", () => {
   it("two games, wide (1024px): the shape this screen exists for", async () => {
     await page.viewport(1024 + 120, 900);
     const container = mountedContainer(1024);
-    renderGameList(container, [TRUCO, SIN_ARTE], { onOpenGame: noop });
+    renderGameList(container, oneSection([TRUCO, SIN_ARTE]), { onOpenGame: noop });
     await expect.element(container).toMatchScreenshot("game-list-two-wide");
   });
 
   it("two games, narrow (375px): one column, the art still a hand", async () => {
     const container = mountedContainer(375);
-    renderGameList(container, [TRUCO, SIN_ARTE], { onOpenGame: noop });
+    renderGameList(container, oneSection([TRUCO, SIN_ARTE]), { onOpenGame: noop });
     await expect.element(container).toMatchScreenshot("game-list-two-narrow");
   });
 
   it("one game with no art at all: a card, never a hole", async () => {
     const container = mountedContainer(375);
-    renderGameList(container, [SIN_ARTE], { onOpenGame: noop });
+    renderGameList(container, oneSection([SIN_ARTE]), { onOpenGame: noop });
     await expect.element(container).toMatchScreenshot("game-list-no-art");
+  });
+});
+
+/**
+ * TWO SHELVES, WHICH IS THE ONLY PART OF THIS SLICE A PLAYER COULD SEE.
+ *
+ * The measurements next door prove the title shares its band and the cards
+ * stay inside it. None of them can say whether the label reads as a label,
+ * whether the gap between shelves groups anything, or whether a raw section
+ * id looks like a defect or like a name. That is what these two are for.
+ */
+describe("scene: two shelves on the front door", () => {
+  it("wide (1024px): two headed groups, the second one with no Spanish name yet", async () => {
+    await page.viewport(1024 + 120, 1000);
+    const container = mountedContainer(1024);
+    renderGameList(container, DOS_ESTANTES, { onOpenGame: noop });
+    await expect.element(container).toMatchScreenshot("game-list-dos-estantes-wide");
+  });
+
+  it("narrow (375px): the shelves stack, and the labels still lead their own column", async () => {
+    await page.viewport(414, 1200);
+    const container = mountedContainer(375);
+    renderGameList(container, DOS_ESTANTES, { onOpenGame: noop });
+    await expect.element(container).toMatchScreenshot("game-list-dos-estantes-narrow");
   });
 });

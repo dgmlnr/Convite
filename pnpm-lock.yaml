@@ -44,6 +44,9 @@ importers:
 
   apps/mint-server:
     dependencies:
+      '@hexdev/escoba-module':
+        specifier: workspace:*
+        version: link:../../packages/games/escoba-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract

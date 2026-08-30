@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderEmbedShell } from "./embed-shell.js";
 
-const BOOTSTRAP = { token: "t1", playerId: "p1", catalog: [{ id: "truco-argentino", gameFamily: "truco", displayNameKey: "games.truco.name", seatCount: 2, configOptions: [] }] };
+const BOOTSTRAP = { token: "t1", playerId: "p1", catalog: [{ id: "truco-argentino", gameFamily: "truco", section: "cartas", displayNameKey: "games.truco.name", seatCount: 2, configOptions: [] }] };
 
 describe("renderEmbedShell (spec: widget-embed — the iframe needs real content AND its own session to mount)", () => {
   it("references the widget-app bundle as a module script, so the browser actually executes it", () => {

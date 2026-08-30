@@ -174,6 +174,7 @@ describe("the lobby's secondary copy stays legible however quiet the design want
   const TRUCO: CatalogEntry = {
     id: "truco-argentino" as GameId,
     gameFamily: "truco",
+    section: "cartas",
     displayNameKey: "games.truco.name",
     seatCount: 2,
     configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],

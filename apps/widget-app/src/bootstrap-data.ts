@@ -1,4 +1,4 @@
-import type { ConfigOption, GameFamilyId, GameId } from "@hexdev/platform-contract";
+import type { CatalogSectionId, ConfigOption, GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { ThemeOverride } from "@hexdev/widget-protocol";
 
 /** The client-side mirror of `apps/server`'s `CatalogEntry` — the SAME shape
@@ -14,6 +14,14 @@ export interface CatalogEntry {
    * undeclared family to the game's own id, so no consumer ever sees
    * `undefined`. */
   readonly gameFamily: GameFamilyId;
+  /** Which shelf of the catalog this entry sits on — the mirror of the
+   * server's own `CatalogEntry.section`, required here for the same reason
+   * `gameFamily` above is. It lands on both sides in ONE change on purpose:
+   * server and client ship as a single artifact, so there is no version-skew
+   * window, and a required field declared on only one side is precisely the
+   * gap that left `gameFamily` unreadable here after it was already on the
+   * wire. */
+  readonly section: CatalogSectionId;
   readonly displayNameKey: string;
   readonly seatCount: number;
   readonly configOptions: readonly ConfigOption[];

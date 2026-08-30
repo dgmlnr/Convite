@@ -91,6 +91,10 @@ describe("handleEmbedRequest — catalog (spec: tenant-catalog — server-enforc
         // playing one game into one thing to choose, and cannot derive that
         // from the id without guessing.
         gameFamily: "truco",
+        // And the shelf, one tier above it. This fixture declares no
+        // `section`, so what crosses the wire is the NORMALIZED FAMILY —
+        // never `undefined`, and never the id.
+        section: "truco",
         displayNameKey: "games.truco.name",
         seatCount: 2,
         configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],

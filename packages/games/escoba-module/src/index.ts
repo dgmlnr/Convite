@@ -164,7 +164,7 @@ const deserialize = (json: JsonValue): MatchState => json as unknown as MatchSta
 
 export const escobaModule: GameModule<MatchState, EscobaModuleAction, PlayerView, EscobaMatchConfig> = {
   id: "escoba-de-15",
-  metadata: { seatCount: 2, gameFamily: "escoba", displayNameKey: "games.escoba.name", assetBase: "/games/escoba-de-15" },
+  metadata: { seatCount: 2, gameFamily: "escoba", section: "cartas", displayNameKey: "games.escoba.name", assetBase: "/games/escoba-de-15" },
   configOptions: [],
   createMatch: (_config, seats) => buildMatch(seats),
   applyAction,
@@ -181,7 +181,7 @@ export const escobaModule: GameModule<MatchState, EscobaModuleAction, PlayerView
  * additive to `trucoModule`. */
 export const escobaModule2v2: GameModule<MatchState, EscobaModuleAction, PlayerView, EscobaMatchConfig> = {
   id: "escoba-de-15-2v2",
-  metadata: { seatCount: 4, gameFamily: "escoba", displayNameKey: "games.escoba2v2.name", assetBase: "/games/escoba-de-15" },
+  metadata: { seatCount: 4, gameFamily: "escoba", section: "cartas", displayNameKey: "games.escoba2v2.name", assetBase: "/games/escoba-de-15" },
   configOptions: [],
   createMatch: (_config, seats) => buildMatch2v2(seats),
   applyAction,

@@ -1,4 +1,5 @@
-import type { BotTier, GameId, GameModule, JsonValue, PlayerId, RandomSource } from "@hexdev/platform-contract";
+import type { BotTier, CatalogSectionId, GameFamilyId, GameId, GameModule, JsonValue, PlayerId, RandomSource } from "@hexdev/platform-contract";
+import { catalogGroupingOf } from "./catalog-grouping.js";
 
 /** What every conformant `TAction` structurally carries (`GameModule`'s
  * bound) — kept as the registry's erased action shape instead of `unknown`
@@ -213,6 +214,43 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
     if (!Number.isInteger(module.metadata.seatCount) || module.metadata.seatCount < 2) {
       throw new Error(
         `createGameModuleRegistry: module "${module.id}" declares metadata.seatCount ${String(module.metadata.seatCount)} — must be an integer >= 2, a group that size can never form a match`,
+      );
+    }
+  }
+  // The same "fail loud at composition time" discipline as the seatCount
+  // guard above, for the other invariant nothing else can hold.
+  //
+  // A `section` is declared on an ENTRY, but a section groups FAMILIES, so two
+  // ways of playing one game can name two different shelves. Types cannot stop
+  // it: `GameFamilyId` and `CatalogSectionId` are both `string`, and TS has no
+  // way to say "every element sharing field A shares field B" across a
+  // heterogeneous array.
+  //
+  // NOT DEFERRED TO `buildCatalog`, where these keys reach a client, for three
+  // reasons and the third decides it. The entitlement gap that function
+  // tolerates is a TENANT-authored fact meeting a build-authored one, and it
+  // has a correct degraded answer: serve the rest. A straddle is two
+  // BUILD-authored facts contradicting each other inside one binary — same
+  // array literal, same author, same PR, no external data can produce it — and
+  // it has no correct degraded answer at all: the game appears twice, or one
+  // declaration is silently discarded. And `buildCatalog` is tenant-scoped, so
+  // the check would be silent-green by tenant: whoever is entitled to only one
+  // of the two straddling entries never sees the contradiction, which makes it
+  // pass on the dev tenant and fail on a customer's.
+  //
+  // Compares NORMALIZED sections, never declared ones. A family where one
+  // module says `"cartas"` and its sibling says nothing is the likeliest
+  // authoring slip there is, and catching it is the point: the silent one
+  // resolves to its own family, which is not `"cartas"`.
+  const sectionByFamily = new Map<GameFamilyId, { readonly section: CatalogSectionId; readonly moduleId: GameId }>();
+  for (const { module } of entries) {
+    const { gameFamily, section } = catalogGroupingOf(module.id, module.metadata);
+    const claimed = sectionByFamily.get(gameFamily);
+    if (claimed === undefined) {
+      sectionByFamily.set(gameFamily, { section, moduleId: module.id });
+    } else if (claimed.section !== section) {
+      throw new Error(
+        `createGameModuleRegistry: game family "${gameFamily}" straddles two catalog sections — module "${claimed.moduleId}" resolves to section "${claimed.section}" and module "${module.id}" to section "${section}". A family is ONE thing to choose, so it cannot sit on two shelves; note an undeclared section resolves to the family itself.`,
       );
     }
   }

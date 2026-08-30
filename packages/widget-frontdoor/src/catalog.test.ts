@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { createGameModuleRegistry } from "@hexdev/platform-core";
-import type { GameFamilyId, GameId, GameModule, PlayerId } from "@hexdev/platform-contract";
+import type { CatalogSectionId, GameFamilyId, GameId, GameModule, PlayerId } from "@hexdev/platform-contract";
 import { buildCatalog } from "./catalog.js";
 
 const TRUCO_ID = "truco-argentino" as GameId;
 const OTHER_ID = "escoba-de-15" as GameId;
 
-function fakeModule(id: GameId, gameFamily?: string): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
+function fakeModule(id: GameId, gameFamily?: string, section?: string): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
   return {
     id,
-    metadata: { seatCount: 2, displayNameKey: `games.${id}.name`, assetBase: `/games/${id}`, ...(gameFamily === undefined ? {} : { gameFamily: gameFamily as GameFamilyId }) },
+    metadata: {
+      seatCount: 2,
+      displayNameKey: `games.${id}.name`,
+      assetBase: `/games/${id}`,
+      ...(gameFamily === undefined ? {} : { gameFamily: gameFamily as GameFamilyId }),
+      ...(section === undefined ? {} : { section: section as CatalogSectionId }),
+    },
     configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
     createMatch: () => ({}),
     applyAction: () => ({ ok: true, state: {} }),
@@ -30,6 +36,7 @@ describe("buildCatalog (spec: tenant-catalog — server-enforced per-tenant game
       {
         id: TRUCO_ID,
         gameFamily: TRUCO_ID, // sin declararla, la familia ES el id
+        section: TRUCO_ID, // y sin seccion, la seccion es esa familia: el id otra vez
         displayNameKey: "games.truco-argentino.name",
         seatCount: 2,
         configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
@@ -70,6 +77,26 @@ describe("buildCatalog (spec: tenant-catalog — server-enforced per-tenant game
     const [entry] = buildCatalog([OTHER_ID], registry);
 
     expect(entry?.gameFamily, "an ungrouped game is a family of one, named after itself").toBe(OTHER_ID);
+  });
+
+  /* THE SHELF, one tier above the family, and normalized by the SAME function
+   * — `buildCatalog` no longer owns a `??` of its own. A declared section
+   * wins; an undeclared one is the entry's NORMALIZED FAMILY, so the two ways
+   * of playing truco stay on one shelf instead of getting one each named
+   * after themselves. Required on the way out for the same reason `gameFamily`
+   * is: no client branches on its absence. */
+  it("carries a declared section, and falls back to the family so one game keeps one shelf", () => {
+    const registry = createGameModuleRegistry([fakeModule(TRUCO_ID, "truco", "cartas"), fakeModule("truco-argentino-2v2" as GameId, "truco", "cartas"), fakeModule(OTHER_ID, "escoba")]);
+    const catalog = buildCatalog([TRUCO_ID, "truco-argentino-2v2" as GameId, OTHER_ID], registry);
+
+    expect(
+      catalog.map((entry) => entry.section),
+      "truco declares its shelf; escoba declares none and gets its own family as one",
+    ).toEqual(["cartas", "cartas", "escoba"]);
+    expect(
+      catalog.every((entry) => entry.section.length > 0),
+      "no entry crosses the wire with an empty section",
+    ).toBe(true);
   });
 
   it("drops an entitled id that has no registered module, instead of throwing", () => {
