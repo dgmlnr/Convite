@@ -3,7 +3,7 @@ import type { GameId } from "@hexdev/platform-contract";
 import { createLobbyScreen } from "./lobby-screen.js";
 import type { GameFamily } from "./game-families.js";
 
-const entry = (id: string, gameFamily: string) => ({ id: id as GameId, gameFamily, displayNameKey: "n", seatCount: 2, configOptions: [] });
+const entry = (id: string, gameFamily: string) => ({ id: id as GameId, gameFamily, section: "cartas", displayNameKey: "n", seatCount: 2, configOptions: [] });
 const family = (id: string, ...ids: string[]): GameFamily => ({ id, entries: ids.map((i) => entry(i, id)) });
 
 const TRUCO = family("truco", "truco-argentino", "truco-argentino-2v2");

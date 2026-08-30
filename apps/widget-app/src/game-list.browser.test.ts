@@ -18,6 +18,7 @@ const PRESENCE = new Map<GameId, readonly LobbyDisplayEntry[]>([["truco-argentin
 const entry = (id: string, gameFamily: string, seatCount = 2): CatalogEntry => ({
   id: id as GameId,
   gameFamily,
+  section: "cartas",
   displayNameKey: "games.truco.name",
   seatCount,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
@@ -31,7 +32,7 @@ const ESCOBA: GameFamily = { id: "escoba", entries: [entry("escoba-de-15", "esco
  * `familyUiFor` regardless of what this fixture's own fields say. The
  * "no declared art" case below needs a family id `familyUiFor` truly has
  * nothing for. */
-const noArtEntry = (id: string): CatalogEntry => ({ id: id as GameId, gameFamily: "no-art-fixture", displayNameKey: "games.truco.name", seatCount: 2, configOptions: [] });
+const noArtEntry = (id: string): CatalogEntry => ({ id: id as GameId, gameFamily: "no-art-fixture", section: "cartas", displayNameKey: "games.truco.name", seatCount: 2, configOptions: [] });
 const NO_ART_FAMILY: GameFamily = { id: "no-art-fixture", entries: [noArtEntry("no-art-fixture-game")] };
 
 /* Unit M's finished escoba entries — REAL ids, REAL empty `configOptions`,
@@ -40,6 +41,7 @@ const NO_ART_FAMILY: GameFamily = { id: "no-art-fixture", entries: [noArtEntry("
 const escobaEntry = (id: string, displayNameKey: string, seatCount: number): CatalogEntry => ({
   id: id as GameId,
   gameFamily: "escoba",
+  section: "cartas",
   displayNameKey,
   seatCount,
   configOptions: [],

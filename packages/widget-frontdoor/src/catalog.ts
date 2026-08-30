@@ -1,5 +1,5 @@
-import type { ConfigOption, GameFamilyId, GameId } from "@hexdev/platform-contract";
-import type { GameModuleRegistry } from "@hexdev/platform-core";
+import type { CatalogSectionId, ConfigOption, GameFamilyId, GameId } from "@hexdev/platform-contract";
+import { catalogGroupingOf, type GameModuleRegistry } from "@hexdev/platform-core";
 
 /** What the widget's game-selection screen needs to render one entry — the
  * platform-level slice of `GameMetadata`/`ConfigOption`, never a truco
@@ -13,6 +13,14 @@ export interface CatalogEntry {
    * this point reads a family and none of them branches on its absence.
    */
   readonly gameFamily: GameFamilyId;
+  /**
+   * Which shelf of the catalog this entry sits on — see `CatalogSectionId`.
+   * REQUIRED here on exactly the grounds `gameFamily` above is: an undeclared
+   * section is normalized to the entry's NORMALIZED FAMILY, so no consumer
+   * past this point branches on its absence, and the two ways of playing one
+   * game cannot end up on two shelves by omission.
+   */
+  readonly section: CatalogSectionId;
   readonly displayNameKey: string;
   readonly seatCount: number;
   readonly configOptions: readonly ConfigOption[];
@@ -37,10 +45,14 @@ export function buildCatalog(entitledGames: readonly GameId[], registry: GameMod
     if (module === undefined) continue;
     entries.push({
       id: gameId,
-      // A game that declares no family is a family of one, named after
-      // itself — the honest reading of "ungrouped", and what keeps the
-      // client side of this field free of `undefined`.
-      gameFamily: module.metadata.gameFamily ?? gameId,
+      // BOTH grouping keys come from `catalogGroupingOf`, and the `??` that
+      // used to sit right here is gone rather than duplicated: a game that
+      // declares no family is a family of one named after itself, and one
+      // that declares no shelf takes its family's. The composition-time
+      // straddle fence in `createGameModuleRegistry` needs that identical
+      // answer, and the day two copies of the rule disagree the fence passes
+      // while this function puts the wrong thing on the wire.
+      ...catalogGroupingOf(gameId, module.metadata),
       displayNameKey: module.metadata.displayNameKey,
       seatCount: module.metadata.seatCount,
       configOptions: module.configOptions,

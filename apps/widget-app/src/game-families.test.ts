@@ -6,6 +6,7 @@ import type { CatalogEntry } from "./bootstrap-data.js";
 const entry = (id: string, gameFamily: string, seatCount = 2): CatalogEntry => ({
   id: id as GameId,
   gameFamily,
+  section: "cartas",
   displayNameKey: `games.${gameFamily}.name`,
   seatCount,
   configOptions: [],

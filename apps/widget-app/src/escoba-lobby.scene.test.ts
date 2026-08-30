@@ -40,6 +40,7 @@ import { renderGameSelection } from "./game-screen.js";
 const TRUCO_1V1: CatalogEntry = {
   id: "truco-argentino",
   gameFamily: "truco",
+  section: "cartas",
   displayNameKey: "games.truco.name",
   seatCount: 2,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
@@ -48,6 +49,7 @@ const TRUCO_1V1: CatalogEntry = {
 const TRUCO_2V2: CatalogEntry = {
   id: "truco-argentino-2v2",
   gameFamily: "truco",
+  section: "cartas",
   displayNameKey: "games.truco2v2.name",
   seatCount: 4,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
@@ -64,6 +66,7 @@ const TRUCO_2V2: CatalogEntry = {
 const ESCOBA_1V1: CatalogEntry = {
   id: "escoba-de-15",
   gameFamily: "escoba",
+  section: "cartas",
   displayNameKey: "games.escoba.name",
   seatCount: 2,
   configOptions: [],
@@ -72,6 +75,7 @@ const ESCOBA_1V1: CatalogEntry = {
 const ESCOBA_2V2: CatalogEntry = {
   id: "escoba-de-15-2v2",
   gameFamily: "escoba",
+  section: "cartas",
   displayNameKey: "games.escoba2v2.name",
   seatCount: 4,
   configOptions: [],
