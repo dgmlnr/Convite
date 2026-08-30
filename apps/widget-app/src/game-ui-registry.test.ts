@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
-import { createGameUiRegistry, familyUiFor } from "./game-ui-registry.js";
+import { createGameUiRegistry, familyUiFor, sectionUiFor } from "./game-ui-registry.js";
 
 describe("createGameUiRegistry (design §5: rendering is deliberately outside the platform contract)", () => {
   it("has an entry for truco-argentino", () => {
@@ -57,5 +57,30 @@ describe("familyUiFor(\"escoba\") — the lobby's finished second family", () =>
     const family = familyUiFor("escoba");
 
     expect(family?.hero?.[1]).toContain("7-oro");
+  });
+});
+
+/**
+ * The shelf's own name. Client-owned for the same reason a family's is: the
+ * server declares WHICH shelf (`GameMetadata.section`), the widget decides
+ * what it is called, and no `displayNameKey` for sections crosses the wire.
+ *
+ * This is the fourth hand-written list in this file, so its failure mode is
+ * load-bearing rather than incidental — see the second test.
+ */
+describe("sectionUiFor — what the catalog's shelves are called, on the client's side of the wire", () => {
+  it("names the one shelf the four registered modules actually declare", () => {
+    expect(sectionUiFor("cartas")?.id).toBe("cartas");
+    expect(sectionUiFor("cartas")?.title, "the Spanish string itself lives in i18n.ts; this record only points at it").toBe("Cartas");
+  });
+
+  /* "Fichas" is deliberately NOT declared yet: a `SECTIONS` row no module
+   * points at is an enumerating-config entry with no referent, and it lands
+   * with the package that needs it. Until then this is the real, exercised
+   * state of the missing-copy path — `undefined`, so a caller can fall back
+   * to the raw section id and show a visible bug report, rather than a
+   * record with an empty title or a silent merge under the shelf above. */
+  it("returns undefined for a shelf this build has no copy for, rather than an empty name", () => {
+    expect(sectionUiFor("fichas")).toBeUndefined();
   });
 });
