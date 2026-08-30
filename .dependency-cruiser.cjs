@@ -35,16 +35,16 @@ module.exports = {
       name: "l1-no-l2-l3",
       severity: "error",
       comment:
-        "L1 packages (platform-core, truco-bot, truco-ui, escoba-bot, escoba-ui) must not depend on L2 adapters or L3 apps. `transport-colyseus-client` added to the `to` list: it was in NO layer rule at all — an omission, not a decision — while its sibling `transport-colyseus` already appeared in both this rule's `to` and `l2-no-l3`'s `from`.",
-      from: { path: "^packages/(platform-core|games/truco-bot|games/truco-ui|games/escoba-bot|games/escoba-ui)/src" },
-      to: { path: "^(packages/(games/truco-module|games/escoba-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)|apps)/" },
+        "L1 packages (platform-core, plus every packages/games/*-bot and *-ui) must not depend on L2 adapters or L3 apps. Generalized from a hand-written package list — `from` was truco-bot|truco-ui|escoba-bot|escoba-ui, `to` was truco-module|escoba-module — onto the same packages/games/<game>-<role> directory convention l0-game-engine-no-workspace-deps already stands on, per gotchas/cercados-no-se-heredan-a-juego-nuevo. The trailing `/src` (from) and `/` (to) are what pin the suffix to the end of the directory segment, so `*-uikit` is not a `*-ui`. Measured before generalizing, on a bundle-free tree whose baseline is 199 modules / 593 dependencies: a scratch packages/games/zz-probe-ui importing escoba-module by RELATIVE path was cruised (200/594) with its edge resolved to packages/games/escoba-module/src/index.ts, and produced ZERO violations — the same silent shape PR #98 found on transport-colyseus-client, where the dependency count rose and no rule judged the new edge. The `to` half is the one nothing else covers: scripts/dependency-cruiser-layer-coverage.test.ts reads `from.path` only, so a new package added to a rule's `from` but forgotten in this rule's `to` still passes it. The non-game L2 packages stay enumerated: they sit at packages/ root and share no suffix, so a glob there would invent a naming convention ahead of the packages it fences — the same objection that keeps l0-spanish-deck-ui-no-workspace-deps explicit. `transport-colyseus-client` in the `to` list: it was in NO layer rule at all — an omission, not a decision — while its sibling `transport-colyseus` already appeared in both this rule's `to` and `l2-no-l3`'s `from`.",
+      from: { path: "^packages/(platform-core|games/[^/]+-(bot|ui))/src" },
+      to: { path: "^(packages/(games/[^/]+-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)|apps)/" },
     },
     {
       name: "l2-no-l3",
       severity: "error",
       comment:
-        "L2 adapters (truco-module, escoba-module, transport-colyseus, transport-colyseus-client, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps. `transport-colyseus-client` depends only on platform-contract/platform-core and is consumed only by apps/widget-app (L3) — the same shape as its sibling `transport-colyseus`, which this rule already covered.",
-      from: { path: "^packages/(games/truco-module|games/escoba-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)/src" },
+        "L2 adapters (every packages/games/*-module, plus transport-colyseus, transport-colyseus-client, widget-frontdoor, widget-sdk) must not depend on L3 composition-root apps. The game modules are matched by the same directory convention l1-no-l2-l3 records, and the non-game ones stay enumerated for the reason recorded there. Measured before generalizing: a scratch packages/games/zz-probe-module importing apps/server/src/registry.js by RELATIVE path was cruised (200 modules / 594 dependencies against a 199/593 baseline) with its edge resolved to apps/server/src/registry.ts, and produced ZERO violations. `transport-colyseus-client` depends only on platform-contract/platform-core and is consumed only by apps/widget-app (L3) — the same shape as its sibling `transport-colyseus`, which this rule already covered.",
+      from: { path: "^packages/(games/[^/]+-module|transport-colyseus|transport-colyseus-client|widget-frontdoor|widget-sdk)/src" },
       to: { path: "^apps/" },
     },
     {
