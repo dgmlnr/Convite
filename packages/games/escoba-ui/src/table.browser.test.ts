@@ -11,11 +11,30 @@ afterEach(() => {
   document.getElementById(TABLE_STYLE_ID)?.remove();
 });
 
-function freshContainer(widthPx: number): HTMLElement {
+/**
+ * A TABLE UNDER A FELT, which is the only place a table ever is.
+ *
+ * This used to mount the table bare on the body, at an explicit width, and
+ * that was convenient rather than faithful: `game-ui-registry.ts` has always
+ * appended it inside `.hexdev-escoba-felt`. It stopped being merely unfaithful
+ * when `table-styles.ts` moved its container-query root up to the felt so the
+ * hand could be tiered too — a bare table now has nothing to ask, so it draws
+ * at the untiered default whatever width it is given, and the width tiers this
+ * file exercises would have quietly stopped being exercised at all.
+ *
+ * So the felt is the box with the width on it, and the table is its child at
+ * `width: 100%`. NOTHING BELOW IS WEAKENED BY IT: the 20-card assertion still
+ * measures the table's own rect against its own cards and still demands no
+ * horizontal overflow — it just does so at the size the real screen picks.
+ */
+function freshTable(widthPx: number): HTMLElement {
   container = document.createElement("div");
+  container.className = "hexdev-escoba-felt";
   container.style.width = `${widthPx}px`;
   document.body.appendChild(container);
-  return container;
+  const tableEl = document.createElement("div");
+  container.appendChild(tableEl);
+  return tableEl;
 }
 
 // escoba/invariante-de-paridad-de-la-mesa: a table made entirely of
@@ -30,7 +49,7 @@ function twentyEvenCards(): readonly Card[] {
 
 describe("renderEscobaTable (spec: escoba-table-ui, static render)", () => {
   it("renders nothing when the table is empty", () => {
-    const el = freshContainer(400);
+    const el = freshTable(400);
 
     renderEscobaTable(el, []);
 
@@ -38,7 +57,7 @@ describe("renderEscobaTable (spec: escoba-table-ui, static render)", () => {
   });
 
   it("renders every card of a given HandState.table, in order, with real card art", () => {
-    const el = freshContainer(400);
+    const el = freshTable(400);
     const table: readonly Card[] = [
       { suit: "oro", rank: 5 },
       { suit: "espada", rank: 3 },
@@ -55,7 +74,7 @@ describe("renderEscobaTable (spec: escoba-table-ui, static render)", () => {
 
   it("holds a 20-card table — the structural ceiling — with every card inside the container and no horizontal overflow", () => {
     ensureTableStyles(document);
-    const el = freshContainer(360); // a narrow, realistic embed width
+    const el = freshTable(360); // a narrow, realistic embed width
     const table = twentyEvenCards();
     expect(table).toHaveLength(20);
 

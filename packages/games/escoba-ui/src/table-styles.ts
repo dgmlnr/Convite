@@ -8,6 +8,20 @@ export const TABLE_STYLE_ID = "hexdev-escoba-table-styles";
  * and the interactive (markable/marked/playable) card states on top of the
  * same base rules -- one stylesheet for the whole surface, not two.
  *
+ * ONE CONTAINER FOR BOTH SURFACES, and that is this sheet's own root. The
+ * card tiers used to hang off a container declared on .hexdev-escoba-table
+ * itself, which meant they only ever reached the cards INSIDE the table: the
+ * hand is a SIBLING of it (game-ui-registry.ts appends table, hand, piles and
+ * sum side by side under the felt), so no query ever resolved for it and its
+ * cards stayed at the 72px default at every width. At 375px that drew a 72px
+ * hand under a 44px table -- the shared surface the whole game is played on
+ * rendered as an afterthought under three cards you already know. The root is
+ * therefore .hexdev-escoba-felt, the nearest box that is an ancestor of BOTH,
+ * and it is declared here rather than in rail-styles.ts (which owns the felt's
+ * PLACE in the layout) so that the sheet asking the question is the sheet that
+ * creates the container -- ensureTableStyles alone is enough for a card to be
+ * sized correctly, with no cross-file injection order to get right.
+ *
  * Container-query only, per this project's own rule: an embedded widget's
  * available width is its container's, never the viewport's, so no
  * ResizeObserver/matchMedia/innerWidth may appear here. flex-wrap is the
@@ -24,9 +38,23 @@ export const TABLE_STYLE_ID = "hexdev-escoba-table-styles";
  */
 export function buildTableStylesheet(): string {
   return `
-.hexdev-escoba-table {
+/* THE CARD-SIZING CONTAINER for every band on this felt (see the header). Its
+   layout -- flex column, the rail's neighbour -- belongs to rail-styles.ts;
+   only the container declaration is ours, and neither file restates a
+   property the other already sets.
+
+   INLINE-SIZE AND NOT SIZE: the felt's HEIGHT must keep coming from what it
+   holds, since .hexdev-escoba-match hugs its content when the host gives it no
+   height of its own. Inline-size containment still zeroes the felt's intrinsic
+   width contribution, which is why rail-styles.ts gives it flex-grow: whatever
+   the layout has left over after the rail is the felt's, and no card row's
+   max-content width gets a vote in that any more. */
+.hexdev-escoba-felt {
   container-type: inline-size;
-  container-name: hexdev-escoba-table;
+  container-name: hexdev-escoba-felt;
+}
+
+.hexdev-escoba-table {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
@@ -52,17 +80,41 @@ export function buildTableStylesheet(): string {
 
 .hexdev-escoba-card {
   /* --escoba-card-tier is the WIDTH tier's own choice; --escoba-card-width is
-   * what everything else reads. They are the same value everywhere except
-   * fullscreen, where the FULLSCREEN FIT block at the bottom of this sheet
-   * caps the tier by the height actually available. Splitting them is what
-   * lets that cap exist at all: a custom property cannot be defined in terms
-   * of itself, so min(the tier, the fit) needs the tier to still have a name
-   * of its own after the @container blocks below have spoken. The same split,
-   * for the same reason, as truco-ui's --truco-card-tier. */
-  --escoba-card-tier: 72px;
-  --escoba-card-width: var(--escoba-card-tier);
+   * what everything else reads. They differ in two ways: fullscreen, where the
+   * FULLSCREEN FIT block at the bottom of this sheet caps the tier by the
+   * height actually available, and in the hand, which takes a fraction of the
+   * tier rather than a tier of its own. Splitting them is what lets either
+   * exist at all: a custom property cannot be defined in terms of itself, so
+   * min(the tier, the fit) needs the tier to still have a name of its own
+   * after the @container blocks below have spoken. The same split, for the
+   * same reason, as truco-ui's --truco-card-tier.
+   *
+   * THE ORDER OF IMPORTANCE IS THE ORDER OF SIZE, and it runs table > hand >
+   * piles. The table is the shared surface a capture is decided on and it gets
+   * the tier outright; the hand is three cards you already hold, so it gets
+   * four fifths of it; a pile is a RECORD of what was taken, so piles-styles.ts
+   * keeps its own smaller fixed widths (28/40px) and stays under the hand at
+   * every tier below. One scale for the hand rather than a second set of tiers:
+   * the two rows then move together, and there is one number to argue with.
+   *
+   * --escoba-hand-scale is declared on EVERY card, not only on the ones in the
+   * hand, because the fit model at the bottom of this sheet has to read it too
+   * -- the two card rows cost 1 + the scale of a row between them, and a
+   * literal restated there could drift from this one. */
+  --escoba-hand-scale: 0.8;
+  --escoba-card-scale: 1;
+  --escoba-card-tier: 76px;
+  --escoba-card-width: calc(var(--escoba-card-tier) * var(--escoba-card-scale));
   flex: 0 0 auto;
   width: var(--escoba-card-width);
+}
+
+/* Higher specificity than the block above and than the fullscreen cap's own
+   --escoba-card-width, which is exactly why the scale lives on its own
+   property: the cap goes on setting the WIDTH for every card on the felt, and
+   the hand still ends up four fifths of whatever it decided. */
+.hexdev-escoba-hand .hexdev-escoba-card {
+  --escoba-card-scale: var(--escoba-hand-scale);
 }
 
 .hexdev-escoba-card img {
@@ -71,13 +123,14 @@ export function buildTableStylesheet(): string {
   height: auto;
 }
 
-@container hexdev-escoba-table (width < 400px) {
-  .hexdev-escoba-card { --escoba-card-tier: 44px; }
-  .hexdev-escoba-table { gap: 4px; }
+@container hexdev-escoba-felt (width < 400px) {
+  .hexdev-escoba-card { --escoba-card-tier: 56px; }
+  .hexdev-escoba-table,
+  .hexdev-escoba-hand { gap: 4px; }
 }
 
-@container hexdev-escoba-table (min-width: 400px) and (width < 640px) {
-  .hexdev-escoba-card { --escoba-card-tier: 56px; }
+@container hexdev-escoba-felt (min-width: 400px) and (width < 640px) {
+  .hexdev-escoba-card { --escoba-card-tier: 64px; }
 }
 
 .hexdev-escoba-hand {
@@ -92,7 +145,10 @@ export function buildTableStylesheet(): string {
    * contribute to its inline size -- fit-content under it resolves to zero,
    * not to the width of the cards. Nothing is lost by dropping it: every
    * @container query in this package is NAMED, an unnamed container matches
-   * none of them, and nothing here was ever asking this box a question.
+   * none of them, and nothing here was ever asking this box a question. The
+   * cards inside it now DO ask one -- they are tiered like the table's -- and
+   * they ask it of the felt above, which is the whole point of moving the root
+   * up there: a box that is contained cannot be the box that answers.
    * max-width keeps the wrap: past the felt's width the row still breaks. */
   display: flex;
   flex-wrap: wrap;
@@ -195,10 +251,20 @@ export function buildTableStylesheet(): string {
  *
  *     felt = rows x cardHeight + status + piles + sum + 4 paddings + R
  *
- * ROWS is two: the face-up table's row and the player's own hand's row. The
- * piles are NOT a third -- a pile card has its own fixed width
- * (piles-styles.ts) and does not move with this one -- so they enter as a
- * band, not as a row.
+ * ROWS IS NO LONGER TWO, and the fraction is the honest number rather than a
+ * loosened one. There are still exactly two card rows -- the face-up table's
+ * and the player's own hand's -- but they are no longer the same height: the
+ * hand draws at --escoba-hand-scale of the table, so the pair costs
+ * 1 + that scale of a table row, not 2. Written as a calc over the same
+ * property the hand itself reads, so re-arguing the scale re-solves the budget
+ * in one place. The piles are NOT a third row -- a pile card has its own fixed
+ * width (piles-styles.ts) and does not move with this one -- so they enter as
+ * a band, not as a row.
+ *
+ * THE CAP MULTIPLIES BY THE SCALE, exactly as the unfit width above does.
+ * Without that the hand would keep the table's capped width in fullscreen and
+ * the two rows would cost 2 again -- the budget would be right and the layout
+ * would not, which is the worse of the two failures.
  *
  * THE PILES BAND IS THE FULL ONE, and it is now 80px where it used to be
  * 160. That is not a loosened budget: it is the same worst case costing half
@@ -241,7 +307,7 @@ export function buildTableStylesheet(): string {
  * card the tier still wins and nothing about the existing layout changes.
  * ========================================================================== */
 :root[data-hexdev-layout="fullscreen"] .hexdev-escoba-card {
-  --escoba-fit-rows: 2;
+  --escoba-fit-rows: calc(1 + var(--escoba-hand-scale));
   --escoba-fit-status: 30px;
   --escoba-fit-piles: 80px;
   --escoba-fit-sum: 25px;
@@ -251,12 +317,12 @@ export function buildTableStylesheet(): string {
      one pixel above the real one leaves one pixel of headroom and one below
      overflows by one. */
   --escoba-fit-residual: 12px;
-  --escoba-card-width: min(
-    var(--escoba-card-tier),
-    calc(
+  --escoba-card-width: calc(
+    min(
+      var(--escoba-card-tier),
       (100dvh - var(--escoba-fit-status) - var(--escoba-fit-piles) - var(--escoba-fit-sum) - var(--escoba-table-padding, 8px) * 4 - var(--escoba-fit-residual)) * 329 / 520 /
         var(--escoba-fit-rows)
-    )
+    ) * var(--escoba-card-scale)
   );
 }
 `;
