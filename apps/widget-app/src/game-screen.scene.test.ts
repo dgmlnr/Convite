@@ -11,6 +11,7 @@ const TRUCO_ID = "truco-argentino" as GameId;
 const TRUCO_ENTRY: CatalogEntry = {
   id: TRUCO_ID,
   gameFamily: "truco",
+  section: "cartas",
   displayNameKey: "games.truco.name",
   seatCount: 2,
   configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],

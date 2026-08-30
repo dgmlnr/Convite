@@ -1,33 +1,39 @@
 import { ensureChromeStyles } from "./chrome-styles.js";
 import type { GameFamily } from "./game-families.js";
+import type { GameSection } from "./game-sections.js";
 import { renderAbout } from "./game-screen.js";
-import { familyUiFor } from "./game-ui-registry.js";
+import { familyUiFor, sectionUiFor } from "./game-ui-registry.js";
 import { STRINGS, translateGameName } from "./i18n.js";
 
 /**
- * SCREEN ONE: the place, and the games in it.
+ * SCREEN ONE: the place, the shelves, and the games on them.
  *
  * The screen a player lands on when this tenant is entitled to more than one
  * game. It lists GAMES, not the entries the matchmaker joins: `truco-argentino`
  * and `truco-argentino-2v2` are two ways of playing one thing, and choosing
  * between them belongs on the game's own screen, not here.
  *
- * DELIBERATELY UNREACHABLE TODAY. The only configured tenant is entitled to
- * both truco entries, which is a single family, and a single-family tenant
- * opens straight onto its game (`lobby-screen.ts`). So this renders for
- * nobody until a second game ships — which is exactly why its correctness
- * rests on tests and a rendered scene rather than on somebody using it.
+ * REACHABLE TODAY, and the paragraph that stood here said the opposite for
+ * two shipped releases. It read "deliberately unreachable — the only
+ * configured tenant is entitled to both truco entries, which is a single
+ * family". Escoba satisfied that condition and nobody came back to the
+ * sentence: both composition roots now entitle four ids (`apps/server/src/
+ * config.ts`, `apps/mint-server/src/config.ts`) which collapse into TWO
+ * families, so `lobby-screen.ts`'s single-family shortcut is false and this
+ * is the first thing a player sees. Its tests and its scene are still the
+ * fastest way to look at it; they stopped being the only way.
  *
- * WHAT IS NOT HERE YET, and is not an oversight: each family's own cards, the
- * "Convite" mark at the foot, and this screen's own scene. Those are the next
- * unit; this one is the screen existing and working. Nothing plain reaches a
- * player in between, because of the paragraph above.
+ * ONE SHELF IS NO SHELF. A tenant whose games all sit on one shelf has
+ * nothing to tell apart, so no heading and no group wrapper are emitted and
+ * the card names stay at `h2` — the same DOM this screen rendered before
+ * shelves existed. Every module registered today declares `section:
+ * "cartas"`, so that is the branch the running product takes.
  */
 export interface GameListCallbacks {
   readonly onOpenGame: (family: GameFamily) => void;
 }
 
-export function renderGameList(container: HTMLElement, families: readonly GameFamily[], callbacks: GameListCallbacks): void {
+export function renderGameList(container: HTMLElement, sections: readonly GameSection[], callbacks: GameListCallbacks): void {
   ensureChromeStyles(container.ownerDocument);
   // THE SAME SHELL CLASS SCREEN TWO SETS, and it is not decoration: it
   // carries the felt, the type scale, and the @container context every
@@ -65,7 +71,9 @@ export function renderGameList(container: HTMLElement, families: readonly GameFa
   header.appendChild(tagline);
 
   // An empty catalog is a lobby with nothing in it, never a blank screen.
-  if (families.length === 0) {
+  // Normalization is total (`catalogGroupingOf`), so a non-empty catalog
+  // always yields at least one shelf — no shelf means no games.
+  if (sections.length === 0) {
     const empty = document.createElement("p");
     empty.className = "hexdev-chrome-empty";
     empty.textContent = STRINGS.emptyCatalog;
@@ -73,60 +81,103 @@ export function renderGameList(container: HTMLElement, families: readonly GameFa
     return;
   }
 
-  // THE SAME ROW AS SCREEN TWO, on purpose: `.hexdev-chrome-games` carries
-  // the band contract both screens live in — the header's own max-width and
-  // centre, with bounded tracks so one card cannot run the full width. Two
-  // screens sharing one layout rule is why the fix made for one holds here.
-  const list = document.createElement("div");
-  list.className = "hexdev-chrome-games";
-  content.appendChild(list);
+  // ONE CONDITION, AND IT DECIDES BOTH HALVES OF THE CHANGE. A single shelf
+  // gets no wrapper, no heading, and card names left at `h2`; more than one
+  // gets all three. The heading level cannot be decided anywhere else: a
+  // heading emitted without stepping the names under it puts a shelf and a
+  // game at the same level, and a step with no heading above it skips a
+  // level in the outline. Two `if`s here is how those drift apart.
+  const headed = sections.length > 1;
 
-  for (const family of families) {
-    // A BUTTON, not a div with a handler: the whole card is the activation
-    // target, and a button is the only element that gets keyboard activation,
-    // focus and a role without being told to.
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "hexdev-game-card hexdev-game-card--choice";
-    card.dataset.family = family.id;
+  for (const section of sections) {
+    // THE HEADING IS A SIBLING OF THE BAND, NEVER A CHILD OF IT, and that is
+    // geometry rather than taste. `.hexdev-chrome-games` becomes an auto-fit
+    // grid of 22rem tracks at ≥720px (chrome-styles.ts), so an `<h2>` placed
+    // inside it is a grid ITEM standing beside a card instead of a label over
+    // the row. Spanning it back would need `grid-column: 1 / -1`, meaningful
+    // only in the grid tier and silently inert below it. Wrapping instead
+    // leaves the band's own rules edited by zero lines, which is what makes
+    // the one-shelf render identical rather than merely close.
+    let band: HTMLElement = content;
+    if (headed) {
+      const shelf = document.createElement("section");
+      shelf.className = "hexdev-chrome-section";
+      const headingId = `hexdev-section-${section.id}`;
+      // An unnamed <section> is not exposed as a region at all, so a grouping
+      // that is obvious to somebody looking at it would not exist for anyone
+      // who is not.
+      shelf.setAttribute("aria-labelledby", headingId);
 
-    // ITS OWN CARDS, ahead of its name: somebody who plays reads the faces
-    // before they read a word, and somebody who does not still sees a hand.
-    // Hidden from the accessibility tree because the heading below already
-    // says which game this is — three alt texts would be read out first and
-    // name nothing a player must act on.
-    //
-    // A family that declares none renders a title-only card, still full size
-    // and still a full activation target: a game with no art yet is a game,
-    // not a hole in the list.
-    const art = familyUiFor(family.id)?.cardArt ?? [];
-    if (art.length > 0) {
-      const fan = document.createElement("div");
-      fan.className = "hexdev-game-card-art";
-      fan.setAttribute("aria-hidden", "true");
-      fan.style.setProperty("--n", String(art.length));
-      for (const [index, src] of art.entries()) {
-        const face = document.createElement("img");
-        face.className = "hexdev-game-card-face";
-        face.src = src;
-        face.alt = "";
-        face.decoding = "async";
-        face.style.setProperty("--i", String(index));
-        fan.appendChild(face);
-      }
-      card.appendChild(fan);
+      const heading = document.createElement("h2");
+      heading.className = "hexdev-chrome-section-title";
+      heading.id = headingId;
+      // THE RAW ID WHEN THE CLIENT HAS NO COPY FOR THE SHELF. `SECTIONS` is a
+      // hand-written list and will fall behind the catalog eventually; the
+      // alternative — emitting no heading — silently files these cards under
+      // the shelf above and mis-attributes them. Visible and ugly is a bug
+      // report somebody files; silent is a lie about a neighbour.
+      heading.textContent = sectionUiFor(section.id)?.title ?? section.id;
+      shelf.appendChild(heading);
+
+      content.appendChild(shelf);
+      band = shelf;
     }
 
-    const name = document.createElement("h2");
-    // The name comes from the family's FIRST entry, which is the catalog's
-    // own first way of playing it. Both truco entries translate to names that
-    // differ only by seat count, and the seat count belongs on the game's own
-    // screen — never in the title of the card you press to get there.
-    name.textContent = translateGameName(family.entries[0]!.displayNameKey);
-    card.appendChild(name);
+    // THE SAME ROW AS SCREEN TWO, on purpose: `.hexdev-chrome-games` carries
+    // the band contract both screens live in — the header's own max-width and
+    // centre, with bounded tracks so one card cannot run the full width. Two
+    // screens sharing one layout rule is why the fix made for one holds here.
+    const list = document.createElement("div");
+    list.className = "hexdev-chrome-games";
+    band.appendChild(list);
 
-    card.addEventListener("click", () => callbacks.onOpenGame(family));
-    list.appendChild(card);
+    for (const family of section.families) {
+      // A BUTTON, not a div with a handler: the whole card is the activation
+      // target, and a button is the only element that gets keyboard activation,
+      // focus and a role without being told to.
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hexdev-game-card hexdev-game-card--choice";
+      card.dataset.family = family.id;
+
+      // ITS OWN CARDS, ahead of its name: somebody who plays reads the faces
+      // before they read a word, and somebody who does not still sees a hand.
+      // Hidden from the accessibility tree because the heading below already
+      // says which game this is — three alt texts would be read out first and
+      // name nothing a player must act on.
+      //
+      // A family that declares none renders a title-only card, still full size
+      // and still a full activation target: a game with no art yet is a game,
+      // not a hole in the list.
+      const art = familyUiFor(family.id)?.cardArt ?? [];
+      if (art.length > 0) {
+        const fan = document.createElement("div");
+        fan.className = "hexdev-game-card-art";
+        fan.setAttribute("aria-hidden", "true");
+        fan.style.setProperty("--n", String(art.length));
+        for (const [index, src] of art.entries()) {
+          const face = document.createElement("img");
+          face.className = "hexdev-game-card-face";
+          face.src = src;
+          face.alt = "";
+          face.decoding = "async";
+          face.style.setProperty("--i", String(index));
+          fan.appendChild(face);
+        }
+        card.appendChild(fan);
+      }
+
+      const name = document.createElement(headed ? "h3" : "h2");
+      // The name comes from the family's FIRST entry, which is the catalog's
+      // own first way of playing it. Both truco entries translate to names that
+      // differ only by seat count, and the seat count belongs on the game's own
+      // screen — never in the title of the card you press to get there.
+      name.textContent = translateGameName(family.entries[0]!.displayNameKey);
+      card.appendChild(name);
+
+      card.addEventListener("click", () => callbacks.onOpenGame(family));
+      list.appendChild(card);
+    }
   }
 
   // THE CREDITS RENDER ON BOTH SCREENS, and that is a licensing obligation
