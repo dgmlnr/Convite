@@ -203,3 +203,51 @@ describe("the hand-end breakdown never shares the felt with a card", () => {
     expect(el.querySelectorAll(".hexdev-escoba-hand [data-card]"), "a decided hand with cards still in hand").toHaveLength(0);
   });
 });
+
+/**
+ * AND THE HAND-END SCREEN FITS, which the block above never once claimed.
+ *
+ * That block proves the BUDGET's assumption — that a decided breakdown and a
+ * card never share the felt — and it is the reason the 184px panel is not
+ * subtracted from the card rows. It says nothing at all about whether the
+ * screen it describes fits, and it did not: the widget measured 402.22px
+ * against 390px of rotated phone while its felt measured 350.22px. The 52px
+ * between the two was the `aria-live` paragraph that repeats the breakdown in
+ * one sentence, rendered as an ordinary <p> because no stylesheet had ever
+ * claimed it. `scoreboard-styles.ts` now clips it the way this package already
+ * clips its two other say-it-do-not-draw-it nodes.
+ *
+ * A CAP CANNOT REACH THIS SCREEN, which is why it needs a fence of its own
+ * rather than a wider budget. When a hand is decided the table and the hand
+ * are empty, so the card rows the cap governs are two 16px strips of padding
+ * and every other band is a fixed height. There is no card left to shrink:
+ * whatever the fixed bands add up to IS the screen, and the only lever is
+ * which bands exist.
+ */
+describe.each(WINDOWS)("the hand-end screen fits too — $w x $h ($label)", ({ w, h }) => {
+  it.each(["1v1", "2v2"] as const)("%s: a decided hand renders nothing below the fold", async (seats) => {
+    const el = await mountedFullscreen(w, h);
+    await renderScreen(el, seats, handEndState(seats));
+
+    expect(el.querySelector<HTMLElement>(".hexdev-escoba-hand-breakdown")?.dataset.decided, "fence setup: this state must actually render the breakdown").toBe("true");
+    expect(widgetHeight(el), `${seats} hand-end against a ${String(h)}px window`).toBeLessThanOrEqual(h);
+  });
+
+  /**
+   * THE HALF THAT MAKES THE FIX A FIX RATHER THAN A DELETION. Clipping a live
+   * region and removing it are the same number of pixels and opposite
+   * outcomes: one keeps the hand's result reaching assistive tech, the other
+   * silently ends it. So the fence is not "the announcer is small" — it is
+   * "the announcer still says the whole thing, and still costs nothing".
+   */
+  it.each(["1v1", "2v2"] as const)("%s: the outcome is still announced, and still costs no height", async (seats) => {
+    const el = await mountedFullscreen(w, h);
+    await renderScreen(el, seats, handEndState(seats));
+
+    const announcer = el.querySelector<HTMLElement>(".hexdev-escoba-breakdown-announcer");
+    expect(announcer, "the region a decided hand is announced through").not.toBeNull();
+    expect(announcer!.getAttribute("aria-live"), "a region that does not announce is not a region").toBe("polite");
+    expect(announcer!.textContent, "the hand's own result, in words").toContain("La mano valió");
+    expect(announcer!.getBoundingClientRect().height, "an announcement drawn as a paragraph is the overflow").toBeLessThanOrEqual(1);
+  });
+});

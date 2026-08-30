@@ -139,6 +139,36 @@ export function buildScoreboardStylesheet(): string {
   font-weight: 700;
 }
 
+/* THE SAME BREAKDOWN, SPOKEN — announced, never painted.
+   \`describeHandBreakdown\` writes the whole result of a hand into an aria-live
+   region the composition root mounts once and mutates after, because the panel
+   above is rebuilt from scratch on every broadcast and a rebuilt node
+   announces nothing.
+
+   IT HAD NO RULE AT ALL, so it rendered as what it is built from: an ordinary
+   paragraph, 36px of prose plus a 16px margin, repeating in one sentence the
+   seven rows directly above it. On a rotated phone that band WAS the overflow
+   and nothing else was — the felt measures 350.22px against 390px of screen,
+   and the widget measured 402.22px. Fifty-two pixels of duplicate text is not
+   what a 390px screen is short of.
+
+   CLIPPED, NEVER \`display: none\`, and that is the whole point of the element:
+   a region taken out of the accessibility tree announces nothing, so hiding it
+   that way would silently delete the hand's outcome from every screen reader
+   rather than merely stop drawing it. Same recipe, same bargain, as
+   .hexdev-escoba-escoba-count above — a picture and its sentence, except here
+   the visible panel is the picture. */
+.hexdev-escoba-breakdown-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 @container hexdev-escoba-scoreboard (width < 400px) {
   .hexdev-escoba-scoreboard { gap: 12px; }
 }
