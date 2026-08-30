@@ -12,6 +12,15 @@ build/
 # Generated review artifacts (regenerate via each package's own generator script)
 packages/spanish-deck-ui/sample/
 
+# Engram memory chunks. `engram sync` writes `.engram/` relative to the CURRENT
+# directory, so running it from inside this repo drops a chunk of personal
+# memory here — and this repo is public. There is no flag or environment
+# variable to redirect it (checked in engram v1.20.0), so ignoring it is the
+# only defense. Chunks belong in the dedicated dgmlnr/engram-sync repo.
+# The read-only command is `engram sync --status`; positional `sync status`
+# does not report, it exports.
+/.engram/
+
 # Test output
 coverage/
 test-results/
