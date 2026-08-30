@@ -1,4 +1,4 @@
-import type { GameFamilyId, GameId, PlayerId } from "./ids.js";
+import type { CatalogSectionId, GameFamilyId, GameId, PlayerId } from "./ids.js";
 import type { JsonValue } from "./json.js";
 
 /** What a lobby/catalog UI needs to present a game. No team concept, no
@@ -19,6 +19,18 @@ export interface GameMetadata {
    * a game that declares no family is simply a family of one.
    */
   readonly gameFamily?: GameFamilyId;
+  /**
+   * Which shelf of the catalog this game sits on — see `CatalogSectionId`.
+   *
+   * OPTIONAL HERE AND REQUIRED ON THE WAY OUT, for exactly the reason
+   * `gameFamily` above is, and normalized by the same single function
+   * (`catalogGroupingOf`). The two normalizations CHAIN: an absent section
+   * becomes the entry's NORMALIZED FAMILY, not its id, so the two ways of
+   * playing one game never land on two different shelves by accident. A game
+   * that declares neither is a family of one on a shelf of one, both named
+   * after itself, and no CLIENT ever handles `undefined`.
+   */
+  readonly section?: CatalogSectionId;
 }
 
 export type ConfigOptionValue = string | number | boolean;
