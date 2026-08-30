@@ -91,6 +91,18 @@ export const STRINGS = {
    * front door asks which, the game's own screen asks how.
    */
   gameListTitle: "Elegí un juego",
+  /**
+   * The name of the shelf the card games sit on — screen one's section
+   * heading, once there is more than one shelf to tell apart.
+   *
+   * HERE rather than as a literal inside `game-ui-registry.ts`'s own
+   * `SECTIONS` record, unlike `ESCOBA_FAMILY.heroTitle: "Escoba de 15"`, and
+   * the difference is the kind of word: "Escoba de 15" is a proper noun, the
+   * game's own name, which is the same in every language. "Cartas" is an
+   * ordinary common noun that a second language would translate, so it
+   * belongs in the one Spanish string table with the rest of the copy.
+   */
+  sectionCartas: "Cartas",
   backToGames: "Todos los juegos",
   brand: "Convite",
   /**

@@ -4,7 +4,7 @@ import { page } from "vitest/browser";
 import type { GameId } from "@hexdev/platform-contract";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import type { CatalogEntry } from "./bootstrap-data.js";
-import { groupByFamily } from "./game-families.js";
+import { groupBySection } from "./game-sections.js";
 import { renderGameList } from "./game-list.js";
 import { renderGameSelection } from "./game-screen.js";
 
@@ -120,14 +120,17 @@ describe("scene: the lobby with two real games in it", () => {
     await page.viewport(414, 1000);
     const container = mountedContainer(375);
 
-    // The REAL grouping function, not a hand-built family list: a family's
-    // identity comes from the explicit `gameFamily` every catalog entry
-    // carries, and the art from `familyUiFor` inside `renderGameList`. So
+    // The REAL grouping functions, not a hand-built list: `groupBySection`
+    // composes `groupByFamily`, a family's identity comes from the explicit
+    // `gameFamily` every catalog entry carries, and the art from `familyUiFor`
+    // inside `renderGameList`. Every entry here declares `section: "cartas"`,
+    // exactly as the four registered modules do, so this is the ONE-shelf
+    // render — no heading, no wrapper, the screen a player gets today. So
     // escoba's three faces here are the ones the product would really draw —
     // 3 de copa, 7 de ORO centred, 5 de espada, which sum to fifteen and are
     // therefore the game's own name laid out as pictures
     // (`escoba/cartas-insignia-del-lobby`).
-    renderGameList(container, groupByFamily(CATALOG), { onOpenGame: noop });
+    renderGameList(container, groupBySection(CATALOG), { onOpenGame: noop });
     await waitForArt(container);
 
     await expect.element(container).toMatchScreenshot("escoba-lobby-two-families");
