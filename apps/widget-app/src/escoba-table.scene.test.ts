@@ -107,9 +107,9 @@ const HEAD_TO_HEAD_DECK: readonly Card[] = deckOpeningWith([
   { suit: "oro", rank: 11 }, // seat 0 — caballo de oro, still in hand
   { suit: "copa", rank: 7 }, // seat 1 — takes the sota
   { suit: "basto", rank: 5 }, // seat 0 — still in hand
-  { suit: "copa", rank: 1 }, // seat 1 — left face up
+  { suit: "copa", rank: 12 }, // seat 1 — left face up, then swept: ESCOBA
   { suit: "espada", rank: 3 }, // seat 0 — sweeps the table: ESCOBA
-  { suit: "basto", rank: 1 }, // seat 1 — never played here
+  { suit: "basto", rank: 1 }, // seat 1 — played only in the two-escoba state
   { suit: "copa", rank: 4 }, // table
   { suit: "espada", rank: 6 }, // table
   { suit: "basto", rank: 10 }, // table — sota, worth 8
@@ -141,7 +141,7 @@ function headToHeadMatch(): MatchState {
  *   1. the rival's siete de copa takes the sota de basto      (7 + 8 = 15)
  *   2. our tres de espada takes the four, the six and the two (3 + 4 + 6 + 2 = 15)
  *      and that is the WHOLE table, so it is an ESCOBA
- *   3. the rival's as de copa lands on an empty table and stays face up
+ *   3. the rival's rey de copa lands on an empty table and stays face up
  *
  * Our two remaining cards form no fifteen with it, so both render as playable
  * rather than dimmed. That is a choice about the PICTURE and it is worth being
@@ -162,8 +162,34 @@ function headToHeadMidHand(): MatchState {
       { suit: "oro", rank: 2 },
     ],
   );
-  state = play(state, RIVAL, { suit: "copa", rank: 1 }, []);
+  state = play(state, RIVAL, { suit: "copa", rank: 12 }, []);
   return state;
+}
+
+/**
+ * THE SAME HAND, TWO PLAYS LATER, AND THE ONLY THING THAT CHANGES IS THE
+ * NOTATION.
+ *
+ * `scoreboard.ts` draws an escoba the way art. 14.1 asks for it — a card
+ * turned face up across the pile — and every scene above photographs exactly
+ * ONE of them, which is the count at which the mark is least legible: a lone
+ * ivory chip beside a score reads as a badge nobody explained. A real hand
+ * reaches two and three, and a notation is only judgeable at the counts it is
+ * actually seen at. That is the whole reason this state exists.
+ *
+ *   4. our cinco de basto takes the rey de copa left face up above (5 + 10 = 15)
+ *      and that is the whole table, so it is a SECOND ESCOBA
+ *   5. the rival's as de basto lands on an empty table and stays face up
+ *
+ * Which leaves us two marks against the rivals' none, on one screen: the mark
+ * at the count that was judged and the empty row it has to be distinguishable
+ * from, side by side. The turn comes back to us holding the caballo de oro,
+ * with nothing on the table to take it with — the same honest, playable state
+ * the shot above is composed for.
+ */
+function headToHeadTwoEscobas(): MatchState {
+  const swept = play(headToHeadMidHand(), SELF, { suit: "basto", rank: 5 }, [{ suit: "copa", rank: 12 }]);
+  return play(swept, RIVAL, { suit: "basto", rank: 1 }, []);
 }
 
 /* ── 2v2 ───────────────────────────────────────────────────────────────── */
@@ -520,6 +546,33 @@ describe("scene: the escoba side rail, opened and unfolded", () => {
     await waitForArt(container);
 
     await expect.element(container).toMatchScreenshot("escoba-table-2v2-rail-column");
+  });
+});
+
+/**
+ * THE ESCOBA MARKS, AT THE COUNT A REAL HAND REACHES.
+ *
+ * Every other scene in this file carries exactly one mark, and one was the
+ * count at which the notation was judged and found ambiguous — a small ivory
+ * chip beside a score. Two or three was the open question, and the only way to
+ * settle it is to draw two and look, so this is the same 1v1 hand two plays
+ * further on (`headToHeadTwoEscobas`).
+ *
+ * THE TABLET COLUMN, and not a phone: the tanteador is where the marks live,
+ * and on a phone that is a drawer somebody has to open first. Past 640
+ * container-px it is a permanent column, so the notation is simply on screen —
+ * two marks on our row, none on the rivals', which is the comparison the
+ * judgement actually needs.
+ */
+describe("scene: the escoba marks, at two", () => {
+  it("1v1, tablet: two escobas on our row and none on theirs, in the rail's own column", async () => {
+    await page.viewport(TABLET.width, TABLET.height);
+    const container = mountedContainer(TABLET.container);
+
+    renderScreen(container, "escoba-de-15", headToHeadTwoEscobas());
+    await waitForArt(container);
+
+    await expect.element(container).toMatchScreenshot("escoba-table-two-escobas");
   });
 });
 
