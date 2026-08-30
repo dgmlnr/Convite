@@ -448,7 +448,10 @@ describe("two shelves: headed groups, in the catalog's own order", () => {
     const el = fresh();
     renderGameList(el, TWO_SHELVES, { onOpenGame: noop });
 
-    for (const shelf of el.querySelectorAll<HTMLElement>(".hexdev-chrome-section")) {
+    const shelves = [...el.querySelectorAll<HTMLElement>(".hexdev-chrome-section")];
+    expect(shelves.length, "sanity: two shelves, or this loop proves nothing").toBe(2);
+
+    for (const shelf of shelves) {
       const labelledBy = shelf.getAttribute("aria-labelledby");
       expect(labelledBy, "an unnamed <section> is not exposed as a region at all").toBeTruthy();
       expect(document.getElementById(labelledBy!)?.textContent, "aria-labelledby points at something that is not this shelf's own heading").toBe(
@@ -528,7 +531,7 @@ describe("a shelf's title stands over its own cards, in the same 46rem band", ()
    * and no measurement did. The band is shrink-to-fit — an auto cross-axis
    * margin on a flex item turns stretch off — so a shelf of two games came
    * out 728px and a shelf of one came out 352px, each centred on its own
-   * width, their labels 138px apart. The assertion above passed throughout,
+   * width, their labels 188px apart. The assertion above passed throughout,
    * because each label DID sit over its own cards. What was wrong was the
    * relationship BETWEEN shelves, and nothing was looking at it. */
   it("puts every shelf, and every shelf's first card, on the same left edge whatever it holds", () => {

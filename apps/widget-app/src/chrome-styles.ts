@@ -484,7 +484,7 @@ export function buildChromeStylesheet(): string {
    auto cross-axis margin on a flex item turns stretch off -- so a shelf of
    two games came out 728px wide and a shelf of one came out 352px, each
    centred on its own width. Every measurement passed, because each label DID
-   sit over its own cards; the two labels simply landed 138px apart and the
+   sit over its own cards; the two labels simply landed 188px apart and the
    second shelf read as an accidental indent. A definite width is what makes
    them share an edge. The band nested inside is then an ordinary block and
    fills it, so no rule of its own had to change. */
@@ -493,7 +493,7 @@ export function buildChromeStylesheet(): string {
      (see its own rule above) because a bandless screen has a centred title
      over it and nothing else to line up with. A shelf label is exactly that
      something else: with one anchored at the row's left edge, a lone card
-     centred 136px away from its own name reads as a gap rather than as a
+     centred 192px away from its own name reads as a gap rather than as a
      group. Scoped to a shelf, so the unheaded one-shelf screen keeps
      centring, untouched. */
   .hexdev-chrome-section > .hexdev-chrome-games {
