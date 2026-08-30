@@ -6,6 +6,7 @@ import type { ConsultAskMessage, ErasedAction, MatchConnection } from "@hexdev/t
 import { readInlineBootstrap, type CatalogEntry } from "./bootstrap-data.js";
 import { CONSULT_IDLE, askOnView, consultOnAdvice, consultOnAsk, consultOnView, routeAction, type ConsultState } from "./consult-channel.js";
 import { groupByFamily } from "./game-families.js";
+import { groupBySection } from "./game-sections.js";
 import { renderGameList } from "./game-list.js";
 import { createLobbyScreen } from "./lobby-screen.js";
 import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
@@ -303,6 +304,15 @@ function main(): void {
     // rather than by an `if` in this file. Same reason `departureGate` above
     // is a gate and not a boolean: composition stays here, decisions leave.
     const families = groupByFamily(catalog);
+    // BOTH GROUPINGS, EACH FROM THE CATALOG, and deliberately not
+    // `sections.flatMap((s) => s.families)`. A family whose two entries
+    // declare different shelves appears under BOTH of them — honest for a
+    // screen, ruinous for `createLobbyScreen`, whose whole state is
+    // "`families.length === 1` means open that game straight away". Flattening
+    // would hand it a duplicate and turn a two-entry family into a two-family
+    // tenant. The server fences that shape off at composition time
+    // (`createGameModuleRegistry`); this line does not depend on it having.
+    const sections = groupBySection(catalog);
     const screen = createLobbyScreen(families);
 
     // The moment someone most wants another match is right after finishing
@@ -339,7 +349,7 @@ function main(): void {
         // `game-screen.ts` keys the player's picked modality by container, so
         // handing screen two a different element would silently reset it on
         // every trip through the list.
-        renderGameList(app!, families, {
+        renderGameList(app!, sections, {
           onOpenGame: (family) => {
             screen.open(family.id);
             rerender();
