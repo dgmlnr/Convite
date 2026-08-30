@@ -81,11 +81,18 @@ export function buildRailStylesheet(): string {
   width: min(64cqw, var(--escoba-rail-drawer-width, 220px));
   padding: var(--escoba-rail-padding, 8px);
   border-radius: var(--gx-radius, 10px) 0 0 var(--gx-radius, 10px);
-  /* OPAQUE, a correction found by looking: at 34% black the score was read
-     THROUGH a sota, and a drawer covers what it covers. Darkened felt, not a
-     fourth green -- --hx-cloth-deep is READ here, never declared. */
-  background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), var(--hx-cloth-deep, #0d3325);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  /* A PANEL, NOT DARKER CLOTH. This was a 50%-black wash over --hx-cloth-deep
+     -- opaque, which was the correction that mattered (at 34% the score was
+     read THROUGH a sota, and a drawer covers what it covers), but still felt:
+     the tanteador looked like a patch of the table rather than a thing lying
+     on it. Truco's side panel is a real SURFACE, and this is that surface,
+     re-declared here because escoba-ui is L1: the tenant's own surface colour
+     where they sent one, a green of ours where they did not, and the two
+     shadows -- one to sit it above the cloth, one to give it an edge -- that
+     say so. Opaque either way. */
+  background: var(--gx-color-surface, #26433a);
+  color: var(--gx-color-on-surface, var(--hx-felt-text, #f2f2f2));
+  box-shadow: var(--hx-elev-2), var(--hx-relief);
 }
 .hexdev-escoba-side-rail[data-open="false"] > .hexdev-escoba-rail-body { display: none; }
 

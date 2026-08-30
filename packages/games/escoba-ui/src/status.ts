@@ -1,3 +1,4 @@
+import { cardBackSvg } from "@hexdev/spanish-deck-ui";
 import type { OtherPlayerView, PlayerView } from "@hexdev/escoba-engine";
 
 /**
@@ -137,12 +138,34 @@ function renderSeat(other: OtherPlayerView, view: PlayerView): HTMLElement {
   label.className = "hexdev-escoba-seat-label";
   label.textContent = SEAT_LABELS[role];
 
+  // STILL SAID IN WORDS, only no longer drawn as them. The backs below are a
+  // PICTURE of the number, and a picture-only count reads as nothing at all
+  // (WCAG 1.1.1) — so the sentence stays, clipped to nothing so it costs the
+  // chip no width, exactly as `truco-ui`'s own `renderOpponentHand` keeps its.
   const count = document.createElement("span");
   count.className = "hexdev-escoba-seat-count";
   count.dataset.cards = String(other.cardsRemaining);
   count.textContent = describeCards(other.cardsRemaining);
 
-  seat.append(label, count);
+  // ONE REAL BACK PER CARD STILL IN THAT HAND. `cardBackSvg` comes from L0's
+  // `spanish-deck-ui` — the same deck `renderEscobaTable` draws its fronts
+  // from and the same call `truco-ui/src/opponent-hand.ts` makes — so both
+  // games' opponents are drawn from one deck rather than two lookalikes.
+  // Decorative: a back carries nothing the count above does not already say,
+  // and it must never say more (the identity is redacted engine-side; this
+  // function only ever receives a number).
+  const backs = document.createElement("span");
+  backs.className = "hexdev-escoba-seat-backs";
+  backs.setAttribute("aria-hidden", "true");
+  for (let index = 0; index < other.cardsRemaining; index += 1) {
+    const back = document.createElement("span");
+    back.className = "hexdev-escoba-card-back";
+    back.dataset.cardBack = String(index);
+    back.innerHTML = cardBackSvg();
+    backs.appendChild(back);
+  }
+
+  seat.append(label, count, backs);
   return seat;
 }
 

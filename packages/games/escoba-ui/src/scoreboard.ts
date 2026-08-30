@@ -77,9 +77,32 @@ export function renderEscobaScoreboard(
       const line = document.createElement("span");
       line.className = "hexdev-escoba-scoreboard-escobas";
       line.dataset.escobas = String(made);
-      // Real text, like the score beside it: never a bare digit next to a
-      // broom glyph, and never the count conveyed by colour (WCAG 1.4.1).
-      line.textContent = `Escobas: ${String(made)}`;
+
+      // ART. 14.1, IN THE UI'S OWN HAND: "cada escoba se marcará colocando
+      // una carta boca arriba en el momento de recoger la baza". At a real
+      // table an escoba is not written down — it is a card turned FACE UP in
+      // the pile, and you count them by looking. That is escoba's own
+      // notation, the way matchstick squares are truco's, so this draws the
+      // marks rather than the sentence.
+      //
+      // The sentence stays anyway, clipped to nothing: a row of marks is a
+      // picture of a number, and a picture-only count reads as nothing at all
+      // (WCAG 1.1.1) — the same bargain `status.ts` makes for the seat counts.
+      const spoken = document.createElement("span");
+      spoken.className = "hexdev-escoba-escoba-count";
+      spoken.textContent = `Escobas: ${String(made)}`;
+      line.appendChild(spoken);
+
+      for (let index = 0; index < made; index += 1) {
+        const mark = document.createElement("span");
+        mark.className = "hexdev-escoba-escoba-mark";
+        mark.dataset.escobaMark = String(index);
+        // Decorative: `spoken` above already says how many, and a mark that
+        // announced itself would say it a second time, once per escoba.
+        mark.setAttribute("aria-hidden", "true");
+        line.appendChild(mark);
+      }
+
       tally.appendChild(line);
     }
 

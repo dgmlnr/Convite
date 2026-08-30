@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { HandOutcome, HandScoreBreakdown, TeamId } from "@hexdev/escoba-engine";
 import { describeHandBreakdown, renderEscobaHandBreakdown, renderEscobaScoreboard } from "./scoreboard.js";
+import { ensureScoreboardStyles, SCOREBOARD_STYLE_ID } from "./scoreboard-styles.js";
 
 let container: HTMLElement;
 
 afterEach(() => {
   container.remove();
+  document.getElementById(SCOREBOARD_STYLE_ID)?.remove();
 });
 
 function freshContainer(): HTMLElement {
@@ -53,6 +55,45 @@ describe("renderEscobaScoreboard (slice R1, part 1 — the running score, TEAM-k
     const lines = [...el.querySelectorAll<HTMLElement>(".hexdev-escoba-scoreboard-escobas")];
     expect(lines.map((line) => line.textContent)).toEqual(["Escobas: 2", "Escobas: 0"]);
     expect(lines[0]?.dataset.escobas).toBe("2");
+  });
+
+  /**
+   * ART. 14.1 IS THE NOTATION, not a decoration on top of one: "cada escoba se
+   * marcará colocando una carta boca arriba en el momento de recoger la baza".
+   * A team's escobas are therefore DRAWN — one face-up card mark each — the
+   * same way truco's score is drawn as matchstick squares rather than spelled
+   * out as a number.
+   */
+  it("draws one face-up card mark per escoba (art. 14.1) and hides none of the count from a screen reader", () => {
+    const el = freshContainer();
+    renderEscobaScoreboard(el, [{ id: TEAM_A, score: 12 }, { id: TEAM_B, score: 8 }], TEAM_A, { [TEAM_A]: 3, [TEAM_B]: 0 });
+
+    const lines = [...el.querySelectorAll<HTMLElement>(".hexdev-escoba-scoreboard-escobas")];
+    expect(lines[0]!.querySelectorAll(".hexdev-escoba-escoba-mark"), "three escobas, three marks").toHaveLength(3);
+    expect(lines[1]!.querySelectorAll(".hexdev-escoba-escoba-mark"), "none made, none marked").toHaveLength(0);
+    // The marks are a PICTURE of the number, so the number itself is still
+    // said in words (WCAG 1.1.1) — and said once, not once per mark.
+    expect(lines[0]!.querySelector(".hexdev-escoba-escoba-count")?.textContent).toBe("Escobas: 3");
+    expect([...lines[0]!.querySelectorAll(".hexdev-escoba-escoba-mark")].every((mark) => mark.getAttribute("aria-hidden") === "true")).toBe(true);
+  });
+
+  /**
+   * ZERO COSTS WHAT ONE COSTS. The marks share the score's row, and the whole
+   * reason they are allowed to is that the row does not grow when the first
+   * escoba of a hand lands — the box that holds them reserves a mark's height
+   * while it is still empty (scoreboard-styles.ts). Measured rather than
+   * asserted about the CSS, because the property is a rectangle.
+   */
+  it("does not move the score's row when the first escoba of a hand lands", () => {
+    ensureScoreboardStyles(document);
+    const el = freshContainer();
+    const teams = [{ id: TEAM_A, score: 12 }, { id: TEAM_B, score: 8 }];
+
+    renderEscobaScoreboard(el, teams, TEAM_A, { [TEAM_A]: 0, [TEAM_B]: 0 });
+    const before = el.getBoundingClientRect().height;
+
+    renderEscobaScoreboard(el, teams, TEAM_A, { [TEAM_A]: 1, [TEAM_B]: 0 });
+    expect(el.getBoundingClientRect().height, "the first escoba pushed the cards down").toBe(before);
   });
 
   it("omits the escobas line entirely between hands, so it can never contradict the closing panel", () => {

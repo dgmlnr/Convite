@@ -129,6 +129,31 @@ describe("renderEscobaStatus — the row a player actually reads", () => {
     expect(seats[1]?.querySelector(".hexdev-escoba-seat-count")?.textContent).toBe("3 cartas");
   });
 
+  /**
+   * WHAT ANOTHER SEAT HOLDS, DRAWN AS CARDS. The chip used to say the words
+   * "2 cartas" beside a name; `truco-ui`'s own `renderOpponentHand` has always
+   * drawn real backs from L0's `cardBackSvg`, and this is that, one game over.
+   *
+   * THE SENTENCE IS NOT TRADED FOR THE PICTURE. N backs are a picture of the
+   * number N and read as nothing at all on their own (WCAG 1.1.1), so the
+   * <li>'s accessible name still carries the count and the count element still
+   * holds the words — clipped, not deleted.
+   */
+  it("draws one real card back per card another seat still holds, without giving up the spoken count", () => {
+    const els = freshElements();
+    renderEscobaStatus(els, viewWith(FOUR_SEATS, handWith(SELF, 24)));
+
+    const seats = [...els.seatsEl.querySelectorAll<HTMLElement>(".hexdev-escoba-seat")];
+    expect(seats.map((seat) => seat.querySelectorAll(".hexdev-escoba-card-back").length)).toEqual([1, 3, 2]);
+    expect(seats.map((seat) => seat.querySelectorAll(".hexdev-escoba-card-back svg").length)).toEqual([1, 3, 2]);
+    // Decorative, and decorative as a GROUP: the count above already says how
+    // many, and a back must never say more than that (the identity is
+    // redacted engine-side and never reaches this module at all).
+    expect(seats.every((seat) => seat.querySelector(".hexdev-escoba-seat-backs")?.getAttribute("aria-hidden") === "true")).toBe(true);
+    expect(seats[2]?.getAttribute("aria-label")).toBe("El rival de la derecha: 2 cartas");
+    expect(seats[2]?.querySelector(".hexdev-escoba-seat-count")?.textContent).toBe("2 cartas");
+  });
+
   it("marks the seat on turn with an attribute AND names it in the turn line — never colour alone", () => {
     const els = freshElements();
     renderEscobaStatus(els, viewWith(FOUR_SEATS, handWith(PARTNER, 24)));

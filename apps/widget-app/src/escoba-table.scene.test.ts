@@ -96,13 +96,19 @@ function play(state: MatchState, playerId: PlayerId, card: Card, captured: reado
  * The opening table sums to 20 — deliberately neither 15 nor 30, so no escoba
  * de muestra (art. 16.1/16.2) fires and the shot is an ordinary hand in
  * progress rather than a rules corner.
+ *
+ * IT DOES CONTAIN A REAL ESCOBA, three plays in, and that is deliberate too:
+ * an escoba is marked on screen with a face-up card (art. 14.1,
+ * `scoreboard.ts`), and a notation nobody ever photographs is a notation
+ * nobody ever looks at. The deal below hands seat 0 a tres so that its play
+ * sweeps the table clean.
  */
 const HEAD_TO_HEAD_DECK: readonly Card[] = deckOpeningWith([
-  { suit: "oro", rank: 11 }, // seat 0 — caballo de oro, captures the six
+  { suit: "oro", rank: 11 }, // seat 0 — caballo de oro, still in hand
   { suit: "copa", rank: 7 }, // seat 1 — takes the sota
   { suit: "basto", rank: 5 }, // seat 0 — still in hand
-  { suit: "espada", rank: 3 }, // seat 1 — left face up
-  { suit: "copa", rank: 1 }, // seat 0 — still in hand
+  { suit: "copa", rank: 1 }, // seat 1 — left face up
+  { suit: "espada", rank: 3 }, // seat 0 — sweeps the table: ESCOBA
   { suit: "basto", rank: 1 }, // seat 1 — never played here
   { suit: "copa", rank: 4 }, // table
   { suit: "espada", rank: 6 }, // table
@@ -127,14 +133,17 @@ function headToHeadMatch(): MatchState {
 
 /**
  * Three real plays, chosen so every piece the screen has to show is actually
- * on it: cards still face up on the table, a hand to play from, BOTH teams'
- * capture piles non-empty, and the scoreboard mid-match.
+ * on it: a card still face up on the table, a hand to play from, BOTH teams'
+ * capture piles non-empty, the scoreboard mid-match — and one escoba on our
+ * side against none on theirs, so a single shot carries both states of the
+ * mark art. 14.1 asks for.
  *
  *   1. the rival's siete de copa takes the sota de basto      (7 + 8 = 15)
- *   2. our caballo de oro takes the seis de espada            (9 + 6 = 15)
- *   3. the rival's tres de espada forms no fifteen and stays face up
+ *   2. our tres de espada takes the four, the six and the two (3 + 4 + 6 + 2 = 15)
+ *      and that is the WHOLE table, so it is an ESCOBA
+ *   3. the rival's as de copa lands on an empty table and stays face up
  *
- * Our two remaining cards form no fifteen either, so both render as playable
+ * Our two remaining cards form no fifteen with it, so both render as playable
  * rather than dimmed. That is a choice about the PICTURE and it is worth being
  * honest about: a card that must capture before it can be played is a real
  * state of this UI, it just renders at 45% opacity, which in a still image
@@ -143,8 +152,17 @@ function headToHeadMatch(): MatchState {
 function headToHeadMidHand(): MatchState {
   let state = deal(headToHeadMatch(), HEAD_TO_HEAD_DECK);
   state = play(state, RIVAL, { suit: "copa", rank: 7 }, [{ suit: "basto", rank: 10 }]);
-  state = play(state, SELF, { suit: "oro", rank: 11 }, [{ suit: "espada", rank: 6 }]);
-  state = play(state, RIVAL, { suit: "espada", rank: 3 }, []);
+  state = play(
+    state,
+    SELF,
+    { suit: "espada", rank: 3 },
+    [
+      { suit: "copa", rank: 4 },
+      { suit: "espada", rank: 6 },
+      { suit: "oro", rank: 2 },
+    ],
+  );
+  state = play(state, RIVAL, { suit: "copa", rank: 1 }, []);
   return state;
 }
 

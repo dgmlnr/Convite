@@ -30,9 +30,17 @@ export function buildScoreboardStylesheet(): string {
   gap: 2px;
 }
 
+/* THE TEAM'S NAME, in the platform's own label voice: small, uppercase,
+   tracked out, and gold. Byte for byte the treatment truco-ui gives
+   .hexdev-truco-team-label — re-declared rather than imported, because
+   escoba-ui is L1 and reaches no further than spanish-deck-ui. It replaces a
+   dimmed 0.85em line, which read as a caption someone forgot to finish. */
 .hexdev-escoba-scoreboard-label {
-  font-size: 0.85em;
-  opacity: 0.8;
+  font-size: var(--hx-text-meta, 0.75rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--hx-tracking-label, 0.08em);
+  color: var(--gx-color-accent, var(--hx-gold, #e8c877));
 }
 
 /* THE SCORE AND THIS HAND'S ESCOBAS SHARE ONE ROW. Stacked, the escobas count
@@ -51,10 +59,62 @@ export function buildScoreboardStylesheet(): string {
   font-variant-numeric: tabular-nums;
 }
 
+/* THIS HAND'S ESCOBAS, AS ART. 14.1 MARKS THEM — one face-up card per
+   escoba, laid ACROSS the pile (scoreboard.ts carries the regulation).
+
+   ZERO COSTS THE SAME AS ONE, which is the property that lets this live on
+   the score's own row at all: the box reserves a mark's height whether or not
+   there is a mark in it, and it is centred rather than baseline-aligned, so
+   the first escoba of a hand appears INSIDE a row that was already that tall.
+   Nothing below it moves. min-height is deliberately under the score's own
+   line box, so the row's height is still the score's and this never grows it.
+
+   flex-wrap because a hand can hold several: at 168px of rail column four
+   marks and a score share the row, and the fifth drops under them rather than
+   pushing the score off its edge. */
 .hexdev-escoba-scoreboard-escobas {
-  font-size: 0.8em;
-  opacity: 0.85;
-  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-self: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-height: var(--escoba-mark-height, 19px);
+}
+
+/* A CARD SEEN FACE UP AND SIDEWAYS: 520/329 is the deck art's own ratio, laid
+   on its side, so the mark is the shape of a real card lying across a pile
+   rather than a generic chip. Ivory face, gold filet, one contact shadow —
+   the three things that make it read as a card and not as a highlight. */
+.hexdev-escoba-escoba-mark {
+  flex: 0 0 auto;
+  height: var(--escoba-mark-height, 19px);
+  width: calc(var(--escoba-mark-height, 19px) * 520 / 329);
+  border-radius: 2px;
+  /* Ivory face, gold filet, and the deck's own inner frame one pixel further
+     in -- that third line is what stops a 15px rectangle reading as a blank
+     chip, because an inner frame is the one thing every card in this deck has
+     and no counter, pill or badge on this screen does. */
+  background: linear-gradient(160deg, #fdf7e8, #e6d9bd);
+  box-shadow: var(--hx-elev-1), inset 0 0 0 1px var(--hx-gold-edge, #b8923f), inset 0 0 0 3px rgba(253, 247, 232, 0.95), inset 0 0 0 4px rgba(184, 146, 63, 0.55);
+  /* LAID ACROSS, not filed in a row. Square to the score these read as a
+     progress meter; a few degrees off and they read as what they are, cards
+     dropped sideways onto a pile as the baza was gathered. */
+  transform: rotate(-7deg);
+}
+
+/* Said, not drawn — same bargain, same recipe, as .hexdev-escoba-seat-count
+   one stylesheet over. Kept as its own rule rather than a shared utility
+   because each is half of a "picture plus its sentence" pair that lives and
+   dies with the component around it. */
+.hexdev-escoba-escoba-count {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .hexdev-escoba-hand-breakdown {

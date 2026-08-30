@@ -81,18 +81,63 @@ export function buildTableStylesheet(): string {
 }
 
 .hexdev-escoba-hand {
-  container-type: inline-size;
+  /* AS WIDE AS THE CARDS IN IT, AND NO WIDER — the property the turn ring
+   * below is built on. Full width, the ring came out 676px across on a
+   * rotated phone around 150px of cards, which is exactly the defect
+   * truco-ui's own ring was moved off its anchor to fix ("most of the 'turn'
+   * ring was drawn around empty cloth").
+   *
+   * WHICH IS WHY THIS BOX IS NO LONGER A CONTAINER-QUERY ROOT. An inline-size
+   * container applies size containment, and a contained box's contents do not
+   * contribute to its inline size -- fit-content under it resolves to zero,
+   * not to the width of the cards. Nothing is lost by dropping it: every
+   * @container query in this package is NAMED, an unnamed container matches
+   * none of them, and nothing here was ever asking this box a question.
+   * max-width keeps the wrap: past the felt's width the row still breaks. */
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--escoba-card-gap, 6px);
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
   box-sizing: border-box;
   padding: var(--escoba-table-padding, 8px);
-  /* Same fix as .hexdev-escoba-table above, its own container-query root and
-   * therefore its own declaration -- a sibling, never a descendant, of the
-   * table (game-ui-registry.ts mounts table/hand/piles/sum side by side). */
+  /* Same fix as .hexdev-escoba-table above, and its own declaration for the
+   * same reason -- a sibling, never a descendant, of the table
+   * (game-ui-registry.ts mounts table/hand/piles/sum side by side). */
   font-family: var(--gx-font-family, system-ui, sans-serif);
+}
+
+/* THE TURN RING. Truco wraps the hand on turn in a bright accent ring, and
+ * that is the loudest thing either table says; escoba said it only in words,
+ * in a line above the cards. Same signal, same gold, re-declared here because
+ * escoba-ui is L1 and may not import truco-ui.
+ *
+ * :has() AND NOT A NEW ATTRIBUTE, because the fact is already on the page:
+ * renderEscobaStatus writes data-self on the turn line every broadcast. A
+ * second copy stamped on the hand would be a second thing to keep true.
+ *
+ * INSIDE THE HAND'S OWN BOX, unlike truco's, and that is this felt's own
+ * constraint rather than a preference. Truco's ring hangs 13px outside its
+ * anchor and one whole rule (--hx-ring-reach) exists to buy that room back;
+ * escoba's bands are stacked flush, so a ring painted outside would cross the
+ * piles below and the table above. The hand already carries 8px of padding
+ * around its cards, so a 3px outline offset -5px lands 3px off the cards --
+ * air around them, at zero layout cost, exactly the property that made truco
+ * choose an outline in the first place. The inset wash fills the band between
+ * the box edge and the ring, so it reads as a halo rather than a second line.
+ *
+ * AROUND THE CARDS AND NOT AROUND THE LANE, which is the same correction
+ * truco made and the reason .hexdev-escoba-hand above now hugs its content.
+ *
+ * WCAG 1.4.1: never the message on its own. The turn line one band up already
+ * says "Tu turno" in words, and says it into an aria-live region. */
+.hexdev-escoba-felt:has(.hexdev-escoba-turn[data-self="true"]) .hexdev-escoba-hand {
+  outline: 3px solid var(--gx-color-accent, var(--hx-gold, #e8c877));
+  outline-offset: -5px;
+  border-radius: var(--gx-radius, 12px);
+  box-shadow: inset 0 0 0 5px rgba(232, 200, 119, 0.16);
 }
 
 .hexdev-escoba-card--markable,
