@@ -39,6 +39,13 @@ export function renderEscobaPiles(container: HTMLElement, teams: readonly TeamId
     pile.className = "hexdev-escoba-pile";
     pile.dataset.team = team.id;
     pile.dataset.count = String(cards.length);
+    // THE SAME COUNT, A SECOND TIME, AS A NUMBER CSS CAN DO ARITHMETIC ON.
+    // `piles-styles.ts` divides the room a pile is allowed by the gaps between
+    // its cards, so the fan tightens instead of wrapping (that file carries the
+    // measurement). A custom property is the only way that number crosses:
+    // `attr()` cannot be used in a calculation, and CSS has no way to count
+    // children for sizing. Never read back — the DOM stays the source of truth.
+    pile.style.setProperty("--escoba-pile-count", String(cards.length));
 
     for (const card of cards) {
       const art = getCardArt(card);

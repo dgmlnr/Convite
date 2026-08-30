@@ -30,17 +30,43 @@ export function buildPilesStylesheet(): string {
 }
 
 .hexdev-escoba-pile {
+  /* HALF THE LINE, MINUS HALF THE GAP — the room ONE pile may occupy so that
+     BOTH always fit on a single row. There are exactly two piles, always
+     (piles.ts: one per team, never one per player), so halving the line is a
+     complete answer rather than an approximation. \`100cqw\` is the piles
+     container's own CONTENT box, which is why the padding is not subtracted
+     again here. Two pixels of honest slack, so a sub-pixel line width can
+     never be the thing that breaks the row. */
+  --escoba-pile-span: calc((100cqw - var(--escoba-piles-gap, 16px) - 2px) / 2);
   display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  min-width: var(--escoba-pile-card-width, 40px);
+  /* NOWRAP, and it is the fan below that earns it: a pile can no longer
+     out-grow its span, so there is nothing left to wrap. */
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .hexdev-escoba-pile-card {
   --escoba-pile-card-width: 40px;
+  /* THE FAN TIGHTENS INSTEAD OF WRAPPING, and this is the fix for a real
+     measured defect: the step used to be a CONSTANT 40% of a card, so a pile's
+     width was a function of its CARD COUNT and of nothing else — it took no
+     notice of the room it had. Two twenty-card piles ask for 344px each; the
+     felt's piles line at 844x390 fullscreen is 660px wide (the 168px rail
+     column is the rest), so 344 + 16 + 344 = 704 overflowed and the two piles
+     wrapped onto two rows. The height cap in table-styles.ts then had to
+     reserve BOTH rows, and a rotated phone paid for it in card size.
+
+     So the step is the smaller of what the fan WANTS and what the row can
+     AFFORD: (span - one whole card) spread over the gaps between the cards.
+     --escoba-pile-count is the pile's own card count, set by piles.ts. Below
+     ~19 cards a pile the first term still wins and the fan looks exactly as it
+     always did; past it the cards simply slide further under each other. The
+     2px floor is for a container too narrow to hold even one card, where the
+     second term goes negative. */
+  --escoba-pile-step: max(2px, min(var(--escoba-pile-card-width) * 0.4, (var(--escoba-pile-span) - var(--escoba-pile-card-width)) / max(1, var(--escoba-pile-count, 1) - 1)));
   flex: 0 0 auto;
   width: var(--escoba-pile-card-width);
-  margin-left: calc(-1 * var(--escoba-pile-card-width) * 0.6);
+  margin-left: calc(var(--escoba-pile-step) - var(--escoba-pile-card-width));
 }
 
 .hexdev-escoba-pile-card:first-child {

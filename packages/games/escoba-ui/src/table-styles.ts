@@ -155,12 +155,17 @@ export function buildTableStylesheet(): string {
  * (piles-styles.ts) and does not move with this one -- so they enter as a
  * band, not as a row.
  *
- * THE PILES BAND IS THE FULL ONE, 160px and not the 79.22px a fresh hand
- * measures, and that is the whole difference between a cap and a
- * coincidence. Both capture piles start a hand EMPTY and finish it holding
- * all forty cards; budgeting against the empty ones buys a felt that fits
- * until somebody actually plays. escoba-viewport-fit.browser.test.ts spends
- * that growth up front rather than trusting it.
+ * THE PILES BAND IS THE FULL ONE, and it is now 80px where it used to be
+ * 160. That is not a loosened budget: it is the same worst case costing half
+ * as much. Both capture piles start a hand EMPTY and finish it holding all
+ * forty cards, and budgeting against the empty ones would buy a felt that
+ * fits until somebody actually plays — escoba-viewport-fit.browser.test.ts
+ * spends that growth up front rather than trusting it. What changed is the
+ * growth itself: the fan's step was a constant, so past 18 cards a pile grew
+ * wider than half the line and the two of them wrapped onto a SECOND row,
+ * 154.16px of piles under a 390px window. piles-styles.ts now spends the
+ * room it has instead of the room it wants, so the full band is one row at
+ * every width this repo tests — 77.08px measured, 80 reserved.
  *
  * THE HAND-END BREAKDOWN IS NOT SUBTRACTED, deliberately. It is seven rows
  * and 184px, and reserving it alongside the card rows would leave 39px for
@@ -193,7 +198,7 @@ export function buildTableStylesheet(): string {
 :root[data-hexdev-layout="fullscreen"] .hexdev-escoba-card {
   --escoba-fit-rows: 2;
   --escoba-fit-status: 30px;
-  --escoba-fit-piles: 160px;
+  --escoba-fit-piles: 80px;
   --escoba-fit-sum: 25px;
   /* The residual is exactly the slack, which is what makes it safe to tune:
      substituting the card back into the row model collapses to
