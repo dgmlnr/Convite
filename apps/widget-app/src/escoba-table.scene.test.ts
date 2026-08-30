@@ -228,6 +228,7 @@ const mounted: HTMLElement[] = [];
 
 afterEach(() => {
   while (mounted.length > 0) mounted.pop()?.remove();
+  document.documentElement.removeAttribute("data-hexdev-layout");
 });
 
 /**
@@ -286,13 +287,14 @@ function mountedContainer(width: number): HTMLElement {
  * a picture that cannot answer the question it was taken to answer. Nothing
  * below asks for more height than its own content plus headroom.
  *
- * Which is only safe because NO stylesheet in `escoba-ui` contains a single
- * viewport-height unit — `rg 'dvh|svh|vh'` over the package comes back
- * empty. Its layout is a pure function of the CONTAINER's inline size, so
- * two runs at the same width and different viewport heights lay out
- * identically and only the capture differs. The same substitution against
- * `truco-ui` would be a lie: its `--truco-card-width` really does read
- * `100dvh`.
+ * Which is safe for every scene below that mounts INLINE, and only those.
+ * Inline, escoba's layout is still a pure function of the CONTAINER's inline
+ * size, so two runs at the same width and different viewport heights lay out
+ * identically and only the capture differs. It stopped being true of the
+ * package as a whole the day `table-styles.ts` grew its fullscreen height
+ * cap: under `[data-hexdev-layout="fullscreen"]` the card really does read
+ * `100dvh`, exactly as `truco-ui`'s always has, which is why the landscape
+ * pair at the bottom of this file pins a viewport height it means.
  */
 const PHONE = { width: 414, height: 896 } as const;
 
@@ -311,33 +313,44 @@ const TABLET = { container: 768, width: 768 + 120, height: 700 } as const;
 /**
  * A phone ROTATED: 844 wide, and — the part that matters — 390 tall.
  *
- * The width is the boring half. An embedded widget lays out from its
- * CONTAINER (this repo bans `matchMedia` and `innerWidth` for exactly that
- * reason), so 828 container-px is the same wide branch the tablet scenes
- * already cover, and rotation changes the layout not at all through that
- * door. 828 and not 844 because `<body>`'s 8px UA margin is real on both
- * sides, and a container that overflowed horizontally would photograph a
- * horizontal problem on top of the vertical one under examination.
+ * FULLSCREEN, unlike every other scene in this file, because that is the only
+ * mode a live escoba match is ever drawn in (`main.ts`'s `enterMatch` calls
+ * `sendLayout("fullscreen")` before a card is dealt) and the only mode the
+ * height cap in `escoba-ui/src/table-styles.ts` applies in. Inline, the host
+ * sizes the iframe to the height the widget reported, so `100dvh` would be a
+ * function of this very layout; fullscreen, the box IS the window. Mounted
+ * the way `applyLayoutMode` mounts it — `position: fixed; inset: 0` — so the
+ * container is 844 rather than the 828 the inline scenes use.
  *
- * THE HEIGHT IS WHY THESE EXIST. 390px is all a rotated phone has, and
- * `escoba-ui` stacks a status line, the face-up table, the hand, both piles,
- * the running sum and the hand-end breakdown down that axis with no cap of
- * any kind: `truco-ui/src/table-styles.ts` derives `--truco-card-width` as
- * `min(the width tier's choice, the height that actually fits)`, and nothing
- * in `escoba-ui/src/table-styles.ts` does anything of the sort.
- *
- * SO WHY IS THE VIEWPORT 640 TALL AND NOT 390. Because a viewport of exactly
- * 390 is the one setting under which this scene could not answer its own
- * question. Chromium paints nothing past the fold, so a layout that fits
- * photographs as a 390px image and a layout that overflows by 200px ALSO
- * photographs as a 390px image — the failure and the success are the same
- * picture. At 640 the capture is the whole widget however tall it turns out
- * to be, so the PNG's own height is the measurement: 390 means it fits, and
- * anything more is exactly how far past the fold escoba has gone, with the
- * offending rows visible rather than cropped away. The layout is identical
- * either way, for the reason `PHONE` above sets out.
+ * THE VIEWPORT IS 390 AND NOT 640, which reverses this scene's own earlier
+ * reasoning on purpose. A viewport taller than the fold used to be the trick
+ * that made the overflow visible: the PNG's own height WAS the measurement,
+ * because Chromium paints nothing past the fold and 390 of screen cannot tell
+ * a layout that fits from one that overflows by 200px. That job now belongs
+ * to `escoba-viewport-fit.browser.test.ts`, which measures rectangles and is
+ * unbothered by the fold. What is left for a picture is the question no
+ * measurement answers: the cap trades card size for fit, and only an eye can
+ * say whether what is left is still a card you would play a hand with. That
+ * question needs `100dvh` to mean 390, so the viewport is 390.
  */
-const LANDSCAPE = { container: 828, width: 844, height: 640 } as const;
+const LANDSCAPE = { width: 844, height: 390 } as const;
+
+/** The attribute `handshake.ts` stamps on its own document root when it puts
+ * the widget in fullscreen — the switch the height cap keys off. */
+const LAYOUT_ATTRIBUTE = "data-hexdev-layout";
+
+/** The fullscreen box, reproduced: pinned to the viewport, with the attribute
+ * set BEFORE the first render so the cap is in effect for the initial layout
+ * rather than applied to an already-measured one. */
+function mountedFullscreen(): HTMLElement {
+  document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.inset = "0";
+  document.body.appendChild(container);
+  mounted.push(container);
+  return container;
+}
 
 /** The exact seam `main.ts` crosses to draw a live match: registry lookup,
  * then one fresh renderer per match. An unregistered id is a failed fixture,
@@ -494,31 +507,25 @@ describe("scene: the escoba side rail, opened and unfolded", () => {
 
 /**
  * THE PHONE, ROTATED — the one axis every other scene in this repo leaves
- * unexamined.
+ * unexamined, and the one the height cap is paid for out of.
  *
- * Rotation changes NOTHING about this layout directly, and that is worth
- * stating plainly because it is the reason these are not duplicates of the
- * tablet pair above: the widget lays out from its container's inline size,
- * so 828 landscape-px and 768 portrait-px pick the same rail and the same
- * card tier. What rotation actually takes away is HEIGHT — 390px, against
- * the 896 every other scene here has enjoyed.
+ * What rotation takes away is HEIGHT: 390px, against the 896 every other
+ * scene here has enjoyed. Escoba spends that axis on a status line, the
+ * face-up table, the hand, both piles and the running sum, and until the cap
+ * it spent it without looking: 72px cards at the wide tier were 72px whatever
+ * room was left below them, and the widget measured 391.48px inside 390.
  *
- * And escoba spends that axis freely: status, table, hand, both piles, the
- * running sum, the breakdown, stacked. `truco-ui` met this exact problem and
- * capped its card width at `min(the width tier, the height that fits)`;
- * `escoba-ui/src/table-styles.ts` has no such clause, so its 72px cards at
- * the wide tier are 72px whatever room is left below them.
- *
- * These scenes do not decide whether that is wrong. They make it visible,
- * which is the only thing a scene is for — and because the capture viewport
- * is deliberately taller than the fold (`LANDSCAPE` above), the visible form
- * it takes is the PNG's own height. 390 is a screen that fits. Anything
- * taller is the overflow, drawn.
+ * `escoba-ui/src/table-styles.ts` now derives the card as `min(the width
+ * tier, the height that fits)`, so these two are the picture of the price.
+ * They decide nothing — a scene asserts nothing, and the fit itself is
+ * measured in `escoba-viewport-fit.browser.test.ts` — but a cap that buys a
+ * fit by making the cards unreadable is a worse bug than the overflow it
+ * prevents, and only an eye can call that.
  */
-describe("scene: the escoba table on a phone in landscape — 828 container-px, 390 of height to spend", () => {
+describe("scene: the escoba table on a phone in landscape — fullscreen, 390 of height to spend", () => {
   it("1v1: everything the table stacks, against the 390px a rotated phone actually has", async () => {
     await page.viewport(LANDSCAPE.width, LANDSCAPE.height);
-    const container = mountedContainer(LANDSCAPE.container);
+    const container = mountedFullscreen();
 
     renderScreen(container, "escoba-de-15", headToHeadMidHand());
     await waitForArt(container);
@@ -528,7 +535,7 @@ describe("scene: the escoba table on a phone in landscape — 828 container-px, 
 
   it("2v2: the same rotation with four seats and two four-card piles — more to stack, the same 390px", async () => {
     await page.viewport(LANDSCAPE.width, LANDSCAPE.height);
-    const container = mountedContainer(LANDSCAPE.container);
+    const container = mountedFullscreen();
 
     renderScreen(container, "escoba-de-15-2v2", teamMidHand());
     await waitForArt(container);
