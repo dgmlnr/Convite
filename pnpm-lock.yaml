@@ -112,6 +112,9 @@ importers:
       '@hexdev/escoba-ui':
         specifier: workspace:*
         version: link:../../packages/games/escoba-ui
+      '@hexdev/mahjong-solitaire-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/mahjong-solitaire-ui
       '@hexdev/mahjong-tile-ui':
         specifier: workspace:*
         version: link:../../packages/mahjong-tile-ui

@@ -14,6 +14,25 @@ import { defineConfig } from "vitest/config";
  * builds both bundles and starts both servers exactly ONCE for the whole
  * run; individual specs only read the resulting connection info (see
  * `e2e/support/harness-info.ts`) and open real browser contexts against it.
+ *
+ * AND IT IS NOT IN CI EITHER, which is a SECOND decision and was never a
+ * deliberate one. "Not part of `pnpm test`" is argued above and is sound —
+ * a TDD loop must not spawn servers. "Not part of `.github/workflows/ci.yml`"
+ * is a different question with a different answer, and for a long time it had
+ * no answer at all: this file predates that workflow (`857c3c7` against
+ * `353073f`), so the workflow simply never learned about it.
+ *
+ * WHAT THAT COST, measured rather than assumed: three of the six spec files
+ * here fail at `main` — `reload-identity` (storage denied), `team-play` (the
+ * 2v2 card's bot tier) and `token-renewal` (the hand never renders past the
+ * TTL). `team-play`'s own comment still describes the one-screen lobby the
+ * catalog-sections work replaced with two. Nothing caught any of it, because
+ * a suite outside CI is a suite that only runs when somebody remembers, and
+ * eventually nobody does.
+ *
+ * The full verdict — cost, flakiness, and what has to be true before a job
+ * can land — is recorded in `scripts/ci-suite-coverage.test.ts`, which now
+ * fails if any suite config in this repository has no verdict at all.
  */
 export default defineConfig({
   test: {
