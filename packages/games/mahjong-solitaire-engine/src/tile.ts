@@ -65,12 +65,15 @@ export const ALL_TILES: readonly Tile[] = [
   ...BONUS_TILES,
 ];
 
+/** A face's name. 42 distinct values exist; `tileId` is the only producer. */
+export type TileId = string;
+
 /**
  * The face's own name — 42 distinct values across the wall, one per piece of
  * artwork. Two tiles with the same `tileId` are the same face; they are not
  * necessarily interchangeable in a deal, which is what `matchKey` is for.
  */
-export function tileId(tile: Tile): string {
+export function tileId(tile: Tile): TileId {
   switch (tile.kind) {
     case "suit":
       return `${tile.rank}-${tile.suit}`;
