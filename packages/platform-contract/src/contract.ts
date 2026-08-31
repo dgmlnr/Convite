@@ -148,13 +148,14 @@ export interface GameModule<TState, TAction extends { readonly playerId: PlayerI
    * transport DERIVES from this member's absence rather than from more
    * registration flags it would have to keep in step.
    *
-   * TWO OF THE THREE ARE DERIVED TODAY: `MatchRoom.armTurnTimer` arms no
-   * clock, and `onCreate`'s pre-seat block builds no bot. THE THIRD IS NOT.
-   * `takeOverSeat` holds a COMPILE guard only and leaves the seat exactly as
-   * it was, because what a vacated seat means when there is no bot to take it
-   * is a behaviour, and it belongs to the change that fences it — reading
-   * this and going there expecting to find it would be reading a promise this
-   * member has not kept yet.
+   * TWO OF THE THREE ARE DERIVED FROM THIS MEMBER, and the third deliberately
+   * is NOT. `MatchRoom.armTurnTimer` arms no clock and `onCreate`'s pre-seat
+   * block builds no bot, both by reading `createBot` directly. What a VACATED
+   * seat means is a rules question instead: `takeOverSeat` asks the module,
+   * through `platform-core`'s `AbandonedSeatActionProvider` pairing, and only
+   * falls back to the bot when the game has no answer. Keying that one on this
+   * member's absence too would have said "a match may only end this way if
+   * nobody can play it", which is a rule about opponents, not about leaving.
    *
    * MAKING IT OPTIONAL MOVES THE COMPILE-TIME PRESSURE, IT DOES NOT REMOVE
    * IT. Until now the type system was what guaranteed every registered game
