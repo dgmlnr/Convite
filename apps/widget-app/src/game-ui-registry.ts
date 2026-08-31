@@ -1,4 +1,4 @@
-import type { CatalogSectionId, GameFamilyId, GameId } from "@hexdev/platform-contract";
+import type { CatalogSectionId, Clock, GameFamilyId, GameId } from "@hexdev/platform-contract";
 import type { Card } from "@hexdev/spanish-deck-ui";
 import { getCardFrontUrl } from "@hexdev/spanish-deck-ui";
 import type { ConsultAskMessage } from "@hexdev/transport-colyseus-client";
@@ -87,6 +87,78 @@ export interface AssetCredit {
   readonly licenseName: string;
   readonly licenseUrl: string;
   readonly changes: readonly string[];
+}
+
+/**
+ * HOW THIS PLAYER GOT INTO THIS MATCH — two values, because the two mean
+ * genuinely different things to anything that measures time.
+ *
+ * `"joined"` is a match this page session started, by pairing with a person
+ * or by asking for a bot. `"resumed"` is a match that was already running
+ * when this page loaded: the widget persists a match session
+ * (`identity-storage.ts`) and gets ONE attempt to rejoin it before the
+ * catalog is ever shown, so a returning player mid-match never sees the lobby
+ * flash by.
+ *
+ * A CLOSED TWO-VALUE UNION AND NOT A BOOLEAN, so the call site reads as
+ * itself: `enterMatch(..., "resumed")` says what happened, where
+ * `enterMatch(..., true)` says nothing at all without going and reading the
+ * signature.
+ */
+export type MatchEntry = "joined" | "resumed";
+
+/**
+ * What a renderer is built with, once per match.
+ *
+ * WHY THIS RIDES ON `createRenderer` AND NOT ON THE VIEW PAYLOAD. `render(...)`
+ * runs on every message a match produces; `createRenderer` runs exactly once,
+ * when the match is entered, which is exactly where anything per-match and
+ * client-side gets created. Putting these on the payload would make every game
+ * pay, on the hot path, for something one game needs.
+ *
+ * WHY THE PROVENANCE IS CARRIED RATHER THAN LOOKED UP, and it is worth
+ * writing down because the obvious derivation is wrong for a verified reason:
+ * `main.ts`'s three `enterMatch` call sites — two fresh joins and one resume
+ * — all call `persistMatchSession` IMMEDIATELY BEFORE entering. Storage
+ * therefore reports "a session exists" in all three cases, so reading
+ * `readPersistedMatchSession` from inside cannot tell a resume from a fresh
+ * join. The distinguishing fact exists only at the call site, so the call
+ * site is what states it.
+ *
+ * `Clock` is `platform-contract`'s existing `() => number`, reused rather
+ * than re-declared. This is the one tier that holds both the platform and a
+ * game's presentation, which is why the mirroring `escoba-ui` and
+ * `mahjong-solitaire-ui` have to do stops here.
+ */
+export interface MatchRenderContext {
+  /** True only for a match this page session did not start. Anything that
+   * reports elapsed time as a RESULT has to refuse to when this is true: a
+   * closure started at first render on that path measures time since the
+   * reload, which is a shorter number than the truth wearing the truth's
+   * clothes. */
+  readonly resumed: boolean;
+  /** The real clock, injected. Every consumer measures against this rather
+   * than calling `Date.now()` inline, so a test can assert an exact number
+   * and a visual baseline can freeze one. */
+  readonly now: Clock;
+}
+
+/**
+ * A provenance and a clock, as the thing a renderer is built with.
+ *
+ * IT LIVES HERE RATHER THAN INLINE IN `main.ts` because of that file's own
+ * rule: composition stays, decisions leave. Deciding that `"resumed"` is the
+ * one entry whose renderer may not report a time is a decision, and the one
+ * time decisions were left in that file they sat unfenced for a whole change.
+ *
+ * THE CLOCK IS CARRIED, NEVER READ. Capturing `now()` as a number here would
+ * freeze it at the instant the match was entered, and every chronometer built
+ * from the context would then measure zero — while every test injecting a
+ * scripted clock still passed, because the scripted clock would have been read
+ * too.
+ */
+export function matchRenderContextFor(entry: MatchEntry, now: Clock): MatchRenderContext {
+  return { resumed: entry === "resumed", now };
 }
 
 export interface GameUiEntry {

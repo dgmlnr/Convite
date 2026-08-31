@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
-import { createGameUiRegistry, familyUiFor, sectionUiFor } from "./game-ui-registry.js";
+import { createGameUiRegistry, familyUiFor, matchRenderContextFor, sectionUiFor } from "./game-ui-registry.js";
 
 describe("createGameUiRegistry (design §5: rendering is deliberately outside the platform contract)", () => {
   it("has an entry for truco-argentino", () => {
@@ -82,5 +82,49 @@ describe("sectionUiFor — what the catalog's shelves are called, on the client'
    * record with an empty title or a silent merge under the shelf above. */
   it("returns undefined for a shelf this build has no copy for, rather than an empty name", () => {
     expect(sectionUiFor("fichas")).toBeUndefined();
+  });
+});
+
+/**
+ * WHERE THIS MATCH CAME FROM, carried to the one place that can use it.
+ *
+ * `createRenderer` is called exactly once per match, which is exactly where a
+ * chronometer would be created — so it is the seam that has to know whether
+ * this match was started in this page session or resumed from a persisted one
+ * after a reload. `main.ts`'s own rule is that composition stays there and
+ * decisions leave; this mapping is the decision, so it lives here with a test
+ * beside it.
+ */
+describe("matchRenderContextFor — the provenance a renderer is built with", () => {
+  it("a fresh join is not a resume", () => {
+    expect(matchRenderContextFor("joined", () => 7).resumed).toBe(false);
+  });
+
+  it("a resume is", () => {
+    expect(matchRenderContextFor("resumed", () => 7).resumed).toBe(true);
+  });
+
+  it("the two really do differ, so neither assertion above stands alone", () => {
+    expect(matchRenderContextFor("joined", () => 7).resumed).not.toBe(matchRenderContextFor("resumed", () => 7).resumed);
+  });
+
+  it("carries the CLOCK, not a reading of it", () => {
+    /**
+     * The difference is the whole feature. Capturing `now()` as a number here
+     * would freeze the clock at the instant the match was entered, and every
+     * chronometer built from this context would then measure zero — a board
+     * cleared in four and a half minutes would report 0:00, and every fence
+     * downstream that injects a scripted clock would still pass, because the
+     * scripted clock would have been read too.
+     */
+    let reads = 0;
+    const now = (): number => {
+      reads += 1;
+      return 7;
+    };
+    const context = matchRenderContextFor("joined", now);
+    expect(reads, "building a context reads no clock — the reading belongs to whoever starts measuring").toBe(0);
+    expect(context.now, "the same function, not a wrapper around a captured number").toBe(now);
+    expect(context.now()).toBe(7);
   });
 });
