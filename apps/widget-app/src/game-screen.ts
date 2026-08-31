@@ -393,7 +393,7 @@ export function renderAbout(open: boolean): HTMLElement | undefined {
   for (const attribution of GAME_UI_CREDITS) {
     const credit = document.createElement("p");
     credit.className = "hexdev-about-credit";
-    credit.textContent = STRINGS.aboutCredit(attribution.author);
+    credit.textContent = STRINGS.aboutCredit(attribution.author, attribution.subject);
     panel.appendChild(credit);
 
     const links = document.createElement("p");

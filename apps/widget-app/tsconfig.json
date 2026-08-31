@@ -19,6 +19,9 @@
       "path": "../../packages/spanish-deck-ui"
     },
     {
+      "path": "../../packages/mahjong-tile-ui"
+    },
+    {
       "path": "../../packages/transport-colyseus-client"
     },
     {

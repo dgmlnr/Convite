@@ -619,7 +619,44 @@ describe("the deck credit reaches the player", () => {
 
     // Both truco entries declare the same artwork. Two identical credits
     // stacked on one screen reads as a bug, not as diligence.
-    expect(container.querySelectorAll(".hexdev-about-credit")).toHaveLength(1);
+    //
+    // COUNTS THE DECK'S OWN LINE, not the panel's rows, and the difference
+    // started mattering the day this widget owed a SECOND obligation (slice
+    // 9, the mahjong tiles: a different author under a different license
+    // version, correctly surviving the `author|licenseUrl` dedupe). Until
+    // then "the panel holds one row" and "the deck is credited once" were
+    // the same sentence by accident, and the weaker one was the one being
+    // asserted.
+    const deckLines = [...container.querySelectorAll(".hexdev-about-credit")].filter((line) => (line.textContent ?? "").includes("Basquetteur"));
+    expect(deckLines).toHaveLength(1);
+  });
+
+  /**
+   * EACH CREDIT NAMES ITS OWN ARTWORK, and this fence exists because the
+   * mutation that breaks it (M9i) reds exactly ONE other test in the whole
+   * repository — `game-list.browser.test.ts`'s pinned one-shelf markup,
+   * whose subject is shelves and which would catch this only by accident.
+   *
+   * The sentence is one a license REQUIRES, so getting the noun wrong is not
+   * a copy defect: hardcoding "las cartas" (which is what this string did
+   * until a second artwork existed) prints a false statement of fact about
+   * 碧海风's mahjong tiles inside the attribution CC BY-SA 4.0 asks for.
+   *
+   * Written out by hand rather than composed from `STRINGS.aboutCredit`
+   * (R15): building the expected sentence from the production function would
+   * agree with any rewording it produces, including the wrong noun.
+   */
+  it("names what each credit is art OF, so a license sentence cannot state a false fact", () => {
+    renderGameSelection(freshContainer(), [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map(), { onPlayVsPerson: noop, onPlayVsBot: noop });
+    openAbout();
+    const lines = [...container.querySelectorAll(".hexdev-about-credit")].map((line) => line.textContent ?? "");
+
+    // Anti-vacuity (R6): the two assertions below are `find`s over this
+    // collection, and an empty panel would satisfy neither by failing to
+    // contain anything wrong.
+    expect(lines, "two artworks are drawn by this widget, so two obligations are owed").toHaveLength(2);
+    expect(lines).toContain("Arte de las cartas: Basquetteur. Se le hicieron cambios.");
+    expect(lines).toContain("Arte de las fichas: 碧海风. Se le hicieron cambios.");
   });
 
   /**

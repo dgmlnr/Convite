@@ -22,6 +22,7 @@ import {
   renderEscobaStatus,
   renderMatchOverOverlay,
 } from "@hexdev/escoba-ui";
+import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
 import { STRINGS } from "./i18n.js";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
@@ -87,6 +88,25 @@ export interface AssetCredit {
   readonly licenseName: string;
   readonly licenseUrl: string;
   readonly changes: readonly string[];
+  /**
+   * WHAT THIS IS ART OF, in the widget's own language — "las cartas", "las
+   * fichas". Optional, and the whole point of it living HERE rather than in
+   * the copy: `STRINGS.aboutCredit` used to name the medium itself, which
+   * was true for exactly as long as every credit in this widget was the
+   * Spanish deck. A second artwork made that sentence say "Arte de las
+   * cartas" over a set of mahjong tiles.
+   *
+   * The game supplies it, in the same record where it supplies its own
+   * hero title, because a game is the only thing that knows what its
+   * rendering draws — the same reason `credits` itself lives on a family
+   * rather than in the shell. `undefined` falls back to a sentence with no
+   * noun at all, which is still true of anything.
+   *
+   * NOT PART OF THE DEDUPE KEY (`author|licenseUrl`, below): two games
+   * crediting one artist for one artwork owe one obligation, whatever each
+   * of them calls it.
+   */
+  readonly subject?: string;
 }
 
 /**
@@ -259,13 +279,27 @@ export interface SectionUi {
   readonly title: string;
 }
 
-/** The one shelf the four registered modules declare today. "Fichas" is NOT
- * declared alongside it: a row here that no module points at is an
- * enumerating-config entry with no referent, and it belongs to the change
- * that ships the game needing it. */
+/** The shelf the four card modules declare. */
 const CARTAS_SECTION: SectionUi = { id: "cartas", title: STRINGS.sectionCartas };
 
-const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION];
+/**
+ * THE SECOND SHELF, and it arrives with its referent rather than ahead of it.
+ *
+ * The paragraph that stood here said "Fichas" was deliberately NOT declared,
+ * because a row nothing points at is an enumerating-config entry with no
+ * referent and belongs to the change that ships the game needing it. This is
+ * that change: `mahjongSolitaireModule.metadata.section` is `"fichas"`, so
+ * the row has a game under it the day it lands.
+ *
+ * What made the absence matter is what a missing row DOES: `game-list.ts`
+ * falls back to the raw section id, so before this line the shelf on screen
+ * one was literally headed `fichas` — visible, ugly, and a bug report
+ * somebody files, which is the failure mode that file chose on purpose over
+ * silently filing those cards under "Cartas".
+ */
+const FICHAS_SECTION: SectionUi = { id: "fichas", title: STRINGS.sectionFichas };
+
+const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION, FICHAS_SECTION];
 
 /**
  * A shelf's own name, by section id — the exact mirror of `familyUiFor`
@@ -325,7 +359,16 @@ export interface GameFamilyUi {
   readonly credits?: readonly AssetCredit[];
 }
 
-const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_ATTRIBUTION] };
+/**
+ * ONE RECORD, SHARED BY BOTH CARD GAMES — the same object, not two equal
+ * ones, so there is nowhere for truco's and escoba's copies of an obligation
+ * to drift apart. `GAME_UI_CREDITS` would dedupe them anyway; this is the
+ * half that also keeps the SUBJECT from disagreeing, which the dedupe key
+ * does not cover.
+ */
+const DECK_CREDIT: AssetCredit = { ...DECK_ATTRIBUTION, subject: STRINGS.creditSubjectCards };
+
+const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_CREDIT] };
 
 /**
  * The three cards that name escoba, not just any three faces (see
@@ -370,10 +413,41 @@ const ESCOBA_FAMILY: GameFamilyUi = {
   heroTitle: "Escoba de 15",
   hero: ESCOBA_FACES,
   cardArt: ESCOBA_FACES,
-  credits: [DECK_ATTRIBUTION],
+  credits: [DECK_CREDIT],
 };
 
-const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY];
+/**
+ * THE THIRD FAMILY, AND THE FIRST THAT IS NOT A DECK OF CARDS.
+ *
+ * `heroTitle` and `credits`, and deliberately nothing else — the two fields
+ * this game genuinely has something to put in.
+ *
+ * NO `hero`, NO `cardArt`, AND THAT IS A DECISION ABOUT THE ARTWORK ITSELF.
+ * The 42 shipped faces are TRANSPARENT: each file is the symbol alone, with
+ * no tile body behind it, and `mahjong-tile-ui`'s own license record says so
+ * in as many words ("This artwork's transparency is deliberate — each file is
+ * the face symbol with no tile body behind it"). The bone under the symbol is
+ * drawn separately by `tileBodySvg()`, as markup, while `hero`/`cardArt` take
+ * image URLs. A face pointed at from here would therefore render as a glyph
+ * floating on the felt with nothing under it — a rendering bug that looks
+ * deliberate, which is the worst way for one to look. `game-list.ts` already
+ * answers the empty case honestly: a title-only card, still full size and
+ * still a full activation target.
+ *
+ * THE CREDIT IS NOT OPTIONAL EVEN THOUGH THE ART IS ABSENT FROM THE LOBBY.
+ * CC BY-SA 4.0 is owed because the widget DRAWS the artwork — on the board,
+ * 144 tiles at a time — not because a lobby card shows it. `GAME_UI_CREDITS`
+ * below unions this list for exactly that reason, in its own words: "an
+ * obligation is owed whether or not that game's art won a place on the front
+ * page".
+ */
+const MAHJONG_FAMILY: GameFamilyUi = {
+  id: "mahjong-solitario",
+  heroTitle: "Mahjong Solitario",
+  credits: [{ ...TILE_ATTRIBUTION, subject: STRINGS.creditSubjectTiles }],
+};
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY];
 
 /**
  * The family whose face the front door wears — or none.

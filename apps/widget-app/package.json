@@ -9,6 +9,7 @@
   "dependencies": {
     "@hexdev/escoba-engine": "workspace:*",
     "@hexdev/escoba-ui": "workspace:*",
+    "@hexdev/mahjong-tile-ui": "workspace:*",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "@hexdev/spanish-deck-ui": "workspace:*",
