@@ -13,10 +13,16 @@ export { createMahjongBoardRenderer } from "./board.js";
 export { BOARD_STYLE_ID, buildBoardStylesheet, ensureBoardStyles } from "./board-styles.js";
 export type { HitTestRoot } from "./hit-test.js";
 export { TILE_POSITION_ATTRIBUTE, tileIndexAtPoint } from "./hit-test.js";
+export type { MahjongPair, PairSelectionMove } from "./pair-selection.js";
+export { resolvePress } from "./pair-selection.js";
 export type { BoardTiles } from "./board-identity.js";
 export { isSameBoard } from "./board-identity.js";
 export type { Chronometer, ChronometerClock, ChronometerContext } from "./chronometer.js";
 export { createChronometer, elapsedWholeSeconds, formatElapsed } from "./chronometer.js";
+export type { MahjongMatchOverProps, MahjongOutcomeInfo } from "./match-over.js";
+export { MAHJONG_DEADLOCK_MESSAGE, mahjongMatchOverMessage } from "./match-over.js";
+export type { MahjongMatchOverViewProps } from "./match-over-view.js";
+export { MATCH_OVER_STYLE_ID, buildMatchOverStylesheet, ensureMatchOverStyles, renderMahjongMatchOver } from "./match-over-view.js";
 export type { BoardExtent, BoardRoom } from "./board-geometry.js";
 export {
   BOARD_BLOCK_IN_TILE_HEIGHTS,

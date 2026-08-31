@@ -25,6 +25,9 @@
       "path": "../../packages/games/escoba-module"
     },
     {
+      "path": "../../packages/games/mahjong-solitaire-module"
+    },
+    {
       "path": "../../packages/widget-frontdoor"
     }
   ]

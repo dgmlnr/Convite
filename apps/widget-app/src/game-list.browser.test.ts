@@ -375,9 +375,20 @@ const TWO_SHELVES: readonly GameSection[] = [
  * collapse into ONE shelf, so this string is the render a player actually
  * gets, and "the one-section case is unchanged" is only worth saying if it
  * means the same bytes.
+ *
+ * MOVED ONCE, IN SLICE 9, AND FOR A REASON THAT IS NOT ABOUT SHELVES. The
+ * footer gained a SECOND credit block: this widget started drawing a second
+ * licensed artwork (the mahjong tiles, CC BY-SA 4.0 by 碧海风) and
+ * `GAME_UI_CREDITS` unions every family's obligations onto every screen a
+ * player can reach — deliberately, in its own words, "whether or not that
+ * game's art won a place on the front page". The diff was read before it was
+ * accepted and it is exactly one `<p class="hexdev-about-credit">` plus its
+ * links; every byte above the footer, and the deck's own credit line inside
+ * it, are unchanged. What this string still pins is what it always pinned:
+ * that ONE shelf grows no wrapper, no heading, and no stepped heading level.
  */
 const PRE_SECTION_MARKUP =
-  '<div class="hexdev-chrome-content"><header class="hexdev-chrome-header"><h1 class="hexdev-chrome-title">Elegí un juego</h1><p class="hexdev-chrome-tagline">Sentate a jugar: sin instalar nada, sin crear cuenta.</p></header><div class="hexdev-chrome-games"><button type="button" class="hexdev-game-card hexdev-game-card--choice" data-family="alfa-fixture"><h2>Truco Argentino</h2></button><button type="button" class="hexdev-game-card hexdev-game-card--choice" data-family="beta-fixture"><h2>Escoba de 15</h2></button></div><footer class="hexdev-chrome-foot"><p class="hexdev-chrome-brand">Convite</p><details class="hexdev-about"><summary class="hexdev-about-toggle" aria-label="Créditos y licencia" title="Créditos y licencia">i</summary><div class="hexdev-about-panel"><h2 class="hexdev-about-title">Créditos</h2><p class="hexdev-about-credit">Arte de las cartas: Basquetteur. Se le hicieron cambios.</p><p class="hexdev-about-links"><a href="https://github.com/gjenkins20/spanish-playing-cards-svg" target="_blank" rel="noopener noreferrer">Ver la fuente</a><a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">Licencia CC BY-SA 3.0</a></p></div></details></footer></div>';
+  '<div class="hexdev-chrome-content"><header class="hexdev-chrome-header"><h1 class="hexdev-chrome-title">Elegí un juego</h1><p class="hexdev-chrome-tagline">Sentate a jugar: sin instalar nada, sin crear cuenta.</p></header><div class="hexdev-chrome-games"><button type="button" class="hexdev-game-card hexdev-game-card--choice" data-family="alfa-fixture"><h2>Truco Argentino</h2></button><button type="button" class="hexdev-game-card hexdev-game-card--choice" data-family="beta-fixture"><h2>Escoba de 15</h2></button></div><footer class="hexdev-chrome-foot"><p class="hexdev-chrome-brand">Convite</p><details class="hexdev-about"><summary class="hexdev-about-toggle" aria-label="Créditos y licencia" title="Créditos y licencia">i</summary><div class="hexdev-about-panel"><h2 class="hexdev-about-title">Créditos</h2><p class="hexdev-about-credit">Arte de las cartas: Basquetteur. Se le hicieron cambios.</p><p class="hexdev-about-links"><a href="https://github.com/gjenkins20/spanish-playing-cards-svg" target="_blank" rel="noopener noreferrer">Ver la fuente</a><a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">Licencia CC BY-SA 3.0</a></p><p class="hexdev-about-credit">Arte de las fichas: 碧海风. Se le hicieron cambios.</p><p class="hexdev-about-links"><a href="https://commons.wikimedia.org/wiki/Special:ListFiles/%E7%A2%A7%E6%B5%B7%E9%A3%8E" target="_blank" rel="noopener noreferrer">Ver la fuente</a><a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">Licencia CC BY-SA 4.0</a></p></div></details></footer></div>';
 
 describe("one shelf: the screen a player gets today, and the same bytes as before", () => {
   it("adds no group wrapper and no shelf heading", () => {
