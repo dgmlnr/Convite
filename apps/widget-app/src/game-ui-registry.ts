@@ -171,8 +171,16 @@ export interface GameUiEntry {
    * small per-mount state (the trick-outcome banner) that must not leak
    * between two different matches sharing one widget session. `onPlayAgain`
    * is optional: the fallback "connection is live" path has nowhere to
-   * return to and never renders a match-over overlay in the first place. */
-  createRenderer(): (
+   * return to and never renders a match-over overlay in the first place.
+   *
+   * THE CONTEXT IS REQUIRED, AND THE FOUR SHIPPED ENTRIES IGNORE IT BY NOT
+   * DECLARING IT. TypeScript assigns a zero-argument `() => Renderer` to a
+   * one-argument parameter, so truco's and escoba's factories below are
+   * untouched by this and pay nothing for it. Required rather than optional
+   * on purpose: an optional parameter is exactly how a fourth call site
+   * silently gets `undefined` and quietly decides for itself what a missing
+   * provenance means. */
+  createRenderer(context: MatchRenderContext): (
     container: HTMLElement,
     payload: GameUiPayload,
     dispatch: (action: unknown) => void,

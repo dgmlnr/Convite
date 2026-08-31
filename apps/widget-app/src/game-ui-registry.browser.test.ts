@@ -3,7 +3,7 @@ import type { GameId } from "@hexdev/platform-contract";
 import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { PlayCardAction as EscobaPlayCardAction, PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView, TeamId as EscobaTeamId } from "@hexdev/escoba-engine";
-import { createGameUiRegistry } from "./game-ui-registry.js";
+import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 
 let container: HTMLElement;
 
@@ -31,7 +31,7 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const render = registry.get("truco-argentino" as never)!.createRenderer(matchRenderContextFor("joined", Date.now));
 
     render(container, { view, legalActions: [] }, () => {});
 
@@ -43,7 +43,7 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const render = registry.get("truco-argentino" as never)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const dispatch = vi.fn();
     const legalActions = [{ type: "call-truco" as const, playerId: SELF, level: "truco" as const }];
 
@@ -57,7 +57,7 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const render = registry.get("truco-argentino" as never)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const onPlayAgain = vi.fn();
 
     render(container, { view, legalActions: [], outcome: { winnerIds: [SELF] } }, () => {}, onPlayAgain);
@@ -80,7 +80,7 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const render = registry.get("truco-argentino" as never)!.createRenderer(matchRenderContextFor("joined", Date.now));
 
     render(container, { view, legalActions: [], pendingConsult: { askerSeat: 0, deadline: Date.now() + 30_000 } }, () => {});
 
@@ -93,7 +93,7 @@ describe("truco's registered renderer — the real wiring boundary from a generi
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("truco-argentino" as never)!.createRenderer();
+    const render = registry.get("truco-argentino" as never)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const dispatch = vi.fn();
 
     render(container, { view, legalActions: [], consultAsk: { about: "pending-call", options: ["quiero", "no-quiero"], deadline: Date.now() + 30_000 } }, dispatch);
@@ -145,7 +145,7 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("escoba-de-15" as GameId)!.createRenderer();
+    const render = registry.get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
 
     render(container, { view: escobaView, legalActions: [] }, () => {});
 
@@ -172,7 +172,7 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
       others: [{ playerId: rival, teamId: ESCOBA_TEAM_B, seat: 1, cardsRemaining: 2 }],
       hand: { ...escobaView.hand!, turn: rival, escobas: { [ESCOBA_TEAM_A]: 1, [ESCOBA_TEAM_B]: 0 } },
     };
-    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer();
+    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
 
     render(container, { view, legalActions: [] }, () => {});
 
@@ -202,7 +202,7 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("escoba-de-15" as GameId)!.createRenderer();
+    const render = registry.get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
 
     render(container, { view: escobaView, legalActions: [] }, () => {});
 
@@ -219,12 +219,12 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
 
   /** Unit P — the real wiring boundary `enterMatch` now exercises: mark the
    * table's own 5-oro, then play a hand card, in ONE gesture, through the
-   * EXACT `createRenderer()` entry-point live matches use. */
+   * EXACT `createRenderer(context)` entry-point live matches use. */
   it("marking the table's forming card then playing the hand card dispatches ONE real PlayCardAction, no intermediate dialog", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     const registry = createGameUiRegistry();
-    const render = registry.get("escoba-de-15" as GameId)!.createRenderer();
+    const render = registry.get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const dispatch = vi.fn();
     const REY_ESPADA = { suit: "espada", rank: 12 } as const; // value 10, target 15-10=5 -> the table's own 5-oro
     const view: EscobaPlayerView = { ...escobaView, self: { ...escobaView.self, hand: [REY_ESPADA] } };

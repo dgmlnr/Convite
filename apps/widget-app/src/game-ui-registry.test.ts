@@ -128,3 +128,37 @@ describe("matchRenderContextFor — the provenance a renderer is built with", ()
     expect(context.now()).toBe(7);
   });
 });
+
+/**
+ * THE FOUR SHIPPED ENTRIES ARE NOT EDITED, and this is what says so.
+ *
+ * `GameUiEntry.createRenderer` now takes a `MatchRenderContext`, and truco's
+ * and escoba's factories ignore it by NOT DECLARING it — TypeScript assigns a
+ * zero-argument `() => Renderer` to a one-argument parameter, so a game that
+ * has nothing to do with time pays nothing for one that does. The rejected
+ * alternative was a sixth positional argument on `render(...)`, which every
+ * game would have paid for on the hot path.
+ */
+describe("every registered entry accepts a render context and none of them has to want it", () => {
+  it.each(["truco-argentino", "truco-argentino-2v2", "escoba-de-15", "escoba-de-15-2v2"])("%s builds a renderer from a context it never declared", (id) => {
+    const entry = createGameUiRegistry().get(id as GameId);
+    expect(entry, "R6: an absent entry would make the assertion below vacuous").not.toBeUndefined();
+    expect(typeof entry!.createRenderer(matchRenderContextFor("resumed", () => 7))).toBe("function");
+  });
+
+  it("and a caller that supplies no context at all does not compile", () => {
+    /**
+     * THE COMPILE-TIME HALF, and it is here because the mutation that made
+     * the parameter optional came back with ZERO REDS — a type weakening
+     * changes no behaviour, so no behaviour test can see it (the same
+     * "derived, not typed" gap the tile package and the board package each
+     * measured).
+     *
+     * `@ts-expect-error` closes it from the other side: TypeScript fails the
+     * build when the directive is UNUSED, so the day `context` becomes
+     * optional this line stops being an error and `tsc -b` says so.
+     */
+    // @ts-expect-error the render context is REQUIRED, and this line is what says so
+    expect(typeof createGameUiRegistry().get("truco-argentino" as GameId)!.createRenderer()).toBe("function");
+  });
+});
