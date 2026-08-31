@@ -8,6 +8,7 @@
  * why the renderer takes a plain tile array rather than a `SolitairePlayerView`:
  * the rule about who may see what belongs one tier up.
  */
+export type { BoardExtent, BoardRoom } from "./board-geometry.js";
 export {
   BOARD_BLOCK_IN_TILE_HEIGHTS,
   BOARD_COLUMNS,
@@ -20,4 +21,7 @@ export {
   LAYER_STEP_X,
   LAYER_STEP_Y,
   TILE_LAYER_STEP,
+  bindingTileWidth,
+  boardExtent,
+  emptyInlineFraction,
 } from "./board-geometry.js";

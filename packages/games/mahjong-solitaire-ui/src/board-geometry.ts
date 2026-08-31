@@ -1,5 +1,5 @@
 import { LAYOUT } from "@hexdev/mahjong-solitaire-engine";
-import { TILE_HEIGHT, TILE_WIDTH } from "@hexdev/mahjong-tile-ui";
+import { TILE_ART_RATIO, TILE_HEIGHT, TILE_MAX_INLINE_SIZE, TILE_WIDTH } from "@hexdev/mahjong-tile-ui";
 
 /**
  * How big the turtle is, and how big one of its tiles may be — all of it
@@ -16,7 +16,8 @@ import { TILE_HEIGHT, TILE_WIDTH } from "@hexdev/mahjong-tile-ui";
  * The numbers below therefore exist twice on purpose: once here, where they
  * can be reasoned about and mutated, and once inside the stylesheet — which
  * INTERPOLATES them from this module rather than restating them, so there is
- * one place to change.
+ * one place to change and `board-fit.browser.test.ts` measures the real
+ * element against `bindingTileWidth`'s prediction to prove the two agree.
  */
 
 /** The turtle's own footprint, in half-cells, read off the layout data.
@@ -85,3 +86,64 @@ export const BOARD_BLOCK_IN_TILE_HEIGHTS = BOARD_ROWS + (BOARD_LAYERS - 1) * LAY
  * stylesheet writes it AND `bindingTileWidth`'s callers have to subtract it
  * from a window height — one number, never two that agree today. */
 export const BOARD_PADDING = 8;
+
+/** The room a board has been given, both sides already net of
+ * `BOARD_PADDING`. Named for CSS's own logical axes, because that is what
+ * the sheet is written in. */
+export interface BoardRoom {
+  readonly inlineSize: number;
+  readonly blockSize: number;
+}
+
+/** The board's real pixel box for a given tile width. */
+export interface BoardExtent {
+  readonly inlineSize: number;
+  readonly blockSize: number;
+}
+
+/**
+ * The tile width a given room affords: the smallest of what the width can
+ * pay for, what the height can pay for, and the cap.
+ *
+ * THE CAP IS THE HALF SLICE 6 SHIPPED UNCONSUMED. `TILE_MAX_INLINE_SIZE`
+ * exists because the raster dimension needed a largest-ever-drawn width and a
+ * board has none — it fills its container, and a container has no upper
+ * bound. This is the other end of that bargain: having declared 72px so the
+ * artwork could be rasterized for it, the board must never draw wider than
+ * 72px, or the raster is undersampled for a size we promised not to reach.
+ *
+ * The HEIGHT is what binds on every real phone, and that is the whole of
+ * design D1's argument: a wider layout would spend the recovered width on
+ * more columns, never on a bigger tile. Re-checked at the artwork's real
+ * ratio in `board-geometry.test.ts` — the crossover is 26.2 columns, not the
+ * 23.6 D1 computed at r = 0.75.
+ */
+export function bindingTileWidth(room: BoardRoom): number {
+  const byInline = room.inlineSize / BOARD_INLINE_IN_TILE_WIDTHS;
+  const byBlock = (room.blockSize / BOARD_BLOCK_IN_TILE_HEIGHTS) * TILE_ART_RATIO;
+  return Math.min(byInline, byBlock, TILE_MAX_INLINE_SIZE);
+}
+
+/** The board's own box at a given tile width. The block side goes through
+ * the artwork's ratio rather than a second constant, so a tile that is not
+ * 0.69882 wide cannot produce a board that thinks it is. */
+export function boardExtent(tileWidth: number): BoardExtent {
+  return {
+    inlineSize: tileWidth * BOARD_INLINE_IN_TILE_WIDTHS,
+    blockSize: (tileWidth / TILE_ART_RATIO) * BOARD_BLOCK_IN_TILE_HEIGHTS,
+  };
+}
+
+/**
+ * How much of the room's width the board does NOT use.
+ *
+ * PINNED BY A TEST, because design D1 accepted this margin on the condition
+ * that it be a number somebody looked at rather than a surprise. On a rotated
+ * phone it is 41.6%. It is not the 36.6% this change carried for six slices:
+ * that was computed at r = 0.75, from an asset survey that described the
+ * artwork as a bare face symbol. The drawing IS the tile, at its own 0.69882,
+ * and a narrower tile against the same height budget is a narrower board.
+ */
+export function emptyInlineFraction(room: BoardRoom): number {
+  return 1 - boardExtent(bindingTileWidth(room)).inlineSize / room.inlineSize;
+}
