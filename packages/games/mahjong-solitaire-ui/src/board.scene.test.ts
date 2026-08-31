@@ -1,7 +1,7 @@
 /// <reference types="@vitest/browser/matchers" />
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
-import { ALL_TILES, layBoard, tileId } from "@hexdev/mahjong-solitaire-engine";
+import { ALL_TILES, LAYOUT, layBoard, tileId } from "@hexdev/mahjong-solitaire-engine";
 import type { PlayerId } from "@hexdev/mahjong-solitaire-engine";
 import { ALL_TILE_FACES, getTileArt, tileBodySvg } from "@hexdev/mahjong-tile-ui";
 import { ensureBoardStyles } from "./board-styles.js";
@@ -35,6 +35,9 @@ import { createMahjongBoardRenderer } from "./board.js";
  */
 
 const PLAYER = "mahjong-scene-player" as unknown as PlayerId;
+/** The apex, found in the data rather than written down — the same
+ * derivation `board.browser.test.ts` uses, so a layout swap moves both. */
+const APEX = LAYOUT.reduce((best, position, index) => (position.z > LAYOUT[best]!.z ? index : best), 0);
 const LAYOUT_ATTRIBUTE = "data-hexdev-layout";
 
 const mounted: HTMLElement[] = [];
@@ -45,7 +48,7 @@ afterEach(async () => {
   await page.viewport(414, 896);
 });
 
-async function fullscreenBoard(w: number, h: number): Promise<HTMLElement> {
+async function fullscreenBoard(w: number, h: number, selected: number | null = null): Promise<HTMLElement> {
   await page.viewport(w, h);
   document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
   const container = document.createElement("div");
@@ -53,7 +56,7 @@ async function fullscreenBoard(w: number, h: number): Promise<HTMLElement> {
   container.style.inset = "0";
   document.body.appendChild(container);
   mounted.push(container);
-  createMahjongBoardRenderer()(container, layBoard(PLAYER, ALL_TILES.map((tile) => tileId(tile))).tiles);
+  createMahjongBoardRenderer()(container, layBoard(PLAYER, ALL_TILES.map((tile) => tileId(tile))).tiles, selected);
   await Promise.all([...container.querySelectorAll("img")].map((image) => image.decode()));
   return container;
 }
@@ -71,6 +74,26 @@ describe("scene: the turtle on the felt", () => {
     // would show first.
     const container = await fullscreenBoard(1400, 900);
     await expect.element(container).toMatchScreenshot("mahjong-turtle-desktop");
+  });
+});
+
+/**
+ * THE HALF OF A MOVE THAT IS ON THE BOARD.
+ *
+ * The fences next door say the selected tile carries an attribute and
+ * computes a different `filter` than its neighbour. Neither of them can say
+ * whether a person can SEE which tile they pressed, at the width they will be
+ * pressing it — which is the entire question, in a game whose only
+ * interaction is two presses.
+ *
+ * The apex is chosen deliberately: it is the smallest tile on the board in
+ * apparent terms (the most surrounded by others) and the one whose halo has
+ * the most competing edges to be lost against.
+ */
+describe("scene: the tile that has been pressed once", () => {
+  it("a rotated phone, fullscreen — the halo at the binding width", async () => {
+    const container = await fullscreenBoard(844, 390, APEX);
+    await expect.element(container).toMatchScreenshot("mahjong-turtle-selected");
   });
 });
 
