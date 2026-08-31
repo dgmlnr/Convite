@@ -12,6 +12,7 @@
     { "path": "packages/games/truco-bot" },
     { "path": "packages/games/truco-ui" },
     { "path": "packages/games/escoba-ui" },
+    { "path": "packages/games/mahjong-solitaire-ui" },
     { "path": "packages/games/truco-module" },
     { "path": "packages/games/escoba-module" },
     { "path": "packages/games/mahjong-solitaire-module" },
