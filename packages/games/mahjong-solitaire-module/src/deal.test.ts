@@ -137,6 +137,7 @@ describe("the deal", () => {
       expect(onBoard.has(step.b)).toBe(true);
       expect(isFree(step.a, onBoard)).toBe(true);
       expect(isFree(step.b, onBoard)).toBe(true);
+      expect(step.a).toBeLessThan(step.b);
       expect(KEY_BY_ID.get(placements[step.a])).toBe(KEY_BY_ID.get(placements[step.b]));
       onBoard.delete(step.a);
       onBoard.delete(step.b);
