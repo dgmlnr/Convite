@@ -8,6 +8,8 @@
  * why the renderer takes a plain tile array rather than a `SolitairePlayerView`:
  * the rule about who may see what belongs one tier up.
  */
+export type { MahjongBoardCallbacks, MahjongBoardRenderer } from "./board.js";
+export { createMahjongBoardRenderer } from "./board.js";
 export { BOARD_STYLE_ID, buildBoardStylesheet, ensureBoardStyles } from "./board-styles.js";
 export type { HitTestRoot } from "./hit-test.js";
 export { TILE_POSITION_ATTRIBUTE, tileIndexAtPoint } from "./hit-test.js";
