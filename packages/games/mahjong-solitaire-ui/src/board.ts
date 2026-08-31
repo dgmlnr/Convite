@@ -221,6 +221,14 @@ function drawTile(doc: Document, position: number, id: string): HTMLElement {
     image.width = art.width;
     image.height = art.height;
     image.alt = art.alt;
+    // A GAME PIECE, NOT A PICTURE ON A PAGE. An `<img>` is natively draggable,
+    // so a press-and-move over the turtle peeled the face off under the cursor
+    // with a ghost preview of it. The property and not a `dragstart` handler:
+    // it is the same refusal stated where the browser reads it, on 144
+    // elements that would otherwise each need a listener. The sheet's own
+    // `user-select: none` is the sibling refusal and not a substitute — that
+    // one governs the selection, this one governs the drag.
+    image.draggable = false;
     element.appendChild(image);
   }
 
