@@ -15,6 +15,7 @@ export type { HitTestRoot } from "./hit-test.js";
 export { TILE_POSITION_ATTRIBUTE, tileIndexAtPoint } from "./hit-test.js";
 export type { MahjongPair, PairSelectionMove } from "./pair-selection.js";
 export { resolvePress } from "./pair-selection.js";
+export { liftablePositions } from "./liftable.js";
 export type { BoardTiles } from "./board-identity.js";
 export { isSameBoard } from "./board-identity.js";
 export type { Chronometer, ChronometerClock, ChronometerContext } from "./chronometer.js";
