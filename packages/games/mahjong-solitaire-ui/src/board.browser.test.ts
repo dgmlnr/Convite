@@ -24,6 +24,12 @@ function fullBoard(): BoardTiles {
   return layBoard(PLAYER, ALL_TILES.map((tile) => tileId(tile))).tiles;
 }
 
+/** The same 144 tiles in the opposite order: same length, same faces, no
+ * holes — and a board the renderer has to rebuild rather than diff. */
+function reshuffledBoard(): BoardTiles {
+  return layBoard(PLAYER, [...ALL_TILES].reverse().map((tile) => tileId(tile))).tiles;
+}
+
 function without(board: BoardTiles, ...positions: readonly number[]): BoardTiles {
   const tiles: (TileId | null)[] = [...board];
   for (const position of positions) tiles[position] = null;
@@ -203,5 +209,36 @@ describe("a move removes two elements and touches nothing else", () => {
 
     expect(tilesOf(el)).toHaveLength(LAYOUT.length - 40);
     expect(tileAt(el, LAYOUT.length - 1)).toBe(first);
+  });
+});
+
+describe("a board that is not the same board is rebuilt", () => {
+  it("a fresh deal replaces every element and shows the new faces", async () => {
+    const el = await mounted();
+    const render = createMahjongBoardRenderer();
+    render(el, fullBoard());
+    const before = tileAt(el, 0)!;
+    const beforeTile = before.dataset.tile;
+
+    render(el, reshuffledBoard());
+
+    const after = tileAt(el, 0)!;
+    expect(after).not.toBe(before);
+    expect(after.dataset.tile).not.toBe(beforeTile);
+    expect(tilesOf(el)).toHaveLength(LAYOUT.length);
+  });
+
+  it("a board that went away leaves nothing behind, and the next one is built fresh", async () => {
+    const el = await mounted();
+    const render = createMahjongBoardRenderer();
+    render(el, fullBoard());
+    const before = tileAt(el, 0)!;
+
+    render(el, null);
+    expect(tilesOf(el)).toHaveLength(0);
+
+    render(el, fullBoard());
+    expect(tilesOf(el)).toHaveLength(LAYOUT.length);
+    expect(tileAt(el, 0)).not.toBe(before);
   });
 });
