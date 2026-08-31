@@ -49,14 +49,19 @@ const SIN_ARTE: GameFamily = { id: "escoba", entries: [entry("escoba-de-15", "es
  * three scenes below are of, and it is the pre-shelf screen unchanged. */
 const oneSection = (families: readonly GameFamily[]): readonly GameSection[] => [{ id: "cartas", families }];
 
-/** TWO SHELVES: the arrangement no tenant has yet and every scene assertion
- * is blind to. The second shelf's id is one `SECTIONS` has no copy for, so
- * its heading renders raw — deliberately, because that is what a shelf added
- * to the catalog before its Spanish name lands really looks like, and the
- * point of a scene is to see it before a player does. */
+/** TWO SHELVES, the second of them named by an id `SECTIONS` has no copy for,
+ * so its heading renders raw — deliberately, because that is what a shelf
+ * added to the catalog before its Spanish name lands really looks like, and
+ * the point of a scene is to see it before a player does.
+ *
+ * IT USED TO BE `"fichas"`, and slice 9 gave that shelf its name, which
+ * quietly turned this scene into a picture of the ordinary case and left the
+ * paragraph above saying the opposite of what rendered. Moved to an id
+ * nothing declares, which is what the scene was always about; the real two
+ * shelves a tenant gets today are in `mahjong.scene.test.ts`. */
 const DOS_ESTANTES: readonly GameSection[] = [
   { id: "cartas", families: [TRUCO, SIN_ARTE] },
-  { id: "fichas", families: [{ id: "sin-copia", entries: [entry("sin-copia-game", "sin-copia", "games.escoba.name", 2, "fichas")] }] },
+  { id: "dados", families: [{ id: "sin-copia", entries: [entry("sin-copia-game", "sin-copia", "games.escoba.name", 2, "dados")] }] },
 ];
 
 const mounted: HTMLElement[] = [];
