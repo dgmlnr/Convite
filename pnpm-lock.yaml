@@ -335,6 +335,9 @@ importers:
 
   packages/widget-frontdoor:
     dependencies:
+      '@hexdev/mahjong-tile-ui':
+        specifier: workspace:*
+        version: link:../mahjong-tile-ui
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../platform-contract

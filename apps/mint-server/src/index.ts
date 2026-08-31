@@ -10,6 +10,7 @@ import {
   renderEmbedShell,
   serveCardFrontAsset,
   serveLoaderAsset,
+  serveTileFrontAsset,
   serveWidgetAppAsset,
   type EmbedBootstrap,
 } from "@hexdev/widget-frontdoor";
@@ -73,6 +74,9 @@ const registry = buildMintGameRegistry();
 const widgetAppDistDir = fileURLToPath(new URL("../../widget-app/dist-app", import.meta.url));
 const widgetSdkDistDir = fileURLToPath(new URL("../../../packages/widget-sdk/dist-iife", import.meta.url));
 const deckFrontsDir = fileURLToPath(new URL("../../../packages/spanish-deck-ui/assets/fronts", import.meta.url));
+// Its own directory, its own artwork, its own license (CC BY-SA 4.0 rather
+// than the deck's 3.0) — see packages/mahjong-tile-ui/assets/LICENSE.
+const tileFrontsDir = fileURLToPath(new URL("../../../packages/mahjong-tile-ui/assets/tiles", import.meta.url));
 
 /* c8 ignore start — the HTTP plumbing; `resolveRoute` and `loadMintConfig` are what the tests pin. */
 const server = createServer((req, res) => {
@@ -154,6 +158,15 @@ const server = createServer((req, res) => {
 
     case "card-front":
       serveCardFrontAsset(deckFrontsDir, route.file)
+        .then(({ status, contentType, body }) => {
+          res.writeHead(status, { "content-type": contentType });
+          res.end(body);
+        })
+        .catch(fail);
+      return;
+
+    case "tile-front":
+      serveTileFrontAsset(tileFrontsDir, route.file)
         .then(({ status, contentType, body }) => {
           res.writeHead(status, { "content-type": contentType });
           res.end(body);
