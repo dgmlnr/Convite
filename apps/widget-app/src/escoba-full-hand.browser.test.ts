@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { GameId } from "@hexdev/platform-contract";
 import { applyAction, buildDeck, cardId, deal, getLegalActions, getMatchWinner, getViewFor, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
 import type { Card, MatchState, PlayCardAction, Player, PlayerId, Team, TeamId } from "@hexdev/escoba-engine";
-import { createGameUiRegistry } from "./game-ui-registry.js";
+import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 
 /**
  * Slice Q.4 — the LIVE CHECKPOINT through the interface that now exists.
  * Drives a real deal/capture/hand-end score through
- * `createGameUiRegistry().get("escoba-de-15")!.createRenderer()`, the EXACT
+ * `createGameUiRegistry().get("escoba-de-15")!.createRenderer(context)`, the EXACT
  * entry point `main.ts`'s `enterMatch` calls — clicking real `<button>`s,
  * dispatching back into the real engine reducer.
  *
@@ -49,7 +49,7 @@ describe("Slice Q.4 checkpoint — a full escoba hand played end to end through 
     const captureAction = legal.find((action) => action.captured.length > 0);
     expect(captureAction, "fixture setup: this deterministic deal must offer a real capture").toBeDefined();
 
-    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer();
+    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const container = mount();
     const dispatch = vi.fn();
     render(container, { view: getViewFor(state, acting), legalActions: legal }, dispatch);
@@ -113,7 +113,7 @@ describe("Slice Q.4 checkpoint — a full escoba hand played end to end through 
     };
     expect(decided.teams[0].score, "fixture setup: cartas+oros+siete de oro must all resolve").toBe(3);
 
-    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer();
+    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const container = mount();
     render(container, { view: getViewFor(decided, PLAYER_A), legalActions: [] }, () => {});
 
@@ -163,7 +163,7 @@ describe("Slice Q.4 checkpoint — a full escoba hand played end to end through 
     expect(getMatchWinner(decided), "fixture setup: this hand must actually decide the match").toBe(TEAM_A);
     const outcome = { winnerIds: [PLAYER_A] };
 
-    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer();
+    const render = createGameUiRegistry().get("escoba-de-15" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
     const container = mount();
     const onPlayAgain = vi.fn();
     const onLeaveMatch = vi.fn();

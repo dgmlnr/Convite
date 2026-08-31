@@ -32,6 +32,14 @@ module.exports = {
       to: { path: "^(packages|apps)/", pathNot: "^packages/spanish-deck-ui/src" },
     },
     {
+      name: "l0-mahjong-tile-ui-no-workspace-deps",
+      severity: "error",
+      comment:
+        "mahjong-tile-ui is pure L0 and must not depend on any other workspace package. It is the mahjong tile SET as artwork — the 42 faces, their images, the body they sit on and the credit CC BY-SA 4.0 requires — and it must not know that a solitaire exists, exactly like spanish-deck-ui must not know truco exists. Its own rule rather than a `*-ui` glob on purpose: the existing glob is `packages/games/*-ui`, which is L1 game presentation and MAY import its engine; this package sits at packages/ root beside spanish-deck-ui and is one tier lower. Widening that glob to reach here would have quietly granted every game UI the same restriction it does not have, and granted this package the imports it must not have.",
+      from: { path: "^packages/mahjong-tile-ui/src" },
+      to: { path: "^(packages|apps)/", pathNot: "^packages/mahjong-tile-ui/src" },
+    },
+    {
       name: "l1-no-l2-l3",
       severity: "error",
       comment:
