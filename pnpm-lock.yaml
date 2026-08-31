@@ -181,6 +181,8 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.0(@types/node@26.1.2))(vitest@4.1.10)
 
+  packages/games/mahjong-solitaire-engine: {}
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':
