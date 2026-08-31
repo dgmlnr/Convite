@@ -1,0 +1,20 @@
+{
+  "name": "@hexdev/mahjong-solitaire-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@hexdev/mahjong-tile-ui": "workspace:*",
+    "@hexdev/mahjong-solitaire-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@vitest/browser": "^4.1.10"
+  }
+}
