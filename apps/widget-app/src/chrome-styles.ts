@@ -690,6 +690,28 @@ padding: 20px 16px 18px;
 min-height: 172px;
 }
 
+/* NOTHING TO RESERVE. The rule above reserves the height a hand of faces
+   needs, so that a game which "has not chosen its cards yet" does not look
+   unfinished beside one that has. That premise held for as long as every
+   game in the catalog was a deck of cards.
+
+   The mahjong solitaire declares no lobby art and never will: its 42 faces
+   are TRANSPARENT symbols with no tile body behind them (mahjong-tile-ui's
+   own license record says the transparency is deliberate), the bone under a
+   symbol is generated markup, and cardArt takes image URLs. Rendered on its
+   own shelf at 172px it came out as a large empty rectangle with a name at
+   the foot — read on a real render, and it does not say "this game has no
+   art", it says "the art failed to load".
+
+   The equal-height intent is untouched, because it was always about a ROW:
+   the :has() rule further up stretches a band's items, so an art-less card
+   standing beside art-bearing ones still matches their height. This only
+   stops a card from reserving space for art that is not coming when there is
+   nothing beside it to match. */
+.convite-chrome .hexdev-game-card--choice:not(:has(.hexdev-game-card-art)) {
+min-height: 0;
+}
+
 .convite-chrome .hexdev-game-card--choice:hover,
 .convite-chrome .hexdev-game-card--choice:focus-visible {
 /* Lifted with light, never with a second colour: the same move the panel
@@ -1085,8 +1107,14 @@ opacity: 0.55;
  * place their brand SHOULD show — with gold underneath it, so a tenant that
  * sets none gets the product's own accent rather than a hardcoded yellow that
  * belongs to nobody. */
+/* The third value of the same attribute: a one-seat game (game-screen.ts's
+   own seat-count gate) offers exactly one control, so that control is the
+   prominent one by construction rather than by a count nobody is waiting
+   in. Same treatment, same token, no second rule — a solitaire's only
+   button must not read as the SECONDARY action on its own card. */
 .hexdev-modality[data-prominent="person"] button[data-action="vs-person"],
-.hexdev-modality[data-prominent="bot"] button[data-action="vs-bot"] {
+.hexdev-modality[data-prominent="bot"] button[data-action="vs-bot"],
+.hexdev-modality[data-prominent="solo"] button[data-action="play-solo"] {
   background: var(--gx-color-accent, var(--hx-gold));
   border-color: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);

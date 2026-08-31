@@ -12,5 +12,8 @@
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/mahjong-solitaire-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@hexdev/platform-core": "workspace:*"
   }
 }
