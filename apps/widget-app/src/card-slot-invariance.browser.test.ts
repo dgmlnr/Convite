@@ -12,7 +12,7 @@ import {
 import type { DealInput, PlayerId as TrucoPlayerId } from "@hexdev/truco-engine";
 import { createMatchTableRenderer } from "@hexdev/truco-ui";
 import type { GameId } from "@hexdev/platform-contract";
-import { createGameUiRegistry } from "./game-ui-registry.js";
+import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 
 /**
  * A CARD SLOT KEEPS ITS SHAPE WHEN THE SCREEN IS ROTATED.
@@ -203,7 +203,7 @@ async function escobaSlots(seats: Seats, w: number, h: number): Promise<readonly
   const entry = createGameUiRegistry().get(ESCOBA_GAME_ID[seats]);
   if (entry === undefined) throw new Error(`fence setup: no renderer for ${ESCOBA_GAME_ID[seats]}`);
   const state = escobaState(seats);
-  entry.createRenderer()(el, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
+  entry.createRenderer(matchRenderContextFor("joined", Date.now))(el, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
   return slotRatios(el);
 }
 
