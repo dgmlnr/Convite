@@ -26,9 +26,12 @@ import type { BoardTiles, MahjongOutcomeInfo, MahjongPair } from "@hexdev/mahjon
 import {
   createChronometer,
   createMahjongBoardRenderer,
+  ensureElapsedReadoutStyles,
   ensureMatchOverStyles as ensureMahjongMatchOverStyles,
   renderMahjongMatchOver,
   resolvePress,
+  startElapsedReadout,
+  windowTicker,
 } from "@hexdev/mahjong-solitaire-ui";
 import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
 import { STRINGS } from "./i18n.js";
@@ -690,6 +693,7 @@ function createMahjongRenderer(): GameUiEntry["createRenderer"] {
 
     return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
       ensureMahjongMatchOverStyles(document);
+      ensureElapsedReadoutStyles(document);
 
       if (mounted === null || mounted.boardEl.parentElement !== container) {
         container.replaceChildren();
@@ -700,8 +704,20 @@ function createMahjongRenderer(): GameUiEntry["createRenderer"] {
         container.className = "hexdev-mahjong-match";
         const boardEl = document.createElement("div");
         const matchOverEl = document.createElement("div");
-        container.append(boardEl, matchOverEl);
+        // THREE children now, and the clock is a SIBLING of the board for the
+        // same reason the panel is: the board renderer owns its container
+        // outright and wipes it on a rebuild, so a readout mounted inside it
+        // would be a readout the next deal deletes — and with it, silently,
+        // the only figure the player has been watching all game.
+        const elapsedEl = document.createElement("div");
+        container.append(boardEl, elapsedEl, matchOverEl);
         mounted = { boardEl, matchOverEl };
+        // Started once per mount, never per render, exactly like the
+        // chronometer it reads. It needs no counterpart here because it ends
+        // itself when `elapsedEl` leaves the document — see
+        // `startElapsedReadout`, and the renderer contract that has no
+        // teardown hook to offer it.
+        startElapsedReadout(elapsedEl, chronometer, windowTicker(window));
       }
 
       const view = payload.view as MahjongPlayerView;

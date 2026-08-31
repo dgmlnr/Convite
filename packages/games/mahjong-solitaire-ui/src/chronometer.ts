@@ -76,6 +76,24 @@ export interface Chronometer {
    * call is the one that decides.
    */
   readonly finish: () => number;
+  /**
+   * The elapsed time RIGHT NOW, for a readout the player watches while they
+   * play.
+   *
+   * IT DOES NOT FREEZE AND IT DOES NOT START ANYTHING, which is the whole of
+   * what separates it from `finish`. Reading it a hundred times changes
+   * nothing; `finish` is a decision about when the board was cleared and can
+   * therefore only be made once. A single method could not be both, and the
+   * one that was here was correctly the freezing one — a live readout calling
+   * it would have stopped the clock on its first tick and shown the player a
+   * number frozen at zero.
+   *
+   * AFTER THE BOARD IS CLEARED IT REPORTS THE FINISHED FIGURE, so the readout
+   * on the felt and the sentence on the panel cannot disagree by the seconds
+   * the player spent reading the panel. It follows `finish`'s decision rather
+   * than making a second one.
+   */
+  readonly elapsed: () => number;
 }
 
 /**
@@ -160,5 +178,6 @@ export function createChronometer(context: ChronometerContext): Chronometer | nu
       finishedAt ??= context.now();
       return finishedAt - startedAt;
     },
+    elapsed: () => (finishedAt ?? context.now()) - startedAt,
   };
 }

@@ -19,6 +19,17 @@ export type { BoardTiles } from "./board-identity.js";
 export { isSameBoard } from "./board-identity.js";
 export type { Chronometer, ChronometerClock, ChronometerContext } from "./chronometer.js";
 export { createChronometer, elapsedWholeSeconds, formatElapsed } from "./chronometer.js";
+export type { ElapsedReadoutTicker } from "./elapsed-readout.js";
+export {
+  ELAPSED_READOUT_CLASS,
+  ELAPSED_READOUT_STYLE_ID,
+  buildElapsedReadoutStylesheet,
+  elapsedReadoutText,
+  ensureElapsedReadoutStyles,
+  renderElapsedReadout,
+  startElapsedReadout,
+  windowTicker,
+} from "./elapsed-readout.js";
 export type { MahjongMatchOverProps, MahjongOutcomeInfo } from "./match-over.js";
 export { MAHJONG_DEADLOCK_MESSAGE, mahjongMatchOverMessage } from "./match-over.js";
 export type { MahjongMatchOverViewProps } from "./match-over-view.js";
