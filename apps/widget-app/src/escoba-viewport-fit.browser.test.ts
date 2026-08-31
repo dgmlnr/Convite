@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildDeck, getLegalActions, getViewFor, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
 import type { Card, MatchState, Player, PlayerId, Team, TeamId } from "@hexdev/escoba-engine";
 import type { GameId } from "@hexdev/platform-contract";
-import { createGameUiRegistry } from "./game-ui-registry.js";
+import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 
 /**
  * ESCOBA FITS THE WINDOW IT WAS GIVEN — measured, never photographed.
@@ -128,7 +128,7 @@ async function mountedFullscreen(w: number, h: number): Promise<HTMLElement> {
 async function renderScreen(el: HTMLElement, seats: Seats, state: MatchState): Promise<void> {
   const entry = createGameUiRegistry().get(GAME_ID[seats]);
   if (entry === undefined) throw new Error(`fence setup: no renderer registered for ${GAME_ID[seats]}`);
-  entry.createRenderer()(el, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
+  entry.createRenderer(matchRenderContextFor("joined", Date.now))(el, { view: getViewFor(state, SELF), legalActions: getLegalActions(state, SELF) }, () => {});
   await Promise.all([...el.querySelectorAll("img")].map((img) => img.decode()));
 }
 

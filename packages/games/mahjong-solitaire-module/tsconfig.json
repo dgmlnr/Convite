@@ -18,6 +18,9 @@
     },
     {
       "path": "../mahjong-solitaire-engine"
+    },
+    {
+      "path": "../../platform-core"
     }
   ]
 }

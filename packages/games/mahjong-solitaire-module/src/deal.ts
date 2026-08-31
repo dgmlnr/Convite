@@ -22,8 +22,15 @@ export interface DealBoardAction {
   readonly placements: readonly TileId[];
 }
 
-/** One pair of positions, in the order the generator's own solution takes
- * them off the board. `a` and `b` are indices into `LAYOUT`. */
+/**
+ * One pair of positions, in the order the generator's own solution takes them
+ * off the board. `a` and `b` are indices into `LAYOUT`, and `a` is ALWAYS the
+ * lower one — which is not decoration: `RemovePairAction`'s own docblock in the
+ * engine promises the same thing, and `getLegalActions` only ever emits pairs
+ * that way, so a step recorded in the other order names a move the engine will
+ * refuse. Found by replaying a solution through the module rather than by
+ * reading either file (`module.test.ts`).
+ */
 export interface SolutionStep {
   readonly a: number;
   readonly b: number;
@@ -156,7 +163,7 @@ export function generateDeal(rng: RandomSource): GeneratedDeal {
     }
     placements[a] = pool.pop()!;
     placements[b] = pool.pop()!;
-    solution.push({ a, b });
+    solution.push(a < b ? { a, b } : { a: b, b: a });
     remaining.delete(a);
     remaining.delete(b);
   }

@@ -120,3 +120,22 @@ jobs:
             **/__screenshots__/**
           if-no-files-found: ignore
           retention-days: 7
+
+# THE SUITES THIS FILE DOES NOT RUN, AND WHY — read this before adding a job.
+#
+# There are five vitest project configs at the repository root and this file
+# runs two of them. That was never a decision anybody wrote down: `test:e2e`,
+# `test:redis` and `test:visual` all existed BEFORE this workflow did, and the
+# scenes config arrived after it, so three suites were left out by omission
+# rather than by choice. `scripts/ci-suite-coverage.test.ts` now fails if a
+# suite config has no verdict, and it is where each verdict is argued in full.
+#
+# The one that matters is `pnpm test:e2e` — real Chromium, both real server
+# roles, real matches played to an ending. It BELONGS here as its own job,
+# alongside `visual`, and it is not here because it is currently RED at `main`
+# itself: three of its six spec files fail deterministically, and they fail
+# for the ordinary reason a suite nothing re-runs fails — a refactor walked
+# past them. Cost is not the objection (3m30s, not flaky over two runs, and
+# the Chromium is already installed above). Landing a job that is red on
+# arrival is: it teaches everyone to ignore the one signal that would have
+# caught this. Fix those three specs, add the job, and update the verdict.
