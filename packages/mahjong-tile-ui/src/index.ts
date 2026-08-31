@@ -31,6 +31,8 @@ export {
   TILE_VIEWBOX,
   TILE_WIDTH,
 } from "./geometry.js";
+export type { TileFrontImage } from "./front-image.js";
+export { TILE_FRONT_HEIGHT, TILE_FRONT_WIDTH, getTileArt, getTileFrontUrl, tileLabel } from "./front-image.js";
 export { TILE_THEME_DEFAULTS } from "./theme-tokens.js";
 export type { TileThemeToken } from "./theme-tokens.js";
 export { tileBodySvg } from "./tile-body.js";
