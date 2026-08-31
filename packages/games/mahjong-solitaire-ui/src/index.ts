@@ -9,6 +9,8 @@
  * the rule about who may see what belongs one tier up.
  */
 export { BOARD_STYLE_ID, buildBoardStylesheet, ensureBoardStyles } from "./board-styles.js";
+export type { HitTestRoot } from "./hit-test.js";
+export { TILE_POSITION_ATTRIBUTE, tileIndexAtPoint } from "./hit-test.js";
 export type { BoardTiles } from "./board-identity.js";
 export { isSameBoard } from "./board-identity.js";
 export type { BoardExtent, BoardRoom } from "./board-geometry.js";
