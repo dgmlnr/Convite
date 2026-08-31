@@ -549,6 +549,137 @@ describe("MatchRoom + single-player vs bot (spec: Single-Player vs Bot Mode)", (
 });
 
 /**
+ * `humanSeatsNeeded` arrives from the client and nothing checked it.
+ *
+ * It is declared on `MatchRoomCreateOptions` and read straight into the
+ * pre-seat loop, but it is not one of the four keys `createMatchServer`'s
+ * `defaultOptions` merges OVER the client's (`server.ts`), so a room request
+ * can carry any number at all. `0` is the one that hurts: the
+ * loop then fills EVERY seat with a bot, `maxClients` drops to 0, and the
+ * room nobody can join sits there holding a match between two bots.
+ *
+ * THE PRECONDITION THIS SUITE EXISTS TO CARRY. The whole pre-seat block is
+ * inside `if (options.botTier !== undefined)`, and the option's own docblock
+ * already says "Only consulted when `botTier` is also present". So a
+ * scenario that sends `humanSeatsNeeded: 0` ALONE runs an empty loop,
+ * constructs nothing, and passes with the production code never executing —
+ * a green that means the opposite of what it looks like. Every case below
+ * sends BOTH options, deliberately.
+ *
+ * And because "no bot was constructed" is exactly the shape of assertion
+ * that passes when the code never ran, the first case has a positive control
+ * beside it: the same module and the same `botTier`, with an IN-range
+ * `humanSeatsNeeded`, must construct a bot. Without that sibling, the
+ * refusal below proves nothing about the refusal.
+ */
+describe("MatchRoom.onCreate — humanSeatsNeeded is validated before any seat controller exists", () => {
+  /** `onCreate` throws before it ever touches `auth`, so these cases need no
+   * real key material — the same minimal static double the unknown-gameId
+   * test above uses, for the same reason. */
+  const staticAuth: MatchRoomAuthOptions = {
+    verifier: { verify: () => Promise.resolve(undefined) },
+    repository: createStaticTenantRepository([]),
+    replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+    joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+    allowedWidgetOrigins: [],
+  };
+
+  /** `fixtureModule` with a chosen seat count and a `createBot` that records
+   * every call, so "no controller was registered" is asserted on the one
+   * observable that only the pre-seat loop can produce. */
+  function countingModule(id: string, seatCount: number) {
+    const createBotCalls: BotTier[] = [];
+    const module: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+      ...fixtureModule,
+      id,
+      metadata: { ...fixtureModule.metadata, seatCount },
+      createBot: (tier) => {
+        createBotCalls.push(tier);
+        return fixtureModule.createBot(tier);
+      },
+    };
+    return { module, createBotCalls };
+  }
+
+  function createRoom(id: string, seatCount: number, humanSeatsNeeded: number | undefined) {
+    const { module, createBotCalls } = countingModule(id, seatCount);
+    const registry = createGameModuleRegistry([module]);
+    const room = new MatchRoom();
+    const create = () => {
+      room.onCreate({ gameId: id, config: undefined, registry, auth: staticAuth, rng: DEFAULT_RNG, botTier: "easy", humanSeatsNeeded });
+    };
+    return { room, createBotCalls, create };
+  }
+
+  it("refuses a bot-only room: humanSeatsNeeded 0 alongside botTier is rejected, no controller is registered, createBot is never called", () => {
+    const { room, createBotCalls, create } = createRoom("fixture-bot-only", 2, 0);
+
+    expect(create).toThrow(/humanSeatsNeeded/);
+
+    expect(createBotCalls, "a bot built here is a seat no client can ever occupy").toEqual([]);
+    // Colyseus' own default. `onCreate` narrows this to the human seats at
+    // its very last step, so an untouched Infinity is the proof the seat
+    // allocation never happened at all.
+    expect(room.maxClients).toBe(Infinity);
+  });
+
+  it("POSITIVE CONTROL — the same module and the same botTier with an in-range humanSeatsNeeded DOES build a bot", () => {
+    const { room, createBotCalls, create } = createRoom("fixture-bot-only", 2, 1);
+
+    expect(create).not.toThrow();
+
+    // Without this, the refusal above would be indistinguishable from a
+    // pre-seat block that never runs for this fixture at all.
+    expect(createBotCalls).toEqual(["easy"]);
+    expect(room.maxClients).toBe(1);
+  });
+
+  it("accepts the lower boundary on a four-seat module: humanSeatsNeeded 1 seats three bots", () => {
+    const { room, createBotCalls, create } = createRoom("fixture-four-seats", 4, 1);
+
+    expect(create).not.toThrow();
+
+    expect(createBotCalls).toEqual(["easy", "easy", "easy"]);
+    expect(room.maxClients).toBe(1);
+  });
+
+  it("accepts the upper boundary: humanSeatsNeeded equal to seatCount is a full table of humans and zero bots", () => {
+    const { room, createBotCalls, create } = createRoom("fixture-four-seats", 4, 4);
+
+    expect(create).not.toThrow();
+
+    expect(createBotCalls, "asking for every seat asks for no bot — an empty loop, not a rejected one").toEqual([]);
+    expect(room.maxClients).toBe(4);
+  });
+
+  it("rejects more human seats than the module has", () => {
+    const { createBotCalls, create } = createRoom("fixture-four-seats", 4, 5);
+
+    expect(create).toThrow(/humanSeatsNeeded/);
+    expect(createBotCalls).toEqual([]);
+  });
+
+  it("rejects a non-integer, which a bounds-only check would let through", () => {
+    const { createBotCalls, create } = createRoom("fixture-four-seats", 4, 2.5);
+
+    // 2.5 sits inside 1..4, so only the integer half of the guard can refuse
+    // it. Left in, the loop would run `seat >= 2.5` and seat two and a half
+    // seats' worth of bots.
+    expect(create).toThrow(/humanSeatsNeeded/);
+    expect(createBotCalls).toEqual([]);
+  });
+
+  it("leaves the option's default alone: omitting humanSeatsNeeded entirely still means one human seat", () => {
+    const { room, createBotCalls, create } = createRoom("fixture-four-seats", 4, undefined);
+
+    expect(create).not.toThrow();
+
+    expect(createBotCalls).toEqual(["easy", "easy", "easy"]);
+    expect(room.maxClients).toBe(1);
+  });
+});
+
+/**
  * Joining must not wait for the bots' opening.
  *
  * THE BUG THIS CLOSES, reported from real play and then measured: a 2v2 match

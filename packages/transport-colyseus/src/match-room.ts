@@ -69,7 +69,15 @@ export interface MatchRoomCreateOptions {
    * filled — defaults to 1 (single-player vs bot, unchanged 1v1 behavior).
    * A 2v2 "play vs bots" entry point passes 1 here too (3 bot seats); a
    * future "2 real players vs 2 bots" entry point would pass 2. Only
-   * consulted when `botTier` is also present. */
+   * consulted when `botTier` is also present.
+   *
+   * VALIDATED IN `onCreate` as an integer `1 <= n <= metadata.seatCount`,
+   * and refused before any controller exists — this is not one of the four
+   * keys `createMatchServer`'s `defaultOptions` merges OVER the client's
+   * (`server.ts`), so it is whatever the room request carried.
+   * `degradeLongWaits`, the only server-side producer, returns
+   * early for `seatCount <= 2` and otherwise passes `1 <= k < seatCount`,
+   * so every value it can produce is already inside that range. */
   readonly humanSeatsNeeded?: number;
   /** Reconnection window (spec: "Disconnect, Reconnection Window, and Bot
    * Takeover"; design open question resolved to 30s, obs 2919/2921). */
@@ -324,6 +332,30 @@ export class MatchRoom extends Room {
     this.takeoverTier = options.takeoverTier ?? DEFAULT_TAKEOVER_TIER;
     this.botTier = options.botTier ?? this.takeoverTier;
     this.turnTimeoutSeconds = options.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
+    // Fail loud at room creation, before a single controller exists, the same
+    // discipline as the unknown-gameId throw above and as
+    // `createGameModuleRegistry`'s own `seatCount` guard.
+    //
+    // WHAT AN UNVALIDATED VALUE COSTS: `humanSeatsNeeded` is not one of the
+    // four keys `createMatchServer`'s `defaultOptions` merges OVER the
+    // client's (`server.ts`), so it arrives from whoever asked for the
+    // room. At 0 the loop below fills EVERY seat with a bot and
+    // `maxClients` lands on 0 — a room that holds a whole match between bots
+    // and that no client can ever join. Above `seatCount` it silently
+    // reserves seats the module does not have. A non-integer is worse than
+    // either: `seat >= 2.5` is a perfectly good loop condition, so the room
+    // starts on a seat split nobody wrote down.
+    //
+    // CHECKED EVEN WHEN `botTier` IS ABSENT, deliberately. The value is only
+    // CONSULTED below, inside the bot branch — but a caller that sends a
+    // nonsense number is wrong about this room either way, and a guard that
+    // only fires in one branch would be a guard whose coverage depends on an
+    // unrelated option. Refusing on shape costs nothing and cannot drift.
+    if (options.humanSeatsNeeded !== undefined && (!Number.isInteger(options.humanSeatsNeeded) || options.humanSeatsNeeded < 1 || options.humanSeatsNeeded > module.metadata.seatCount)) {
+      throw new Error(
+        `MatchRoom: humanSeatsNeeded ${String(options.humanSeatsNeeded)} is out of range for gameId "${options.gameId}" — must be an integer between 1 and metadata.seatCount (${String(module.metadata.seatCount)})`,
+      );
+    }
     if (options.botTier !== undefined) {
       // Unguessable on purpose: `/embed?p=` is client-suppliable (design
       // §7), so a fixed or predictable bot id would be an identity a client
