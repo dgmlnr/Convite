@@ -69,9 +69,37 @@ function botButtonsRow(gameId: GameId, modality: ModalityConfig, callbacks: Game
 // bot-filled seats, so a 4-seat queue join is fulfilled, never a silent hang.
 // Every modality gets the same queue affordance regardless of seat count.
 
+/**
+ * THE ONE PLAY CONTROL A GAME WITH NO OPPONENT OFFERS.
+ *
+ * IT CALLS `onPlayVsPerson`, AND THAT IS THE HONEST WIRING RATHER THAN A
+ * SHORTCUT. That callback names the PATH — the matchmaking queue — not who is
+ * on the other side of it: `PresenceRoom.tryFormGroup` pops the game's own
+ * `metadata.seatCount` from the queue, so a one-seat game forms a group of
+ * one the instant the player joins and is handed straight into a match. There
+ * is no second way in to write a second handler for, and inventing one that
+ * did the identical thing would be a callback whose only content is the label
+ * above it.
+ *
+ * The BUTTON is named for what it is (`data-action="play-solo"`), because
+ * that is what a test — and `chrome-styles.ts`'s prominence rule — has to be
+ * able to tell apart from an opponent control.
+ */
+function soloPlayControl(gameId: GameId, modality: ModalityConfig, callbacks: GameSelectionCallbacks): HTMLElement {
+  const section = document.createElement("div");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.action = "play-solo";
+  button.textContent = STRINGS.playSolo;
+  button.addEventListener("click", () => callbacks.onPlayVsPerson(gameId, modality));
+  section.appendChild(button);
+  return section;
+}
+
 function renderModality(
   gameId: GameId,
   gameName: string,
+  seatCount: number,
   entry: LobbyDisplayEntry,
   configOptions: CatalogEntry["configOptions"],
   callbacks: GameSelectionCallbacks,
@@ -122,6 +150,39 @@ function renderModality(
     heading.className = "hexdev-modality-title";
     heading.textContent = description;
     wrapper.appendChild(heading);
+  }
+
+  /**
+   * A GAME WITH ONE SEAT HAS NO OPPONENT, SO IT IS OFFERED NONE.
+   *
+   * READ THE PARAGRAPH ABOVE `soloPlayControl` BEFORE TREATING THIS AS THE
+   * RETURN OF `canQueueForPerson`. That gate asked a DIFFERENT question —
+   * "can a queue of this size ever be fulfilled?" — and it died because the
+   * answer became yes for every size: `PresenceRoom` degrades a long-waiting
+   * 4-seat queue to bot-filled seats, so the hang it guarded no longer
+   * exists. This one asks whether an opponent EXISTS AT ALL, which is not a
+   * matchmaking property and cannot be fixed by making matchmaking better.
+   *
+   * WHAT IT PREVENTS, precisely. Everything below this branch renders three
+   * machine tiers plus a "play against another person" control for every
+   * modality of every game, unconditionally — and the zero-counter rule
+   * makes the machine the PROMINENT one whenever nobody is waiting, which
+   * for a solitaire is always. Without this gate the headline offer on a
+   * one-seat card would read "Jugar contra la máquina: Fácil / Normal /
+   * Difícil", which is not merely wrong copy: `mahjong-solitaire-module`
+   * ships no `createBot` at all, so it is an offer the platform is
+   * structurally unable to honour.
+   *
+   * `data-prominent="solo"` rather than an omitted attribute: the single
+   * control IS the prominent action here (there is nothing for it to compete
+   * with), and `chrome-styles.ts` paints prominence from this value alone —
+   * the same "presentation reads the value the derivation already computed,
+   * never re-decides it" rule the two branches below live by.
+   */
+  if (seatCount === 1) {
+    wrapper.dataset.prominent = "solo";
+    wrapper.appendChild(soloPlayControl(gameId, entry.modality, callbacks));
+    return wrapper;
   }
 
   const botLabel = document.createElement("p");
@@ -336,7 +397,7 @@ function renderGame(
     );
   }
 
-  card.appendChild(renderModality(entry.id, gameName, current, entry.configOptions, callbacks));
+  card.appendChild(renderModality(entry.id, gameName, entry.seatCount, current, entry.configOptions, callbacks));
   return card;
 }
 

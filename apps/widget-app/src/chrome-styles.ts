@@ -1085,8 +1085,14 @@ opacity: 0.55;
  * place their brand SHOULD show — with gold underneath it, so a tenant that
  * sets none gets the product's own accent rather than a hardcoded yellow that
  * belongs to nobody. */
+/* The third value of the same attribute: a one-seat game (game-screen.ts's
+   own seat-count gate) offers exactly one control, so that control is the
+   prominent one by construction rather than by a count nobody is waiting
+   in. Same treatment, same token, no second rule — a solitaire's only
+   button must not read as the SECONDARY action on its own card. */
 .hexdev-modality[data-prominent="person"] button[data-action="vs-person"],
-.hexdev-modality[data-prominent="bot"] button[data-action="vs-bot"] {
+.hexdev-modality[data-prominent="bot"] button[data-action="vs-bot"],
+.hexdev-modality[data-prominent="solo"] button[data-action="play-solo"] {
   background: var(--gx-color-accent, var(--hx-gold));
   border-color: var(--gx-color-accent, var(--hx-gold));
   color: var(--hx-ink);
