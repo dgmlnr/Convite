@@ -47,6 +47,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/mahjong-solitaire-module':
+        specifier: workspace:*
+        version: link:../../packages/games/mahjong-solitaire-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -69,6 +72,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/mahjong-solitaire-module':
+        specifier: workspace:*
+        version: link:../../packages/games/mahjong-solitaire-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -106,6 +112,12 @@ importers:
       '@hexdev/escoba-ui':
         specifier: workspace:*
         version: link:../../packages/games/escoba-ui
+      '@hexdev/mahjong-solitaire-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/mahjong-solitaire-ui
+      '@hexdev/mahjong-tile-ui':
+        specifier: workspace:*
+        version: link:../../packages/mahjong-tile-ui
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -196,6 +208,22 @@ importers:
         specifier: workspace:*
         version: link:../../platform-core
 
+  packages/games/mahjong-solitaire-ui:
+    dependencies:
+      '@hexdev/mahjong-solitaire-engine':
+        specifier: workspace:*
+        version: link:../mahjong-solitaire-engine
+      '@hexdev/mahjong-tile-ui':
+        specifier: workspace:*
+        version: link:../../mahjong-tile-ui
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      '@vitest/browser':
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.0(@types/node@26.1.2))(vitest@4.1.10)
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':
@@ -238,6 +266,12 @@ importers:
       '@vitest/browser':
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.0(@types/node@26.1.2))(vitest@4.1.10)
+
+  packages/mahjong-tile-ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
 
   packages/platform-contract: {}
 
@@ -329,6 +363,9 @@ importers:
 
   packages/widget-frontdoor:
     dependencies:
+      '@hexdev/mahjong-tile-ui':
+        specifier: workspace:*
+        version: link:../mahjong-tile-ui
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../platform-contract

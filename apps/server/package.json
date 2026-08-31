@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@hexdev/escoba-module": "workspace:*",
+    "@hexdev/mahjong-solitaire-module": "workspace:*",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "@hexdev/transport-colyseus": "workspace:*",
