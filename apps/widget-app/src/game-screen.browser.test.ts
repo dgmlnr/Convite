@@ -66,6 +66,28 @@ const NO_CONFIG_ENTRY: CatalogEntry = {
   configOptions: [],
 };
 
+/**
+ * THE FIRST ONE-SEAT ENTRY, and it is the real registered game rather than a
+ * fixture: the copy assertions below read `STRINGS`'s actual Spanish, and a
+ * fixture id would resolve `modalitySummary` to `undefined` and quietly turn
+ * the "the card says something" fence into a check on nothing.
+ *
+ * `configOptions: []` is the module's own shape — the layout is fixed and
+ * difficulty is the generator's choice policy, not a lobby knob — so this
+ * entry also travels the empty-config path (`deriveModalities([])` yields
+ * exactly one modality, `{}`).
+ */
+const SOLO_ID = "mahjong-solitario" as GameId;
+
+const SOLO_ENTRY: CatalogEntry = {
+  id: SOLO_ID,
+  gameFamily: "mahjong-solitario",
+  section: "fichas",
+  displayNameKey: "games.mahjongSolitario.name",
+  seatCount: 1,
+  configOptions: [],
+};
+
 let container: HTMLElement;
 
 afterEach(() => {
@@ -82,6 +104,117 @@ function freshContainer(): HTMLElement {
 function noop(): void {
   // intentionally empty default callback for tests that don't assert on it
 }
+
+/**
+ * SPEC DOMAIN F — "A catalog entry whose `seatCount` is 1 MUST offer no
+ * opponent affordance anywhere: no bot row, no play-versus-person control,
+ * and no zero-counter prominence."
+ *
+ * PROVEN BESIDE A TWO-SEAT CARD, ON ONE SCREEN, which is the spec's own
+ * wording and not an accident of test setup: the fence has to say what it
+ * caught. A renderer that simply stopped drawing opponent controls would
+ * satisfy every assertion about the solitaire card and break both other
+ * games in this repository — so the two-seat assertions in the same test are
+ * what stop this from being a fence against opponents in general (mutation
+ * M9j measures exactly that).
+ *
+ * Rendered under truco's own family so a `heroTitle` exists and the card
+ * titles read as FORMATS; `game-screen.ts` picks the game's name instead
+ * when there is no hero, and that branch has its own test below.
+ */
+describe("one seat, no opponent (spec Domain F)", () => {
+  const bothCards = (): HTMLElement => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([
+      [TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 4, promoteBotFallback: false }]],
+      [SOLO_ID, [{ modality: {}, waitingCount: undefined, promoteBotFallback: true }]],
+    ]);
+    renderGameSelection(el, [TRUCO_ENTRY, SOLO_ENTRY], TRUCO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    return el;
+  };
+
+  const cardFor = (el: HTMLElement, gameId: string): HTMLElement => el.querySelector<HTMLElement>(`.hexdev-game-card[data-game="${gameId}"]`)!;
+
+  it("puts both cards on the screen — the fence setup every assertion below walks", () => {
+    // R6: every assertion in this block reads one card out of a collection.
+    // A screen that rendered neither, or only one, would satisfy the
+    // "no opponent controls" half by having no controls at all.
+    expect(bothCards().querySelectorAll(".hexdev-game-card")).toHaveLength(2);
+  });
+
+  it("offers the one-seat card exactly one play control, and it names no opponent", () => {
+    const card = cardFor(bothCards(), SOLO_ID);
+
+    expect(card.querySelectorAll("button")).toHaveLength(1);
+    expect(card.querySelector<HTMLButtonElement>('button[data-action="play-solo"]')?.textContent).toBe("Jugar");
+  });
+
+  it("offers it no opponent affordance at all: no person control, no bot row, no difficulty tiers", () => {
+    const card = cardFor(bothCards(), SOLO_ID);
+
+    expect(card.querySelector('button[data-action="vs-person"]'), "a solitaire has no second seat to wait for").toBeNull();
+    expect(card.querySelectorAll('button[data-action="vs-bot"]'), "and no machine to be the opponent it does not have").toHaveLength(0);
+    expect(card.querySelector(".hexdev-bot-row")).toBeNull();
+    // The label above the tiers is its own element and would survive a fix
+    // that only removed the buttons.
+    expect(card.textContent, "the words, not just the controls").not.toContain("Jugar contra la máquina");
+    expect(card.textContent).not.toContain("Jugar contra otra persona");
+  });
+
+  it("never promotes a machine on it — the zero-counter rule would otherwise make the bot CTA the headline", () => {
+    const card = cardFor(bothCards(), SOLO_ID);
+    const modality = card.querySelector<HTMLElement>(".hexdev-modality")!;
+
+    // Its presence entry is `waitingCount: undefined`, which for any other
+    // game is exactly the branch that sets `data-prominent="bot"` and
+    // renders the tier row FIRST.
+    expect(modality.dataset.prominent).not.toBe("bot");
+    expect(modality.dataset.prominent, "the single control is still the prominent one — there is nothing to compete with it").toBe("solo");
+    expect(card.textContent, "and no count text, in either direction").not.toContain("esperando");
+  });
+
+  it("leaves the two-seat card with BOTH offers, so the fence names what it caught", () => {
+    const card = cardFor(bothCards(), TRUCO_ID);
+
+    expect(card.querySelector('button[data-action="vs-person"]')).not.toBeNull();
+    expect(card.querySelectorAll('button[data-action="vs-bot"]')).toHaveLength(3);
+    expect(card.querySelector('button[data-action="play-solo"]'), "a game with a rival does not get the solitaire control either").toBeNull();
+  });
+
+  it("starts the match through the matchmaking queue, with the game id and its one modality", () => {
+    const el = freshContainer();
+    const onPlayVsPerson = vi.fn();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([[SOLO_ID, [{ modality: {}, waitingCount: undefined, promoteBotFallback: true }]]]);
+
+    renderGameSelection(el, [SOLO_ENTRY], SOLO_ENTRY.gameFamily, presence, { onPlayVsPerson, onPlayVsBot: noop });
+    el.querySelector<HTMLButtonElement>('button[data-action="play-solo"]')?.click();
+
+    // The SAME callback the two-seat card's "vs-person" control uses, and
+    // that is the honest wiring rather than a shortcut: it names the PATH,
+    // which is the matchmaking queue. A queue for a game whose `seatCount`
+    // is 1 forms a group of one and hands off immediately
+    // (`PresenceRoom.tryFormGroup`), so there is genuinely no second way in
+    // and no second handler to write.
+    expect(onPlayVsPerson).toHaveBeenCalledWith(SOLO_ID, {});
+  });
+
+  it("says something on every line: the format, what it is, and what the board is", () => {
+    const el = freshContainer();
+    const presence = new Map<GameId, readonly LobbyDisplayEntry[]>([[SOLO_ID, [{ modality: {}, waitingCount: undefined, promoteBotFallback: true }]]]);
+
+    renderGameSelection(el, [SOLO_ENTRY], SOLO_ENTRY.gameFamily, presence, { onPlayVsPerson: noop, onPlayVsBot: noop });
+    const card = el.querySelector<HTMLElement>(".hexdev-game-card")!;
+
+    // Under its own family's hero ("Mahjong Solitario"), so the card names
+    // the FORMAT. Before this slice all three of these were `undefined` and
+    // the card rendered with a title falling back to the game's name and no
+    // other line at all.
+    expect(el.querySelector(".hexdev-chrome-title")?.textContent).toBe("Mahjong Solitario");
+    expect(card.querySelector("h2")?.textContent).toBe("Solitario");
+    expect(card.querySelector(".hexdev-game-blurb")?.textContent).toBe("Vos contra el tablero.");
+    expect(card.querySelector(".hexdev-modality-title")?.textContent).toBe("Tablero de 144 fichas");
+  });
+});
 
 describe("renderGameSelection (spec: game-session — the widget's opening view)", () => {
   it("shows an empty-state message when the tenant has no entitled games", () => {

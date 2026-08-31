@@ -137,6 +137,43 @@ export function buildBoardStylesheet(): string {
   --mj-board-block-budget: calc(100dvh - var(--mj-board-padding) * 2);
 }
 
+/* THE TILE THE PLAYER HAS PRESSED ONCE. Half of a move is on the board and
+   the other half is in the player's head, so this is the only thing telling
+   them the first press landed at all.
+
+   A DROP-SHADOW HALO AND NOT AN OUTLINE, because the tile is a rounded slab
+   drawn inside an SVG while its element is a plain rectangle: an \`outline\`
+   would trace the rectangle and read as a rendering fault at every corner.
+   \`filter\` composites the element's own painted alpha, so the halo follows
+   the artwork's real silhouette. Two stacked shadows rather than one wide
+   one — a tight ring for the edge and a soft one for the glow — because a
+   single large blur washes out against bone at 30px.
+
+   NOT A COLOUR CHANGE, and not a transform. Recolouring would fight artwork
+   this package does not own (\`mahjong-tile-ui\`'s faces are fixed across every
+   tenant, deliberately), and moving the tile would move a hit target the
+   press test measures to the pixel. The accent is the tenant's own, with the
+   product's gold underneath it, exactly as the lobby's prominent control
+   does. */
+.hexdev-mahjong-tile[data-selected="true"] {
+  /* THE BONE TAKES THE ACCENT, and the halo alone did not do the job. Looked
+     at on the real turtle at the binding width, a gold glow around a bone
+     tile surrounded by other bone tiles is nearly invisible: every neighbour
+     is the same colour and the halo has three or four competing edges to be
+     lost against. The tile itself has to change.
+
+     THROUGH THE TILE'S OWN THEME TOKENS, which is what makes this legal
+     rather than a hack. \`tile-body.ts\` draws the slab, its edge and its
+     bevel from four custom properties precisely so they are theme surfaces;
+     the FACE is the one thing that stays fixed across every tenant, and it is
+     a raster this rule never touches. Overriding them here cascades into the
+     nested SVG and nowhere else. */
+  --mj-tile-face: color-mix(in srgb, var(--gx-color-accent, #d4af37) 38%, #f4efe2);
+  --mj-tile-edge: color-mix(in srgb, var(--gx-color-accent, #d4af37) 70%, #cbbfa4);
+  --mj-tile-bevel-light: color-mix(in srgb, var(--gx-color-accent, #d4af37) 25%, #fffdf6);
+  filter: drop-shadow(0 0 2px var(--gx-color-accent, #d4af37)) drop-shadow(0 0 6px var(--gx-color-accent, #d4af37));
+}
+
 .hexdev-mahjong-tile-face {
   display: block;
   /* The artwork is 195x279 and the box is 0.69882 of its own height — the
