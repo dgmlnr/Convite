@@ -1313,12 +1313,39 @@ export class MatchRoom extends Room {
    * `runAdvanceOnce` has already driven every bot that owed a blocking
    * action, so a bot seat structurally cannot be the seat on the clock. Bots
    * act immediately; there is nothing to wait for.
+   *
+   * A GAME WITH NO BOT GETS NO CLOCK AT ALL, and that is DERIVED here rather
+   * than declared anywhere. An expired turn has exactly one effect in this
+   * room — `playOneBotActionFor` — so for a module with no `createBot` the
+   * clock would count down to a silence, take the turn away from the only
+   * person at the table and hand it to nobody. `turnDeadline` stays `null`,
+   * which the client already reads as "nothing is being timed" — its own
+   * declaration says exactly that of `null`, and "renders an untimed table"
+   * of a payload missing the field entirely (`game-ui-registry.ts`). So
+   * nothing about this reaches a client that did not already handle it: no
+   * wire change, no new field, no migration.
+   *
+   * IT HAS A SECOND EFFECT, AND IT IS RECORDED HERE RATHER THAN FOUND LATER:
+   * clock off means CONSULTS OFF for that game. `openConsult` bounds its
+   * window by `this.turnDeadline` and refuses outright when there is none
+   * rather than inventing an unbounded one — so a game that arms no clock can
+   * never open a consult. For a game with no opponent that is the right
+   * answer arrived at honestly (a consult asks a TEAMMATE, and there is
+   * none), but it is a consequence of this method, not of that one, and
+   * whoever changes either should be able to see it from here.
    */
   private armTurnTimer(): void {
     const module = this.module;
     // No match, or a match already decided — a finished match must never keep
     // a clock running, and `getOutcome` is the module's own authority on that.
     if (module === undefined || this.matchState === undefined || module.getOutcome(this.matchState) !== null) {
+      this.clearTurnTimer();
+      return;
+    }
+    // No bot, no clock — see the derivation above. `clearTurnTimer` rather
+    // than a bare `return`, so a module that somehow lost its bot mid-match
+    // does not leave a live timer behind.
+    if (module.createBot === undefined) {
       this.clearTurnTimer();
       return;
     }

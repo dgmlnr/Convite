@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Client } from "@colyseus/core";
-import type { ApplyResult, BotTier, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotTier, GameModule, JsonValue, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
   createGameModuleRegistry,
   createJtiReplayGuard,
@@ -1761,5 +1761,131 @@ describe("MatchRoom.onCreate — a game with no bot pre-seats nothing, and still
     const room = createRoom(asModule(soloModule), "fixture-solo", { botTier: "easy", humanSeatsNeeded: 1 });
 
     expect(room.maxClients).toBe(1);
+  });
+});
+
+/**
+ * NO BOT, NO CLOCK — and it is DERIVED, never declared.
+ *
+ * An expired turn has exactly one effect in this room: a bot plays the seat
+ * (`playOneBotActionFor`). A module with no `createBot` has no bot, so the
+ * clock has nothing it could do when it runs out — it would count down to a
+ * silence. That is a consequence of the module's own shape, not a third
+ * registration flag somebody has to remember to set, which is why
+ * `armTurnTimer` reads `createBot` rather than a new option.
+ *
+ * Every fence below is paired with the SAME fixture carrying a bot. Without
+ * that control, "no deadline was armed" and "there was nobody to arm one for"
+ * read identically from the outside — and a solitaire fixture is exactly the
+ * shape where the second one is plausible.
+ */
+describe("MatchRoom turn clock — a game with no bot is untimed for its whole life", () => {
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error("waitFor: condition never became true");
+      await sleep(2);
+    }
+  }
+
+  /** The FIELD itself, never a `?? null` fallback: an untimed table has to
+   * send a present, null deadline — the client's cue to draw no countdown —
+   * and an absent one would be indistinguishable from a bug here. */
+  const deadlineFieldOf = (entry: { message: unknown } | undefined): unknown => (entry?.message as Record<string, unknown> | undefined)?.turnDeadline;
+
+  async function soloSeat(module: GameModule<SoloState, SoloAction, SoloState, void>, turnTimeoutSeconds: number) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: module.id, config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds });
+    const seat0 = fakeClient("s0");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    return { room, seat0 };
+  }
+
+  /** One seat, one player, and a bot — the control fixture, identical to
+   * `soloModule` in every other member. */
+  const soloWithBotModule: GameModule<SoloState, SoloAction, SoloState, void> = {
+    ...soloModule,
+    id: "fixture-solo-with-bot",
+    createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+  };
+
+  it("never arms a deadline: the view says null on the first broadcast and on every one after it", async () => {
+    const { room, seat0 } = await soloSeat(soloModule, 0.03);
+
+    expect(deadlineFieldOf(seat0.sent[0])).toBeNull();
+    expect(room.hasPendingTurnTimer()).toBe(false);
+
+    // Acting is what re-enters `armTurnTimer`: the derivation has to hold on
+    // every broadcast, not only on the one that opens the match.
+    await room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+    expect(seat0.sent).toHaveLength(2);
+    expect(deadlineFieldOf(seat0.sent[1])).toBeNull();
+
+    // Four times the timeout that WOULD have been armed. Nothing fired, so
+    // nothing played the seat: no bot was built, and none could have been.
+    const settled = seat0.sent.length;
+    await sleep(120);
+    expect(seat0.sent).toHaveLength(settled);
+  });
+
+  it("POSITIVE CONTROL — the same one-seat game WITH a bot is timed, and its clock really fires", async () => {
+    // Without this the test above passes for a fixture whose seat was never
+    // on the clock at all — the same shape as an assertion inside a loop that
+    // never runs. Same module, same single seat, one member different.
+    const { room, seat0 } = await soloSeat(soloWithBotModule, 0.05);
+
+    expect(typeof deadlineFieldOf(seat0.sent[0])).toBe("number");
+    expect(room.hasPendingTurnTimer()).toBe(true);
+
+    const before = seat0.sent.length;
+    await waitFor(() => seat0.sent.length > before);
+    expect(seat0.sent.length).toBeGreaterThan(before);
+  });
+
+  /** The asker is seat 0 and the partner seat 1 — the shape `openConsult`
+   * needs: a LIVE HUMAN teammate the module is willing to name. */
+  const askSeatOne = (_state: unknown, playerId: PlayerId) => (playerId === P0 ? { partnerId: P1, options: ["si", "no"] as readonly JsonValue[] } : null);
+
+  async function twoSeats(module: GameModule<FixtureState, FixtureAction, FixtureView, void>) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      { module: module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>, getConsultAsk: askSeatOne },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds: 30 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    return { room, seat0, seat1 };
+  }
+
+  it("refuses a consult on an untimed table — the second effect of no clock, stated rather than discovered later", async () => {
+    const { room, seat0, seat1 } = await twoSeats(botlessFixtureModule);
+
+    await room.handleConsult(seat0.client, { type: "advance", playerId: P0, about: "algo" });
+
+    // `openConsult` bounds its window by `turnDeadline`, and refuses outright
+    // when there is none rather than inventing an unbounded one. With no bot
+    // there is never a deadline, so a game with no opponent has no consults
+    // either — which is exactly right, since a consult asks a TEAMMATE.
+    expect(seat1.sent.filter((entry) => entry.type === "consult-ask")).toEqual([]);
+  });
+
+  it("POSITIVE CONTROL — the same two-seat game WITH a bot opens the consult window", async () => {
+    // The whole path is real: the action is legal, it changes state, the
+    // module names a partner, and the partner is a live human. The refusal
+    // above is the missing clock and nothing else.
+    const { room, seat0, seat1 } = await twoSeats(fixtureModule);
+
+    await room.handleConsult(seat0.client, { type: "advance", playerId: P0, about: "algo" });
+
+    expect(seat1.sent.filter((entry) => entry.type === "consult-ask")).toHaveLength(1);
   });
 });
