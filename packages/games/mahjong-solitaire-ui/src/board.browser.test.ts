@@ -77,6 +77,100 @@ function centreOf(el: HTMLElement): { readonly x: number; readonly y: number } {
   return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
 }
 
+/**
+ * THE PRESS THAT HAS NOT BECOME A MOVE YET.
+ *
+ * `pair-selection.ts` decides WHICH tile is selected; this is the half that
+ * makes the answer visible, and it is the half a rule cannot be tested
+ * through. Without it the first of the two presses a move is made of leaves
+ * the board looking exactly as it did — the player is told nothing, and the
+ * one interaction this game has becomes guesswork.
+ *
+ * ASSERTED ON THE ATTRIBUTE AND ON A COMPUTED STYLE, because either alone is
+ * a half-fence: the attribute alone says nothing about anything being drawn
+ * differently, and a sheet rule alone says nothing about the right tile
+ * carrying it.
+ */
+describe("the selected tile says so", () => {
+  it("marks exactly the selected tile, and nothing else", async () => {
+    const el = await mounted();
+    createMahjongBoardRenderer()(el, fullBoard(), 7);
+
+    const marked = [...el.querySelectorAll<HTMLElement>("[data-selected]")];
+    expect(marked).toHaveLength(1);
+    expect(Number(marked[0]!.dataset.position)).toBe(7);
+  });
+
+  it("draws it differently, rather than only labelling it", async () => {
+    const el = await mounted();
+    createMahjongBoardRenderer()(el, fullBoard(), 7);
+
+    const selected = getComputedStyle(tileAt(el, 7)!).filter;
+    const plain = getComputedStyle(tileAt(el, 8)!).filter;
+
+    // The sheet paints the selection with a drop-shadow halo that follows
+    // the tile's own rounded silhouette — a rectangular outline around a
+    // rounded tile reads as a rendering fault, and a colour change would
+    // fight artwork this package does not own.
+    expect(selected, `the selected tile computed "${selected}", the same as an unselected one`).not.toBe(plain);
+    expect(selected).toContain("drop-shadow");
+    expect(plain, "an unselected tile is not glowing").toBe("none");
+  });
+
+  it("moves the mark when the selection moves, leaving nothing behind", async () => {
+    const el = await mounted();
+    const render = createMahjongBoardRenderer();
+    render(el, fullBoard(), 7);
+    render(el, fullBoard(), 12);
+
+    const marked = [...el.querySelectorAll<HTMLElement>("[data-selected]")];
+    expect(marked, "the previous selection stayed lit").toHaveLength(1);
+    expect(Number(marked[0]!.dataset.position)).toBe(12);
+  });
+
+  it("clears the mark when nothing is selected", async () => {
+    const el = await mounted();
+    const render = createMahjongBoardRenderer();
+    render(el, fullBoard(), 7);
+    render(el, fullBoard(), null);
+
+    expect(el.querySelectorAll("[data-selected]")).toHaveLength(0);
+  });
+
+  it("marks nothing at all when the caller says nothing about a selection", async () => {
+    const el = await mounted();
+    createMahjongBoardRenderer()(el, fullBoard());
+
+    expect(el.querySelectorAll("[data-selected]"), "a board drawn with no selection is a board with no selection").toHaveLength(0);
+  });
+
+  it("keeps the mark across an in-place removal of two OTHER tiles", async () => {
+    // The ordinary case a mahjong board spends its whole life in: the two
+    // that came off are gone, the one the player has since picked stays lit,
+    // and the 141 in between are the same elements they always were.
+    const el = await mounted();
+    const render = createMahjongBoardRenderer();
+    render(el, fullBoard(), null);
+    const kept = tileAt(el, 7)!;
+    render(el, without(fullBoard(), 0, 1), 7);
+
+    expect(tileAt(el, 7), "the board rebuilt when it only needed to lose two tiles").toBe(kept);
+    expect(kept.dataset.selected).toBe("true");
+  });
+
+  it("carries no mark into a board it had to rebuild", async () => {
+    // A new deal is a different board, so the renderer rebuilds — and a
+    // selection is about the board that is gone. Nothing on screen is the
+    // element that was lit.
+    const el = await mounted();
+    const render = createMahjongBoardRenderer();
+    render(el, fullBoard(), 7);
+    render(el, reshuffledBoard(), null);
+
+    expect(el.querySelectorAll("[data-selected]")).toHaveLength(0);
+  });
+});
+
 describe("the board draws one element per position, in the layout's own order", () => {
   it("renders every position, and nothing else", async () => {
     const el = await mounted();
