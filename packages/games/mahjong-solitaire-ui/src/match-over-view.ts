@@ -78,16 +78,45 @@ export function buildMatchOverStylesheet(): string {
   gap: 1rem;
   padding: 1.5rem;
   text-align: center;
-  /* The felt, dimmed. Same token the board reads, so a tenant theme reaches
-     both without either knowing about the other. */
-  background: color-mix(in srgb, var(--hexdev-color-primary, #14532d) 82%, black);
-  color: var(--hexdev-color-on-primary, #f8fafc);
+  /* THE SAME TOKENS THE BOARD READS, and the prefix is the correction a
+     person looking at this screen found. It was \`--hexdev-color-primary\`,
+     which is not a token this product has: the accepted vocabulary is the
+     CLOSED seven-name \`--gx-*\` set in \`widget-protocol/theme-tokens.ts\`,
+     and every other surface in the repository reads it. So this panel could
+     never take a tenant's theme, and on a tenant with a themed felt it would
+     have painted a hardcoded green over a board of another colour. Nothing
+     could see that: the panel had no scene until the slice that made it
+     reachable.
+
+     DARKENED AND OPAQUE, not translucent, so the board behind a DEADLOCK is
+     covered rather than shown through. Considered and rejected: a scrim
+     would keep the stuck board visible under its own verdict, which reads
+     well — and would put white text over 144 arbitrary tile faces with no
+     contrast fence anywhere in this package, in a repository that already
+     keeps a whole contrast suite because of that exact defect class. The two
+     endings also share one panel, and a cleared board has nothing left
+     behind it, so opaque is the only treatment that looks the same both
+     times. */
+  background: color-mix(in srgb, var(--gx-color-primary, #1e5c43) 82%, black);
+  color: var(--gx-color-on-primary, #f8fafc);
+  /* Every other screen in this product is set in the tenant's own face, or
+     in the system sans underneath it. This panel is a SIBLING of the board
+     rather than a child, so it inherited nothing from
+     \`.hexdev-mahjong-board\` and came out in the browser's default SERIF —
+     the only serif in the product, on the one screen that is made entirely
+     of words. Found by looking. */
+  font-family: var(--gx-font-family, system-ui, sans-serif);
 }
 
 .hexdev-mahjong-match-over-message {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
+  /* THE SENTENCE IS THE HEADLINE — there is no other heading on this screen,
+     because a solitaire has no score line to put above it. At 1.25rem it sat
+     in the middle of an empty felt looking like a caption for something that
+     was not there. \`escoba-ui\`'s own headline is 1.5rem/800 and it has a
+     score line under it; this one carries the whole ending on its own. */
+  font-size: 1.5rem;
+  font-weight: 700;
   /* A sentence, not a slogan: it wraps rather than shrinking the board's
      felt out from under it. */
   max-inline-size: 28ch;
