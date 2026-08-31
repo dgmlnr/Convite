@@ -20,6 +20,7 @@ export type Route =
   | { readonly kind: "loader" }
   | { readonly kind: "widget-app" }
   | { readonly kind: "card-front"; readonly file: string }
+  | { readonly kind: "tile-front"; readonly file: string }
   | { readonly kind: "not-found" };
 
 /**
@@ -42,7 +43,36 @@ export function prefersHtml(acceptHeader: string | undefined): boolean {
 
 const CARD_FRONT_PREFIX = "/assets/fronts/";
 
+/**
+ * A SECOND LITERAL PREFIX, not a generalisation of the first. Two artworks
+ * exist and no third does, and `.dependency-cruiser.cjs:38` already records
+ * the objection to inventing a convention ahead of its second consumer: a
+ * parameterised `/assets/<kind>/` route would have to decide which directory
+ * a caller meant, and would answer for kinds nobody ships.
+ */
+const TILE_FRONT_PREFIX = "/assets/tiles/";
+
 const NOT_FOUND: Route = { kind: "not-found" };
+
+/**
+ * The file name a static-asset prefix carries, or `undefined` when the rest
+ * of the path is not a bare name.
+ *
+ * Rejected HERE, not left to the asset reader: a route that cannot express a
+ * traversal is a stronger guarantee than a reader that has to remember to
+ * check for one. `%2F` is checked alongside `/` because a caller may hand
+ * this function a raw, undecoded pathname. Shared by both prefixes so the two
+ * artworks cannot drift into different refusals — which is the failure a
+ * copied-and-edited second branch would produce, silently, on whichever half
+ * nobody re-read.
+ */
+function assetFileName(pathname: string, prefix: string): string | undefined {
+  const file = pathname.slice(prefix.length);
+  if (file === "" || file.includes("/") || file.includes("\\") || file.includes("..") || /%2f/i.test(file)) {
+    return undefined;
+  }
+  return file;
+}
 
 export function resolveRoute(method: string, pathname: string): Route {
   if (method === "GET") {
@@ -50,15 +80,12 @@ export function resolveRoute(method: string, pathname: string): Route {
     if (pathname === "/loader.js") return { kind: "loader" };
     if (pathname === "/assets/widget-app.js") return { kind: "widget-app" };
     if (pathname.startsWith(CARD_FRONT_PREFIX)) {
-      const file = pathname.slice(CARD_FRONT_PREFIX.length);
-      // Rejected HERE, not left to the asset reader: a route that cannot
-      // express a traversal is a stronger guarantee than a reader that has
-      // to remember to check for one. `%2F` is checked alongside `/` because
-      // a caller may hand this function a raw, undecoded pathname.
-      if (file === "" || file.includes("/") || file.includes("\\") || file.includes("..") || /%2f/i.test(file)) {
-        return NOT_FOUND;
-      }
-      return { kind: "card-front", file };
+      const file = assetFileName(pathname, CARD_FRONT_PREFIX);
+      return file === undefined ? NOT_FOUND : { kind: "card-front", file };
+    }
+    if (pathname.startsWith(TILE_FRONT_PREFIX)) {
+      const file = assetFileName(pathname, TILE_FRONT_PREFIX);
+      return file === undefined ? NOT_FOUND : { kind: "tile-front", file };
     }
     return NOT_FOUND;
   }

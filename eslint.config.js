@@ -51,6 +51,45 @@ export default tseslint.config(
     },
   },
   {
+    // A SECONDARY, HONESTLY WEAK GUARD ON THE DEAL PATH — declared as a
+    // heuristic in its own message, because that is what it is. The real
+    // no-search fence is the entropy budget in
+    // `mahjong-solitaire-module/src/deal.test.ts`: a deal draws a constant
+    // number of random values, and no retry-until-solvable loop can hold a
+    // constant. `no-restricted-syntax` is AST-SELECTOR based (design X-2) and
+    // structurally cannot see that a function calls itself, so it can only
+    // ever catch the three shapes below — never recursion, never a search.
+    //
+    // THE MODULE ONLY, AND THE ENGINE DELIBERATELY NOT. Design D7 asks for
+    // `mahjong-solitaire-{engine,module}`, and that glob is a trap, MEASURED
+    // rather than assumed: a later config object naming the same file
+    // REPLACES an earlier one's `no-restricted-syntax` options instead of
+    // merging them, so covering the engine here would silently delete the
+    // `packages/games/*-engine` block's `new Date()` restriction for this one
+    // engine. Verified by planting `new Date()` in `mahjong-solitaire-engine`
+    // with such a block present: eslint exited 0. The engine already carries
+    // the strictest fence in the repo and has no entropy at all; the deal path
+    // — the thing this rule is about — lives here.
+    files: ["packages/games/mahjong-solitaire-module/src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "WhileStatement[test.value=true]",
+          message: "HEURISTIC, not proof: the deal is one pass with a fixed entropy budget, so `while (true)` here is almost certainly a retry or a search. The budget test in deal.test.ts is what actually fences this.",
+        },
+        {
+          selector: "DoWhileStatement",
+          message: "HEURISTIC, not proof: a do/while on the deal path is the shape of deal-check-redeal. Deciding solvability is NP-complete; the generator answers it by construction instead.",
+        },
+        {
+          selector: "ContinueStatement[label]",
+          message: "HEURISTIC, not proof: a labelled continue on the deal path is the shape of a backtracking scan. See deal.ts — there is no backtracking, and there is not going to be one.",
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/transport-colyseus/src/**/*.ts"],
     rules: {
       "no-restricted-syntax": [

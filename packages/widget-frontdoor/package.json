@@ -10,6 +10,7 @@
     }
   },
   "dependencies": {
+    "@hexdev/mahjong-tile-ui": "workspace:*",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "@hexdev/widget-protocol": "workspace:*"
