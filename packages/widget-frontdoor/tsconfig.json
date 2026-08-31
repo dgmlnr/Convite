@@ -13,6 +13,9 @@
   ],
   "references": [
     {
+      "path": "../mahjong-tile-ui"
+    },
+    {
       "path": "../platform-contract"
     },
     {
