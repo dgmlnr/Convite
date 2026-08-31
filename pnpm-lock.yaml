@@ -47,6 +47,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/mahjong-solitaire-module':
+        specifier: workspace:*
+        version: link:../../packages/games/mahjong-solitaire-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -69,6 +72,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/mahjong-solitaire-module':
+        specifier: workspace:*
+        version: link:../../packages/games/mahjong-solitaire-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
