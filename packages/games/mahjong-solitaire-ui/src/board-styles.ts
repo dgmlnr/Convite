@@ -137,6 +137,28 @@ export function buildBoardStylesheet(): string {
   --mj-board-block-budget: calc(100dvh - var(--mj-board-padding) * 2);
 }
 
+/* THE TILE THE PLAYER HAS PRESSED ONCE. Half of a move is on the board and
+   the other half is in the player's head, so this is the only thing telling
+   them the first press landed at all.
+
+   A DROP-SHADOW HALO AND NOT AN OUTLINE, because the tile is a rounded slab
+   drawn inside an SVG while its element is a plain rectangle: an \`outline\`
+   would trace the rectangle and read as a rendering fault at every corner.
+   \`filter\` composites the element's own painted alpha, so the halo follows
+   the artwork's real silhouette. Two stacked shadows rather than one wide
+   one — a tight ring for the edge and a soft one for the glow — because a
+   single large blur washes out against bone at 30px.
+
+   NOT A COLOUR CHANGE, and not a transform. Recolouring would fight artwork
+   this package does not own (\`mahjong-tile-ui\`'s faces are fixed across every
+   tenant, deliberately), and moving the tile would move a hit target the
+   press test measures to the pixel. The accent is the tenant's own, with the
+   product's gold underneath it, exactly as the lobby's prominent control
+   does. */
+.hexdev-mahjong-tile[data-selected="true"] {
+  filter: drop-shadow(0 0 2px var(--gx-color-accent, #d4af37)) drop-shadow(0 0 6px var(--gx-color-accent, #d4af37));
+}
+
 .hexdev-mahjong-tile-face {
   display: block;
   /* The artwork is 195x279 and the box is 0.69882 of its own height — the
