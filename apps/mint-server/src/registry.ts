@@ -2,6 +2,7 @@ import { createGameModuleRegistry } from "@hexdev/platform-core";
 import type { GameModuleRegistry } from "@hexdev/platform-core";
 import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2 } from "@hexdev/escoba-module";
+import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
 
 /**
  * The MINTING role's own game registry — EXTRACTED from `index.ts` for the
@@ -25,7 +26,18 @@ import { escobaModule, escobaModule2v2 } from "@hexdev/escoba-module";
  * `buildCatalog` drops an entitled id with no module and never throws. That
  * is what `registry.test.ts` now fences, on the invariant rather than on
  * these two lines — see its own docstring.
+ *
+ * THE SOLITAIRE JOINS BARE, and that is a decision rather than an omission.
+ * The match root pairs it with `requestSystemAction` (it has to deal itself
+ * a board) and with `getAbandonedSeatAction` (it has to say what a vacated
+ * seat means, having no bot to hand it to). Neither is reachable from here:
+ * this role never runs a match, never advances one, and never sees a seat
+ * vacated — it reads `metadata` and `configOptions` to build a catalog.
+ * Registering the pair here anyway would add two lines nothing in this
+ * process can call and no test on this root can tell apart from their
+ * absence, which is the shape the paragraph above already refuses for the
+ * bot-driving collaborators.
  */
 export function buildMintGameRegistry(): GameModuleRegistry {
-  return createGameModuleRegistry([trucoModule, trucoModule2v2, escobaModule, escobaModule2v2]);
+  return createGameModuleRegistry([trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule]);
 }
