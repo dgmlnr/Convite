@@ -144,6 +144,38 @@ export type ConsultAskProvider = (
  */
 export type PaidQuestionClassifier = (action: unknown) => boolean;
 
+/**
+ * WHAT A SEAT LEFT FOR GOOD MEANS — asked of the game, answered as one of the
+ * game's own actions, or declined.
+ *
+ * A transport already knows how to replace an absent player: hand the seat to
+ * a bot and let the table play on. That is the right answer for truco and for
+ * escoba, and neither of them registers a provider here. It is the WRONG
+ * answer for a game with no opponent, where "take over the seat" means handing
+ * a solitaire board to a bot that will grind it out with nobody watching.
+ *
+ * WHY IT IS A HOOK AND NOT A TRANSPORT RULE — and `MatchRoom.handleQuit`'s own
+ * docstring is what argues it: quitting is deliberately not a forfeit there,
+ * because "whether truco should also offer a real resignation is a rules
+ * question FOR THE MODULE, not a transport one". This is that seam. The
+ * transport asks, applies whatever it is handed through the module's OWN
+ * `applyAction`, and then reads `getOutcome` to find out what happened — it
+ * never decides that a match ended, and it never inspects the action.
+ *
+ * DELIBERATELY NOT KEYED ON `createBot`'s absence. A one-seat game is the
+ * obvious consumer, but "the player abandoned the table" is a rules event at
+ * any seat count: a two-seat game that wants a real resignation registers this
+ * and gets one. Conflating "has no bot" with "ends on abandonment" would put
+ * that decision back in the transport, which is exactly what this hook exists
+ * to take out of it.
+ *
+ * `null` for "no opinion — do whatever you would have done", the same
+ * fail-closed shape as every other provider above, and for the same reason: a
+ * game that registers none is unchanged, and an unregistered `gameId` answers
+ * identically to a module that declined.
+ */
+export type AbandonedSeatActionProvider = (state: unknown, playerId: PlayerId) => ActorTaggedAction | null;
+
 /** Either a bare `GameModule` (no system-action factory — the common case
  * for a game whose players can always act) or a module paired with its
  * optional `requestSystemAction`/`isNonBlockingAction`. Both forms resolve
@@ -160,6 +192,7 @@ export type GameModuleRegistration =
       readonly getConsultAdvice?: ConsultAdviceProvider;
       readonly getConsultAsk?: ConsultAskProvider;
       readonly isPaidQuestion?: PaidQuestionClassifier;
+      readonly getAbandonedSeatAction?: AbandonedSeatActionProvider;
     };
 
 /**
@@ -196,6 +229,11 @@ export interface GameModuleRegistry {
    * when nothing is registered for `gameId` OR the module supplied no
    * classifier — the same fail-closed shape as the two above. */
   isPaidQuestion(gameId: GameId, action: unknown): boolean;
+  /** `null` when nothing is registered for `gameId`, OR the module supplied no
+   * provider, OR the game itself has no answer for this abandoned seat — all
+   * three fail closed identically, and all three mean "do whatever you would
+   * have done", which for a transport is the ordinary bot takeover. */
+  getAbandonedSeatAction(gameId: GameId, state: unknown, playerId: PlayerId): ActorTaggedAction | null;
 }
 
 // See the erasure note above: registering a `GameModule<TState,...>` for a
@@ -276,5 +314,6 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
     getConsultAdvice: async (gameId, state, playerId, tier, about) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier, about)) ?? null,
     getConsultAsk: (gameId, state, playerId, about) => byId.get(gameId)?.getConsultAsk?.(state, playerId, about) ?? null,
     isPaidQuestion: (gameId, action) => byId.get(gameId)?.isPaidQuestion?.(action) ?? false,
+    getAbandonedSeatAction: (gameId, state, playerId) => byId.get(gameId)?.getAbandonedSeatAction?.(state, playerId) ?? null,
   };
 }

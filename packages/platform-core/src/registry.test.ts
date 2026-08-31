@@ -224,4 +224,69 @@ describe("createGameModuleRegistry", () => {
       expect(seen).toEqual([{ about: "envido" }]);
     });
   });
+
+  /**
+   * "A player walked away from this seat for good — what does that mean?" is a
+   * RULES question, and this is where a game gets to answer it. The transport
+   * asks; it never decides.
+   *
+   * The three fail-closed cases below are not filler: they are what makes the
+   * answer OPTIONAL, and therefore what keeps every game that has no opinion
+   * (truco, escoba: an absent player is replaced by a bot and the table plays
+   * on) working with no registration change at all. They are also the positive
+   * controls for the fourth — without them, "the provider's answer came back"
+   * and "something came back" are the same observation.
+   */
+  describe("getAbandonedSeatAction — paired with a module, the same fail-closed shape as every other hook here", () => {
+    const abandon = (_state: unknown, playerId: PlayerId) => ({ playerId });
+
+    it("returns null for a gameId nothing registered", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getAbandonedSeatAction("does-not-exist", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("returns null for a bare GameModule registration — no provider supplied, so a bot takeover stays the answer", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getAbandonedSeatAction("fixture-a", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("returns null when the paired provider itself declines for this state", () => {
+      const module = fixtureModule("fixture-a");
+      const registry = createGameModuleRegistry([{ module, getAbandonedSeatAction: () => null }]);
+      expect(registry.getAbandonedSeatAction("fixture-a", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    /**
+     * THE ONLY CASE THAT CAN TELL A LOOKUP FROM A `[0]`. Every other test here
+     * registers exactly one module, so "found it by id" and "took the only
+     * entry there is" are the same observation — measured: a version ignoring
+     * its `gameId` and answering from the first registration passes all four
+     * of them. Two modules, and the one being ASKED ABOUT is the one with no
+     * provider.
+     */
+    it("answers for the game it was ASKED about, not for whichever registration happens to have a provider", () => {
+      const registry = createGameModuleRegistry([{ module: fixtureModule("fixture-a"), getAbandonedSeatAction: abandon }, fixtureModule("fixture-b")]);
+      expect(registry.getAbandonedSeatAction("fixture-b", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("delegates to the paired provider, forwarding BOTH the state and the seat's own playerId", () => {
+      const module = fixtureModule("fixture-a");
+      const seen: { state: unknown; playerId: PlayerId }[] = [];
+      const registry = createGameModuleRegistry([
+        {
+          module,
+          getAbandonedSeatAction: (state: unknown, playerId: PlayerId) => {
+            seen.push({ state, playerId });
+            return abandon(state, playerId);
+          },
+        },
+      ]);
+
+      // Both arguments asserted, not just the return: a provider handed the
+      // wrong seat would answer for whoever it was given, and a lookup that
+      // ignores its arguments answers identically for every one of them.
+      expect(registry.getAbandonedSeatAction("fixture-a", { turn: 1 }, "quien-se-fue" as PlayerId)).toEqual({ playerId: "quien-se-fue" });
+      expect(seen).toEqual([{ state: { turn: 1 }, playerId: "quien-se-fue" }]);
+    });
+  });
 });
