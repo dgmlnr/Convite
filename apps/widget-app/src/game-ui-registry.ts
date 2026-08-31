@@ -22,6 +22,15 @@ import {
   renderEscobaStatus,
   renderMatchOverOverlay,
 } from "@hexdev/escoba-ui";
+import type { BoardTiles, MahjongOutcomeInfo, MahjongPair } from "@hexdev/mahjong-solitaire-ui";
+import {
+  createChronometer,
+  createMahjongBoardRenderer,
+  ensureMatchOverStyles as ensureMahjongMatchOverStyles,
+  renderMahjongMatchOver,
+  resolvePress,
+} from "@hexdev/mahjong-solitaire-ui";
+import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
 import { STRINGS } from "./i18n.js";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
@@ -87,6 +96,25 @@ export interface AssetCredit {
   readonly licenseName: string;
   readonly licenseUrl: string;
   readonly changes: readonly string[];
+  /**
+   * WHAT THIS IS ART OF, in the widget's own language — "las cartas", "las
+   * fichas". Optional, and the whole point of it living HERE rather than in
+   * the copy: `STRINGS.aboutCredit` used to name the medium itself, which
+   * was true for exactly as long as every credit in this widget was the
+   * Spanish deck. A second artwork made that sentence say "Arte de las
+   * cartas" over a set of mahjong tiles.
+   *
+   * The game supplies it, in the same record where it supplies its own
+   * hero title, because a game is the only thing that knows what its
+   * rendering draws — the same reason `credits` itself lives on a family
+   * rather than in the shell. `undefined` falls back to a sentence with no
+   * noun at all, which is still true of anything.
+   *
+   * NOT PART OF THE DEDUPE KEY (`author|licenseUrl`, below): two games
+   * crediting one artist for one artwork owe one obligation, whatever each
+   * of them calls it.
+   */
+  readonly subject?: string;
 }
 
 /**
@@ -171,8 +199,16 @@ export interface GameUiEntry {
    * small per-mount state (the trick-outcome banner) that must not leak
    * between two different matches sharing one widget session. `onPlayAgain`
    * is optional: the fallback "connection is live" path has nowhere to
-   * return to and never renders a match-over overlay in the first place. */
-  createRenderer(): (
+   * return to and never renders a match-over overlay in the first place.
+   *
+   * THE CONTEXT IS REQUIRED, AND THE FOUR SHIPPED ENTRIES IGNORE IT BY NOT
+   * DECLARING IT. TypeScript assigns a zero-argument `() => Renderer` to a
+   * one-argument parameter, so truco's and escoba's factories below are
+   * untouched by this and pay nothing for it. Required rather than optional
+   * on purpose: an optional parameter is exactly how a fourth call site
+   * silently gets `undefined` and quietly decides for itself what a missing
+   * provenance means. */
+  createRenderer(context: MatchRenderContext): (
     container: HTMLElement,
     payload: GameUiPayload,
     dispatch: (action: unknown) => void,
@@ -251,13 +287,27 @@ export interface SectionUi {
   readonly title: string;
 }
 
-/** The one shelf the four registered modules declare today. "Fichas" is NOT
- * declared alongside it: a row here that no module points at is an
- * enumerating-config entry with no referent, and it belongs to the change
- * that ships the game needing it. */
+/** The shelf the four card modules declare. */
 const CARTAS_SECTION: SectionUi = { id: "cartas", title: STRINGS.sectionCartas };
 
-const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION];
+/**
+ * THE SECOND SHELF, and it arrives with its referent rather than ahead of it.
+ *
+ * The paragraph that stood here said "Fichas" was deliberately NOT declared,
+ * because a row nothing points at is an enumerating-config entry with no
+ * referent and belongs to the change that ships the game needing it. This is
+ * that change: `mahjongSolitaireModule.metadata.section` is `"fichas"`, so
+ * the row has a game under it the day it lands.
+ *
+ * What made the absence matter is what a missing row DOES: `game-list.ts`
+ * falls back to the raw section id, so before this line the shelf on screen
+ * one was literally headed `fichas` — visible, ugly, and a bug report
+ * somebody files, which is the failure mode that file chose on purpose over
+ * silently filing those cards under "Cartas".
+ */
+const FICHAS_SECTION: SectionUi = { id: "fichas", title: STRINGS.sectionFichas };
+
+const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION, FICHAS_SECTION];
 
 /**
  * A shelf's own name, by section id — the exact mirror of `familyUiFor`
@@ -317,7 +367,16 @@ export interface GameFamilyUi {
   readonly credits?: readonly AssetCredit[];
 }
 
-const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_ATTRIBUTION] };
+/**
+ * ONE RECORD, SHARED BY BOTH CARD GAMES — the same object, not two equal
+ * ones, so there is nowhere for truco's and escoba's copies of an obligation
+ * to drift apart. `GAME_UI_CREDITS` would dedupe them anyway; this is the
+ * half that also keeps the SUBJECT from disagreeing, which the dedupe key
+ * does not cover.
+ */
+const DECK_CREDIT: AssetCredit = { ...DECK_ATTRIBUTION, subject: STRINGS.creditSubjectCards };
+
+const TRUCO_FAMILY: GameFamilyUi = { id: "truco", heroTitle: HERO_TITLE, hero: HERO_CARDS, cardArt: CARD_ART, credits: [DECK_CREDIT] };
 
 /**
  * The three cards that name escoba, not just any three faces (see
@@ -362,10 +421,41 @@ const ESCOBA_FAMILY: GameFamilyUi = {
   heroTitle: "Escoba de 15",
   hero: ESCOBA_FACES,
   cardArt: ESCOBA_FACES,
-  credits: [DECK_ATTRIBUTION],
+  credits: [DECK_CREDIT],
 };
 
-const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY];
+/**
+ * THE THIRD FAMILY, AND THE FIRST THAT IS NOT A DECK OF CARDS.
+ *
+ * `heroTitle` and `credits`, and deliberately nothing else — the two fields
+ * this game genuinely has something to put in.
+ *
+ * NO `hero`, NO `cardArt`, AND THAT IS A DECISION ABOUT THE ARTWORK ITSELF.
+ * The 42 shipped faces are TRANSPARENT: each file is the symbol alone, with
+ * no tile body behind it, and `mahjong-tile-ui`'s own license record says so
+ * in as many words ("This artwork's transparency is deliberate — each file is
+ * the face symbol with no tile body behind it"). The bone under the symbol is
+ * drawn separately by `tileBodySvg()`, as markup, while `hero`/`cardArt` take
+ * image URLs. A face pointed at from here would therefore render as a glyph
+ * floating on the felt with nothing under it — a rendering bug that looks
+ * deliberate, which is the worst way for one to look. `game-list.ts` already
+ * answers the empty case honestly: a title-only card, still full size and
+ * still a full activation target.
+ *
+ * THE CREDIT IS NOT OPTIONAL EVEN THOUGH THE ART IS ABSENT FROM THE LOBBY.
+ * CC BY-SA 4.0 is owed because the widget DRAWS the artwork — on the board,
+ * 144 tiles at a time — not because a lobby card shows it. `GAME_UI_CREDITS`
+ * below unions this list for exactly that reason, in its own words: "an
+ * obligation is owed whether or not that game's art won a place on the front
+ * page".
+ */
+const MAHJONG_FAMILY: GameFamilyUi = {
+  id: "mahjong-solitario",
+  heroTitle: "Mahjong Solitario",
+  credits: [{ ...TILE_ATTRIBUTION, subject: STRINGS.creditSubjectTiles }],
+};
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY];
 
 /**
  * The family whose face the front door wears — or none.
@@ -535,6 +625,115 @@ const escobaEntry: GameUiEntry = { id: "escoba-de-15" as GameId, gameFamily: ESC
  * `createMatchTableRenderer` is already seat-count generic for truco. */
 const escobaEntry2v2: GameUiEntry = { id: "escoba-de-15-2v2" as GameId, gameFamily: ESCOBA_FAMILY.id, createRenderer: createEscobaRenderer() };
 
+/** The view `mahjong-solitaire-module` sends every seat — and there is only
+ * one seat, so it hides nothing. `tiles` is `null` until the deal lands,
+ * which is NOT an empty board: an all-null board is one somebody finished. */
+interface MahjongPlayerView {
+  readonly playerId: string;
+  readonly tiles: BoardTiles | null;
+}
+
+/**
+ * THE FIRST RENDERER IN THIS FILE THAT READS ITS `MatchRenderContext`, and
+ * the first that turns two presses into an action.
+ *
+ * WHAT IS COMPOSED HERE AND WHAT IS NOT. Everything with a rule in it lives
+ * in `@hexdev/mahjong-solitaire-ui` and is fenced there: the board draws and
+ * diffs in place, `resolvePress` decides what a press means, the chronometer
+ * measures and refuses to report a resumed match, and the panel picks one of
+ * three sentences. What is left here is wiring — which is exactly the split
+ * `createEscobaRenderer` above already keeps with `createMarkThenPlay`.
+ *
+ * THE CHRONOMETER IS BUILT ONCE, HERE, AND NOT PER RENDER. `createRenderer`
+ * runs exactly once per match, when the match is entered, which is the
+ * instant the player sat down; `render` runs on every message the match
+ * produces. Building it below would restart it on every view and report the
+ * time since the last tile came off.
+ *
+ * IT IS `null` FOR A RESUMED MATCH, and that is the whole honesty mechanism
+ * rather than a rule this file has to remember: `createChronometer` returns
+ * nothing at all on that path, so there is no figure here to render by
+ * mistake.
+ *
+ * THE SELECTION IS THIS CLOSURE'S, and it dies with the renderer — one match,
+ * one half-made move. It is also cleared by the SERVER's answer rather than
+ * by the press that sent it: when the next view no longer holds the tile the
+ * mark was on, the mark goes, which covers both "the move was accepted" and
+ * "a new board was dealt" with one rule and no bookkeeping.
+ */
+function createMahjongRenderer(): GameUiEntry["createRenderer"] {
+  return (context) => {
+    const chronometer = createChronometer({ resumed: context.resumed, now: context.now });
+    let mounted: { readonly boardEl: HTMLElement; readonly matchOverEl: HTMLElement } | null = null;
+    let selected: number | null = null;
+    let tiles: BoardTiles | null = null;
+    let legal: readonly MahjongPair[] = [];
+    let play: (pair: MahjongPair) => void = () => undefined;
+    // Whether the panel has already claimed focus once this match — the same
+    // transition `createEscobaRenderer` above tracks, for the same reason.
+    let matchOverShown = false;
+
+    const drawBoard = createMahjongBoardRenderer({
+      onPickTile: (position) => {
+        const move = resolvePress(selected, position, legal);
+        if (move.kind === "play") {
+          // Cleared BEFORE the dispatch, not after the server answers: the
+          // move is on its way and the two tiles it names are spoken for.
+          selected = null;
+          play(move.pair);
+          return;
+        }
+        selected = move.kind === "select" ? move.position : null;
+        if (mounted !== null) drawBoard(mounted.boardEl, tiles, selected);
+      },
+    });
+
+    return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
+      ensureMahjongMatchOverStyles(document);
+
+      if (mounted === null || mounted.boardEl.parentElement !== container) {
+        container.replaceChildren();
+        // The positioned ancestor the panel hangs off (`match-over-view.ts`
+        // declares the rule), and two children rather than one: the board
+        // renderer owns its container outright and wipes it on a rebuild, so
+        // a panel mounted inside it would be a panel the next deal deletes.
+        container.className = "hexdev-mahjong-match";
+        const boardEl = document.createElement("div");
+        const matchOverEl = document.createElement("div");
+        container.append(boardEl, matchOverEl);
+        mounted = { boardEl, matchOverEl };
+      }
+
+      const view = payload.view as MahjongPlayerView;
+      tiles = view.tiles;
+      legal = payload.legalActions as readonly MahjongPair[];
+      play = (pair) => {
+        dispatch({ type: "remove-pair", playerId: view.playerId, a: pair.a, b: pair.b });
+      };
+
+      // A mark cannot outlive the tile it is on. `tiles[selected]` is `null`
+      // once the pair came off, and a board that was re-dealt is a different
+      // board the selection knows nothing about.
+      if (selected !== null && (tiles === null || tiles[selected] == null)) selected = null;
+
+      drawBoard(mounted.boardEl, tiles, selected);
+
+      const outcome = (payload.outcome ?? null) as MahjongOutcomeInfo | null;
+      const focusOnOpen = outcome !== null && !matchOverShown;
+      matchOverShown = outcome !== null;
+      renderMahjongMatchOver(mounted.matchOverEl, outcome === null ? null : { outcome, chronometer, onPlayAgain, onLeaveMatch, focusOnOpen });
+    };
+  };
+}
+
+/**
+ * ONE SEAT, ONE ENTRY. Without this row `enterMatch` resolves nothing and
+ * falls through to `renderUnsupportedGame` — "Este juego todavía no está
+ * disponible en esta versión." — for a game both composition roots register,
+ * both tenants are entitled to, and the lobby offers a button for.
+ */
+const mahjongEntry: GameUiEntry = { id: "mahjong-solitario" as GameId, gameFamily: MAHJONG_FAMILY.id, createRenderer: createMahjongRenderer() };
+
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
   /** The identity behind a joinable id — see `GameFamilyUi`. Screen 2 asks
@@ -549,6 +748,7 @@ export function createGameUiRegistry(): GameUiRegistry {
     [trucoEntry2v2.id, trucoEntry2v2],
     [escobaEntry.id, escobaEntry],
     [escobaEntry2v2.id, escobaEntry2v2],
+    [mahjongEntry.id, mahjongEntry],
   ]);
   const byFamily = new Map<GameFamilyId, GameFamilyUi>(FAMILIES.map((entry) => [entry.id, entry]));
   return {

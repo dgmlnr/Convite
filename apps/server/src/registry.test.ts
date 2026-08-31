@@ -122,6 +122,72 @@ describe("buildGameRegistry — escoba's registration (slice L.1)", () => {
 });
 
 /**
+ * Slice 9: the solitaire's own registration on this SAME real
+ * composition-root function.
+ *
+ * TWO PAIRED MEMBERS, ONE ENTRY, AND EACH IS FENCED SEPARATELY, because
+ * deleting either one is silent in a different way. Without
+ * `requestSystemAction` the room admits the player and never lays a board;
+ * without `getAbandonedSeatAction` a vacated seat is left to the transport's
+ * bot-takeover default, which for a module that supplies no `createBot` at
+ * all means the seat is simply never filled and the match never ends.
+ * `platform-core`'s registry answers `null` for an unregistered provider —
+ * "no opinion, do whatever you would have done" — so both failures are a
+ * `null` that nothing else in this process would ever question.
+ *
+ * Rung 1, stated rather than assumed: the MODULE's own behaviour is fenced
+ * in `mahjong-solitaire-module`'s tests, and re-asserting it here would
+ * prove nothing about this file. What these two tests hold on their own is
+ * that this registry reaches this module's providers BY GAME ID.
+ */
+describe("buildGameRegistry — the solitaire's registration (slice 9)", () => {
+  const seats: readonly SeatAssignment[] = [{ seat: 0, playerId: "mahjong-srv-solo" as PlayerId }];
+
+  it("wires requestMahjongSolitaireSystemAction: a real 144-tile deal, not null", () => {
+    const registry = buildGameRegistry();
+    const module = registry.get("mahjong-solitario");
+    expect(module, "null here means the module itself is missing from the registry").toBeDefined();
+    const fresh = module!.createMatch({}, seats);
+
+    const action = registry.getSystemAction("mahjong-solitario", fresh, () => 0.25);
+
+    expect(action, "null here means the requestSystemAction REGISTRATION itself is missing").not.toBeNull();
+    const dealt = JSON.parse(JSON.stringify(action)) as { type: string; placements: readonly (string | null)[] };
+    expect(dealt.type).toBe("deal-board");
+    // Anti-vacuity (R6): a `deal-board` carrying an empty placement list
+    // would satisfy the type assertion above and lay no board at all.
+    expect(dealt.placements).toHaveLength(144);
+  });
+
+  it("wires getAbandonedSeatAction: the seat that was left names its own ending, not the transport's default", () => {
+    const registry = buildGameRegistry();
+    const fresh = registry.get("mahjong-solitario")!.createMatch({}, seats);
+
+    const action = registry.getAbandonedSeatAction("mahjong-solitario", fresh, seats[0]!.playerId);
+
+    expect(action, "null here means the getAbandonedSeatAction REGISTRATION itself is missing").not.toBeNull();
+    expect(JSON.parse(JSON.stringify(action))).toEqual({ type: "abandon-board", playerId: "mahjong-srv-solo" });
+  });
+
+  // The registry is the only thing in this process that knows this game has
+  // no bot, and nothing here registers a consult channel for it either — the
+  // same assertion escoba's own entry carries, for the same reason: a future
+  // copy-paste of truco's consult lines onto this entry would open a channel
+  // a one-seat game has no second seat for.
+  it("registers NO consult hooks and NO bot for the solitaire", () => {
+    const registry = buildGameRegistry();
+    const module = registry.get("mahjong-solitario")!;
+    const fresh = module.createMatch({}, seats);
+
+    expect(module.createBot, "a game with one seat has no opponent for a bot to be").toBeUndefined();
+    expect(registry.isNonBlockingAction("mahjong-solitario", { type: "remove-pair" })).toBe(false);
+    expect(registry.isHumanPriorityAction("mahjong-solitario", { type: "remove-pair" })).toBe(false);
+    expect(registry.isPaidQuestion("mahjong-solitario", { type: "remove-pair" })).toBe(false);
+    expect(registry.getConsultAsk("mahjong-solitario", fresh, seats[0]!.playerId)).toBeNull();
+  });
+});
+
+/**
  * The match root's copy of the entitlement/module coherence fence that
  * `apps/mint-server/src/registry.test.ts` carries — same invariant, this
  * root's own config and its own registry: every id this root's tenants are
