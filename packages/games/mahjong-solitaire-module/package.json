@@ -1,0 +1,16 @@
+{
+  "name": "@hexdev/mahjong-solitaire-module",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@hexdev/platform-contract": "workspace:*",
+    "@hexdev/mahjong-solitaire-engine": "workspace:*"
+  }
+}
