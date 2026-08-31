@@ -1,0 +1,58 @@
+Mahjong tile faces -- packages/mahjong-tile-ui/assets/tiles/*.webp
+=================================================================
+
+These 42 files are NOT covered by the license of the rest of this
+repository. They are a derivative work and carry their own terms.
+
+Original artwork
+  Bi Hai Feng / 碧海风, via Wikimedia Commons
+  https://commons.wikimedia.org/wiki/Special:ListFiles/%E7%A2%A7%E6%B5%B7%E9%A3%8E
+
+  One author and one license across all 42, audited on exactly these files
+  through the Commons API rather than assumed from a category: Artist is
+  碧海风 on every one, LicenseShortName is "CC BY-SA 4.0" on every one, and
+  every sha1 was checked against the API's own.
+
+  NOT taken from Category:SVG Planar illustrations of Mahjong tiles, and the
+  distinction matters legally: that category holds 176 files by many
+  different authors under seven different licenses. These 42 are a subset of
+  it, but the category is neither author- nor license-homogeneous, so citing
+  it as the source would credit the wrong people for most of what it
+  contains. Each file's own Commons page is recorded per tile in
+  ../src/about.ts (TILE_ART_SOURCES).
+
+  ONE HONEST CAVEAT, measured rather than reasoned. 41 of the 42 appear in
+  the author's own Special:ListFiles above; 0405中.svg does not, because
+  Commons lists a file under whoever uploaded its CURRENT version and that
+  one was re-uploaded by a different Commons user (Smasongarrison, 2022) as
+  a mechanical SVGO minification -- 5465 bytes down to 2819, with the
+  Artist, the license and the viewBox all unchanged. It is not creative
+  authorship and it does not break the one-author claim, but that single
+  file is not byte-identical to the author's own upload, and the per-tile
+  Commons page in ../src/about.ts is the URI that reaches it.
+
+License
+  Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+  https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes made
+  1. The source SVGs were rasterized to WebP at 195x279, lossless.
+
+  Nothing else was altered: no repair, no recolour, no crop, no background.
+  The transparency is deliberate and is the whole shape of this artwork.
+  Measured rather than assumed, by rendering one: each file draws the tile's
+  own dark rounded OUTLINE out to the edge of the canvas -- the alpha
+  bounding box is the full canvas on all 42 -- plus the symbol, and leaves
+  the INTERIOR see-through. So the silhouette is the artist's and the fill
+  is not. The bone behind it and the bevel that gives it thickness are drawn
+  by ../src/tile-body.ts and are this repository's own work, not a
+  derivative of anything here.
+
+  The exact recipe, and where 195x279 comes from, is
+  ../tools/process-svg-tiles.mjs.
+
+ShareAlike
+  Because rasterizing is an adaptation, these WebP files are themselves
+  licensed CC BY-SA 4.0. Anyone redistributing them must keep this notice,
+  credit 碧海风, link the license, and state that changes were made. The
+  attribution the product itself shows lives in ../src/about.ts.
