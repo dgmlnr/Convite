@@ -81,30 +81,59 @@ describe("createGameModuleRegistry", () => {
   /**
    * `metadata.seatCount` is consumed downstream by BOTH transports —
    * `MatchRoom.onCreate` sizes its seats from it, and `PresenceRoom` forms
-   * matchmaking groups of it (`MatchmakingPool.tryPairSeats` rejects any
-   * seatCount that is not an integer >= 2) — so an invalid value would
-   * otherwise only surface at runtime, as an unhandled rejection out of
-   * `onJoin` on EVERY join attempt for that game. Fail loud at composition
-   * time instead, naming the offending module (the same boot-guard
-   * discipline as `PresenceRoom.onCreate`'s unknown-module throw).
+   * matchmaking groups of it — so an invalid value would otherwise only
+   * surface at runtime, as an unhandled rejection out of `onJoin` on EVERY
+   * join attempt for that game. Fail loud at composition time instead,
+   * naming the offending module (the same boot-guard discipline as
+   * `PresenceRoom.onCreate`'s unknown-module throw).
+   *
+   * THE FLOOR IS 1, AND IT ALWAYS SHOULD HAVE BEEN. This block used to
+   * assert that `seatCount: 1` throws, on a rationale — repeated verbatim in
+   * the guard's own comment — that `MatchmakingPool.tryPairSeats` "rejects
+   * any seatCount that is not an integer >= 2". It does not:
+   * `presence.ts`'s `assertValidSeatCount` admits >= 1, and its docstring
+   * explicitly retracts the older "0-or-1 is always a caller bug" wording,
+   * because arity 1 is the degradation path's atomic claim of the head
+   * waiter. The registry was refusing a group size the layer it cited
+   * already accepts.
+   *
+   * A one-seat game has nobody to be paired with. That is a reason for it to
+   * skip matchmaking, never a reason to refuse to register it.
+   *
+   * The old `seatCount: 1` rejection is REPLACED by the acceptance case
+   * below, in the same block, rather than quietly deleted — the behaviour
+   * change is the point of this diff and it should be readable in it. The
+   * three genuinely impossible values keep one `it` each, so a mutation to
+   * either half of the guard reds exactly the case it broke.
    */
-  describe("rejects a module whose metadata.seatCount could never form a match — at registration, not at first join", () => {
+  describe("metadata.seatCount is an integer >= 1, checked at registration rather than at first join", () => {
     function moduleWithSeatCount(seatCount: number): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
       const module = fixtureModule("fixture-bad-seats");
       return { ...module, metadata: { ...module.metadata, seatCount } };
     }
 
-    it("throws at registry creation for seatCount 1, 0, and a non-integer, naming the module id", () => {
-      for (const seatCount of [1, 0, 2.5]) {
-        expect(() => createGameModuleRegistry([moduleWithSeatCount(seatCount)])).toThrowError(/fixture-bad-seats/);
-      }
+    it("accepts a one-seat module and resolves it by id — the case this guard used to refuse", () => {
+      const solo = moduleWithSeatCount(1);
+      expect(createGameModuleRegistry([solo]).get("fixture-bad-seats")).toBe(solo);
+    });
+
+    it("throws for seatCount 0, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([moduleWithSeatCount(0)])).toThrowError(/fixture-bad-seats.*\b0\b/);
+    });
+
+    it("throws for a negative seatCount, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([moduleWithSeatCount(-1)])).toThrowError(/fixture-bad-seats.*-1/);
+    });
+
+    it("throws for a non-integer seatCount, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([moduleWithSeatCount(1.5)])).toThrowError(/fixture-bad-seats.*1\.5/);
     });
 
     it("validates the wrapped registration form ({ module, ... }) identically to a bare module", () => {
-      expect(() => createGameModuleRegistry([{ module: moduleWithSeatCount(1) }])).toThrowError(/fixture-bad-seats/);
+      expect(() => createGameModuleRegistry([{ module: moduleWithSeatCount(-1) }])).toThrowError(/fixture-bad-seats/);
     });
 
-    it("accepts the minimum group size (2) and a team game (4) unchanged", () => {
+    it("accepts the usual group sizes unchanged: head-to-head (2) and a team game (4)", () => {
       const two = fixtureModule("fixture-two");
       const four = { ...fixtureModule("fixture-four"), metadata: { seatCount: 4, displayNameKey: "fixture.name", assetBase: "/fixture" } };
       expect(() => createGameModuleRegistry([two, four])).not.toThrow();

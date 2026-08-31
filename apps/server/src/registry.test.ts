@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { applyAction, createTeamMatch, getLegalActions, startHand } from "@hexdev/truco-engine";
 import type { Action, MatchState, PlayerId } from "@hexdev/truco-engine";
-import type { SeatAssignment } from "@hexdev/platform-contract";
+import { createGameModuleRegistry } from "@hexdev/platform-core";
+import type { ApplyResult, BotStrategy, GameModule, SeatAssignment } from "@hexdev/platform-contract";
 import { loadServerConfig } from "./config.js";
 import { buildGameRegistry } from "./registry.js";
 
@@ -159,5 +160,52 @@ describe("buildGameRegistry — every entitled id resolves to a module on THIS r
     // An id in here is one `onAuth` would happily admit and `MatchRoom`
     // could then never run — the diff names it.
     expect(entitled.filter((gameId) => registry.get(gameId) === undefined)).toEqual([]);
+  });
+});
+
+/**
+ * A one-seat module composes on THIS root, in the registration form this
+ * root actually uses.
+ *
+ * `createGameModuleRegistry` threw at composition time for `seatCount: 1`
+ * until this change, which is the single line that made a solitaire
+ * unregisterable on either composition root. The bound itself is fenced
+ * where it lives, in `platform-core/src/registry.test.ts`, together with the
+ * values that are still refused (`0`, negatives, non-integers).
+ *
+ * DECLARED RATHER THAN DRESSED UP: both roots call that same shared
+ * function, so a mutation to the bound reds this test, its
+ * `apps/mint-server` twin and the platform-core case together. Neither root
+ * copy is independent evidence of the bound (archive §6 rung 1). What this
+ * one does hold on its own is the registration FORM this root uses: the
+ * OBJECT form, with a paired `requestSystemAction`. That pairing is not
+ * decoration here — a solitaire deals itself from a system action, the same
+ * shape escoba's entry above already registers, so a one-seat module that
+ * could register but not carry a dealer would be a one-seat module that can
+ * never lay a board.
+ */
+describe("createGameModuleRegistry — the factory THIS root composes with admits a one-seat module in the object form", () => {
+  const soloModule: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
+    id: "fixture-solo",
+    metadata: { seatCount: 1, displayNameKey: "fixture.solo.name", assetBase: "/fixture-solo" },
+    configOptions: [],
+    createMatch: () => ({}),
+    applyAction: (): ApplyResult<unknown> => ({ ok: true, state: {} }),
+    getLegalActions: () => [],
+    getViewFor: () => ({}),
+    getOutcome: () => null,
+    serialize: () => ({}),
+    deserialize: (json) => json,
+    createBot: (): BotStrategy<unknown, { readonly playerId: PlayerId }> => ({ chooseAction: () => ({ playerId: "fixture-solo-actor" as PlayerId }) }),
+  };
+
+  it("registers a one-seat module paired with its own dealer, resolves it by id, and fires that dealer", () => {
+    const registry = createGameModuleRegistry([{ module: soloModule, requestSystemAction: () => ({ playerId: "fixture-solo-dealer" as PlayerId }) }]);
+
+    expect(registry.get("fixture-solo")).toBe(soloModule);
+    // `null` here would mean the pairing was dropped, the same "the
+    // REGISTRATION itself is missing" failure mode escoba's fence above
+    // documents.
+    expect(registry.getSystemAction("fixture-solo", {}, () => 0.25)).toEqual({ playerId: "fixture-solo-dealer" });
   });
 });

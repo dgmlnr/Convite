@@ -206,14 +206,27 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
   for (const { module } of entries) {
     // Fail loud at composition time, naming the module: `metadata.seatCount`
     // is consumed downstream by BOTH transports (`MatchRoom.onCreate` sizes
-    // its seats from it; `PresenceRoom` forms matchmaking groups of it, and
-    // `MatchmakingPool.tryPairSeats` rejects any seatCount that is not an
-    // integer >= 2), so an invalid value here would otherwise only surface
-    // at runtime — as an unhandled rejection out of a lobby join, on every
-    // single join attempt for that game.
-    if (!Number.isInteger(module.metadata.seatCount) || module.metadata.seatCount < 2) {
+    // its seats from it; `PresenceRoom` forms matchmaking groups of it), so
+    // an invalid value here would otherwise only surface at runtime — as an
+    // unhandled rejection out of a lobby join, on every single join attempt
+    // for that game.
+    //
+    // THE FLOOR IS 1. This guard used to refuse `seatCount: 1`, and the
+    // comment that justified it said `MatchmakingPool.tryPairSeats` "rejects
+    // any seatCount that is not an integer >= 2". That was never true:
+    // `presence.ts`'s `assertValidSeatCount` admits >= 1, and its own
+    // docstring explicitly retracts the older "0-or-1 is always a caller
+    // bug" claim — arity 1 is the degradation path's atomic claim of the
+    // head waiter, a legitimate caller the pool must admit. So the registry
+    // was refusing a group size the layer it cited already accepts.
+    //
+    // A one-seat game has nobody to be paired with, which is a reason for it
+    // to skip matchmaking entirely — never a reason to refuse to register
+    // it. What is still refused is what could never seat a match at all:
+    // zero, negatives, and non-integers.
+    if (!Number.isInteger(module.metadata.seatCount) || module.metadata.seatCount < 1) {
       throw new Error(
-        `createGameModuleRegistry: module "${module.id}" declares metadata.seatCount ${String(module.metadata.seatCount)} — must be an integer >= 2, a group that size can never form a match`,
+        `createGameModuleRegistry: module "${module.id}" declares metadata.seatCount ${String(module.metadata.seatCount)} — must be an integer >= 1, a table that size can never seat a match`,
       );
     }
   }
