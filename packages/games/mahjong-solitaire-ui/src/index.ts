@@ -19,6 +19,8 @@ export type { Chronometer, ChronometerClock, ChronometerContext } from "./chrono
 export { createChronometer, elapsedWholeSeconds, formatElapsed } from "./chronometer.js";
 export type { MahjongMatchOverProps, MahjongOutcomeInfo } from "./match-over.js";
 export { MAHJONG_DEADLOCK_MESSAGE, mahjongMatchOverMessage } from "./match-over.js";
+export type { MahjongMatchOverViewProps } from "./match-over-view.js";
+export { MATCH_OVER_STYLE_ID, buildMatchOverStylesheet, ensureMatchOverStyles, renderMahjongMatchOver } from "./match-over-view.js";
 export type { BoardExtent, BoardRoom } from "./board-geometry.js";
 export {
   BOARD_BLOCK_IN_TILE_HEIGHTS,
