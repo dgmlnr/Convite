@@ -9,7 +9,7 @@ import { groupByFamily } from "./game-families.js";
 import { groupBySection } from "./game-sections.js";
 import { renderGameList } from "./game-list.js";
 import { createLobbyScreen } from "./lobby-screen.js";
-import { createGameUiRegistry, type GameUiPayload } from "./game-ui-registry.js";
+import { createGameUiRegistry, matchRenderContextFor, type GameUiPayload, type MatchEntry } from "./game-ui-registry.js";
 import { connectToHost } from "./handshake.js";
 import {
   clearPersistedMatchSession,
@@ -142,8 +142,33 @@ function main(): void {
    * `platform-core/registry.ts`'s `GameModuleRegistry`): a registered game
    * gets its real table; anything else falls back to the smallest HONEST
    * proof the connection is live, never a broken blank screen.
+   *
+   * `entry` IS REQUIRED, AND IT IS THE ONE THING THIS FUNCTION CANNOT WORK
+   * OUT FOR ITSELF. All three call sites below reach here through the same
+   * door — two fresh joins and one resume — and the difference matters to
+   * anything that measures how long a match took: a match RESUMED after a
+   * page reload has been running for longer than this page session has, so a
+   * client-side chronometer started here would measure time since the reload.
+   * Reported as a result, that is a shorter number than the truth wearing the
+   * truth's clothes.
+   *
+   * THE OBVIOUS DERIVATION DOES NOT WORK, and it is written down here so that
+   * nobody has to rediscover it. Reading `readPersistedMatchSession(storage)`
+   * from inside cannot tell the three apart: BOTH fresh paths call
+   * `persistMatchSession` immediately before entering (see the two
+   * `onPlayVsPerson`/`onPlayVsBot` handlers), and so does the resume path, so
+   * storage answers "a session exists" in every case. The distinguishing fact
+   * exists only at the call site, so the call site is what states it.
+   *
+   * Required rather than optional-with-a-default for the same reason the
+   * union has two named values rather than being a boolean: an optional
+   * parameter is exactly how a fourth call site silently gets the wrong
+   * answer, and `"resumed"` is the wrong answer to be silent about.
+   * `match-entry.test.ts` is what checks the three literals below, because
+   * TypeScript can force the argument to be one of two strings and cannot
+   * force the resume site to pick the right one.
    */
-  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onDepart: (departure: MatchDeparture) => void): void {
+  function enterMatch(gameId: GameId, connection: MatchConnection<unknown>, onDepart: (departure: MatchDeparture) => void, entry: MatchEntry): void {
     handshake.sendLayout("fullscreen");
     app!.replaceChildren();
 
@@ -154,8 +179,8 @@ function main(): void {
       onDepart("match-over");
     };
 
-    const entry = gameUiRegistry.get(gameId);
-    if (entry === undefined) {
+    const uiEntry = gameUiRegistry.get(gameId);
+    if (uiEntry === undefined) {
       // WCR-3/PR6-T12: a real match, a real live connection -- just no
       // renderer registered for this gameId in this build. The chrome-styled
       // navigable screen (unsupported-game-view.ts) replaces the former bare
@@ -171,7 +196,10 @@ function main(): void {
       return;
     }
 
-    const render = entry.createRenderer();
+    // `Date.now` and not a wrapper: this is the composition root, and the
+    // real clock entering here is the whole reason everything downstream can
+    // take an injected one.
+    const render = uiEntry.createRenderer(matchRenderContextFor(entry, Date.now));
     // THE CONSULT'S OWN LITTLE STATE, and it lives here rather than in the
     // renderer because it is a property of the CONNECTION: the question goes
     // out on its own channel and the answer comes back addressed to this
@@ -379,7 +407,7 @@ function main(): void {
                   void joinMatchFromReservation(client, pairing.reservation)
                     .then((connection) => {
                       persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });
-                      enterMatch(gameId, connection, (departure) => returnToSelection(connection, departure));
+                      enterMatch(gameId, connection, (departure) => returnToSelection(connection, departure), "joined");
                     })
                     .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
                 });
@@ -399,7 +427,7 @@ function main(): void {
             void withFreshToken(renewToken, (token) => startBotMatch(client, { gameId, config: modality, botTier: tier, playerId, token }))
               .then((connection) => {
                 persistMatchSession(storage, { gameId, reconnectionToken: connection.reconnectionToken });
-                enterMatch(gameId, connection, (departure) => returnToSelection(connection, departure));
+                enterMatch(gameId, connection, (departure) => returnToSelection(connection, departure), "joined");
               })
               .catch(() => renderErrorWithRetry(app!, STRINGS.joinFailed, attempt));
           };
@@ -427,7 +455,7 @@ function main(): void {
     if (resumed !== undefined && pendingSession !== undefined) {
       departureGate.markDeparted();
       persistMatchSession(storage, { gameId: pendingSession.gameId, reconnectionToken: resumed.reconnectionToken });
-      enterMatch(pendingSession.gameId as GameId, resumed, (departure) => returnToSelection(resumed, departure));
+      enterMatch(pendingSession.gameId as GameId, resumed, (departure) => returnToSelection(resumed, departure), "resumed");
       return;
     }
     if (pendingSession !== undefined) clearPersistedMatchSession(storage);
