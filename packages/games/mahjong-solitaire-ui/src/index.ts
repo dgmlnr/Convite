@@ -8,6 +8,7 @@
  * why the renderer takes a plain tile array rather than a `SolitairePlayerView`:
  * the rule about who may see what belongs one tier up.
  */
+export { BOARD_STYLE_ID, buildBoardStylesheet, ensureBoardStyles } from "./board-styles.js";
 export type { BoardTiles } from "./board-identity.js";
 export { isSameBoard } from "./board-identity.js";
 export type { BoardExtent, BoardRoom } from "./board-geometry.js";
