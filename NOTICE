@@ -27,8 +27,31 @@ The full statement, and the exact recipe, are in
 packages/spanish-deck-ui/assets/LICENSE and
 packages/spanish-deck-ui/tools/process-svg-deck.mjs.
 
+--------------------------------------------------------------------------------
+
+The 42 mahjong tile faces in packages/mahjong-tile-ui/assets/tiles/ are NOT
+covered by the Apache License above either, and they carry DIFFERENT terms
+from the cards: they are a derivative of artwork by 碧海风 (Bi Hai Feng) on
+Wikimedia Commons, licensed under Creative Commons Attribution-ShareAlike
+4.0 International (CC BY-SA 4.0):
+
+    https://creativecommons.org/licenses/by-sa/4.0/
+
+One change was made to them: the vectors were rasterized to WebP at 195x279.
+Nothing was repaired or repainted — each file draws the tile's own outline
+and its symbol and leaves the interior transparent on purpose; the bone
+behind it, and the bevel, are this repository's own SVG. The full statement,
+the per-file Commons pages and the exact recipe are in
+packages/mahjong-tile-ui/assets/LICENSE,
+packages/mahjong-tile-ui/src/about.ts and
+packages/mahjong-tile-ui/tools/process-svg-tiles.mjs.
+
+TWO SETS OF ARTWORK, TWO LICENSES, AND THEY ARE NOT INTERCHANGEABLE: the
+cards are 3.0 and the tiles are 4.0, by different authors. A single
+"CC BY-SA" line covering both would be wrong about both.
+
 THE SHAREALIKE ON THOSE FILES DOES NOT REACH THE CODE. ShareAlike binds
 adaptations OF THE ARTWORK; this software is not a derivative of a playing
-card. Redistributing this repository means honouring two sets of terms side
-by side — Apache-2.0 for the code, CC BY-SA 3.0 for those 40 images — not
-one infecting the other.
+card or of a mahjong tile. Redistributing this repository means honouring
+three sets of terms side by side — Apache-2.0 for the code, CC BY-SA 3.0 for
+those 40 images, CC BY-SA 4.0 for those 42 — not one infecting the other.

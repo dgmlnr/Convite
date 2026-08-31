@@ -81,30 +81,59 @@ describe("createGameModuleRegistry", () => {
   /**
    * `metadata.seatCount` is consumed downstream by BOTH transports —
    * `MatchRoom.onCreate` sizes its seats from it, and `PresenceRoom` forms
-   * matchmaking groups of it (`MatchmakingPool.tryPairSeats` rejects any
-   * seatCount that is not an integer >= 2) — so an invalid value would
-   * otherwise only surface at runtime, as an unhandled rejection out of
-   * `onJoin` on EVERY join attempt for that game. Fail loud at composition
-   * time instead, naming the offending module (the same boot-guard
-   * discipline as `PresenceRoom.onCreate`'s unknown-module throw).
+   * matchmaking groups of it — so an invalid value would otherwise only
+   * surface at runtime, as an unhandled rejection out of `onJoin` on EVERY
+   * join attempt for that game. Fail loud at composition time instead,
+   * naming the offending module (the same boot-guard discipline as
+   * `PresenceRoom.onCreate`'s unknown-module throw).
+   *
+   * THE FLOOR IS 1, AND IT ALWAYS SHOULD HAVE BEEN. This block used to
+   * assert that `seatCount: 1` throws, on a rationale — repeated verbatim in
+   * the guard's own comment — that `MatchmakingPool.tryPairSeats` "rejects
+   * any seatCount that is not an integer >= 2". It does not:
+   * `presence.ts`'s `assertValidSeatCount` admits >= 1, and its docstring
+   * explicitly retracts the older "0-or-1 is always a caller bug" wording,
+   * because arity 1 is the degradation path's atomic claim of the head
+   * waiter. The registry was refusing a group size the layer it cited
+   * already accepts.
+   *
+   * A one-seat game has nobody to be paired with. That is a reason for it to
+   * skip matchmaking, never a reason to refuse to register it.
+   *
+   * The old `seatCount: 1` rejection is REPLACED by the acceptance case
+   * below, in the same block, rather than quietly deleted — the behaviour
+   * change is the point of this diff and it should be readable in it. The
+   * three genuinely impossible values keep one `it` each, so a mutation to
+   * either half of the guard reds exactly the case it broke.
    */
-  describe("rejects a module whose metadata.seatCount could never form a match — at registration, not at first join", () => {
+  describe("metadata.seatCount is an integer >= 1, checked at registration rather than at first join", () => {
     function moduleWithSeatCount(seatCount: number): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
       const module = fixtureModule("fixture-bad-seats");
       return { ...module, metadata: { ...module.metadata, seatCount } };
     }
 
-    it("throws at registry creation for seatCount 1, 0, and a non-integer, naming the module id", () => {
-      for (const seatCount of [1, 0, 2.5]) {
-        expect(() => createGameModuleRegistry([moduleWithSeatCount(seatCount)])).toThrowError(/fixture-bad-seats/);
-      }
+    it("accepts a one-seat module and resolves it by id — the case this guard used to refuse", () => {
+      const solo = moduleWithSeatCount(1);
+      expect(createGameModuleRegistry([solo]).get("fixture-bad-seats")).toBe(solo);
+    });
+
+    it("throws for seatCount 0, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([moduleWithSeatCount(0)])).toThrowError(/fixture-bad-seats.*\b0\b/);
+    });
+
+    it("throws for a negative seatCount, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([moduleWithSeatCount(-1)])).toThrowError(/fixture-bad-seats.*-1/);
+    });
+
+    it("throws for a non-integer seatCount, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([moduleWithSeatCount(1.5)])).toThrowError(/fixture-bad-seats.*1\.5/);
     });
 
     it("validates the wrapped registration form ({ module, ... }) identically to a bare module", () => {
-      expect(() => createGameModuleRegistry([{ module: moduleWithSeatCount(1) }])).toThrowError(/fixture-bad-seats/);
+      expect(() => createGameModuleRegistry([{ module: moduleWithSeatCount(-1) }])).toThrowError(/fixture-bad-seats/);
     });
 
-    it("accepts the minimum group size (2) and a team game (4) unchanged", () => {
+    it("accepts the usual group sizes unchanged: head-to-head (2) and a team game (4)", () => {
       const two = fixtureModule("fixture-two");
       const four = { ...fixtureModule("fixture-four"), metadata: { seatCount: 4, displayNameKey: "fixture.name", assetBase: "/fixture" } };
       expect(() => createGameModuleRegistry([two, four])).not.toThrow();
@@ -193,6 +222,71 @@ describe("createGameModuleRegistry", () => {
       const registry = createGameModuleRegistry([{ module, getConsultAsk }]);
       expect(registry.getConsultAsk("fixture-a", { turn: 1 }, "p" as PlayerId, "envido")).toEqual({ partnerId: "partner-x", options: ["quiero", "no-quiero"] });
       expect(seen).toEqual([{ about: "envido" }]);
+    });
+  });
+
+  /**
+   * "A player walked away from this seat for good — what does that mean?" is a
+   * RULES question, and this is where a game gets to answer it. The transport
+   * asks; it never decides.
+   *
+   * The three fail-closed cases below are not filler: they are what makes the
+   * answer OPTIONAL, and therefore what keeps every game that has no opinion
+   * (truco, escoba: an absent player is replaced by a bot and the table plays
+   * on) working with no registration change at all. They are also the positive
+   * controls for the fourth — without them, "the provider's answer came back"
+   * and "something came back" are the same observation.
+   */
+  describe("getAbandonedSeatAction — paired with a module, the same fail-closed shape as every other hook here", () => {
+    const abandon = (_state: unknown, playerId: PlayerId) => ({ playerId });
+
+    it("returns null for a gameId nothing registered", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getAbandonedSeatAction("does-not-exist", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("returns null for a bare GameModule registration — no provider supplied, so a bot takeover stays the answer", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getAbandonedSeatAction("fixture-a", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("returns null when the paired provider itself declines for this state", () => {
+      const module = fixtureModule("fixture-a");
+      const registry = createGameModuleRegistry([{ module, getAbandonedSeatAction: () => null }]);
+      expect(registry.getAbandonedSeatAction("fixture-a", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    /**
+     * THE ONLY CASE THAT CAN TELL A LOOKUP FROM A `[0]`. Every other test here
+     * registers exactly one module, so "found it by id" and "took the only
+     * entry there is" are the same observation — measured: a version ignoring
+     * its `gameId` and answering from the first registration passes all four
+     * of them. Two modules, and the one being ASKED ABOUT is the one with no
+     * provider.
+     */
+    it("answers for the game it was ASKED about, not for whichever registration happens to have a provider", () => {
+      const registry = createGameModuleRegistry([{ module: fixtureModule("fixture-a"), getAbandonedSeatAction: abandon }, fixtureModule("fixture-b")]);
+      expect(registry.getAbandonedSeatAction("fixture-b", {}, "p" as PlayerId)).toBeNull();
+    });
+
+    it("delegates to the paired provider, forwarding BOTH the state and the seat's own playerId", () => {
+      const module = fixtureModule("fixture-a");
+      const seen: { state: unknown; playerId: PlayerId }[] = [];
+      const registry = createGameModuleRegistry([
+        {
+          module,
+          getAbandonedSeatAction: (state: unknown, playerId: PlayerId) => {
+            seen.push({ state, playerId });
+            return abandon(state, playerId);
+          },
+        },
+      ]);
+
+      // Both arguments asserted, not just the return: a provider handed the
+      // wrong seat would answer for whoever it was given, and a lookup that
+      // ignores its arguments answers identically for every one of them.
+      expect(registry.getAbandonedSeatAction("fixture-a", { turn: 1 }, "quien-se-fue" as PlayerId)).toEqual({ playerId: "quien-se-fue" });
+      expect(seen).toEqual([{ state: { turn: 1 }, playerId: "quien-se-fue" }]);
     });
   });
 });

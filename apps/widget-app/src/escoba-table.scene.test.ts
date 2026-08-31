@@ -4,7 +4,7 @@ import { page, userEvent } from "vitest/browser";
 import { applyAction, buildDeck, cardId, deal, getLegalActions, getViewFor } from "@hexdev/escoba-engine";
 import type { Card, MatchState, Player, PlayerId, Team, TeamId } from "@hexdev/escoba-engine";
 import type { GameId } from "@hexdev/platform-contract";
-import { createGameUiRegistry } from "./game-ui-registry.js";
+import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 import type { GameUiEntry } from "./game-ui-registry.js";
 
 /**
@@ -402,7 +402,7 @@ function mountedFullscreen(): HTMLElement {
 function escobaRenderer(gameId: GameId): ReturnType<GameUiEntry["createRenderer"]> {
   const entry = createGameUiRegistry().get(gameId);
   if (entry === undefined) throw new Error(`scene fixture setup: no renderer registered for ${gameId}`);
-  return entry.createRenderer();
+  return entry.createRenderer(matchRenderContextFor("joined", Date.now));
 }
 
 /** One screen, drawn exactly the way `main.ts` draws one: the registry's

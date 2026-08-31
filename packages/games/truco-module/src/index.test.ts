@@ -82,7 +82,10 @@ describe("truco-module: createBot wires REAL tiers (PR9's placeholder is gone)",
     expect(legal.some((action) => action.type === "call-truco")).toBe(true);
     expect(legal.some((action) => action.type === "play-card")).toBe(true);
     const view = trucoModule.getViewFor(state, playerBId);
-    const bot = trucoModule.createBot("easy");
+    // `createBot` is optional on the port now (a solitaire has no opponent).
+    // Asserting it here would duplicate the fence that owns it: conformance
+    // demands a bot of every module declaring two or more seats, by name.
+    const bot = trucoModule.createBot!("easy");
     const chosen = await bot.chooseAction(view, legal, 50);
     expect(chosen.type).toBe("play-card");
   });
@@ -93,7 +96,7 @@ describe("truco-module: createBot wires REAL tiers (PR9's placeholder is gone)",
       const state = dealtFixtureState();
       const legal = trucoModule.getLegalActions(state, playerBId);
       const view = trucoModule.getViewFor(state, playerBId);
-      const bot = trucoModule.createBot("easy");
+      const bot = trucoModule.createBot!("easy");
       let resolved = false;
       void Promise.resolve(bot.chooseAction(view, legal, 50)).then(() => {
         resolved = true;
@@ -120,7 +123,7 @@ describe("truco-module: createBot wires REAL tiers (PR9's placeholder is gone)",
     const state = dealtFixtureState();
     const legal = trucoModule.getLegalActions(state, playerBId);
     const view = trucoModule.getViewFor(state, playerBId);
-    const bot = trucoModule.createBot("hard");
+    const bot = trucoModule.createBot!("hard");
     const chosen = await bot.chooseAction(view, legal, 50);
     expect(legal).toContainEqual(chosen);
   });

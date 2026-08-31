@@ -1,4 +1,4 @@
-export type { GameModuleRegistration, GameModuleRegistry, NonBlockingActionClassifier, ConsultAdviceProvider, ConsultAskProvider, PaidQuestionClassifier, SystemActionRequester } from "./registry.js";
+export type { AbandonedSeatActionProvider, GameModuleRegistration, GameModuleRegistry, NonBlockingActionClassifier, ConsultAdviceProvider, ConsultAskProvider, PaidQuestionClassifier, SystemActionRequester } from "./registry.js";
 export { createGameModuleRegistry } from "./registry.js";
 export type { CatalogGrouping } from "./catalog-grouping.js";
 export { catalogGroupingOf } from "./catalog-grouping.js";

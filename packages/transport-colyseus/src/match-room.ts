@@ -69,7 +69,15 @@ export interface MatchRoomCreateOptions {
    * filled — defaults to 1 (single-player vs bot, unchanged 1v1 behavior).
    * A 2v2 "play vs bots" entry point passes 1 here too (3 bot seats); a
    * future "2 real players vs 2 bots" entry point would pass 2. Only
-   * consulted when `botTier` is also present. */
+   * consulted when `botTier` is also present.
+   *
+   * VALIDATED IN `onCreate` as an integer `1 <= n <= metadata.seatCount`,
+   * and refused before any controller exists — this is not one of the four
+   * keys `createMatchServer`'s `defaultOptions` merges OVER the client's
+   * (`server.ts`), so it is whatever the room request carried.
+   * `degradeLongWaits`, the only server-side producer, returns
+   * early for `seatCount <= 2` and otherwise passes `1 <= k < seatCount`,
+   * so every value it can produce is already inside that range. */
   readonly humanSeatsNeeded?: number;
   /** Reconnection window (spec: "Disconnect, Reconnection Window, and Bot
    * Takeover"; design open question resolved to 30s, obs 2919/2921). */
@@ -324,7 +332,39 @@ export class MatchRoom extends Room {
     this.takeoverTier = options.takeoverTier ?? DEFAULT_TAKEOVER_TIER;
     this.botTier = options.botTier ?? this.takeoverTier;
     this.turnTimeoutSeconds = options.turnTimeoutSeconds ?? DEFAULT_TURN_TIMEOUT_SECONDS;
-    if (options.botTier !== undefined) {
+    // Fail loud at room creation, before a single controller exists, the same
+    // discipline as the unknown-gameId throw above and as
+    // `createGameModuleRegistry`'s own `seatCount` guard.
+    //
+    // WHAT AN UNVALIDATED VALUE COSTS: `humanSeatsNeeded` is not one of the
+    // four keys `createMatchServer`'s `defaultOptions` merges OVER the
+    // client's (`server.ts`), so it arrives from whoever asked for the
+    // room. At 0 the loop below fills EVERY seat with a bot and
+    // `maxClients` lands on 0 — a room that holds a whole match between bots
+    // and that no client can ever join. Above `seatCount` it silently
+    // reserves seats the module does not have. A non-integer is worse than
+    // either: `seat >= 2.5` is a perfectly good loop condition, so the room
+    // starts on a seat split nobody wrote down.
+    //
+    // CHECKED EVEN WHEN `botTier` IS ABSENT, deliberately. The value is only
+    // CONSULTED below, inside the bot branch — but a caller that sends a
+    // nonsense number is wrong about this room either way, and a guard that
+    // only fires in one branch would be a guard whose coverage depends on an
+    // unrelated option. Refusing on shape costs nothing and cannot drift.
+    if (options.humanSeatsNeeded !== undefined && (!Number.isInteger(options.humanSeatsNeeded) || options.humanSeatsNeeded < 1 || options.humanSeatsNeeded > module.metadata.seatCount)) {
+      throw new Error(
+        `MatchRoom: humanSeatsNeeded ${String(options.humanSeatsNeeded)} is out of range for gameId "${options.gameId}" — must be an integer between 1 and metadata.seatCount (${String(module.metadata.seatCount)})`,
+      );
+    }
+    // `createBot` is OPTIONAL on the port, and its absence is what a game
+    // with no opponent looks like from here. Nothing is pre-seated for such a
+    // module and NOTHING THROWS: `botTier` is a request a client can send for
+    // any room, and answering "this game has no opponent to give you" by
+    // refusing the room would be refusing the game itself. The room simply
+    // opens with every seat left for a person — for a one-seat module that is
+    // `maxClients` 1, which is the whole of single-player.
+    const createBot = module.createBot;
+    if (options.botTier !== undefined && createBot !== undefined) {
       // Unguessable on purpose: `/embed?p=` is client-suppliable (design
       // §7), so a fixed or predictable bot id would be an identity a client
       // could pre-claim a token for. A fresh random UUID, generated only
@@ -337,7 +377,7 @@ export class MatchRoom extends Room {
       // seats 1, 2, and 3, leaving only seat 0 for the real player.
       const humanSeatsNeeded = options.humanSeatsNeeded ?? 1;
       for (let seat = module.metadata.seatCount - 1; seat >= humanSeatsNeeded; seat -= 1) {
-        this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: module.createBot(options.botTier) });
+        this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: createBot(options.botTier) });
       }
     }
     this.maxClients = module.metadata.seatCount - this.controllers.size;
@@ -612,11 +652,19 @@ export class MatchRoom extends Room {
    * `allowReconnection` is ever reached. No "who quit" bookkeeping to keep
    * in step with the controllers, and no second path through the window.
    *
-   * Deliberately NOT a forfeit. Bot takeover is what this room already does
-   * for an absent human, and it is the outcome that costs the OTHER players
-   * least — a resignation would end their match too, on one person's
-   * decision. Whether truco should also offer a real resignation is a rules
-   * question for the module, not a transport one.
+   * Deliberately NOT a forfeit DECIDED HERE. Bot takeover is what this room
+   * already does for an absent human, and it is the outcome that costs the
+   * OTHER players least — a resignation would end their match too, on one
+   * person's decision. Whether truco should also offer a real resignation is a
+   * rules question for the module, not a transport one — and `takeOverSeat`
+   * below is now where that question gets ASKED. A game that answers it ends
+   * the match; a game that does not gets the bot, unchanged.
+   *
+   * ONE CONSEQUENCE WORTH KNOWING before changing either: a quit that the
+   * module ANSWERS leaves the seat's controller human, so unlike the bot path
+   * above the closing socket does find a seat and does open a window. It costs
+   * nothing — the expiry re-enters `takeOverSeat`, which finds a match
+   * `getOutcome` already calls over and does nothing at all.
    *
    * Public for the same reason `handleAction` is: `@colyseus/testing` pulls
    * a subdependency this workspace's supply-chain policy blocks, so the
@@ -628,11 +676,47 @@ export class MatchRoom extends Room {
     this.takeOverSeat(seat);
   }
 
+  /**
+   * THE MODULE IS ASKED FIRST, and the order is the whole decision.
+   *
+   * Handing the seat to a bot is this room's own answer to "somebody is gone",
+   * and it is a good one for a game with an opponent: the table plays on. It
+   * is the wrong answer for a game without one, where the same line turns a
+   * solitaire into a headless auto-solver — a board being cleared by a bot
+   * that nobody will ever see, in a match nobody is playing.
+   *
+   * `handleQuit`'s own docstring above is what licenses the seam rather than a
+   * new rule invented here: quitting is deliberately not a forfeit in this
+   * room, because "whether truco should also offer a real resignation is a
+   * rules question FOR THE MODULE, not a transport one". So the question is
+   * asked of the module, through the registry pairing every other
+   * game-specific behaviour already uses, and the bot takeover is what happens
+   * when it has no answer.
+   *
+   * DELIBERATELY NOT `seatCount === 1`, and not `createBot === undefined`
+   * either. Both are transport-side guesses at a rules question: the first
+   * conflates "has one seat" with "ends when its player leaves", and the
+   * second says a game may only end this way if it has nobody to play it. A
+   * two-seat game that wants a real resignation registers the provider and
+   * gets one; a one-seat game that wants a bot to finish the board can still
+   * have that. The transport asks and applies; it never decides.
+   */
   private takeOverSeat(seat: number): void {
     const module = this.module;
     const controller = this.controllers.get(seat);
     if (module === undefined || controller === undefined || controller.kind !== "human") return;
-    this.controllers.set(seat, { kind: "bot", playerId: controller.playerId, strategy: module.createBot(this.takeoverTier) });
+    if (this.endMatchOnAbandonedSeat(controller.playerId)) return;
+    // THE ONE CASE STILL LEFT OPEN, and it is named rather than hidden: a
+    // module with no bot AND no answer of its own leaves the seat exactly as
+    // it was — the match sits there with nobody in it. Nothing registers that
+    // shape today, and it is now a module's own omission rather than something
+    // this room decides on its behalf. What would close it for good is a
+    // composition-time guard in `createGameModuleRegistry` ("a module with no
+    // `createBot` must say what an abandoned seat means"), which is a separate
+    // change with its own fence.
+    const createBot = module.createBot;
+    if (createBot === undefined) return;
+    this.controllers.set(seat, { kind: "bot", playerId: controller.playerId, strategy: createBot(this.takeoverTier) });
     // Explicit hook (design D3): the PARTNER's seat is taken over — resolved
     // right away, marked `from: "fallback"` (never "partner": that would
     // hide that the human is gone), through the SAME queued path the cap
@@ -641,6 +725,54 @@ export class MatchRoom extends Room {
     const pending = this.pendingConsult;
     if (pending !== null && pending.partnerSeat === seat) this.queueConsultFallback(pending.id);
     void this.advance();
+  }
+
+  /**
+   * Asks the game what a seat left for good means, applies whatever it is
+   * handed through the module's OWN `applyAction`, and then finds out what
+   * happened by asking `getOutcome`.
+   *
+   * TERMINALITY IS DERIVED, NEVER STORED, and never inferred from the fact
+   * that a provider answered at all. `getOutcome` is already this room's
+   * single authority on "has this match ended" — `runAdvanceOnce`,
+   * `armTurnTimer` and `playOneBotActionFor` each ask it rather than remember
+   * anything — and reading it here is what keeps a module's answer honest: a
+   * game may legitimately answer "this player concedes the current hand" and
+   * mean the match should carry on, in which case the seat still needs
+   * somebody in it and the ordinary bot takeover is still right.
+   *
+   * Three separate ways to come away with `false`, all of them meaning "do
+   * what you would have done":
+   *   - the game registered no provider (truco, escoba: unchanged);
+   *   - the provider declined for this state;
+   *   - the answer was ILLEGAL for this state, which is no answer at all. A
+   *     misbehaving provider must not strand a seat, the same contract
+   *     `runAdvanceOnce` already holds for `requestSystemAction`.
+   *
+   * @returns true when the match is over — either it already was, or the
+   * module's answer just ended it. An already-decided match returns true
+   * WITHOUT asking: there is nothing left to abandon, and nothing a bot could
+   * usefully be given. That is what makes the second entry into this seam a
+   * no-op — a quit ends the match, the socket closes, `onLeave` opens its
+   * window, and the expiry finds a match that is already over.
+   */
+  private endMatchOnAbandonedSeat(playerId: PlayerId): boolean {
+    const module = this.module;
+    const registry = this.registry;
+    const gameId = this.gameId;
+    if (module === undefined || registry === undefined || gameId === undefined || this.matchState === undefined) return false;
+    if (module.getOutcome(this.matchState) !== null) return true;
+    const abandoned = registry.getAbandonedSeatAction(gameId, this.matchState, playerId);
+    if (abandoned === null) return false;
+    const result = module.applyAction(this.matchState, abandoned);
+    if (!result.ok) return false;
+    this.matchState = result.state;
+    // The state changed, so every client owes a fresh view — including the one
+    // that just quit, which is still connected at that instant and is exactly
+    // who needs to be told the match ended. `broadcastViews` also re-enters
+    // `armTurnTimer`, which is what clears the clock of a game that HAD one.
+    this.broadcastViews();
+    return module.getOutcome(this.matchState) !== null;
   }
 
   /**
@@ -1262,12 +1394,39 @@ export class MatchRoom extends Room {
    * `runAdvanceOnce` has already driven every bot that owed a blocking
    * action, so a bot seat structurally cannot be the seat on the clock. Bots
    * act immediately; there is nothing to wait for.
+   *
+   * A GAME WITH NO BOT GETS NO CLOCK AT ALL, and that is DERIVED here rather
+   * than declared anywhere. An expired turn has exactly one effect in this
+   * room — `playOneBotActionFor` — so for a module with no `createBot` the
+   * clock would count down to a silence, take the turn away from the only
+   * person at the table and hand it to nobody. `turnDeadline` stays `null`,
+   * which the client already reads as "nothing is being timed" — its own
+   * declaration says exactly that of `null`, and "renders an untimed table"
+   * of a payload missing the field entirely (`game-ui-registry.ts`). So
+   * nothing about this reaches a client that did not already handle it: no
+   * wire change, no new field, no migration.
+   *
+   * IT HAS A SECOND EFFECT, AND IT IS RECORDED HERE RATHER THAN FOUND LATER:
+   * clock off means CONSULTS OFF for that game. `openConsult` bounds its
+   * window by `this.turnDeadline` and refuses outright when there is none
+   * rather than inventing an unbounded one — so a game that arms no clock can
+   * never open a consult. For a game with no opponent that is the right
+   * answer arrived at honestly (a consult asks a TEAMMATE, and there is
+   * none), but it is a consequence of this method, not of that one, and
+   * whoever changes either should be able to see it from here.
    */
   private armTurnTimer(): void {
     const module = this.module;
     // No match, or a match already decided — a finished match must never keep
     // a clock running, and `getOutcome` is the module's own authority on that.
     if (module === undefined || this.matchState === undefined || module.getOutcome(this.matchState) !== null) {
+      this.clearTurnTimer();
+      return;
+    }
+    // No bot, no clock — see the derivation above. `clearTurnTimer` rather
+    // than a bare `return`, so a module that somehow lost its bot mid-match
+    // does not leave a live timer behind.
+    if (module.createBot === undefined) {
       this.clearTurnTimer();
       return;
     }
@@ -1389,9 +1548,16 @@ export class MatchRoom extends Room {
       // the match may have ended, or the player may have acted after all.
       if (controller === undefined || controller.kind !== "human") return;
       if (module.getOutcome(this.matchState) !== null) return;
+      // Unreachable by derivation, and kept anyway. `armTurnTimer` refuses to
+      // arm a clock for a module with no `createBot`, so no deadline can
+      // expire and this method has no caller for such a game — but the two
+      // facts live 100 lines apart, and a guard that depends on a distant
+      // invariant staying true is a guard worth spending one line on.
+      const createBot = module.createBot;
+      if (createBot === undefined) return;
       const blocking = module.getLegalActions(this.matchState, controller.playerId).filter((action) => !registry.isNonBlockingAction(gameId, action));
       if (blocking.length === 0) return;
-      this.timeoutBot ??= module.createBot(this.takeoverTier);
+      this.timeoutBot ??= createBot(this.takeoverTier);
       const view = module.getViewFor(this.matchState, controller.playerId);
       const action = await this.timeoutBot.chooseAction(view, blocking, BOT_BUDGET_MS);
       const result = module.applyAction(this.matchState, action);
