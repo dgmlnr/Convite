@@ -236,10 +236,13 @@ quien contribuye como a quien lo usa. Y no una licencia Creative Commons, aunque
 una: **CC no está pensada para software** —lo dice la propia Creative Commons— porque no
 contempla código fuente ni patentes.
 
-**Con una excepción, y no es menor**: los 40 archivos de
+**Con dos excepciones, y no son menores**: los 40 archivos de
 `packages/spanish-deck-ui/assets/fronts/` son obra derivada y llevan **CC BY-SA 3.0**, no
-Apache. Están licenciados aparte en `packages/spanish-deck-ui/assets/LICENSE`.
+Apache. Están licenciados aparte en `packages/spanish-deck-ui/assets/LICENSE`. Y las 42
+caras de `packages/mahjong-tile-ui/assets/tiles/` son obra derivada de 碧海风 y llevan
+**CC BY-SA 4.0** —otro autor y otra versión de la licencia—, aparte en
+`packages/mahjong-tile-ui/assets/LICENSE`.
 
 El ShareAlike de esas imágenes **no alcanza al código**: obliga sobre adaptaciones *del
-arte*, y este software no es obra derivada de un naipe. Redistribuir el repo es honrar dos
-juegos de términos en paralelo, no uno contagiando al otro.
+arte*, y este software no es obra derivada de un naipe ni de una ficha. Redistribuir el repo
+es honrar tres juegos de términos en paralelo, no uno contagiando al otro.
