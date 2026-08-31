@@ -19,6 +19,12 @@
       "path": "../../packages/spanish-deck-ui"
     },
     {
+      "path": "../../packages/mahjong-tile-ui"
+    },
+    {
+      "path": "../../packages/games/mahjong-solitaire-ui"
+    },
+    {
       "path": "../../packages/transport-colyseus-client"
     },
     {
