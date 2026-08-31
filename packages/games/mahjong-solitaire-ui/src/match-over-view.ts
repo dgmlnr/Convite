@@ -56,6 +56,16 @@ export const MATCH_OVER_STYLE_ID = "hexdev-mahjong-match-over-styles";
  */
 export function buildMatchOverStylesheet(): string {
   return `
+/* THE POSITIONED ANCESTOR THE PANEL HANGS OFF, and it belongs here for the
+   same reason \`escoba-ui\`'s own overlay sheet declares its match wrapper:
+   this is the first thing that needs to anchor an absolutely-positioned
+   child over that box, so this is where the rule that makes it possible
+   goes. The class is the one \`apps/widget-app\`'s registry entry sets on the
+   match container. */
+.hexdev-mahjong-match {
+  position: relative;
+}
+
 .hexdev-mahjong-match-over:empty {
   display: none;
 }
