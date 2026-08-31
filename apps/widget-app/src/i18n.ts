@@ -22,6 +22,12 @@ const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   // purpose (design §D6/§D7, slice M finalizes the card titles from this).
   "games.escoba.name": "Escoba de 15",
   "games.escoba2v2.name": "Escoba de 15",
+  // The game's own proper name, and it carries its format inside it because
+  // that is what the thing is CALLED — "mahjong solitario" is one name, not
+  // "mahjong" narrowed by a seat count. It is the only entry of its family,
+  // so unlike truco's and escoba's pairs there is no sibling for it to
+  // differ from.
+  "games.mahjongSolitario.name": "Mahjong Solitario",
 };
 
 const CONFIG_LABELS: Readonly<Record<string, string>> = {
@@ -64,6 +70,17 @@ const MODALITY_SUMMARY: Readonly<Record<GameId, string>> = {
   // "21" (see `escoba/decisiones-de-ui-del-lobby`).
   "escoba-de-15": "Partida a 30",
   "escoba-de-15-2v2": "Partida a 30",
+  /* The solitaire's `configOptions` is empty too — the layout is fixed and
+   * difficulty is the generator's own choice policy, not a lobby knob
+   * (`mahjong-solitaire-module`'s own words) — so it has nothing for
+   * `describeModality` to compute and reaches this table for the same
+   * platform reason escoba does.
+   *
+   * The size of the wall, because it is the one fact that tells a player
+   * what they are sitting down to: 144 tiles is a full board and a real
+   * commitment, and it is the number that is true of every deal this game
+   * ever hands out. */
+  "mahjong-solitario": "Tablero de 144 fichas",
 };
 
 export const STRINGS = {
@@ -103,6 +120,13 @@ export const STRINGS = {
    * belongs in the one Spanish string table with the rest of the copy.
    */
   sectionCartas: "Cartas",
+  /** The shelf the solitaire sits on, and an ordinary common noun for the
+   * same reason "Cartas" is one — a second language would translate both,
+   * where "Escoba de 15" would survive untranslated. "Fichas" and not
+   * "Mahjong": the shelf is what the games on it are PLAYED WITH, so a
+   * future dominoes or a future backgammon belongs on this same row without
+   * the row having to be renamed. */
+  sectionFichas: "Fichas",
   backToGames: "Todos los juegos",
   brand: "Convite",
   /**
@@ -131,7 +155,26 @@ export const STRINGS = {
    * `assets/LICENSE` for whoever redistributes. Embedding it here would have
    * put an English sentence fragment inside a Spanish one for no gain the
    * license asks for. */
-  aboutCredit: (author: string): string => `Arte de las cartas: ${author}. Se le hicieron cambios.`,
+  aboutCredit: (author: string, subject?: string): string =>
+    subject === undefined ? `Arte: ${author}. Se le hicieron cambios.` : `Arte de ${subject}: ${author}. Se le hicieron cambios.`,
+  /**
+   * WHAT A CREDIT IS ART OF, and the two nouns exist because this widget now
+   * owes TWO obligations to two different artists for two different things.
+   *
+   * The sentence above used to read "Arte de las cartas" with the noun baked
+   * in, which was true while every credit on every screen was the Spanish
+   * deck. The moment a second artwork landed, that line would have printed
+   * "Arte de las cartas: 碧海风" over a set of mahjong tiles — a FALSE
+   * STATEMENT OF FACT inside a sentence a license requires, which is a worse
+   * failure than a clumsy one.
+   *
+   * The noun is supplied by the GAME (`GameFamilyUi.credits`), never derived
+   * here from the author: `AssetCredit`'s own docblock keeps the shell
+   * ignorant of what any specific game draws, and a `if (author ===
+   * "Basquetteur")` would be exactly that knowledge wearing a lookup.
+   */
+  creditSubjectCards: "las cartas",
+  creditSubjectTiles: "las fichas",
   aboutLicense: (licenseName: string): string => `Licencia ${licenseName}`,
   aboutSource: "Ver la fuente",
   loadingCatalog: "Cargando…",
@@ -157,6 +200,19 @@ export const STRINGS = {
   modalitySummary: (gameId: GameId): string | undefined => MODALITY_SUMMARY[gameId],
   playVsPerson: "Jugar contra otra persona",
   /**
+   * THE WHOLE CONTROL A ONE-SEAT GAME OFFERS, and it names no opponent
+   * because the game has none.
+   *
+   * NOT `playVsPerson` WITH WORDS TAKEN OFF. `game-screen.ts` renders three
+   * opponent affordances — a person, and three machine tiers — for every
+   * modality of every game, and the zero-counter rule makes the machine the
+   * PROMINENT one. On a solitaire that would read "Jugar contra la máquina:
+   * Fácil / Normal / Difícil" as the headline offer of a game with one
+   * seat: not merely wrong copy, an offer the platform cannot honour, since
+   * the module ships no `createBot` at all.
+   */
+  playSolo: "Jugar",
+  /**
    * What a format IS, in one line, keyed off the only fact the platform
    * actually gives us about it: how many seats it has. Not a description the
    * game wrote — `seatCount` is `GameMetadata`, so this stays true for any
@@ -167,7 +223,18 @@ export const STRINGS = {
    * compañero" is the difference between choosing and guessing.
    */
   formatDescription: (seatCount: number): string | undefined =>
-    seatCount === 2 ? "Vos contra un rival." : seatCount === 4 ? "En parejas: vos y un compañero contra dos." : undefined,
+    seatCount === 1
+      ? // Deliberately the two-seat line with the rival replaced rather than
+        // removed, because a solitaire is not "the same game with nobody
+        // else in it": something IS on the other side of it. Saying so is
+        // also the shortest honest answer to the question a player asks
+        // when a card offers no opponent at all.
+        "Vos contra el tablero."
+      : seatCount === 2
+        ? "Vos contra un rival."
+        : seatCount === 4
+          ? "En parejas: vos y un compañero contra dos."
+          : undefined,
   /* WHAT A CARD IS, once the hero has already said WHICH GAME.
    *
    * The hero reads "Truco Argentino" and the first card's heading read "Truco
@@ -180,7 +247,13 @@ export const STRINGS = {
    * undefined-for-anything-else shape as formatDescription above, so a seat
    * count nobody has written a line for falls back to the game's name. */
   formatName: (seatCount: number): string | undefined =>
-    seatCount === 2 ? "Mano a mano" : seatCount === 4 ? "En parejas" : undefined,
+    // "Solitario" is the ordinary Spanish word for a one-player format, the
+    // same register "mano a mano" and "en parejas" are in — a phrase a
+    // player says rather than a seat count spelled out. It repeats a word
+    // the game's own name already carries, which is the price of naming the
+    // FORMAT here instead of the game; the alternative ("Un jugador") names
+    // an arithmetic fact nobody says out loud.
+    seatCount === 1 ? "Solitario" : seatCount === 2 ? "Mano a mano" : seatCount === 4 ? "En parejas" : undefined,
   /** The label over the modality selector — what the buttons under it choose. */
   modalityLegend: "Modo",
   playVsBot: "Jugar contra la máquina",

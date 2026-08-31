@@ -14,6 +14,26 @@
  * it cannot learn what a legal move is, and a game cannot smuggle a rule in
  * through the art.
  */
+export type { TileAttribution } from "./about.js";
+export { TILE_ART_SOURCES, TILE_ATTRIBUTION, commonsFilePage } from "./about.js";
 export type { Dragon, Flower, Season, Suit, SuitRank, Tile, TileId, Wind } from "./tile.js";
 export { DRAGONS, FLOWERS, SEASONS, SUITS, SUIT_RANKS, WINDS, tileId } from "./tile.js";
+export {
+  TILE_ART_HEIGHT,
+  TILE_ART_RATIO,
+  TILE_ART_WIDTH,
+  TILE_BEVEL,
+  TILE_FRAME,
+  TILE_HEIGHT,
+  TILE_MAX_INLINE_SIZE,
+  TILE_RADIUS,
+  TILE_RASTER_OVERSAMPLE,
+  TILE_VIEWBOX,
+  TILE_WIDTH,
+} from "./geometry.js";
+export type { TileFrontImage } from "./front-image.js";
+export { TILE_FRONT_HEIGHT, TILE_FRONT_WIDTH, getTileArt, getTileFrontUrl, tileLabel } from "./front-image.js";
+export { TILE_THEME_DEFAULTS } from "./theme-tokens.js";
+export type { TileThemeToken } from "./theme-tokens.js";
+export { tileBodySvg } from "./tile-body.js";
 export { ALL_TILE_FACES, TILE_FRONT_FILENAMES } from "./tiles.js";
