@@ -26,8 +26,23 @@ export interface MahjongBoardCallbacks {
 
 /** Draw this board into this container. `null` is "no board has been dealt
  * yet" — the module's own distinction, and not the same thing as an empty
- * board, which is a board somebody finished. */
-export type MahjongBoardRenderer = (container: HTMLElement, tiles: BoardTiles | null) => void;
+ * board, which is a board somebody finished.
+ *
+ * `selected` is the layout position of the tile the player has pressed once
+ * and not yet paired, or `null`/absent for none. IT IS A PARAMETER RATHER
+ * THAN STATE THIS RENDERER KEEPS, because a selection is not a fact about the
+ * board: it is a fact about a move being made, it dies with the move, and it
+ * has to die with a new deal. `pair-selection.ts` decides what it is; this
+ * only draws it.
+ *
+ * OPTIONAL, unlike `createRenderer`'s own `MatchRenderContext` one tier up,
+ * and the difference is what a missing argument would MEAN. There, an absent
+ * provenance lets a caller silently report a resumed match's time as a
+ * result — a wrong answer wearing a right one. Here, absent means "nothing is
+ * selected", which is both the honest default and a state the board spends
+ * most of its life in; a caller who forgets it draws a board that never
+ * lights up, which the browser fences in this package catch by pressing. */
+export type MahjongBoardRenderer = (container: HTMLElement, tiles: BoardTiles | null, selected?: number | null) => void;
 
 /**
  * THE BOARD IS BUILT ONCE AND THEN ONLY LOSES TILES — a `Map` from layout
@@ -72,12 +87,35 @@ export function createMahjongBoardRenderer(callbacks: MahjongBoardCallbacks = {}
   const elements = new Map<number, HTMLElement>();
   let surface: HTMLElement | null = null;
   let previous: BoardTiles | null = null;
+  /** The element currently wearing the selection mark, so moving the mark
+   * touches two elements rather than walking 144 of them on every press.
+   * The ELEMENT and not the position: it is what has to be un-marked, and
+   * looking it up again would ask the DOM a question this closure already
+   * knows the answer to. */
+  let highlighted: HTMLElement | null = null;
 
   function forget(container: HTMLElement): void {
     container.replaceChildren();
     elements.clear();
     surface = null;
     previous = null;
+    highlighted = null;
+  }
+
+  /** Move the mark, or take it off. A position whose tile is no longer drawn
+   * — it was taken while it was selected, or it belongs to a board that has
+   * been rebuilt — simply leaves nothing marked, which is the same answer as
+   * "nothing is selected" and needs no second branch. */
+  function highlight(position: number | null | undefined): void {
+    if (highlighted !== null) {
+      delete highlighted.dataset.selected;
+      highlighted = null;
+    }
+    if (position === null || position === undefined) return;
+    const element = elements.get(position);
+    if (element === undefined) return;
+    element.dataset.selected = "true";
+    highlighted = element;
   }
 
   function build(container: HTMLElement, tiles: BoardTiles): void {
@@ -104,7 +142,7 @@ export function createMahjongBoardRenderer(callbacks: MahjongBoardCallbacks = {}
     surface = drawn;
   }
 
-  return (container, tiles) => {
+  return (container, tiles, selected) => {
     ensureBoardStyles(container.ownerDocument);
     container.className = "hexdev-mahjong-board";
 
@@ -123,11 +161,16 @@ export function createMahjongBoardRenderer(callbacks: MahjongBoardCallbacks = {}
         if (id !== null) continue;
         const element = elements.get(position);
         if (element === undefined) continue;
+        if (element === highlighted) highlighted = null;
         element.remove();
         elements.delete(position);
       }
     }
 
+    // AFTER the diff, always, and never conditionally: the element a mark
+    // belongs on may have just been created by a rebuild, and the element it
+    // was on may have just been removed by a move.
+    highlight(selected);
     previous = tiles;
   };
 }

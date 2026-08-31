@@ -77,6 +77,19 @@ describe("loadMintConfig", () => {
   });
 
   /**
+   * The solitaire, on THIS root's own dev tenant — its twin over in
+   * `apps/server/src/config.test.ts` carries the same assertion against the
+   * OTHER root's independently configured `DEV_TENANT`, which is the whole
+   * reason both exist: this role decides what `/embed` advertises, that one
+   * decides what `MatchRoom.onAuth` admits, and neither reads the other's
+   * list.
+   */
+  it("entitles the dev tenant to the mahjong solitaire (the minting role's own composition root)", () => {
+    const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY });
+    expect(config.tenants[0]?.entitledGames).toContain("mahjong-solitario");
+  });
+
+  /**
    * A numeric env var that is not a number is the failure mode this repo
    * already learned the hard way on HEXDEV_QUEUE_BOT_FILL_SECONDS: `Number()`
    * yields NaN, NaN slips straight through `??` because it is not nullish,
