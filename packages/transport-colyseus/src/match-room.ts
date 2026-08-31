@@ -356,7 +356,15 @@ export class MatchRoom extends Room {
         `MatchRoom: humanSeatsNeeded ${String(options.humanSeatsNeeded)} is out of range for gameId "${options.gameId}" — must be an integer between 1 and metadata.seatCount (${String(module.metadata.seatCount)})`,
       );
     }
-    if (options.botTier !== undefined) {
+    // `createBot` is OPTIONAL on the port, and its absence is what a game
+    // with no opponent looks like from here. Nothing is pre-seated for such a
+    // module and NOTHING THROWS: `botTier` is a request a client can send for
+    // any room, and answering "this game has no opponent to give you" by
+    // refusing the room would be refusing the game itself. The room simply
+    // opens with every seat left for a person — for a one-seat module that is
+    // `maxClients` 1, which is the whole of single-player.
+    const createBot = module.createBot;
+    if (options.botTier !== undefined && createBot !== undefined) {
       // Unguessable on purpose: `/embed?p=` is client-suppliable (design
       // §7), so a fixed or predictable bot id would be an identity a client
       // could pre-claim a token for. A fresh random UUID, generated only
@@ -369,7 +377,7 @@ export class MatchRoom extends Room {
       // seats 1, 2, and 3, leaving only seat 0 for the real player.
       const humanSeatsNeeded = options.humanSeatsNeeded ?? 1;
       for (let seat = module.metadata.seatCount - 1; seat >= humanSeatsNeeded; seat -= 1) {
-        this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: module.createBot(options.botTier) });
+        this.controllers.set(seat, { kind: "bot", playerId: crypto.randomUUID() as PlayerId, strategy: createBot(options.botTier) });
       }
     }
     this.maxClients = module.metadata.seatCount - this.controllers.size;
@@ -664,7 +672,18 @@ export class MatchRoom extends Room {
     const module = this.module;
     const controller = this.controllers.get(seat);
     if (module === undefined || controller === undefined || controller.kind !== "human") return;
-    this.controllers.set(seat, { kind: "bot", playerId: controller.playerId, strategy: module.createBot(this.takeoverTier) });
+    // A COMPILE GUARD, AND DELIBERATELY NOTHING MORE. `createBot` is optional
+    // on the port, so this call site has to narrow — but "what a vacated seat
+    // means when there is no bot to take it" is a BEHAVIOUR, and it belongs to
+    // the change that fences it: the module is consulted first and the match
+    // reaches a terminal outcome (spec Domain B, "with no bot, a vacated seat
+    // ends the match"). Until then the honest thing is to leave the seat
+    // exactly as it was rather than invent a half-answer here — a match nobody
+    // is playing, waiting, which is a defect this guard does not create and
+    // does not pretend to close.
+    const createBot = module.createBot;
+    if (createBot === undefined) return;
+    this.controllers.set(seat, { kind: "bot", playerId: controller.playerId, strategy: createBot(this.takeoverTier) });
     // Explicit hook (design D3): the PARTNER's seat is taken over — resolved
     // right away, marked `from: "fallback"` (never "partner": that would
     // hide that the human is gone), through the SAME queued path the cap
@@ -1421,9 +1440,16 @@ export class MatchRoom extends Room {
       // the match may have ended, or the player may have acted after all.
       if (controller === undefined || controller.kind !== "human") return;
       if (module.getOutcome(this.matchState) !== null) return;
+      // Unreachable by derivation, and kept anyway. `armTurnTimer` refuses to
+      // arm a clock for a module with no `createBot`, so no deadline can
+      // expire and this method has no caller for such a game — but the two
+      // facts live 100 lines apart, and a guard that depends on a distant
+      // invariant staying true is a guard worth spending one line on.
+      const createBot = module.createBot;
+      if (createBot === undefined) return;
       const blocking = module.getLegalActions(this.matchState, controller.playerId).filter((action) => !registry.isNonBlockingAction(gameId, action));
       if (blocking.length === 0) return;
-      this.timeoutBot ??= module.createBot(this.takeoverTier);
+      this.timeoutBot ??= createBot(this.takeoverTier);
       const view = module.getViewFor(this.matchState, controller.playerId);
       const action = await this.timeoutBot.chooseAction(view, blocking, BOT_BUDGET_MS);
       const result = module.applyAction(this.matchState, action);

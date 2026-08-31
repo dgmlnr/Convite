@@ -102,12 +102,44 @@ export function describeGameModule<TState, TAction extends { readonly playerId: 
       expect(fixtures.legalAction.playerId).toBe(fixtures.playerId);
     });
 
-    it("a bot always chooses one of the legal actions it is offered", async () => {
-      const legal = gameModule.getLegalActions(fixtures.reachableState, fixtures.playerId);
-      const view = gameModule.getViewFor(fixtures.reachableState, fixtures.playerId);
-      const bot = gameModule.createBot(fixtures.botTier);
-      const chosen = await bot.chooseAction(view, legal, 50);
-      expect(legal).toContainEqual(chosen);
-    });
+    // THE BOT REQUIREMENT, BY SEAT COUNT — and both halves are a named test
+    // that RUNS. `createBot` is optional on the port (see `contract.ts`), so
+    // this branch is now the only thing standing between a game with
+    // opponents and a registration that silently forgot to bring one.
+    //
+    // Never a mute `if` around the assertion below. A game that skips a
+    // contract requirement has to say so out loud, in the executed test list,
+    // with the reason attached — otherwise the difference between "this game
+    // has no opponent" and "somebody forgot" is invisible in a green run.
+    if (gameModule.metadata.seatCount >= 2) {
+      it("a game with opponents supplies a bot, and that bot always chooses one of the legal actions it is offered", async () => {
+        const createBot = gameModule.createBot;
+        // Asserted as a MESSAGE rather than as `toBe(true)`: whoever hits this
+        // is registering a new game, and needs to be told which module and
+        // which rule, not that `false` was not `true`.
+        expect(
+          createBot === undefined
+            ? `${gameModule.id} declares metadata.seatCount ${String(gameModule.metadata.seatCount)} and supplies no createBot — a game with opponents must supply a bot`
+            : null,
+        ).toBeNull();
+        // Unreachable: the assertion above already threw. Present so the
+        // narrowing is the compiler's, not a cast's.
+        if (createBot === undefined) return;
+
+        const legal = gameModule.getLegalActions(fixtures.reachableState, fixtures.playerId);
+        const view = gameModule.getViewFor(fixtures.reachableState, fixtures.playerId);
+        const bot = createBot(fixtures.botTier);
+        const chosen = await bot.chooseAction(view, legal, 50);
+        expect(legal).toContainEqual(chosen);
+      });
+    } else {
+      it("skips the bot requirement deliberately: this game seats one player, so it has no opponent for a bot to play", () => {
+        // The justification, executed rather than left in a comment. ONE seat
+        // is the entire licence to skip the assertion above, so it is asserted
+        // here: invert the branch and every shipped two-seat game lands in
+        // this test and fails on its own seat count.
+        expect(gameModule.metadata.seatCount).toBe(1);
+      });
+    }
   });
 }

@@ -37,7 +37,19 @@ function seatOf(state: FixtureState, playerId: PlayerId): 0 | 1 | -1 {
   return index === 0 || index === 1 ? index : -1;
 }
 
-const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+/**
+ * Split out of `fixtureModule` below rather than derived from it, and that
+ * direction is deliberate: `createBot` is optional on the port now, so a
+ * module WITHOUT one has to be a module that genuinely never declares the
+ * member — not one that declares it `undefined`. Building the bot-less shape
+ * first and adding the bot on top is the only way to get that without a
+ * `delete` or a destructuring leftover nothing reads.
+ *
+ * The two differ in exactly one member, which is what every fence below leans
+ * on: otherwise "no bot was built" and "this fixture never got that far" are
+ * the same observation.
+ */
+const botlessFixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
   id: "fixture-secret",
   metadata: { seatCount: 2, displayNameKey: "fixture.name", assetBase: "/fixture" },
   configOptions: [],
@@ -63,7 +75,35 @@ const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> 
   getOutcome: () => null,
   serialize: (state) => state as never,
   deserialize: (json) => json as unknown as FixtureState,
+};
+
+const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+  ...botlessFixtureModule,
   createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+};
+
+/** One seat, no opponent, no bot — the shape a solitaire actually registers
+ * as. Deliberately ALWAYS offers a blocking action, so the seat is genuinely
+ * on the clock and "no deadline was armed" cannot pass because there was
+ * nobody to arm one for. */
+interface SoloState {
+  readonly player: PlayerId;
+  readonly steps: number;
+}
+type SoloAction = { readonly type: "advance"; readonly playerId: PlayerId };
+
+const soloModule: GameModule<SoloState, SoloAction, SoloState, void> = {
+  id: "fixture-solo",
+  metadata: { seatCount: 1, displayNameKey: "fixture.solo", assetBase: "/fixture-solo" },
+  configOptions: [],
+  createMatch: (_config, seats: readonly SeatAssignment[]) => ({ player: seats[0]!.playerId, steps: 0 }),
+  applyAction: (state, action): ApplyResult<SoloState> =>
+    action.playerId === state.player ? { ok: true, state: { ...state, steps: state.steps + 1 } } : { ok: false, violation: { code: "not-your-seat", message: "not this player's board" } },
+  getLegalActions: (state, playerId) => (playerId === state.player ? [{ type: "advance", playerId }] : []),
+  getViewFor: (state) => state,
+  getOutcome: () => null,
+  serialize: (state) => state as never,
+  deserialize: (json) => json as unknown as SoloState,
 };
 
 const TENANT_ID = "tenant-fixture" as TenantId;
@@ -87,7 +127,12 @@ async function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}) {
   // matching exactly what `apps/server/src/index.ts` wires in production.
   const verifier = await createSessionTokenVerifier(issuer.publicKey);
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal"] },
+    {
+      id: TENANT_ID,
+      embedKey: "pk_fixture",
+      allowedOrigins: [ALLOWED_ORIGIN],
+      entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal", "fixture-solo", "fixture-solo-with-bot"],
+    },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
   // Generous default so unrelated tests never accidentally trip the limit —
@@ -595,7 +640,7 @@ describe("MatchRoom.onCreate — humanSeatsNeeded is validated before any seat c
       metadata: { ...fixtureModule.metadata, seatCount },
       createBot: (tier) => {
         createBotCalls.push(tier);
-        return fixtureModule.createBot(tier);
+        return fixtureModule.createBot!(tier);
       },
     };
     return { module, createBotCalls };
@@ -837,7 +882,7 @@ describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal'
       ...fixtureModule,
       createBot: (tier) => {
         tiers.push(tier);
-        return fixtureModule.createBot(tier);
+        return fixtureModule.createBot!(tier);
       },
     };
     return { module, tiers };
@@ -931,7 +976,7 @@ describe("MatchRoom — a deliberate quit is not a disconnect (skips the reconne
       ...fixtureModule,
       createBot: (tier) => {
         tiers.push(tier);
-        return fixtureModule.createBot(tier);
+        return fixtureModule.createBot!(tier);
       },
     };
     return { module, tiers };
@@ -1654,5 +1699,67 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     // `runAdvanceOnce`, and that call's own disposal exit is what stops it
     // asking the module for a next step on a room that is already gone.
     expect(legalActionQueries).toBe(queriesAtDisposal);
+  });
+});
+
+/**
+ * `createBot` IS OPTIONAL ON THE PORT, so the pre-seat block in `onCreate`
+ * has a call site it can no longer make. What it does instead is the whole of
+ * this block: it builds nothing, and it does NOT refuse the room.
+ *
+ * `botTier` is a request any client can put on any room. Answering "this game
+ * has no opponent to give you" by throwing out of `onCreate` would refuse the
+ * game itself — a solitaire whose room dies because somebody asked for an
+ * opponent. So the room opens with every seat left for a person.
+ */
+describe("MatchRoom.onCreate — a game with no bot pre-seats nothing, and still opens", () => {
+  function createRoom(module: GameModule<never, never, never, never>, gameId: string, options: { botTier?: BotTier; humanSeatsNeeded?: number } = {}) {
+    const registry = createGameModuleRegistry([module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>]);
+    const room = new MatchRoom();
+    const dummyAuth: MatchRoomAuthOptions = {
+      verifier: { verify: () => Promise.resolve(undefined) },
+      repository: createStaticTenantRepository([]),
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [],
+    };
+    room.onCreate({ gameId, config: undefined, registry, auth: dummyAuth, rng: DEFAULT_RNG, ...options });
+    return room;
+  }
+
+  const asModule = (module: unknown) => module as GameModule<never, never, never, never>;
+
+  it("a TWO-seat module with no bot: botTier is accepted, no controller is built, and both seats stay open", () => {
+    // TWO seats on purpose — see the one-seat test below for why a one-seat
+    // module cannot prove this. `humanSeatsNeeded: 1` is the default written
+    // out, so the pre-seat loop really does have a seat to fill (seat 1) and
+    // the only thing stopping it is the missing bot.
+    const room = createRoom(asModule(botlessFixtureModule), "fixture-secret", { botTier: "easy", humanSeatsNeeded: 1 });
+
+    // `maxClients` is `seatCount - controllers.size`, set at `onCreate`'s last
+    // step: 2 means the loop built nothing, 1 would mean it seated a bot.
+    expect(room.maxClients).toBe(2);
+  });
+
+  it("POSITIVE CONTROL — the same two-seat module WITH a bot fills the seat botTier asked for", () => {
+    // Without this, the test above passes for a room whose pre-seat block was
+    // never reached at all. Same module, same options, one member different.
+    const room = createRoom(asModule(fixtureModule), "fixture-secret", { botTier: "easy", humanSeatsNeeded: 1 });
+
+    expect(room.maxClients).toBe(1);
+  });
+
+  it("a ONE-seat module with no bot opens for exactly one player — and this test CANNOT prove the guard", () => {
+    // DECLARED, not dressed up. This is spec Domain B's own scenario ("the
+    // last surviving call site is closed honestly") and it is VACUOUS as a
+    // fence: the pre-seat loop runs from `seatCount - 1` down to
+    // `humanSeatsNeeded`, so for one seat it is `0 >= 1` — false on the first
+    // check, `createBot` never reached, with or without the guard. The only
+    // value that could make it run is `humanSeatsNeeded: 0`, which `onCreate`
+    // now refuses outright. What this test really pins is the room SHAPE a
+    // solitaire opens with; the test above is what isolates the guard.
+    const room = createRoom(asModule(soloModule), "fixture-solo", { botTier: "easy", humanSeatsNeeded: 1 });
+
+    expect(room.maxClients).toBe(1);
   });
 });
