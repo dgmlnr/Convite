@@ -141,5 +141,32 @@ export interface GameModule<TState, TAction extends { readonly playerId: PlayerI
   getOutcome(state: TState): MatchOutcome | null;
   serialize(state: TState): JsonValue;
   deserialize(json: JsonValue): TState;
-  createBot(tier: BotTier): BotStrategy<TView, TAction>;
+  /**
+   * OPTIONAL, because a game with one seat has no opponent for a bot to be.
+   * A solitaire has nobody to play against, nobody to take over a vacated
+   * seat, and nobody a turn clock could hand the turn to — behaviours a
+   * transport DERIVES from this member's absence rather than from more
+   * registration flags it would have to keep in step.
+   *
+   * TWO OF THE THREE ARE DERIVED FROM THIS MEMBER, and the third deliberately
+   * is NOT. `MatchRoom.armTurnTimer` arms no clock and `onCreate`'s pre-seat
+   * block builds no bot, both by reading `createBot` directly. What a VACATED
+   * seat means is a rules question instead: `takeOverSeat` asks the module,
+   * through `platform-core`'s `AbandonedSeatActionProvider` pairing, and only
+   * falls back to the bot when the game has no answer. Keying that one on this
+   * member's absence too would have said "a match may only end this way if
+   * nobody can play it", which is a rule about opponents, not about leaving.
+   *
+   * MAKING IT OPTIONAL MOVES THE COMPILE-TIME PRESSURE, IT DOES NOT REMOVE
+   * IT. Until now the type system was what guaranteed every registered game
+   * arrived with an opponent, and every game on the roadmap that is not a
+   * solitaire — checkers, dominoes, chess — has one. So the guarantee is
+   * restated where it can be conditional: `describeGameModule` REQUIRES
+   * `createBot` whenever `metadata.seatCount >= 2`, by a named, executed
+   * test, and skips it by a second named, executed test when the module
+   * seats one player. A two-seat game arriving without a bot still fails
+   * loudly; a solitaire passes because it has no opponent, not because
+   * somebody forgot.
+   */
+  createBot?(tier: BotTier): BotStrategy<TView, TAction>;
 }

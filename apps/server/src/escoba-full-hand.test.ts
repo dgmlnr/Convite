@@ -264,7 +264,9 @@ describe("Slice L.6 checkpoint — a full escoba hand played end to end (registr
     const acting = dealt.hand!.turn;
     const legal = escobaModule.getLegalActions(dealt, acting);
     const view = escobaModule.getViewFor(dealt, acting);
-    const bot = escobaModule.createBot("easy");
+    // Optional on the port, required of THIS module by conformance's
+    // seat-count branch — see `platform-contract/src/contract.ts`.
+    const bot = escobaModule.createBot!("easy");
 
     const chosen = await bot.chooseAction(view, legal, 50);
 

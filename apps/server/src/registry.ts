@@ -1,7 +1,8 @@
 import { createGameModuleRegistry } from "@hexdev/platform-core";
-import type { ConsultAdviceProvider, ConsultAskProvider, GameModuleRegistry, SystemActionRequester } from "@hexdev/platform-core";
+import type { AbandonedSeatActionProvider, ConsultAdviceProvider, ConsultAskProvider, GameModuleRegistry, SystemActionRequester } from "@hexdev/platform-core";
 import { getConsultAdvice, getConsultAsk, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2, requestEscobaSystemAction } from "@hexdev/escoba-module";
+import { getAbandonedSeatAction as getMahjongAbandonedSeatAction, mahjongSolitaireModule, requestMahjongSolitaireSystemAction } from "@hexdev/mahjong-solitaire-module";
 
 // The registry erases per-module state types (same documented boundary as
 // `platform-core/registry.ts` itself); this is that one spot for the pairing.
@@ -100,6 +101,31 @@ export function buildGameRegistry(): GameModuleRegistry {
     {
       module: escobaModule2v2,
       requestSystemAction: requestEscobaSystemAction as SystemActionRequester,
+    },
+    /**
+     * THE FIRST ONE-SEAT GAME, and the first entry here that has to say what
+     * an abandoned seat means.
+     *
+     * `requestSystemAction` is the same pairing escoba's two entries above
+     * already carry, and it is what lays the board: a solitaire deals itself
+     * from a system action (`MatchRoom.runAdvanceOnce` asks for one exactly
+     * when no seat can act, which for a fresh solitaire match is the moment
+     * it starts), so an entry registered without it would compose, admit a
+     * player, and then sit forever in front of an empty table.
+     *
+     * `getAbandonedSeatAction` is the member NO OTHER ENTRY registers, and
+     * it is registered here for a reason this game is alone in having: the
+     * transport's default answer to a vacated seat is to hand it to a bot,
+     * and this module supplies no `createBot` at all. Without this line the
+     * seat would be left occupied by nobody until the room disposed. The
+     * module's own docblock carries the argument; `platform-core`'s registry
+     * defaults it to `null` ("no opinion"), which is exactly the wrong
+     * answer for a game with one seat and no opponent.
+     */
+    {
+      module: mahjongSolitaireModule,
+      requestSystemAction: requestMahjongSolitaireSystemAction as SystemActionRequester,
+      getAbandonedSeatAction: getMahjongAbandonedSeatAction as AbandonedSeatActionProvider,
     },
   ]);
 }

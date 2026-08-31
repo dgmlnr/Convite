@@ -41,6 +41,23 @@ describe("loadServerConfig", () => {
     expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15-2v2");
   });
 
+  /**
+   * The solitaire, on THIS root's own dev tenant — and the pair of
+   * assertions is what makes `registry.test.ts`'s coherence fence able to
+   * fail at all. An entitled id with no registered module is exactly the
+   * defect that fence was built for (see its own docstring, and the escoba
+   * gap it closed on the mint root); an id nobody entitles could never
+   * reach it.
+   *
+   * The FIRST game on this platform whose `seatCount` is 1, so it is also
+   * the first entitlement that exercises the bound slice 0 widened
+   * (`createGameModuleRegistry` threw for `seatCount < 2` until then).
+   */
+  it("entitles the dev tenant to the mahjong solitaire (the match role's own composition root)", () => {
+    const config = loadServerConfig(DEV_OPT_IN);
+    expect(config.tenants[0]?.entitledGames).toContain("mahjong-solitario");
+  });
+
   it("parses tenant records from HEXDEV_TENANTS_JSON when set", () => {
     const tenants = [{ id: "t1", embedKey: "pk_x", allowedOrigins: ["https://a.example"], entitledGames: ["truco-argentino"] }];
     const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });

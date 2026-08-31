@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Client } from "@colyseus/core";
-import type { ApplyResult, BotTier, GameModule, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotTier, GameModule, JsonValue, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
   createGameModuleRegistry,
   createJtiReplayGuard,
@@ -37,7 +37,19 @@ function seatOf(state: FixtureState, playerId: PlayerId): 0 | 1 | -1 {
   return index === 0 || index === 1 ? index : -1;
 }
 
-const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+/**
+ * Split out of `fixtureModule` below rather than derived from it, and that
+ * direction is deliberate: `createBot` is optional on the port now, so a
+ * module WITHOUT one has to be a module that genuinely never declares the
+ * member — not one that declares it `undefined`. Building the bot-less shape
+ * first and adding the bot on top is the only way to get that without a
+ * `delete` or a destructuring leftover nothing reads.
+ *
+ * The two differ in exactly one member, which is what every fence below leans
+ * on: otherwise "no bot was built" and "this fixture never got that far" are
+ * the same observation.
+ */
+const botlessFixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
   id: "fixture-secret",
   metadata: { seatCount: 2, displayNameKey: "fixture.name", assetBase: "/fixture" },
   configOptions: [],
@@ -63,7 +75,35 @@ const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> 
   getOutcome: () => null,
   serialize: (state) => state as never,
   deserialize: (json) => json as unknown as FixtureState,
+};
+
+const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureView, void> = {
+  ...botlessFixtureModule,
   createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+};
+
+/** One seat, no opponent, no bot — the shape a solitaire actually registers
+ * as. Deliberately ALWAYS offers a blocking action, so the seat is genuinely
+ * on the clock and "no deadline was armed" cannot pass because there was
+ * nobody to arm one for. */
+interface SoloState {
+  readonly player: PlayerId;
+  readonly steps: number;
+}
+type SoloAction = { readonly type: "advance"; readonly playerId: PlayerId };
+
+const soloModule: GameModule<SoloState, SoloAction, SoloState, void> = {
+  id: "fixture-solo",
+  metadata: { seatCount: 1, displayNameKey: "fixture.solo", assetBase: "/fixture-solo" },
+  configOptions: [],
+  createMatch: (_config, seats: readonly SeatAssignment[]) => ({ player: seats[0]!.playerId, steps: 0 }),
+  applyAction: (state, action): ApplyResult<SoloState> =>
+    action.playerId === state.player ? { ok: true, state: { ...state, steps: state.steps + 1 } } : { ok: false, violation: { code: "not-your-seat", message: "not this player's board" } },
+  getLegalActions: (state, playerId) => (playerId === state.player ? [{ type: "advance", playerId }] : []),
+  getViewFor: (state) => state,
+  getOutcome: () => null,
+  serialize: (state) => state as never,
+  deserialize: (json) => json as unknown as SoloState,
 };
 
 const TENANT_ID = "tenant-fixture" as TenantId;
@@ -87,7 +127,12 @@ async function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}) {
   // matching exactly what `apps/server/src/index.ts` wires in production.
   const verifier = await createSessionTokenVerifier(issuer.publicKey);
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_fixture", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal"] },
+    {
+      id: TENANT_ID,
+      embedKey: "pk_fixture",
+      allowedOrigins: [ALLOWED_ORIGIN],
+      entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal", "fixture-solo", "fixture-solo-with-bot"],
+    },
     { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
   ]);
   // Generous default so unrelated tests never accidentally trip the limit —
@@ -595,7 +640,7 @@ describe("MatchRoom.onCreate — humanSeatsNeeded is validated before any seat c
       metadata: { ...fixtureModule.metadata, seatCount },
       createBot: (tier) => {
         createBotCalls.push(tier);
-        return fixtureModule.createBot(tier);
+        return fixtureModule.createBot!(tier);
       },
     };
     return { module, createBotCalls };
@@ -837,7 +882,7 @@ describe("MatchRoom + disconnect takeover tier (spec 6.3/6.4, obs 2919: 'normal'
       ...fixtureModule,
       createBot: (tier) => {
         tiers.push(tier);
-        return fixtureModule.createBot(tier);
+        return fixtureModule.createBot!(tier);
       },
     };
     return { module, tiers };
@@ -931,7 +976,7 @@ describe("MatchRoom — a deliberate quit is not a disconnect (skips the reconne
       ...fixtureModule,
       createBot: (tier) => {
         tiers.push(tier);
-        return fixtureModule.createBot(tier);
+        return fixtureModule.createBot!(tier);
       },
     };
     return { module, tiers };
@@ -1654,5 +1699,407 @@ describe("MatchRoom turn clock — a seat cannot sit on its turn forever (per-tu
     // `runAdvanceOnce`, and that call's own disposal exit is what stops it
     // asking the module for a next step on a room that is already gone.
     expect(legalActionQueries).toBe(queriesAtDisposal);
+  });
+});
+
+/**
+ * `createBot` IS OPTIONAL ON THE PORT, so the pre-seat block in `onCreate`
+ * has a call site it can no longer make. What it does instead is the whole of
+ * this block: it builds nothing, and it does NOT refuse the room.
+ *
+ * `botTier` is a request any client can put on any room. Answering "this game
+ * has no opponent to give you" by throwing out of `onCreate` would refuse the
+ * game itself — a solitaire whose room dies because somebody asked for an
+ * opponent. So the room opens with every seat left for a person.
+ */
+describe("MatchRoom.onCreate — a game with no bot pre-seats nothing, and still opens", () => {
+  function createRoom(module: GameModule<never, never, never, never>, gameId: string, options: { botTier?: BotTier; humanSeatsNeeded?: number } = {}) {
+    const registry = createGameModuleRegistry([module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>]);
+    const room = new MatchRoom();
+    const dummyAuth: MatchRoomAuthOptions = {
+      verifier: { verify: () => Promise.resolve(undefined) },
+      repository: createStaticTenantRepository([]),
+      replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }),
+      joinRateLimiter: createRateLimiter({ limit: 1000, windowMs: 60_000 }),
+      allowedWidgetOrigins: [],
+    };
+    room.onCreate({ gameId, config: undefined, registry, auth: dummyAuth, rng: DEFAULT_RNG, ...options });
+    return room;
+  }
+
+  const asModule = (module: unknown) => module as GameModule<never, never, never, never>;
+
+  it("a TWO-seat module with no bot: botTier is accepted, no controller is built, and both seats stay open", () => {
+    // TWO seats on purpose — see the one-seat test below for why a one-seat
+    // module cannot prove this. `humanSeatsNeeded: 1` is the default written
+    // out, so the pre-seat loop really does have a seat to fill (seat 1) and
+    // the only thing stopping it is the missing bot.
+    const room = createRoom(asModule(botlessFixtureModule), "fixture-secret", { botTier: "easy", humanSeatsNeeded: 1 });
+
+    // `maxClients` is `seatCount - controllers.size`, set at `onCreate`'s last
+    // step: 2 means the loop built nothing, 1 would mean it seated a bot.
+    expect(room.maxClients).toBe(2);
+  });
+
+  it("POSITIVE CONTROL — the same two-seat module WITH a bot fills the seat botTier asked for", () => {
+    // Without this, the test above passes for a room whose pre-seat block was
+    // never reached at all. Same module, same options, one member different.
+    const room = createRoom(asModule(fixtureModule), "fixture-secret", { botTier: "easy", humanSeatsNeeded: 1 });
+
+    expect(room.maxClients).toBe(1);
+  });
+
+  it("a ONE-seat module with no bot opens for exactly one player — and this test CANNOT prove the guard", () => {
+    // DECLARED, not dressed up. This is spec Domain B's own scenario ("the
+    // last surviving call site is closed honestly") and it is VACUOUS as a
+    // fence: the pre-seat loop runs from `seatCount - 1` down to
+    // `humanSeatsNeeded`, so for one seat it is `0 >= 1` — false on the first
+    // check, `createBot` never reached, with or without the guard. The only
+    // value that could make it run is `humanSeatsNeeded: 0`, which `onCreate`
+    // now refuses outright. What this test really pins is the room SHAPE a
+    // solitaire opens with; the test above is what isolates the guard.
+    const room = createRoom(asModule(soloModule), "fixture-solo", { botTier: "easy", humanSeatsNeeded: 1 });
+
+    expect(room.maxClients).toBe(1);
+  });
+});
+
+/**
+ * NO BOT, NO CLOCK — and it is DERIVED, never declared.
+ *
+ * An expired turn has exactly one effect in this room: a bot plays the seat
+ * (`playOneBotActionFor`). A module with no `createBot` has no bot, so the
+ * clock has nothing it could do when it runs out — it would count down to a
+ * silence. That is a consequence of the module's own shape, not a third
+ * registration flag somebody has to remember to set, which is why
+ * `armTurnTimer` reads `createBot` rather than a new option.
+ *
+ * Every fence below is paired with the SAME fixture carrying a bot. Without
+ * that control, "no deadline was armed" and "there was nobody to arm one for"
+ * read identically from the outside — and a solitaire fixture is exactly the
+ * shape where the second one is plausible.
+ */
+describe("MatchRoom turn clock — a game with no bot is untimed for its whole life", () => {
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error("waitFor: condition never became true");
+      await sleep(2);
+    }
+  }
+
+  /** The FIELD itself, never a `?? null` fallback: an untimed table has to
+   * send a present, null deadline — the client's cue to draw no countdown —
+   * and an absent one would be indistinguishable from a bug here. */
+  const deadlineFieldOf = (entry: { message: unknown } | undefined): unknown => (entry?.message as Record<string, unknown> | undefined)?.turnDeadline;
+
+  async function soloSeat(module: GameModule<SoloState, SoloAction, SoloState, void>, turnTimeoutSeconds: number) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: module.id, config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds });
+    const seat0 = fakeClient("s0");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    return { room, seat0 };
+  }
+
+  /** One seat, one player, and a bot — the control fixture, identical to
+   * `soloModule` in every other member. */
+  const soloWithBotModule: GameModule<SoloState, SoloAction, SoloState, void> = {
+    ...soloModule,
+    id: "fixture-solo-with-bot",
+    createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+  };
+
+  it("never arms a deadline: the view says null on the first broadcast and on every one after it", async () => {
+    const { room, seat0 } = await soloSeat(soloModule, 0.03);
+
+    expect(deadlineFieldOf(seat0.sent[0])).toBeNull();
+    expect(room.hasPendingTurnTimer()).toBe(false);
+
+    // Acting is what re-enters `armTurnTimer`: the derivation has to hold on
+    // every broadcast, not only on the one that opens the match.
+    await room.handleAction(seat0.client, { type: "advance", playerId: P0 });
+    expect(seat0.sent).toHaveLength(2);
+    expect(deadlineFieldOf(seat0.sent[1])).toBeNull();
+
+    // Four times the timeout that WOULD have been armed. Nothing fired, so
+    // nothing played the seat: no bot was built, and none could have been.
+    const settled = seat0.sent.length;
+    await sleep(120);
+    expect(seat0.sent).toHaveLength(settled);
+  });
+
+  it("POSITIVE CONTROL — the same one-seat game WITH a bot is timed, and its clock really fires", async () => {
+    // Without this the test above passes for a fixture whose seat was never
+    // on the clock at all — the same shape as an assertion inside a loop that
+    // never runs. Same module, same single seat, one member different.
+    const { room, seat0 } = await soloSeat(soloWithBotModule, 0.05);
+
+    expect(typeof deadlineFieldOf(seat0.sent[0])).toBe("number");
+    expect(room.hasPendingTurnTimer()).toBe(true);
+
+    const before = seat0.sent.length;
+    await waitFor(() => seat0.sent.length > before);
+    expect(seat0.sent.length).toBeGreaterThan(before);
+  });
+
+  /** The asker is seat 0 and the partner seat 1 — the shape `openConsult`
+   * needs: a LIVE HUMAN teammate the module is willing to name. */
+  const askSeatOne = (_state: unknown, playerId: PlayerId) => (playerId === P0 ? { partnerId: P1, options: ["si", "no"] as readonly JsonValue[] } : null);
+
+  async function twoSeats(module: GameModule<FixtureState, FixtureAction, FixtureView, void>) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      { module: module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>, getConsultAsk: askSeatOne },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG, turnTimeoutSeconds: 30 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    return { room, seat0, seat1 };
+  }
+
+  it("refuses a consult on an untimed table — the second effect of no clock, stated rather than discovered later", async () => {
+    const { room, seat0, seat1 } = await twoSeats(botlessFixtureModule);
+
+    await room.handleConsult(seat0.client, { type: "advance", playerId: P0, about: "algo" });
+
+    // `openConsult` bounds its window by `turnDeadline`, and refuses outright
+    // when there is none rather than inventing an unbounded one. With no bot
+    // there is never a deadline, so a game with no opponent has no consults
+    // either — which is exactly right, since a consult asks a TEAMMATE.
+    expect(seat1.sent.filter((entry) => entry.type === "consult-ask")).toEqual([]);
+  });
+
+  it("POSITIVE CONTROL — the same two-seat game WITH a bot opens the consult window", async () => {
+    // The whole path is real: the action is legal, it changes state, the
+    // module names a partner, and the partner is a live human. The refusal
+    // above is the missing clock and nothing else.
+    const { room, seat0, seat1 } = await twoSeats(fixtureModule);
+
+    await room.handleConsult(seat0.client, { type: "advance", playerId: P0, about: "algo" });
+
+    expect(seat1.sent.filter((entry) => entry.type === "consult-ask")).toHaveLength(1);
+  });
+});
+
+/**
+ * ABANDONING A MATCH NOBODY ELSE IS PLAYING ENDS IT — and the MODULE is what
+ * says so, not this room.
+ *
+ * Until now a vacated seat had exactly one answer here: hand it to a bot. That
+ * is right for truco and escoba, and it is what a game with no opponent turns
+ * into a headless auto-solver — a board being cleared by a bot that nobody
+ * will ever see. `takeOverSeat` therefore asks the module first, through the
+ * registry pairing, and falls back to the bot when the module has no opinion.
+ *
+ * `handleQuit`'s own docstring is what licenses the seam: quitting is
+ * deliberately not a forfeit HERE, because "whether truco should also offer a
+ * real resignation is a rules question for the module, not a transport one".
+ * This is that question being asked.
+ *
+ * WHAT IS DELIBERATELY NOT THE FENCE: `seatCount === 1`. That conflates "has
+ * one seat" with "ends when its player leaves", puts a rules decision back
+ * inside the transport, and cannot express the resignation the docstring above
+ * already names as a legitimate wish for a two-seat game.
+ *
+ * TWO ENTRY POINTS, ONE SEAM. A quit (`handleQuit`) and an expired
+ * reconnection window (`onLeave`) both funnel through `takeOverSeat`, and the
+ * mutation that proves it is moving the consult up into `handleQuit`: the quit
+ * test stays green and the window test alone goes red.
+ */
+describe("MatchRoom — a vacated seat is a rules question, and the module answers it first", () => {
+  /**
+   * One seat, no bot, and a state that can END. `soloModule` above is
+   * deliberately endless (`getOutcome: () => null`), which is what makes it a
+   * good clock fixture and a useless one here.
+   *
+   * `abandoned` is a boolean IN THE MODULE'S OWN STATE, which is the only
+   * place it can live — spec Domain B's "never stored as a boolean" is a rule
+   * about the ROOM, which must keep asking `getOutcome` instead of remembering
+   * an answer. A module deriving its outcome from its own state is the whole
+   * shape of `getOutcome`.
+   */
+  interface AbandonState {
+    readonly player: PlayerId;
+    readonly steps: number;
+    readonly abandoned: boolean;
+  }
+  type AbandonAction = { readonly type: "advance" | "abandon"; readonly playerId: PlayerId };
+
+  /**
+   * THE BOARD RUNS OUT OF MOVES, and that is not decoration.
+   *
+   * `onLeave`'s own docstring already names the hazard: a module "whose legal
+   * actions never terminate (this file's OWN test-only fixtures are exactly
+   * that shape)" drives `advance()` without bound the instant a bot holds the
+   * seat. The first version of this fixture was endless, and the RED run for
+   * the block below did not fail — it HUNG, with no test output at all,
+   * because a bot took the seat and played the same always-legal move forever
+   * inside one microtask chain. Three moves is enough for every fence here and
+   * it terminates.
+   */
+  const BOARD_MOVES = 3;
+
+  const soloAbandonModule: GameModule<AbandonState, AbandonAction, AbandonState, void> = {
+    id: "fixture-solo",
+    metadata: { seatCount: 1, displayNameKey: "fixture.solo", assetBase: "/fixture-solo" },
+    configOptions: [],
+    createMatch: (_config, seats: readonly SeatAssignment[]) => ({ player: seats[0]!.playerId, steps: 0, abandoned: false }),
+    applyAction: (state, action): ApplyResult<AbandonState> => {
+      // Mirrors `escoba-module`'s own `match-over` refusal: a finished match
+      // takes no further action, including a second abandonment.
+      if (state.abandoned) return { ok: false, violation: { code: "match-over", message: "the board was already given up" } };
+      return action.type === "abandon" ? { ok: true, state: { ...state, abandoned: true } } : { ok: true, state: { ...state, steps: state.steps + 1 } };
+    },
+    getLegalActions: (state, playerId) => (playerId === state.player && !state.abandoned && state.steps < BOARD_MOVES ? [{ type: "advance", playerId }] : []),
+    getViewFor: (state) => state,
+    // `contract.ts` blesses this exactly: "`winnerIds` may legitimately be
+    // empty — a draw, or a solo match abandoned unsolved".
+    getOutcome: (state) => (state.abandoned ? { winnerIds: [] } : null),
+    serialize: (state) => state as never,
+    deserialize: (json) => json as unknown as AbandonState,
+  };
+
+  /** The SAME one-seat game, one member different: it has a bot. This is the
+   * only fixture in the block where "no bot was constructed" is a claim that
+   * can fail, and it is what proves the module is asked FIRST. */
+  const soloAbandonWithBotModule: GameModule<AbandonState, AbandonAction, AbandonState, void> = {
+    ...soloAbandonModule,
+    id: "fixture-solo-with-bot",
+    createBot: () => ({ chooseAction: async (_view, legal) => legal[0]! }),
+  };
+
+  const giveUpTheBoard = (_state: unknown, playerId: PlayerId): AbandonAction => ({ type: "abandon", playerId });
+
+  /** A provider whose answer is a perfectly ordinary move — legal, applied,
+   * and NOT the end of anything. It exists so "the match ended" can be proven
+   * to be READ from `getOutcome` rather than assumed from the fact that a
+   * provider answered at all. */
+  const takeOneLastTurn = (_state: unknown, playerId: PlayerId): FixtureAction => ({ type: "advance", playerId });
+
+  const erase = (module: unknown) => module as unknown as GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown>;
+
+  function botSpy<M extends { createBot?: (tier: BotTier) => unknown }>(module: M): { module: M; tiers: BotTier[] } {
+    const tiers: BotTier[] = [];
+    return {
+      module: {
+        ...module,
+        ...(module.createBot === undefined ? {} : { createBot: (tier: BotTier) => (tiers.push(tier), module.createBot!(tier)) }),
+      },
+      tiers,
+    };
+  }
+
+  async function joinSeats(registration: Parameters<typeof createGameModuleRegistry>[0][number], gameId: string, seats: number, reconnectionWindowSeconds = 30) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([registration]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId, config: undefined, registry, auth, rng: DEFAULT_RNG, reconnectionWindowSeconds, turnTimeoutSeconds: 30 });
+    const clients = [];
+    for (const [index, playerId] of [P0, P1].slice(0, seats).entries()) {
+      const client = fakeClient(`s${String(index)}`);
+      await joinWithToken(room, client.client, await mintToken(auth.issuer, playerId));
+      clients.push(client);
+    }
+    return { room, seat0: clients[0]!, seat1: clients[1] };
+  }
+
+  const lastView = (sent: readonly { type: string; message: unknown }[]): Record<string, unknown> | undefined =>
+    [...sent].reverse().find((entry) => entry.type === "view")?.message as Record<string, unknown> | undefined;
+
+  /**
+   * The quit half of spec Domain B's "with no bot, a vacated seat ends the
+   * match".
+   *
+   * DECLARED: the "and no bot is constructed" half of that scenario is VACUOUS
+   * for this fixture — it has no `createBot` to construct one from, so the
+   * assertion could not fail whatever the room did. The test that really makes
+   * that claim is "asks the module BEFORE reaching for a bot" below, where the
+   * fixture has a working bot and still does not get one.
+   */
+  it("quitting a solo match ends it: the last view carries the module's own terminal outcome", async () => {
+    const { room, seat0 } = await joinSeats({ module: erase(soloAbandonModule), getAbandonedSeatAction: giveUpTheBoard }, "fixture-solo", 1);
+    expect(lastView(seat0.sent)?.outcome, "control: the match is live before the quit, so the assertion below has something to change").toBeNull();
+
+    room.handleQuit(seat0.client);
+
+    expect(lastView(seat0.sent)?.outcome).toEqual({ winnerIds: [] });
+  });
+
+  it("an expired reconnection window ends it the same way, through the SAME seam", async () => {
+    // A window short enough to expire inside the test: `onLeave` awaits it and
+    // reaches `takeOverSeat` on the rejection, which is the second and last
+    // entry point into the takeover.
+    const { room, seat0 } = await joinSeats({ module: erase(soloAbandonModule), getAbandonedSeatAction: giveUpTheBoard }, "fixture-solo", 1, 0.01);
+    expect(lastView(seat0.sent)?.outcome).toBeNull();
+
+    await room.onLeave(seat0.client);
+
+    expect(lastView(seat0.sent)?.outcome).toEqual({ winnerIds: [] });
+  });
+
+  it("asks the module BEFORE reaching for a bot — the same one-seat game WITH a bot still ends instead of being auto-solved", async () => {
+    const { module, tiers } = botSpy(soloAbandonWithBotModule);
+    const { room, seat0 } = await joinSeats({ module: erase(module), getAbandonedSeatAction: giveUpTheBoard }, "fixture-solo-with-bot", 1);
+    // CONTROL, and it leans on slice 1's own derivation: a clock is armed only
+    // for a module that HAS a bot. So this fixture demonstrably has one, and
+    // `tiers` staying empty below is a fact about the ORDER of the two
+    // branches, not about a bot that never existed.
+    expect(room.hasPendingTurnTimer(), "control: this fixture really does have a bot").toBe(true);
+
+    room.handleQuit(seat0.client);
+
+    expect(tiers, "the module answered first, so the takeover bot was never built").toEqual([]);
+    expect(lastView(seat0.sent)?.outcome).toEqual({ winnerIds: [] });
+  });
+
+  it("CONTROL — a two-seat game that registers no provider still gets its bot takeover, unchanged", async () => {
+    // Rung 1, stated: the ordinary takeover is ALREADY covered by the two
+    // `disconnect takeover tier` tests and the `deliberate quit` block above.
+    // This one exists so the mutations below can show it staying green in the
+    // same file, not as independent evidence that takeover works.
+    const { module, tiers } = botSpy(fixtureModule);
+    const { room, seat0 } = await joinSeats(erase(module), "fixture-secret", 2);
+
+    room.handleQuit(seat0.client);
+
+    expect(tiers).toEqual(["normal"]);
+  });
+
+  it("reads the ENDING from getOutcome, never from the fact that the module answered: a non-terminal answer still hands the seat to the bot", async () => {
+    const { module, tiers } = botSpy(fixtureModule);
+    const { room, seat0, seat1 } = await joinSeats({ module: erase(module), getAbandonedSeatAction: takeOneLastTurn }, "fixture-secret", 2);
+    expect((lastView(seat1!.sent)?.view as { turnSeat: number }).turnSeat, "control: seat 0 owes the move before it quits").toBe(0);
+
+    room.handleQuit(seat0.client);
+
+    expect((lastView(seat1!.sent)?.view as { turnSeat: number }).turnSeat, "the module's answer was applied through its own applyAction").toBe(1);
+    expect(tiers, "and the match is still live, so the seat still needs somebody in it").toEqual(["normal"]);
+  });
+
+  it("does not ask a second time once the match is over — the socket closing after a quit finds nothing left to decide", async () => {
+    const asked: PlayerId[] = [];
+    const recordingProvider = (state: unknown, playerId: PlayerId): AbandonAction => {
+      asked.push(playerId);
+      return giveUpTheBoard(state, playerId);
+    };
+    // A real window, deliberately: quitting leaves this seat's controller
+    // human (there is no bot to swap in), so unlike the two-seat quit path the
+    // closing socket DOES open one. It expires into `takeOverSeat` a second
+    // time, and `getOutcome` is what makes that call a no-op.
+    const { room, seat0 } = await joinSeats({ module: erase(soloAbandonModule), getAbandonedSeatAction: recordingProvider }, "fixture-solo", 1, 0.01);
+
+    room.handleQuit(seat0.client);
+    await room.onLeave(seat0.client);
+
+    expect(asked, "asked once, for the seat that left").toEqual([P0]);
   });
 });

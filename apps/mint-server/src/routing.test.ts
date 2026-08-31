@@ -84,6 +84,41 @@ describe("resolveRoute", () => {
   });
 
   /**
+   * A SECOND PREFIX RATHER THAN A GENERALISED ONE, and the reason is recorded
+   * in `.dependency-cruiser.cjs:38`: do not invent a convention ahead of its
+   * second consumer. There are two artworks now and no third, so
+   * `/assets/fronts/` and `/assets/tiles/` stay two literal prefixes with the
+   * same refusals rather than one parameterised route that would have to
+   * decide which directory a caller meant.
+   */
+  it("serves a tile face, carrying the file name through", () => {
+    expect(resolveRoute("GET", "/assets/tiles/5-circles.webp")).toEqual({ kind: "tile-front", file: "5-circles.webp" });
+    expect(resolveRoute("GET", "/assets/tiles/flower-bamboo.webp")).toEqual({ kind: "tile-front", file: "flower-bamboo.webp" });
+  });
+
+  it("refuses a tile-front path that tries to escape its directory", () => {
+    expect(resolveRoute("GET", "/assets/tiles/../../../etc/passwd")).toEqual({ kind: "not-found" });
+    expect(resolveRoute("GET", "/assets/tiles/..%2Fsecret")).toEqual({ kind: "not-found" });
+    expect(resolveRoute("GET", "/assets/tiles/nested/5-circles.webp")).toEqual({ kind: "not-found" });
+  });
+
+  it("refuses a tile-front request with no file at all", () => {
+    expect(resolveRoute("GET", "/assets/tiles/")).toEqual({ kind: "not-found" });
+    expect(resolveRoute("GET", "/assets/tiles")).toEqual({ kind: "not-found" });
+  });
+
+  /**
+   * The two artworks must not be reachable through each other's prefix: a
+   * route that answered `card-front` for a tile path would hand the tile
+   * name to the deck's own regex, which rejects it — a 404 that looks like a
+   * missing file rather than like a routing mistake.
+   */
+  it("keeps the two artworks on their own prefixes", () => {
+    expect(resolveRoute("GET", "/assets/fronts/5-circles.webp")).toEqual({ kind: "card-front", file: "5-circles.webp" });
+    expect(resolveRoute("GET", "/assets/tiles/1-espada.webp")).toEqual({ kind: "tile-front", file: "1-espada.webp" });
+  });
+
+  /**
    * The match role owns the colyseus matchmaking surface. This role must not
    * answer for it — a 404 here is the correct, honest answer, and the
    * deployment's path routing is what sends those elsewhere.

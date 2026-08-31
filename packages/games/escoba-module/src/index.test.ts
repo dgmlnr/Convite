@@ -110,7 +110,9 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
     const state = reachable2p();
     const legal = escobaModule.getLegalActions(state, playerB);
     const view = escobaModule.getViewFor(state, playerB);
-    const bot = escobaModule.createBot("easy");
+    // Optional on the port, required of THIS module by conformance's
+    // seat-count branch — see `platform-contract/src/contract.ts`.
+    const bot = escobaModule.createBot!("easy");
     const chosen = await bot.chooseAction(view, legal, 50);
     expect(chosen).toEqual(legal[0]);
   });
