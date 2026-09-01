@@ -130,6 +130,33 @@ export class PresenceRoom extends Room {
   private sweepInterval: ReturnType<typeof setInterval> | undefined;
   private readonly waiting = new Map<string, WaitingClient>();
 
+  /**
+   * The clients that joined to WATCH, by session id — the audience `counts`
+   * is written for.
+   *
+   * A SECOND MAP AND NOT A FLAG ON `waiting`, because the two are disjoint by
+   * construction: `onJoin` returns early for a watch-only join and never
+   * reaches the enqueue below it, so a client is in exactly one of these for
+   * its whole life in this room. A single map with a discriminant would have
+   * to be read carefully at four call sites to say the same thing this says
+   * by existing.
+   *
+   * WHY IT HAD TO EXIST AT ALL. `counts` used to go out as a room-wide
+   * broadcast, so it also reached the clients that had enqueued — and
+   * `presence-connection.ts`'s `joinMatchmakingQueue` listens for `paired`
+   * and `pairing-failed`, and for nothing else. Every one of those was a
+   * message with nowhere to land, which the colyseus SDK reports in the
+   * player's own console, once per broadcast.
+   *
+   * The obvious repair — broadcast to everyone EXCEPT those still waiting —
+   * is wrong at the moment that matters: `tryFormGroup` removes a paired
+   * player from `waiting` and only THEN publishes the new numbers, so the
+   * player it just paired is no longer excluded while still being connected.
+   * "The clients that asked to watch" is the only description that stays
+   * true at both the join and the pairing.
+   */
+  private readonly watchers = new Map<string, Client>();
+
   override onCreate(options: PresenceRoomCreateOptions): void {
     if (options.registry.get(options.gameId) === undefined) {
       throw new Error(`PresenceRoom: no GameModule registered for gameId "${options.gameId}"`);
@@ -193,6 +220,9 @@ export class PresenceRoom extends Room {
     // watcher does not wait for someone else's queue activity to see its
     // first "counts" message, but never track/enqueue/pair this client.
     if (options.modality === undefined) {
+      // Registered BEFORE the publish below, so the snapshot that publish
+      // exists to deliver actually reaches the client it is for.
+      this.watchers.set(client.sessionId, client);
       // FORCED: this is the watcher's first snapshot, and "nothing changed
       // since the last watcher" is precisely when it still needs sending.
       void this.broadcastCounts(true);
@@ -205,6 +235,11 @@ export class PresenceRoom extends Room {
   }
 
   override async onLeave(client: Client): Promise<void> {
+    // FIRST, and above the early return below it. That return is written for
+    // a client with no queue entry, which is exactly what a watcher is — so
+    // anything filed after it never runs for one, and a watcher that left
+    // would be published to forever.
+    this.watchers.delete(client.sessionId);
     const entry = this.waiting.get(client.sessionId);
     const pool = this.pool;
     const gameId = this.gameId;
@@ -474,6 +509,9 @@ export class PresenceRoom extends Room {
     const payload = JSON.stringify(counts);
     if (!force && payload === this.lastCounts) return;
     this.lastCounts = payload;
-    this.broadcast("counts", counts);
+    // TO THE AUDIENCE, not to the room. See `watchers` for why the difference
+    // is not cosmetic. One send per watcher is what `broadcast` does
+    // internally anyway; what changes is who is on the list.
+    for (const watcher of this.watchers.values()) watcher.send("counts", counts);
   }
 }

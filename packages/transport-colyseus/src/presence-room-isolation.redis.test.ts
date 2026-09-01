@@ -120,7 +120,12 @@ describe("PresenceRoom — game isolation, re-verified with RedisPresence/RedisD
   it("a client asking for game B never lands in game A's already-open room, is never enqueued/counted/paired into it, and same-game pairing still works", async () => {
     const roomA0 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-redis-a", modality: { roundLength: 15 }, playerId: "a0" });
     const countsA: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
-    roomA0.onMessage("counts", (message) => countsA.push(message));
+    // WATCHED FROM ITS OWN JOIN, the same correction the non-redis fences
+    // next door carry: `counts` goes to the clients that asked to watch, and
+    // `joinMatchmakingQueue` asks for `paired` and `pairing-failed` only — so
+    // an enqueued client is not a channel this number travels on.
+    const watcherA = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-redis-a" });
+    watcherA.onMessage("counts", (message) => countsA.push(message));
     const pairedA0: unknown[] = [];
     roomA0.onMessage("paired", (message) => pairedA0.push(message));
 
@@ -128,7 +133,8 @@ describe("PresenceRoom — game isolation, re-verified with RedisPresence/RedisD
 
     const roomB0 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-redis-b", modality: { roundLength: 15 }, playerId: "b0" });
     const countsB: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
-    roomB0.onMessage("counts", (message) => countsB.push(message));
+    const watcherB = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-redis-b" });
+    watcherB.onMessage("counts", (message) => countsB.push(message));
     const pairedB0: unknown[] = [];
     roomB0.onMessage("paired", (message) => pairedB0.push(message));
 
