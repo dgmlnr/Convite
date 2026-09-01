@@ -452,13 +452,37 @@ function main(): void {
     // persisted session had ever existed.
     const pendingSession = readPersistedMatchSession(storage);
     const resumed = await tryResumeSession(pendingSession, (session) => reconnectMatch(client, session.reconnectionToken));
-    if (resumed !== undefined && pendingSession !== undefined) {
+    /**
+     * WHETHER THIS BOOT WALKED STRAIGHT INTO A MATCH — a value, and not a
+     * `return`, and the difference is the whole of a real defect.
+     *
+     * This branch used to end in `return`, which read as "a resumed player
+     * has no use for the lobby". Half true: they have no use for it NOW.
+     * They have every use for it the moment they leave that match, and by
+     * then the loop below — the one that opens a watch-only presence
+     * connection per catalog game — had never run, because the `return` sat
+     * above it. `presenceByGame` stayed empty for the life of the page, and
+     * `game-screen.ts` draws its loading line for exactly that, so the
+     * player walked out of the match onto a shelf where every game said
+     * "Cargando…" and nothing ever arrived to replace it. No error, nothing
+     * to click, and only the gesture that caused it — a reload — to escape.
+     *
+     * NOT DRAWING AND NOT CONNECTING ARE DIFFERENT REFUSALS. Only the first
+     * one was ever wanted ("a returning player mid-match should never see
+     * the lobby flash by first"), and the departure gate marked just above
+     * ALREADY delivers it: every count that arrives while a match is open is
+     * stored and repaints nothing. The watchers are silent on this path by
+     * construction, so opening them costs the resumed player nothing and
+     * leaves the lobby ready for the moment they want it.
+     */
+    const enteredResumedMatch = resumed !== undefined && pendingSession !== undefined;
+    if (enteredResumedMatch) {
       departureGate.markDeparted();
       persistMatchSession(storage, { gameId: pendingSession.gameId, reconnectionToken: resumed.reconnectionToken });
       enterMatch(pendingSession.gameId as GameId, resumed, (departure) => returnToSelection(resumed, departure), "resumed");
-      return;
+    } else if (pendingSession !== undefined) {
+      clearPersistedMatchSession(storage);
     }
-    if (pendingSession !== undefined) clearPersistedMatchSession(storage);
 
     // Real websocket presence, replacing HTTP polling (spec: "Lobby
     // Presence Counters Per Point-Target Room" delivered live). One
@@ -475,7 +499,13 @@ function main(): void {
         if (!departureGate.hasDeparted() && screen.affects(entry.id)) rerender();
       });
     }
-    rerender();
+    // THE ONE THING THE RESUMED PATH STILL MUST NOT DO. Painting here would
+    // replace the match this boot just walked into with the lobby — which is
+    // precisely the flash the old `return` was written to prevent, and the
+    // only part of it that was ever load-bearing. Everything above this line
+    // is safe on both paths; this line is not, so this line is the one that
+    // asks.
+    if (!enteredResumedMatch) rerender();
   }
 }
 
