@@ -28,6 +28,7 @@ import {
   createMahjongBoardRenderer,
   ensureElapsedReadoutStyles,
   ensureMatchOverStyles as ensureMahjongMatchOverStyles,
+  liftablePositions,
   renderMahjongMatchOver,
   resolvePress,
   startElapsedReadout,
@@ -664,6 +665,11 @@ interface MahjongPlayerView {
  * mark was on, the mark goes, which covers both "the move was accepted" and
  * "a new board was dealt" with one rule and no bookkeeping.
  */
+/** No board, nothing to lift. A shared frozen empty set rather than a fresh
+ * one per press, and rather than a `null` the press handler would have to
+ * branch on twice. */
+const EMPTY_LIFTABLE: ReadonlySet<number> = new Set();
+
 function createMahjongRenderer(): GameUiEntry["createRenderer"] {
   return (context) => {
     const chronometer = createChronometer({ resumed: context.resumed, now: context.now });
@@ -678,7 +684,13 @@ function createMahjongRenderer(): GameUiEntry["createRenderer"] {
 
     const drawBoard = createMahjongBoardRenderer({
       onPickTile: (position) => {
-        const move = resolvePress(selected, position, legal);
+        // Derived per press rather than cached beside `tiles`: it is a pure
+        // function of the board, and a cache would be a second record of the
+        // same fact with its own invalidation to get wrong on the one path
+        // (a fresh deal) where getting it wrong is silent. 144 positions is
+        // not a cost worth a bug.
+        const liftable = tiles === null ? EMPTY_LIFTABLE : liftablePositions(tiles);
+        const move = resolvePress(selected, position, legal, liftable);
         if (move.kind === "play") {
           // Cleared BEFORE the dispatch, not after the server answers: the
           // move is on its way and the two tiles it names are spoken for.
