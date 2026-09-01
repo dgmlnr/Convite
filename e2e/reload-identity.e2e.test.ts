@@ -133,6 +133,7 @@ describe("player identity survives a page reload — the same browser lands back
 
       await table.locator('[data-tier="easy"]').first().click({ timeout: 15_000 });
       await table.locator(".hexdev-truco-table").waitFor({ state: "visible", timeout: 30_000 });
+      await table.locator(".hexdev-truco-hand [data-card]").first().waitFor({ state: "visible", timeout: 15_000 });
       const handCardCount = await table.locator(".hexdev-truco-hand [data-card]").count();
       expect(handCardCount, "the match never rendered a hand with storage blocked — the widget should still be fully playable").toBeGreaterThan(0);
 

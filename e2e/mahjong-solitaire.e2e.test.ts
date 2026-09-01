@@ -19,19 +19,25 @@ import { startSystem, type SystemHandle } from "./support/system.js";
  * generator recording its own solution in the order it chose it, refused by a
  * module whose every fence was green.
  *
- * IT RE-DECIDES NOTHING. The spec never computes whether a tile is free or
- * whether two faces match; it presses tiles and reads what the widget does.
- * `resolvePress` only marks a tile the SERVER has offered, so a tile that
- * lights up is the server's answer, not this file's opinion — which is the
- * same discipline `single-player.e2e.test.ts` states for truco, arrived at
- * from the other direction.
+ * IT RE-DECIDES NOTHING, and the mechanism for that had to change. This loop
+ * used to hunt for an anchor by pressing tiles until one lit up, on the
+ * reasoning that "a tile that lights up is the server's answer, not this
+ * file's opinion". That was true only because the widget gated the FIRST
+ * press on its offer list — so lighting up doubled as proof that a partner
+ * was free. It was never meant to: it also meant a perfectly reachable tile
+ * whose twin happened to be buried answered a player's press with nothing at
+ * all, which is the defect the widget was fixed for. Every reachable tile
+ * marks now, so pressing one proves only that it is reachable, and a loop
+ * still probing for an anchor spends its whole budget learning that.
  *
- * WHAT THE ORDERING HEURISTIC IS AND IS NOT. Once a tile is marked, the
- * partner is looked for among tiles drawn with the SAME face first, then
- * among the bonus tiles, then among everything else. That is a search ORDER
- * and never a decision: every candidate is pressed, and only a pair the
- * server accepts removes anything. Getting the order wrong costs wall clock
- * and nothing else.
+ * SO THE PAIR IS PROPOSED, NEVER DEDUCED. This spec picks two tiles whose
+ * faces COULD go together, presses them, and reads what the widget did. It
+ * still computes nothing about freedom and settles nothing about legality:
+ * a flower and a season are shortlisted together and are not a pair, either
+ * tile may be covered, and in every one of those cases the board simply does
+ * not move — which is the answer, and it comes from the server exactly as it
+ * did before. What was lost was a shortcut; the discipline
+ * `single-player.e2e.test.ts` states for truco is intact.
  */
 
 // A full board is 72 removals, each a real websocket round trip through a
@@ -43,17 +49,28 @@ interface BoardTile {
   readonly position: number;
   readonly face: string;
   /**
-   * Whether a press at this tile's own centre reaches THIS tile.
+   * A point INSIDE this tile's own box at which a press reaches THIS tile,
+   * or `null` when no such point exists because something is painted over
+   * all of it.
    *
    * Asked of the document with `elementFromPoint`, which is the board's own
    * hit test rather than a second opinion about it: a press in this game is a
    * POINT, and on a five-deep turtle most tiles have another tile painted
-   * over their middle. Pressing one of those does something perfectly
+   * over part of them. Pressing the covered part does something perfectly
    * sensible — it lifts the tile on top — but it is not a press of the tile
-   * this loop meant, and a loop that does not know the difference spends its
-   * whole budget churning the same two selections.
+   * this loop meant.
+   *
+   * A POINT AND NO LONGER A YES-OR-NO, and the difference is a blind spot
+   * this spec carried from the start. It used to ask only about the CENTRE,
+   * so a tile whose middle was covered counted as unreachable and was never
+   * pressed at all — while a person, looking at the same board, would simply
+   * press the part of it they can see. The old anchor hunt hid the cost by
+   * pressing enough tiles to stumble past it; proposing pairs does not, and
+   * a loop that cannot press half the board runs out of moves long before
+   * the board does. Offsets are relative to the tile's own box, which is
+   * exactly what Playwright's `click({ position })` wants.
    */
-  readonly reachable: boolean;
+  readonly hit: { readonly x: number; readonly y: number } | null;
 }
 
 interface BoardSnapshot {
@@ -70,14 +87,34 @@ interface BoardSnapshot {
  * bookkeeping. */
 async function readBoard(table: FrameLocator): Promise<BoardSnapshot> {
   return table.locator("body").evaluate((body): BoardSnapshot => {
+    // The centre first, because on an uncovered tile it is the answer and the
+    // scan stops at once. Then a spread of points across the box: a covered
+    // tile is covered from ONE side (the layer above sits up and to the
+    // right), so what stays visible is a band down the left and along the
+    // bottom, and these fractions reach it without pretending to know the
+    // offset — the document is asked, not the layout.
+    const PROBES = [
+      [0.5, 0.5],
+      [0.15, 0.85],
+      [0.15, 0.5],
+      [0.5, 0.85],
+      [0.15, 0.15],
+      [0.85, 0.85],
+    ] as const;
     const tiles = [...body.querySelectorAll<HTMLElement>("[data-position][data-tile]")].map((element) => {
       const box = element.getBoundingClientRect();
-      const hit = body.ownerDocument.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-      const owner = hit === null ? null : hit.closest("[data-position]");
+      let hit: { x: number; y: number } | null = null;
+      for (const [fx, fy] of PROBES) {
+        const found = body.ownerDocument.elementFromPoint(box.left + box.width * fx, box.top + box.height * fy);
+        if (found !== null && found.closest("[data-position]") === element) {
+          hit = { x: box.width * fx, y: box.height * fy };
+          break;
+        }
+      }
       return {
         position: Number(element.getAttribute("data-position")),
         face: element.dataset.tile ?? "",
-        reachable: owner === element,
+        hit,
       };
     });
     const marked = body.querySelector<HTMLElement>("[data-selected]");
@@ -105,26 +142,55 @@ async function readBoard(table: FrameLocator): Promise<BoardSnapshot> {
  * decide, which is what a finger on a covered tile does too: it lifts the one
  * on top.
  */
-async function press(table: FrameLocator, position: number): Promise<void> {
+async function press(table: FrameLocator, tile: BoardTile): Promise<void> {
   // A tile can leave the board between the snapshot that named it and the
   // press: the previous press may have completed a pair this loop was not
   // expecting. A press of something that is no longer there is a no-op, not
   // a failure — the next read is what says what actually happened.
+  //
+  // AT THE POINT THE SNAPSHOT FOUND, never at the middle by default. The
+  // middle is only where the answer happens to be for an uncovered tile;
+  // aiming there on a covered one presses whatever is painted over it, which
+  // is a real press of the wrong tile and reads back as this loop's proposal
+  // being refused.
   await table
-    .locator(`[data-position="${String(position)}"]`)
-    .click({ timeout: 2_000, force: true })
+    .locator(`[data-position="${String(tile.position)}"]`)
+    .click({ timeout: 2_000, force: true, ...(tile.hit === null ? {} : { position: tile.hit }) })
     .catch(() => undefined);
 }
 
 const isBonus = (face: string): boolean => face.startsWith("flower-") || face.startsWith("season-");
 
-/** A SEARCH ORDER, never a decision: same drawn face first, then the bonus
+/** A SHORTLIST, never a decision: same drawn face first, then the bonus
  * tiles when the anchor is one, then everything else. Only a pair the server
  * accepts removes anything, so getting this wrong costs wall clock and
- * nothing else. */
+ * nothing else — `2` means "do not bother proposing it", not "illegal". */
 function partnerRank(anchor: BoardTile, candidate: BoardTile): number {
   if (candidate.face === anchor.face) return 0;
   return isBonus(anchor.face) && isBonus(candidate.face) ? 1 : 2;
+}
+
+/** One pair, named the same way whichever tile was pressed first. */
+const pairKey = (a: number, b: number): string => `${String(Math.min(a, b))}:${String(Math.max(a, b))}`;
+
+/**
+ * The next pair worth proposing, or nothing when this board has run out of
+ * them.
+ *
+ * ORDERED BY THE ANCHOR AND NOT BY THE PAIR, so the outer walk stays the
+ * top-down one the caller hands in — the apex first, which is how a person
+ * plays and what keeps the most options open. Within one anchor the
+ * shortlist decides, and `refused` is what stops this from proposing the
+ * same doomed two tiles for the rest of the board's life.
+ */
+function nextProposal(reachable: readonly BoardTile[], refused: ReadonlySet<string>): readonly [BoardTile, BoardTile] | undefined {
+  for (const anchor of reachable) {
+    const partner = reachable.find(
+      (other) => other.position !== anchor.position && partnerRank(anchor, other) < 2 && !refused.has(pairKey(anchor.position, other.position)),
+    );
+    if (partner !== undefined) return [anchor, partner];
+  }
+  return undefined;
 }
 
 describe("mahjong solitaire: a real board, dealt by a real match room and cleared by a real browser", () => {
@@ -174,10 +240,23 @@ describe("mahjong solitaire: a real board, dealt by a real match room and cleare
 
       const deadline = Date.now() + BOARD_TIMEOUT_MS;
       let board = dealt;
-      // Anchors whose whole candidate list has been walked without a removal,
-      // on THIS board. Cleared the moment a pair comes off, because every
-      // remaining tile's neighbourhood may have changed.
-      let exhausted = new Set<number>();
+      // Pairs this loop proposed and the board did not take, on THIS board.
+      // Emptied the moment a pair does come off, because a removal uncovers
+      // tiles and every refusal above was a statement about the old board.
+      let refused = new Set<string>();
+      // Whether the slate has already been wiped since the last removal.
+      //
+      // A REFUSAL IS A STATEMENT ABOUT A MOMENT, not about the board. `press`
+      // swallows a click that could not land — deliberately, since a tile can
+      // leave between the snapshot that named it and the press — so a pair
+      // can be recorded as refused without ever having been offered. Left
+      // permanent, one such miss retires a legal pair for the rest of the
+      // run: observed at four tiles left, with the server still holding a
+      // move this loop had already crossed off. Wiping the slate once and
+      // asking again costs one extra pass and cannot loop, because a pass
+      // that removes nothing sets this flag and the next empty proposal ends
+      // the loop for real.
+      let retriedClean = false;
 
       while (board.ended === null && Date.now() < deadline) {
         const before = board.tiles.length;
@@ -186,52 +265,40 @@ describe("mahjong solitaire: a real board, dealt by a real match room and cleare
         // game by hand, and the one that keeps the most options open: a tile
         // on the top layer is covering something, and a tile on the base
         // layer is covering nothing.
-        const reachable = [...board.tiles].reverse().filter((tile) => tile.reachable);
-        const moved = (): boolean => board.tiles.length < before || board.ended !== null;
+        const reachable = [...board.tiles].reverse().filter((tile) => tile.hit !== null);
 
-        // ONE ANCHOR: a tile the SERVER is offering. Pressing a tile only
-        // marks it when `legalActions` names it, so a tile that lights up is
-        // the server's answer and not this file's opinion.
-        //
-        // A press here can also COMPLETE a pair — the previous iteration may
-        // have left a mark on the board — which is a perfectly good outcome
-        // and simply ends this iteration early.
-        let anchor: BoardTile | undefined;
-        for (const tile of reachable) {
-          if (exhausted.has(tile.position)) continue;
-          if (board.selected !== tile.position) await press(table, tile.position);
-          board = await readBoard(table);
-          if (moved()) break;
-          if (board.selected === tile.position) {
-            anchor = tile;
-            break;
-          }
-        }
-        if (moved()) {
-          exhausted = new Set<number>();
+        const proposal = nextProposal(reachable, refused);
+        if (proposal === undefined) {
+          if (retriedClean) break; // asked twice on an unchanged board: this loop is genuinely out of moves
+          retriedClean = true;
+          refused = new Set<string>();
           continue;
         }
-        if (anchor === undefined) break; // nothing left on this board can be lifted
+        const [first, second] = proposal;
 
-        // Its partner, looked for among the tiles a press can actually reach.
-        const held = anchor;
-        for (const candidate of [...reachable].filter((tile) => tile.position !== held.position).sort((a, b) => partnerRank(held, a) - partnerRank(held, b))) {
-          await press(table, candidate.position);
-          board = await readBoard(table);
-          if (moved()) break;
-          // The press marked something else instead: that candidate is itself
-          // liftable but not with this anchor. Put the anchor back and carry
-          // on down the list.
-          if (board.selected !== held.position) {
-            if (board.selected !== null) await press(table, board.selected);
-            await press(table, held.position);
-            board = await readBoard(table);
-            if (moved() || board.selected !== held.position) break;
-          }
+        // A MARK CAN SURVIVE AN ATTEMPT, so the sequence starts by saying what
+        // it wants the board to be holding. A refused pair clears both tiles,
+        // but a proposal whose FIRST tile turned out to be unpressable leaves
+        // the second one marked instead — a press lands on a point, and the
+        // tile that was named may be covered at it. Pressing a marked tile
+        // again is how the widget clears it, which is the only tool here and
+        // the one a player has too.
+        if (board.selected === first.position) {
+          await press(table, second);
+        } else {
+          const marked = board.selected === null ? undefined : board.tiles.find((tile) => tile.position === board.selected);
+          if (marked !== undefined) await press(table, marked);
+          await press(table, first);
+          await press(table, second);
         }
 
-        if (moved()) exhausted = new Set<number>();
-        else exhausted.add(held.position);
+        board = await readBoard(table);
+        if (board.tiles.length < before || board.ended !== null) {
+          refused = new Set<string>();
+          retriedClean = false;
+        } else {
+          refused.add(pairKey(first.position, second.position));
+        }
       }
 
       const ending = await readBoard(table);
