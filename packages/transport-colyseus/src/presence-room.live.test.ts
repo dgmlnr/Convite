@@ -86,9 +86,14 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
 
   it("pairs two real waiting clients in the same modality and removes both from the live counter", async () => {
     const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
-    const client0 = await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p0" });
+    // THE COUNTER IS READ THROUGH A WATCHER, which is how the widget reads it:
+    // `joinMatchmakingQueue` subscribes to `paired` and `pairing-failed` and
+    // to nothing else, so a queued client is not a channel this number ever
+    // travelled on outside these fences.
+    const counter = await testServer.connectTo(room, { gameId: "fixture-lobby" });
     const counts0: unknown[] = [];
-    client0.onMessage("counts", (message) => counts0.push(message));
+    counter.onMessage("counts", (message) => counts0.push(message));
+    const client0 = await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "p0" });
     const paired0: unknown[] = [];
     client0.onMessage("paired", (message) => paired0.push(message));
 
@@ -156,6 +161,51 @@ describe("PresenceRoom — live WebSocket pairing (design §8, spec: Human-vs-Hu
     expect(after.find((entry) => entry.modality.roundLength === 15)?.waitingCount).toBe(1);
     expect(paired).toHaveLength(0);
   }, LIVE_TEST_TIMEOUT_MS);
+  /**
+   * THE MIRROR OF THE TEST ABOVE, and the one nobody had written.
+   *
+   * `counts` answers a question only the shelf asks — how many people are
+   * waiting in each modality — and a client that has already picked one has
+   * left the shelf. It never registers a handler for them
+   * (`presence-connection.ts`'s `joinMatchmakingQueue` listens for `paired`
+   * and `pairing-failed`, and for nothing else), so every one of these that
+   * reached it was a message with nowhere to go: the colyseus SDK said so out
+   * loud, once per broadcast, in the console of every player who ever pressed
+   * "jugar contra otra persona".
+   *
+   * TWO BROADCASTS, AND THE SECOND IS THE ONE AN OBVIOUS FIX MISSES. The join
+   * itself publishes the new number, and so does the pairing that follows —
+   * and `tryFormGroup` deletes a paired player from `waiting` BEFORE it
+   * publishes, so "everyone except those still waiting" still includes them.
+   * The room sends to the clients that asked to watch instead, which is the
+   * only description that stays true at both moments.
+   *
+   * Reported from real play as a mahjong problem, which it never was: the
+   * solitaire is simply the one game whose only control enqueues, so it was
+   * the one where it always happened.
+   */
+  it("never sends counts to a client that enqueued — it asked to play, not to watch", async () => {
+    const room = await testServer.createRoom("presence", { gameId: "fixture-lobby" });
+
+    // A watcher first, so the room is genuinely publishing: a fence where
+    // nobody would have received anything either way proves nothing.
+    const watcher = await testServer.connectTo(room, { gameId: "fixture-lobby" });
+    const watched: unknown[] = [];
+    watcher.onMessage("counts", (message) => watched.push(message));
+
+    const queued = await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "q0" });
+    const leaked: unknown[] = [];
+    queued.onMessage("counts", (message) => leaked.push(message));
+
+    // A second player in the same modality, which pairs the two — the moment
+    // that produces the broadcast the `except: waiting` shortcut would miss.
+    await testServer.connectTo(room, { gameId: "fixture-lobby", modality: { roundLength: 15 }, playerId: "q1" });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(leaked, "a queued client was sent lobby counts it never asked for").toHaveLength(0);
+    expect(watched.length, "the room stopped publishing altogether — this fence would pass on a silent room").toBeGreaterThan(0);
+  }, LIVE_TEST_TIMEOUT_MS);
+
   /**
    * THE SWEEP STOPS SHOUTING THE SAME NUMBERS.
    *
@@ -408,7 +458,10 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
     // would prove nothing about this defect).
     const roomA0 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-a", modality: { roundLength: 15 }, playerId: "a0" });
     const countsA: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
-    roomA0.onMessage("counts", (message) => countsA.push(message));
+    // Watched from its own join, for the reason the other fences here now
+    // state: an enqueued client is not where this number arrives.
+    const watcherA = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-a" });
+    watcherA.onMessage("counts", (message) => countsA.push(message));
     const pairedA0: unknown[] = [];
     roomA0.onMessage("paired", (message) => pairedA0.push(message));
 
@@ -419,7 +472,8 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
     // open room (the exact live bug this unit closes).
     const roomB0 = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-b", modality: { roundLength: 15 }, playerId: "b0" });
     const countsB: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
-    roomB0.onMessage("counts", (message) => countsB.push(message));
+    const watcherB = await testServer.sdk.joinOrCreate("presence", { gameId: "fixture-isolation-b" });
+    watcherB.onMessage("counts", (message) => countsB.push(message));
     const pairedB0: unknown[] = [];
     roomB0.onMessage("paired", (message) => pairedB0.push(message));
 
@@ -946,9 +1000,14 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
    * bot CTA is that queue's rescue, not a server-side pop). */
   it("never degrades a 2-seat queue: a lone 1v1 waiter far past the timeout is not paired and stays counted as waiting", async () => {
     const presenceRoom = await testServer.createRoom("presence", { gameId: DUO_GAME_ID, botFillAfterSeconds: 0.05, sweepTickMs: 25 });
-    const client = await testServer.connectTo(presenceRoom, { gameId: DUO_GAME_ID, modality: { roundLength: 15 }, playerId: "duo-lone" });
+    // THE COUNTER IS READ THROUGH A WATCHER, which is how the widget reads it:
+    // `joinMatchmakingQueue` subscribes to `paired` and `pairing-failed` and
+    // to nothing else, so a queued client is not a channel this number ever
+    // travelled on outside these fences.
+    const counter = await testServer.connectTo(presenceRoom, { gameId: DUO_GAME_ID });
     const counts: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
-    client.onMessage("counts", (message) => counts.push(message));
+    counter.onMessage("counts", (message) => counts.push(message));
+    const client = await testServer.connectTo(presenceRoom, { gameId: DUO_GAME_ID, modality: { roundLength: 15 }, playerId: "duo-lone" });
     const paired: unknown[] = [];
     client.onMessage("paired", (message) => paired.push(message));
 
@@ -966,10 +1025,11 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     const presenceRoom = await testServer.createRoom("presence", { gameId: GROUP_GAME_ID, botFillAfterSeconds: 5, sweepTickMs: 25 });
     const paired: unknown[][] = [[], []];
     const counts: Array<Array<{ modality: { roundLength: number }; waitingCount: number }>> = [];
+    const counter = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID });
+    counter.onMessage("counts", (message) => counts.push(message));
     for (const [index, playerId] of HUMANS.slice(0, 2).entries()) {
       const client = await testServer.connectTo(presenceRoom, { gameId: GROUP_GAME_ID, modality: { roundLength: 15 }, playerId });
       client.onMessage("paired", (message) => paired[index]!.push(message));
-      client.onMessage("counts", (message) => counts.push(message));
     }
 
     await new Promise((resolve) => setTimeout(resolve, 300));
