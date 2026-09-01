@@ -42,7 +42,7 @@ import { createServer, request } from "node:http";
 import { connect } from "node:net";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -53,8 +53,6 @@ const HOST_PORT = 5173;
 /** Internal only — nothing outside this machine ever talks to these. */
 const MINT_PORT = 2570;
 const MATCH_PORT = 2571;
-
-const EMBED_KEY = "pk_dev_local";
 
 /**
  * This machine's address on the actual local network.
@@ -134,18 +132,33 @@ if (skipBuild) {
  * origin, and the server refusing it is correct behaviour, not a bug — so
  * the allowlist has to name it. Loopback stays listed so this script does
  * not break opening the same demo locally.
+ *
+ * WIDENED FROM THE REAL RECORD, never transcribed. This block used to
+ * hand-write the whole tenant, and the one field it had no reason to
+ * restate — `entitledGames` — is exactly the one that rotted: it still
+ * listed only the two truco ids after escoba and the solitaire were
+ * registered, so the demo this script exists to serve showed three fewer
+ * games than the server it booted was ready to run, on both `dev:server`
+ * and `dev:lan`. Nothing threw, because an entitled id with no module is
+ * dropped from the catalog silently and a module with no entitlement is
+ * simply never offered. Importing the record means the only thing this
+ * script can get wrong is the one thing it actually knows: the address.
  */
+const { DEV_TENANT } = await import(pathToFileURL(path.join(REPO_ROOT, "apps/mint-server/dist/config.js")).href);
 const tenants = [
   {
-    id: "dev-tenant",
-    embedKey: EMBED_KEY,
+    ...DEV_TENANT,
     // De-duplicated: at `localhost` the served origin IS one of the built-in
     // ones, and a repeated entry in this document is noise an operator
     // reading it would have to stop and explain to themselves.
-    allowedOrigins: [...new Set([hostOrigin, "http://localhost:5173", "http://localhost:3000"])],
-    entitledGames: ["truco-argentino", "truco-argentino-2v2"],
+    allowedOrigins: [...new Set([hostOrigin, ...DEV_TENANT.allowedOrigins])],
   },
 ];
+
+/** Read off the same record rather than restated, for the reason above: the
+ * key the stand-in page embeds with and the key the tenant is minted under
+ * have to be one value, and two literals is how they stop being one. */
+const EMBED_KEY = DEV_TENANT.embedKey;
 
 const roleEnv = {
   ...process.env,

@@ -127,8 +127,18 @@ const DEV_SESSION_SIGNING_KEY = "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI"; /
 
 /** One fixture tenant so a fresh clone is curl-able with zero setup. Not a
  * secret: an embed key and an origin allowlist are meant to be public
- * (design §7, "same trust model as a Stripe publishable key"). */
-const DEV_TENANT: TenantRecord = {
+ * (design §7, "same trust model as a Stripe publishable key").
+ *
+ * EXPORTED so `scripts/dev-stack.mjs` can widen this exact record's origin
+ * allowlist for a LAN address instead of hand-writing a third copy of it.
+ * That copy existed and drifted: it still entitled only the two truco ids
+ * long after escoba and the solitaire were registered, so `pnpm dev:lan`
+ * and `pnpm dev:server` served a catalog with three games missing — and
+ * `buildCatalog` drops an entitled id with no module and never throws, so
+ * the reverse mistake is silent too (`registry.ts`'s own docstring records
+ * the same failure from the other side). A record spread from here cannot
+ * fall behind the registry the way a transcription of it did. */
+export const DEV_TENANT: TenantRecord = {
   id: "dev-tenant" as TenantId,
   embedKey: "pk_dev_local",
   allowedOrigins: ["http://localhost:5173", "http://localhost:3000"],
