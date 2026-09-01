@@ -10,12 +10,14 @@
  * `match-over.ts` do: a rule that is only reachable through a rendered board
  * can only be checked through a rendered board.
  *
- * IT CONSULTS THE OFFER LIST AND STATES NO RULE OF ITS OWN. Which tiles are
- * free and which faces match is the engine's answer, already computed and
- * already on the payload as `legalActions` — this file never recomputes it,
- * never re-derives freedom, and never decides that a tile "should" be
- * liftable. What it adds is the part that is not a rule at all: remembering
- * one press until the next one lands.
+ * IT CONSULTS ITS TWO INPUTS AND STATES NO RULE OF ITS OWN. Which faces match
+ * is the engine's answer, on the payload as `legalActions`; which tiles are
+ * reachable is the engine's answer too, handed in as `liftable` by whoever
+ * holds the board (`liftable.ts` derives it, and explains why it is derived
+ * rather than sent). This file never computes either, and never decides that
+ * a tile "should" be liftable. What it adds is the part that is not a rule at
+ * all: remembering one press until the next one lands, and saying what a
+ * press that completes nothing does to it.
  *
  * THIS IS `escoba-ui`'s `createMarkThenPlay` SHAPE, one game over. That
  * package owns "mark the cards, then play the one that captures them" for the
@@ -62,17 +64,20 @@ export type PairSelectionMove =
 
 const CLEAR: PairSelectionMove = { kind: "clear" };
 
-/** Whether any offer names this position at all — "can this tile be lifted,
- * with anything". A tile with no partner is not a candidate for a selection,
- * which is what stops the board lighting up under a press that could never
- * become a move. */
-function hasPartner(position: number, legal: readonly MahjongPair[]): boolean {
-  return legal.some((pair) => pair.a === position || pair.b === position);
-}
-
 /**
- * The move a press makes, given what was already selected and what the engine
- * is currently offering.
+ * The move a press makes, given what was already selected, which tiles the
+ * player may lift, and what the engine is currently offering.
+ *
+ * SELECTION IS ABOUT REACH, REMOVAL IS ABOUT MATCHING, AND THE TWO INPUTS ARE
+ * NOT INTERCHANGEABLE. This function used to gate the first press on
+ * `legalActions` — "does some offer name this tile" — which is the wrong
+ * question asked of the wrong list. `legalActions` names PAIRS, so a tile
+ * that is perfectly free with no free twin appears in none of them, and the
+ * board answered a press on it with the same nothing it answers a buried tile
+ * with. Two independent facts, one silence, and the player left to guess
+ * which: reported from real play on the 1-of-bamboo, twice, before the cause
+ * was the code rather than the board. `liftable` is now the first press's own
+ * authority and the offer list is only ever consulted to complete a pair.
  *
  * THE ANSWER CARRIES THE OFFER'S OWN PAIR, NOT THE TWO POSITIONS PRESSED, and
  * that is not tidiness. The engine promises `a < b` on every action it emits
@@ -83,19 +88,29 @@ function hasPartner(position: number, legal: readonly MahjongPair[]): boolean {
  * cannot reintroduce that defect by dispatching the presses in the order they
  * happened.
  *
- * A SECOND PRESS THAT DOES NOT COMPLETE A PAIR RE-SELECTS RATHER THAN
- * CLEARING, when the tile it lands on has a partner of its own. On a real
- * board a free tile usually has more than one match, so "I meant that other
- * one" is the ordinary case; making the player press twice to change their
- * mind would spend a press on undoing rather than on playing.
+ * A SECOND PRESS THAT DOES NOT COMPLETE A PAIR CLEARS BOTH, with no
+ * exception for a tile that could have started a selection of its own. The
+ * earlier rule re-selected in that case, on the reasoning that "I meant that
+ * other one" is the ordinary intent; it reads differently now that every
+ * reachable tile is selectable, because the set of tiles a second press can
+ * land on has grown to include every free tile on the board. A miss that
+ * silently becomes a new selection would leave the player holding a mark they
+ * did not ask for, and — worse — looking at a board that changed in response
+ * to a press they meant as a question about the pair. Going dark says "those
+ * two do not go together" in the one vocabulary this board has.
  */
-export function resolvePress(selected: number | null, pressed: number, legal: readonly MahjongPair[]): PairSelectionMove {
+export function resolvePress(
+  selected: number | null,
+  pressed: number,
+  legal: readonly MahjongPair[],
+  liftable: ReadonlySet<number>,
+): PairSelectionMove {
   if (selected === pressed) return CLEAR;
 
   if (selected !== null) {
     const offered = legal.find((pair) => (pair.a === selected && pair.b === pressed) || (pair.a === pressed && pair.b === selected));
-    if (offered !== undefined) return { kind: "play", pair: offered };
+    return offered === undefined ? CLEAR : { kind: "play", pair: offered };
   }
 
-  return hasPartner(pressed, legal) ? { kind: "select", position: pressed } : CLEAR;
+  return liftable.has(pressed) ? { kind: "select", position: pressed } : CLEAR;
 }
