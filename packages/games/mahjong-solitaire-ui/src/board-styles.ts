@@ -55,6 +55,15 @@ export function buildBoardStylesheet(): string {
   padding: var(--mj-board-padding);
   display: grid;
   place-items: center;
+  /* NOTHING HERE IS TEXT. Dragging across the turtle painted its tiles in the
+     browser's selection colour — an \`<img>\` inside a \`<div>\` is selectable
+     content by default, and this board has no prose for the gesture to be
+     FOR. Declared once here and inherited rather than repeated on the tile:
+     the felt is the whole surface the cursor can travel over, and a rule
+     scoped to tiles alone would still let a drag that started on the felt
+     sweep them up. \`-webkit-\` first, for Safari and older WebKit. */
+  -webkit-user-select: none;
+  user-select: none;
   /* Felt, and the tenant's own primary when it has one — the same token and
      the same fallback truco's and escoba's tables read. A tile is bone
      coloured (\`TILE_THEME_DEFAULTS\`); the surface under it has to be dark
@@ -135,6 +144,33 @@ export function buildBoardStylesheet(): string {
    own fit caps. */
 :root[data-hexdev-layout="fullscreen"] .hexdev-mahjong-board-surface {
   --mj-board-block-budget: calc(100dvh - var(--mj-board-padding) * 2);
+}
+
+/* AND THE FELT IS THE WHOLE OF THAT BOX, not the part of it the turtle
+   happens to need.
+
+   The tile width is the SMALLEST of three budgets, so whenever the width is
+   the one that binds — a window that is wide relative to its height, which is
+   every desktop — the turtle comes out shorter than the room it was given and
+   this box, whose height is its content, comes out shorter with it. What sat
+   under the remainder was the host page's own background: a pale strip below
+   the felt, on the one screen that is supposed to read as a table.
+
+   IT ALSO CENTRES THE TURTLE, and that is the same fix rather than a second
+   one. \`place-items: center\` was already here and had nothing to work with;
+   a box with room to spare is what turns it back on, so the board sits in the
+   middle of its felt instead of hanging from the top of it. Both were
+   reported separately and both are this one missing line.
+
+   \`min-height\` AND NOT \`height\`, so the declaration can only ever ADD felt.
+   Should a window ever be short enough that the turtle is the taller of the
+   two, a fixed height would clip it — and the block budget above already
+   exists to keep that from happening, which is a different job this rule must
+   not quietly take over. Scoped to fullscreen for the reason the budget above
+   is: inline, the host sizes the iframe to the height the widget reports, and
+   a widget that reported the window would be granted the whole of it. */
+:root[data-hexdev-layout="fullscreen"] .hexdev-mahjong-board {
+  min-height: 100dvh;
 }
 
 /* THE TILE THE PLAYER HAS PRESSED ONCE. Half of a move is on the board and
