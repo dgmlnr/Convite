@@ -73,13 +73,29 @@ describe("2v2: a real four-seat match, playable through the widget UI", () => {
       await page.waitForSelector("iframe", { timeout: 15_000 });
       const table: FrameLocator = page.frameLocator("iframe");
 
+      // A family opens to its formats, so reaching the 2v2 card means
+      // opening the truco family first. Only when the tenant is entitled to
+      // more than one family does a shelf stand between the boot and here;
+      // clicking the card when it is there and skipping it when it is not
+      // keeps this spec working under either entitlement rather than pinning
+      // the fixture's current one.
+      const shelfCard = table.locator('[data-family="truco"]');
+      if ((await shelfCard.count()) > 0) await shelfCard.first().click({ timeout: 15_000 });
+
       // The 2v2 game card offers ONLY bot buttons (game-selection.ts's own
       // seatCount gate — no vs-person affordance for a 4-seat modality this
-      // unit's matchmaking pool cannot yet pair). Scoped to the 2v2 card's
-      // own heading so this never accidentally clicks the 1v1 card's button
-      // — both cards are on screen at once once the tenant is entitled to
-      // both.
-      const card2v2 = table.locator(".hexdev-game-card", { hasText: "Truco Argentino 2v2" });
+      // unit's matchmaking pool cannot yet pair). Scoped to the 2v2 card so
+      // this never accidentally clicks the 1v1 card's button — both are on
+      // screen at once once the tenant is entitled to both.
+      //
+      // BY IDENTITY AND NOT BY COPY. This read `hasText: "Truco Argentino
+      // 2v2"` and went stale the day a card stopped repeating the game's own
+      // name: `game-screen.ts` titles a card by its FORMAT under a hero
+      // ("Mano a mano" / "En parejas"), because the hero above it already
+      // says which game — measured, and written down there. The card has
+      // carried `data-game` all along for focus continuity; that is the
+      // thing that cannot drift when the copy is rewritten again.
+      const card2v2 = table.locator('[data-game="truco-argentino-2v2"]');
       await card2v2.locator('[data-tier="easy"]').first().click({ timeout: 15_000 });
 
       await table.locator(".hexdev-truco-table").waitFor({ state: "visible", timeout: MATCH_START_TIMEOUT_MS });

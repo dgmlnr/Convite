@@ -57,6 +57,7 @@ describe("a session token minted at page load survives a real wait past its TTL"
       await table.locator('[data-tier="easy"]').first().click();
 
       await table.locator(".hexdev-truco-table").waitFor({ state: "visible", timeout: 20_000 });
+      await table.locator("[data-card]").first().waitFor({ state: "visible", timeout: 15_000 });
       const handCardCount = await table.locator("[data-card]").count();
       expect(handCardCount, "the local hand never rendered — the join likely failed silently past the TTL").toBeGreaterThan(0);
 
