@@ -16,12 +16,21 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../..");
  * decision and only one got one. `vitest.scenes.config.ts` (`6b5a1fd`) landed
  * AFTER the workflow and got none either. Nothing said so, anywhere.
  *
- * WHAT IT COST. `pnpm test:e2e` was found RED on `main` itself: three of its
- * six spec files fail, deterministically, and they have been failing for long
- * enough that nobody can say when it started — because nothing re-runs them.
- * A suite outside CI does not stay a "local-only gate"; it rots into a suite
- * nobody can run at all, and the rot is invisible precisely because it is
- * outside CI.
+ * WHAT IT COST, AND IT WAS PAID. `pnpm test:e2e` was found RED on `main`
+ * itself: three of its six spec files failed, deterministically, and they had
+ * been failing for long enough that nobody could say when it started —
+ * because nothing re-ran them. A suite outside CI does not stay a "local-only
+ * gate"; it rots into a suite nobody can run at all, and the rot is invisible
+ * precisely because it is outside CI.
+ *
+ * Those specs are fixed and the suite now has its own job, which is what this
+ * entry always said would close it. None of the four was a defect in the
+ * product: two counted a rendered hand before waiting for one, one was
+ * scoped to a card heading the lobby refactor had rewritten, and the
+ * solitaire's own auto-player leaned on a widget behaviour that was itself a
+ * bug. That last one is the whole argument for the job in one sentence — a
+ * change made deliberately, in a package with its own green fences, walked
+ * past a spec nothing re-ran.
  *
  * THIS FENCE DOES NOT DECIDE, exactly like
  * `dependency-cruiser-layer-coverage.test.ts` does not decide a package's
@@ -60,20 +69,7 @@ const TRIAGE: Readonly<Record<string, SuiteTriage>> = {
   },
   "vitest.e2e.config.ts": {
     script: "test:e2e",
-    ciCommand: null,
-    reason:
-      "IT BELONGS IN CI AS ITS OWN JOB — like `visual` — AND IT CANNOT GO IN TODAY, BECAUSE IT IS ALREADY RED. " +
-      "Measured on this repository rather than assumed: `pnpm test:e2e` takes 3m30s locally (2m14s at `main`, before the mahjong " +
-      "solitaire chain adds its own spec), it is NOT flaky — two consecutive runs failed the same three specs with the same " +
-      "messages — and it needs nothing CI does not already have: `tsc -b`, two Vite builds and the Chromium the `check` job " +
-      "already installs. Cost is not the objection. " +
-      "THE OBJECTION IS THAT IT FAILS. `reload-identity` (storage denied), `team-play` (the 2v2 card's bot tier) and " +
-      "`token-renewal` (the hand never renders past the TTL) all fail at `main` too, so they are nobody's regression in " +
-      "particular and everybody's now. `team-play`'s own comment — 'both cards are on screen at once once the tenant is " +
-      "entitled to both' — describes the ONE-screen lobby that the catalog-sections work replaced with two, which is what a " +
-      "suite nothing re-runs looks like after a refactor walks past it. " +
-      "ADDING A JOB THAT IS RED ON ARRIVAL IS WORSE THAN NO JOB: it trains everyone to ignore the one signal that would have " +
-      "prevented this. Fix those three specs, then add the job and delete this entry's `reason`.",
+    ciCommand: "pnpm run test:e2e",
   },
   "vitest.redis.config.ts": {
     script: "test:redis",

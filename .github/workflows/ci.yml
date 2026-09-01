@@ -79,6 +79,40 @@ jobs:
       - name: Tests
         run: pnpm exec vitest run --project node --project browser
 
+  e2e:
+    name: end to end
+    runs-on: ubuntu-latest
+    # Half the budget the suite needs, so a hang fails instead of burning an
+    # hour: the whole run is 4-4m40s locally over three measurements.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The same one browser, for the same reason the `check` job pins it: this
+      # suite drives Chromium and nothing else, and --with-deps because a bare
+      # runner carries none of the shared libraries a real browser needs.
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # THE WORKSPACE HAS TO BE BUILT FIRST, the same trap `visual` records
+      # below: each package's `exports` points at its `dist/`, so without this
+      # the two Vite builds `global-setup.ts` runs cannot resolve a single
+      # `@hexdev/*` import. Invisible locally, where `tsc -b` has always
+      # already run.
+      - name: Build
+        run: pnpm exec tsc -b
+
+      - name: End to end
+        run: pnpm run test:e2e
+
   visual:
     name: visual baselines
     runs-on: ubuntu-latest
@@ -124,18 +158,16 @@ jobs:
 # THE SUITES THIS FILE DOES NOT RUN, AND WHY — read this before adding a job.
 #
 # There are five vitest project configs at the repository root and this file
-# runs two of them. That was never a decision anybody wrote down: `test:e2e`,
+# runs three of them. That was never a decision anybody wrote down: `test:e2e`,
 # `test:redis` and `test:visual` all existed BEFORE this workflow did, and the
 # scenes config arrived after it, so three suites were left out by omission
 # rather than by choice. `scripts/ci-suite-coverage.test.ts` now fails if a
 # suite config has no verdict, and it is where each verdict is argued in full.
 #
-# The one that matters is `pnpm test:e2e` — real Chromium, both real server
-# roles, real matches played to an ending. It BELONGS here as its own job,
-# alongside `visual`, and it is not here because it is currently RED at `main`
-# itself: three of its six spec files fail deterministically, and they fail
-# for the ordinary reason a suite nothing re-runs fails — a refactor walked
-# past them. Cost is not the objection (3m30s, not flaky over two runs, and
-# the Chromium is already installed above). Landing a job that is red on
-# arrival is: it teaches everyone to ignore the one signal that would have
-# caught this. Fix those three specs, add the job, and update the verdict.
+# `pnpm test:e2e` used to be named here as the one that belonged and could not
+# come in, because it was RED at `main` itself. It is green and it is in, as
+# the `e2e` job above. What it costs, measured on this repository rather than
+# assumed: 3m50s to 4m40s over three runs, of which `single-player` alone is
+# just over two minutes — it plays a whole bot match to an ending, and it was
+# never the slow part anybody suspected. The two remaining exclusions are
+# argued in the coverage fence, not here.
