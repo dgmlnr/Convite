@@ -66,3 +66,8 @@ export { findOperatorAuthorizationContext } from "./postgres-operator-authorizat
 // (`operator-repository.ts`'s own docstring explains why) — they take a real
 // `Pool` directly, same placement principle as every adapter above.
 export { disableOperator, enableOperator } from "./operator-lifecycle.js";
+// `bootstrapOperator`/`resetOperatorPassword` (PR14, tenant-administration
+// slice 11b, design §12): the bootstrap CLI's own two Postgres-bound
+// operations — same "no port, no static double" placement as
+// `operator-lifecycle.ts`'s own pair.
+export { bootstrapOperator, resetOperatorPassword } from "./operator-bootstrap.js";

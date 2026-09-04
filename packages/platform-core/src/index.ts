@@ -56,6 +56,10 @@ export { createStaticOperatorRepository } from "./operator-repository.js";
 // on THIS public barrel even though their only producers stay behind
 // `node.ts`.
 export type { OperatorLifecycleGuardedResult, OperatorLifecycleResult } from "./operator-lifecycle.js";
+// `BootstrapOperatorResult`/`ResetOperatorPasswordResult` (PR14, slice 11b):
+// the bootstrap CLI's own two result shapes — same "pure type, Node-only
+// producer" placement as every result type above.
+export type { BootstrapOperatorResult, ResetOperatorPasswordResult } from "./operator-bootstrap.js";
 export type { OperatorSessionRecord, OperatorSessionRepository } from "./operator-session-repository.js";
 export { createStaticOperatorSessionRepository } from "./operator-session-repository.js";
 // `OperatorAuthorizationContext` (tenant-administration slice 9, design §7):
