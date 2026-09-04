@@ -89,5 +89,10 @@ describe("the public barrel is safe to bundle for a browser", () => {
     // own one-query join gets the same guarantee — the DB round trip behind
     // every guarded admin request stays off the browser-bundled barrel.
     expect(nodeBarrel).toMatch(/findOperatorAuthorizationContext/);
+    // PR13 (tenant-administration slice 11a): disable/enable are
+    // cross-table, transaction-bound functions with a real `Pool` argument
+    // — same guarantee, same reason.
+    expect(nodeBarrel).toMatch(/disableOperator/);
+    expect(nodeBarrel).toMatch(/enableOperator/);
   });
 });

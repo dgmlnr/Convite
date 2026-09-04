@@ -47,8 +47,15 @@ export {
 // `apps/admin/src/login-handler.ts`/`logout-handler.ts` (slice 8b, PR10) —
 // built in PR9 but unconsumed until now, which is why these exports were not
 // added until this PR.
-export type { CreateOperatorResult, OperatorDraft, OperatorId, OperatorRecord, OperatorRepository } from "./operator-repository.js";
+export type { CreateOperatorResult, OperatorDraft, OperatorId, OperatorMutationResult, OperatorRecord, OperatorRepository, OperatorWriteWitness } from "./operator-repository.js";
 export { createStaticOperatorRepository } from "./operator-repository.js";
+// `OperatorLifecycleResult`/`OperatorLifecycleGuardedResult` (PR13, slice
+// 11a): the return shapes of `disableOperator`/`enableOperator`
+// (`node.ts`, Postgres-bound) — PURE types with no Node/Postgres dependency
+// of their own, same class as `CreateOperatorResult` above, so they belong
+// on THIS public barrel even though their only producers stay behind
+// `node.ts`.
+export type { OperatorLifecycleGuardedResult, OperatorLifecycleResult } from "./operator-lifecycle.js";
 export type { OperatorSessionRecord, OperatorSessionRepository } from "./operator-session-repository.js";
 export { createStaticOperatorSessionRepository } from "./operator-session-repository.js";
 // `OperatorAuthorizationContext` (tenant-administration slice 9, design §7):
