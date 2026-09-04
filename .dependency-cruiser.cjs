@@ -64,6 +64,14 @@ module.exports = {
       to: { path: "(^pg(/|$)|node_modules/pg(/|$))" },
     },
     {
+      name: "no-admin-internals-outside-admin",
+      severity: "error",
+      comment:
+        "Design §10 layer 2's residual case (tasks 10.8/10.9, threat matrix row 'Audit boundary violation'): l1-no-l2-l3/l2-no-l3 already forbid every PACKAGE from importing apps/** (design §1.6's own `to:` globs), but `apps/**` is ALSO globbed OUT of both rules' `from:` — `scripts/dependency-cruiser-layer-coverage.test.ts:34`'s own 'apps are the top composition-root tier' — so an APP importing another app's internals (e.g. apps/mint-server reaching directly into apps/admin/src/audit-log.ts) is a hole neither existing rule's `from` can close. Proven empirically before this rule existed: a temporary probe import of apps/admin/src/audit-log.js from apps/mint-server/src/index.ts produced `no dependency violations found`. `from.pathNot` on purpose, never `from.path`: scripts/dependency-cruiser-layer-coverage.test.ts counts only `from.path` rules as tier assignments, and a blanket `from.path` rule here would silently disarm that fence, the exact class of gap PR #98 found on transport-colyseus-client (Part A tasks §0.4's own recorded rule).",
+      from: { pathNot: "^apps/admin/" },
+      to: { path: "^apps/admin/" },
+    },
+    {
       name: "no-colyseus-outside-transport",
       severity: "error",
       comment:

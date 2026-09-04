@@ -47,7 +47,7 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../..");
  * `reachable` dependency-cruiser rule, for its own analogous reason.
  *
  * So: scan every non-test `.ts` file under each app's own `src/` for a
- * VALUE reference to the two symbols that can actually PRODUCE a
+ * VALUE reference to the symbols that can actually PRODUCE a
  * `TenantAdminRepository` instance — `createPostgresTenantAdminRepository`
  * (the Postgres adapter) and `createStaticTenantAdminRepository` (the
  * in-memory one used only by this port's own contract tests). A type-only
@@ -57,8 +57,23 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../..");
  * build a write repository" from "this file merely names the port's type",
  * the same kind of over-firing the module-graph attempt above already
  * demonstrated in a different shape.
+ *
+ * PART 2 OF 2 (task 10.12, threat matrix row "Secret placement", completing
+ * what this file's own header comment promised once an audit writer
+ * existed): `appendAuditEntry` (`apps/admin/src/audit-log.ts`, task 10.5)
+ * joins the pattern for the identical reason — it is the ONLY symbol that
+ * can actually PRODUCE an `audit_entries` INSERT (`audit-log.test.ts`'s own
+ * "only module issuing an INSERT" fence proves that side; this fence proves
+ * mint/match's own composition roots never reach for it). Confirmed the gap
+ * this extension closes, empirically, before adding it here: a temporary
+ * probe `import { appendAuditEntry } ...` in `apps/server/src/index.ts`
+ * passed this suite under the PRE-task-10.12 regex — the fence would have
+ * stayed silently green while `check:boundaries`'s own
+ * `no-admin-internals-outside-admin` rule (task 10.9) caught the identical
+ * probe, meaning THIS fence alone would have been decoration for that case
+ * until now.
  */
-const OFFENDING_SYMBOL_PATTERN = /\b(createPostgresTenantAdminRepository|createStaticTenantAdminRepository)\b/;
+const OFFENDING_SYMBOL_PATTERN = /\b(createPostgresTenantAdminRepository|createStaticTenantAdminRepository|appendAuditEntry)\b/;
 
 function sourceFilesUnder(dir: string): readonly string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -86,5 +101,17 @@ describe("composition-root least privilege: the write port never reaches a read-
   it("the fence itself can fire — a value reference to the write adapter's factory is caught (guards against a silently-vacuous regex)", () => {
     expect(OFFENDING_SYMBOL_PATTERN.test('import { createPostgresTenantAdminRepository } from "@hexdev/platform-core/node";')).toBe(true);
     expect(OFFENDING_SYMBOL_PATTERN.test('import type { TenantAdminRepository } from "@hexdev/platform-core/node";')).toBe(false);
+  });
+
+  it("apps/mint-server never references the audit writer's own producing symbol (task 10.12, part 2 of 2)", () => {
+    expect(offendingFiles(path.join(repoRoot, "apps/mint-server/src"))).toEqual([]);
+  });
+
+  it("apps/server never references the audit writer's own producing symbol (task 10.12, part 2 of 2)", () => {
+    expect(offendingFiles(path.join(repoRoot, "apps/server/src"))).toEqual([]);
+  });
+
+  it("the fence itself can fire for the audit writer too — a value reference to appendAuditEntry is caught", () => {
+    expect(OFFENDING_SYMBOL_PATTERN.test('import { appendAuditEntry } from "../../admin/src/audit-log.js";')).toBe(true);
   });
 });
