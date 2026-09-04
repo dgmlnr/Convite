@@ -118,7 +118,11 @@ describe("2v2 over-the-wire: a real per-team signal never reaches an opposing RE
     const registry = createGameModuleRegistry([{ module: fixtureModule, isNonBlockingAction: (action) => (action as SignalFixtureAction).type === "signal" }]);
     const httpServer = createServer();
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("team-play-live-secret"));
-    const repository = createStaticTenantRepository([{ id: TENANT_ID, embedKey: "pk_team_play", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GAME_ID] }]);
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
+    const repository = createStaticTenantRepository([
+      { id: TENANT_ID, embedKey: "pk_team_play", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GAME_ID], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
+    ]);
     const auth = {
       verifier: await createSessionTokenVerifier(issuer.publicKey),
       repository,
