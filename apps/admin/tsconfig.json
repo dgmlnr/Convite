@@ -18,6 +18,9 @@
     },
     {
       "path": "../../packages/widget-frontdoor"
+    },
+    {
+      "path": "../../packages/widget-protocol"
     }
   ]
 }
