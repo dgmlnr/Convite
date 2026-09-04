@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node dist/index.js"
   },
+  "dependencies": {
+    "@hexdev/widget-frontdoor": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^26.1.2"
   }
