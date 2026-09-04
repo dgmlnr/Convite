@@ -24,9 +24,36 @@
  * the system of record, so an unset value must fail closed at boot rather
  * than silently serve an empty catalog.
  */
+export interface RateLimitConfig {
+  readonly limit: number;
+  readonly windowMs: number;
+}
+
 export interface AdminServerConfig {
   readonly port: number;
   readonly postgresUrl: string;
+  /** design §11.2's CSRF check (`csrf.ts`, tasks 8b.5/8b.6): the panel's own
+   * origin, compared against every non-GET request's Origin/Referer.
+   * Defaults relative to the resolved `port` — same shape `loadMintConfig`'s
+   * own `allowedWidgetOrigins` default already takes — so a fresh checkout
+   * never needs an extra env var for its own CSRF check to pass against
+   * itself. */
+  readonly selfOrigin: string;
+  /** design §11.2: whether the session cookie carries `Secure`. Droppable
+   * ONLY through the identical `HEXDEV_ALLOW_DEV_DEFAULTS` opt-in
+   * `postgresUrl` above already reads — one flag, one meaning ("this is a
+   * local, insecure dev run"), never a second independent escape hatch. */
+  readonly cookieSecure: boolean;
+  /** design §11.3: keyed by the submitted username. Suggested budget 5/15min. */
+  readonly loginUserRateLimit: RateLimitConfig;
+  /** design §11.3: keyed by the request's source IP. Suggested budget 20/15min. */
+  readonly loginIpRateLimit: RateLimitConfig;
+  /** Shared rate-limit state across replicas of THIS role — identical "one
+   * knob, both limiters flip together" convention `MintServerConfig.redisUrl`
+   * already establishes. Unset means the in-memory limiter, correct for a
+   * single instance (this panel's expected deployment shape, design §7's own
+   * "single-digit operators" scale) and for local dev. */
+  readonly redisUrl: string | undefined;
 }
 
 const DEFAULT_PORT = 2572; // server:2567, mint-server:2568 (dev-stack.mjs overrides both to 2570/2571) — the next free slot.
@@ -63,6 +90,19 @@ function readPositiveNumber(env: NodeJS.ProcessEnv, name: string, fallback: numb
  */
 const DEV_POSTGRES_URL = "postgres://postgres@localhost:5432/convite";
 
+// design §11.3's own suggested budgets, mirroring mint-server's
+// `DEFAULT_EMBED_IP_LIMIT`/`DEFAULT_EMBED_KEY_LIMIT` shape.
+const DEFAULT_LOGIN_RATE_WINDOW_MS = 15 * 60_000; // 15 minutes
+const DEFAULT_LOGIN_USER_LIMIT = 5;
+const DEFAULT_LOGIN_IP_LIMIT = 20;
+
+function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: string, defaultLimit: number): RateLimitConfig {
+  return {
+    limit: readPositiveNumber(env, limitVar, defaultLimit),
+    windowMs: readPositiveNumber(env, windowVar, DEFAULT_LOGIN_RATE_WINDOW_MS),
+  };
+}
+
 /**
  * Reads this app's configuration from the process environment. A pure
  * function of its input, exactly like `loadMintConfig`/`loadServerConfig`,
@@ -92,9 +132,15 @@ export function loadAdminConfig(env: NodeJS.ProcessEnv): AdminServerConfig {
       );
     }
   }
+  const port = readPositiveNumber(env, "PORT", DEFAULT_PORT, MAX_PORT);
   return {
-    port: readPositiveNumber(env, "PORT", DEFAULT_PORT, MAX_PORT),
+    port,
     postgresUrl: postgresUrl ?? DEV_POSTGRES_URL,
+    selfOrigin: env.HEXDEV_ADMIN_ORIGIN ?? `http://localhost:${String(port)}`,
+    cookieSecure: !allowDevDefaults,
+    loginUserRateLimit: readRateLimit(env, "HEXDEV_ADMIN_LOGIN_USER_RATE_LIMIT", "HEXDEV_ADMIN_LOGIN_USER_RATE_WINDOW_MS", DEFAULT_LOGIN_USER_LIMIT),
+    loginIpRateLimit: readRateLimit(env, "HEXDEV_ADMIN_LOGIN_IP_RATE_LIMIT", "HEXDEV_ADMIN_LOGIN_IP_RATE_WINDOW_MS", DEFAULT_LOGIN_IP_LIMIT),
+    redisUrl: env.HEXDEV_REDIS_URL,
   };
 }
 
