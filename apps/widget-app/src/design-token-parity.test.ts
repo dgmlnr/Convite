@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTableStylesheet } from "@hexdev/truco-ui";
 import { buildMatchStylesheet } from "@hexdev/escoba-ui";
+import { DEFAULT_THEME_TOKENS } from "@hexdev/widget-protocol";
 import { buildChromeStylesheet } from "./chrome-styles.js";
 
 /**
@@ -204,5 +205,67 @@ describe("design-token-parity (VDS-1: the --hx-* token layer is identical in bot
       expect(rootTokens[name], `escoba-ui match-styles.ts declares ${name}, which is not part of the shared --hx-* layer`).toBeDefined();
       expect(value, `${name} drifted between escoba-ui's match-styles.ts and the other two stylesheets`).toBe(rootTokens[name]);
     }
+  });
+});
+
+/**
+ * VDS-2 (tenant token defaults, task 13a.3): `widget-protocol`'s new
+ * `DEFAULT_THEME_TOKENS` (design §13.2) exists so `apps/admin`'s token
+ * bridge (slice 13b) never has to hand-type a default this file already
+ * hardcodes as a `var(--gx-*, <literal>)` fallback -- but a second, silently
+ * drifting copy would defeat the whole point of exporting one.
+ *
+ * `transparent` fallbacks are set aside before comparing: every one of them
+ * sits inside a `color-mix()` call, where it means "contribute nothing to
+ * this blend if the token is absent" -- a graceful-degradation value, not a
+ * guess at a brand default. Once those are set aside, `--gx-color-primary`,
+ * `--gx-color-on-primary`, `--gx-color-on-surface` and `--gx-color-surface`
+ * each carry exactly one literal at every remaining occurrence.
+ *
+ * `--gx-color-accent` never carries a literal fallback at all -- every
+ * occurrence reads `var(--gx-color-accent, var(--hx-gold))`, so its parity
+ * check is against this same file's own `--hx-gold` declaration (already
+ * extracted by `chromeSurfaceTokens()` above) instead of a second regex.
+ *
+ * `--gx-radius` and `--gx-font-family` are DELIBERATELY excluded: this file
+ * never gives them one canonical literal to begin with, `transparent` or
+ * otherwise. `--gx-radius`'s fallback is chosen PER SHAPE (a button's
+ * `16px`, a chip's `999px`, a badge's `10px`) and disagreeing with itself is
+ * the intended behavior, not drift. `--gx-font-family` falls back to either
+ * a generic sans stack or the display serif depending on which type role is
+ * being painted. Pinning either against one literal would assert a false
+ * uniformity.
+ */
+function literalFallbacksOf(css: string, tokenName: string): readonly string[] {
+  const pattern = new RegExp(`var\\(\\s*${tokenName}\\s*,\\s*([^()]+?)\\s*\\)`, "g");
+  return [...css.matchAll(pattern)].map((match) => match[1]!.trim()).filter((value) => value !== "transparent");
+}
+
+describe("VDS-2 (tenant token defaults): DEFAULT_THEME_TOKENS matches chrome-styles.ts's own literal fallbacks", () => {
+  const chromeCss = buildChromeStylesheet();
+
+  it.each(["--gx-color-primary", "--gx-color-on-primary", "--gx-color-on-surface", "--gx-color-surface"] as const)(
+    "every non-blend literal fallback %s carries in chrome-styles.ts agrees with DEFAULT_THEME_TOKENS",
+    (tokenName) => {
+      const fallbacks = literalFallbacksOf(chromeCss, tokenName);
+
+      expect(fallbacks.length, `fence setup: chrome-styles.ts should still read ${tokenName} with a non-blend literal fallback somewhere`).toBeGreaterThan(0);
+      for (const value of fallbacks) {
+        expect(value, `${tokenName}'s inline fallback (${value}) drifted from DEFAULT_THEME_TOKENS (${DEFAULT_THEME_TOKENS[tokenName]})`).toBe(
+          DEFAULT_THEME_TOKENS[tokenName],
+        );
+      }
+    },
+  );
+
+  it("--gx-color-accent's own private alias (--hx-gold) agrees with DEFAULT_THEME_TOKENS", () => {
+    // Every occurrence of --gx-color-accent in this file falls back to
+    // var(--hx-gold), never a literal — so the real parity check is against
+    // that alias's OWN declared value, not a second color literal.
+    expect(chromeCss).toContain("var(--gx-color-accent, var(--hx-gold))");
+
+    const hxGold = chromeSurfaceTokens()["--hx-gold"];
+    expect(hxGold, "fence setup: chrome-styles.ts's .convite-chrome must declare --hx-gold").toBeDefined();
+    expect(hxGold).toBe(DEFAULT_THEME_TOKENS["--gx-color-accent"]);
   });
 });

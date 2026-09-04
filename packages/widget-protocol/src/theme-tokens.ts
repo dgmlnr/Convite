@@ -63,6 +63,62 @@ const TOKEN_PATTERNS: Record<ThemeTokenName, RegExp> = {
 };
 
 /**
+ * The single source of default token values (design §13.2, task 13a).
+ * `widget-protocol` already owned the token NAMES and their validation but
+ * not their defaults, which lived only as scattered inline
+ * `var(--gx-*, <literal>)` fallbacks inside `apps/widget-app`'s own
+ * stylesheets. Two sibling L0 packages already export exactly this shape --
+ * `spanish-deck-ui`'s `DECK_THEME_DEFAULTS`, `mahjong-tile-ui`'s
+ * `TILE_THEME_DEFAULTS` -- which made `widget-protocol` the outlier for
+ * owning names without defaults, not a case needing its own new convention.
+ *
+ * Values match `apps/widget-app/src/chrome-styles.ts`'s own literal
+ * fallbacks one-for-one, for every token that file gives at least one
+ * unambiguous literal once its `color-mix()`-internal `transparent`
+ * occurrences are set aside (those exist to blend gracefully when a token
+ * is absent, not to guess a brand default — `design-token-parity.test.ts`
+ * excludes them from its own parity check the same way):
+ *
+ * - `--gx-color-primary`/`--gx-color-on-primary`/`--gx-color-on-surface`/
+ *   `--gx-color-surface` each carry the same literal at every non-blend
+ *   occurrence.
+ * - `--gx-color-accent` never carries a literal fallback at all — every
+ *   occurrence reads `var(--gx-color-accent, var(--hx-gold))`, so its value
+ *   here is that file's OWN `--hx-gold` declaration, not an independent
+ *   guess.
+ *
+ * `--gx-radius` and `--gx-font-family` have NO single canonical literal in
+ * that file by design — `--gx-radius` is chosen per component shape (a
+ * button's 16px, a chip's 999px), and `--gx-font-family` alternates between
+ * a generic sans stack and the display serif depending on which type role
+ * is painted — so their defaults here are chosen independently rather than
+ * lifted from one disagreeing source.
+ */
+export const DEFAULT_THEME_TOKENS: Readonly<Record<ThemeTokenName, string>> = {
+  "--gx-color-surface": "#14231d",
+  "--gx-color-on-surface": "#1a1a1a",
+  "--gx-color-primary": "#2f6f4f",
+  "--gx-color-on-primary": "#ffffff",
+  "--gx-color-accent": "#e8c877",
+  "--gx-radius": "8px",
+  "--gx-font-family": "system-ui, sans-serif",
+} as const;
+
+/**
+ * Renders a `:root{--gx-…:…;}` block covering every token in
+ * `THEME_TOKEN_NAMES`, filling any gap in `theme` from `DEFAULT_THEME_TOKENS`.
+ * `apps/admin` (task 13b.3) calls this with no argument, once at boot, to
+ * emit its own copy of the widget's defaults -- never a hand-typed literal.
+ * Iterates `THEME_TOKEN_NAMES` rather than `Object.keys`, so declaration
+ * order is stable and does not depend on object-key insertion order.
+ */
+export function themeTokensToCss(theme?: ThemeOverride): string {
+  const merged = { ...DEFAULT_THEME_TOKENS, ...theme };
+  const declarations = THEME_TOKEN_NAMES.map((name) => `${name}:${merged[name]};`).join("");
+  return `:root{${declarations}}`;
+}
+
+/**
  * Reads ONLY the closed token vocabulary out of an arbitrary input object,
  * dropping any key not in `THEME_TOKEN_NAMES` and any value that fails its
  * own token's pattern. The loop is driven by the vocabulary, not by the
