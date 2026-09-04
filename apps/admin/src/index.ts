@@ -7,15 +7,19 @@ import {
   connectRedis,
   createPostgresOperatorRepository,
   createPostgresOperatorSessionRepository,
+  disableOperator,
+  enableOperator,
   findOperatorAuthorizationContext,
 } from "@hexdev/platform-core/node";
 
-import { authorizeAndDispatch, type AdminHandler, type AuthorizationQuery } from "./authorization.js";
+import { authorizeAndDispatch, type AdminHandler, type AdminRequest, type AuthorizationQuery } from "./authorization.js";
 import { isSameOriginRequest } from "./csrf.js";
 import { loadAdminConfig } from "./config.js";
 import { handleLoginRequest } from "./login-handler.js";
 import { handleLogoutRequest } from "./logout-handler.js";
-import { resolveAdminRoute } from "./routing.js";
+import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
+import { createOwnPasswordHandler } from "./own-password-handler.js";
+import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 
 /**
  * The admin panel's composition root — the FOURTH composition root in this
@@ -29,32 +33,34 @@ import { resolveAdminRoute } from "./routing.js";
  * structural here, not a policy, and this file's own imports are part of
  * what that fence verifies.
  *
- * STATUS (slice 9 of tenant-administration, THIS PR): every
- * `access: "permission"` route (design §6.2's route table) now passes
- * through the single authorization checkpoint (`authorization.ts`,
- * `authorizeAndDispatch`) BEFORE reaching its own (still-501) stub — a
- * refusal never reaches `notImplementedHandler` at all, the same guarantee
- * a REAL future handler touching `TenantAdminRepository` will inherit for
- * free (`authorization.test.ts` proves this with a call-recording handler).
- * `login-submit`/`logout` (slice 8b, unchanged) stay wired to their own real
- * handlers against a REAL Postgres-backed `OperatorRepository`/
- * `OperatorSessionRepository`.
+ * STATUS (slice 11a of tenant-administration, THIS PR): every
+ * `access: "permission"` route, PLUS `own-password` (`access:
+ * "authenticated"` — see below), now passes through the single authorization
+ * checkpoint (`authorization.ts`, `authorizeAndDispatch`) before reaching its
+ * handler. `REAL_HANDLERS` below resolves `operator-create`/
+ * `operator-disable`/`operator-enable`/`own-password` to their real
+ * implementations (`operator-handlers.ts`/`own-password-handler.ts`, slice
+ * 11a); every other permission-guarded kind still stubs 501 via
+ * `notImplementedHandler` (tenant CRUD/permission grant-revoke/audit viewer
+ * arrive PR15/PR15/PR22). `login-submit`/`logout` (slice 8b, unchanged) stay
+ * wired OUTSIDE this checkpoint entirely, to their own real handlers against
+ * a REAL Postgres-backed `OperatorRepository`/`OperatorSessionRepository`.
  *
- * DELIBERATE SCOPE BOUNDARY, disclosed rather than silently decided: `logout`
- * and `own-password` carry guard `access: "authenticated"` (design §6.2), so
- * Domain K's own checkpoint requirement technically covers them too — but
- * task 9's own list names permission-gated routes only (9.1/9.3), neither
- * has a real handler needing an `AuthorizedOperator` yet (`own-password`
- * arrives with Domain J's self-service password change; `logout`'s own
- * idempotent-regardless-of-cookie behaviour, PR10d, is a settled, tested
- * property this PR does not touch), and wiring the checkpoint's session-only
- * branch onto them now would be unrequested scope change to already-shipped,
- * already-tested behaviour. Deferred to whichever slice implements their
- * real handlers, not overlooked.
+ * `own-password` NOW joins the checkpoint, closing the scope boundary a
+ * PRIOR revision of this file disclosed rather than silently decided:
+ * design §6.2's own table guards it `authenticated` only (task 7.7's
+ * three-member exemption — a permission gate here is unsatisfiable for a
+ * zero-permission operator), so it reaches `authorizeAndDispatch` through an
+ * explicit `route.kind === "own-password"` check alongside the
+ * data-driven `access: "permission"` test, rather than broadening that test
+ * itself — `logout` deliberately does NOT join it: its own
+ * idempotent-regardless-of-cookie behaviour (PR10d) needs no
+ * `AuthorizedOperator` at all, and broadening the condition to cover every
+ * `authenticated` route would silently change that settled, tested property.
  *
- * No tenant/operator/audit route has a REAL handler yet — this slice
- * establishes WHAT an authenticated, authorized operator may reach, not the
- * business logic behind any specific action (slices 11/12/14-16).
+ * `AdminRequest.body` (this PR): the FIRST guarded route needing one —
+ * parsed once by `readJsonBody` before `authorizeAndDispatch` runs, never by
+ * a handler touching `node:http` itself.
  */
 const config = loadAdminConfig(process.env);
 
@@ -80,6 +86,40 @@ const loginUserLimiter: RateLimiter =
   redis !== undefined ? createRedisRateLimiter({ redis, ...config.loginUserRateLimit, keyPrefix: "rl:admin-login-user" }) : createRateLimiter(config.loginUserRateLimit);
 const loginIpLimiter: RateLimiter =
   redis !== undefined ? createRedisRateLimiter({ redis, ...config.loginIpRateLimit, keyPrefix: "rl:admin-login-ip" }) : createRateLimiter(config.loginIpRateLimit);
+
+/**
+ * Slice 11a's own real handlers — the FIRST production callers of
+ * `appendAuditEntry` (design §9's own closing argument): `operator-handlers.ts`
+ * builds every `WriteWitness` as `(exec) => appendAuditEntry(exec, {...})`,
+ * bound to whichever mutation it accompanies. `disableOperator`/
+ * `enableOperator` are bound to THIS process's own pool — same "one knob per
+ * composition root" shape every other Postgres-backed adapter above already
+ * follows.
+ */
+const operatorHandlersDeps: OperatorHandlersDeps = {
+  operators,
+  disableOperator: (id, w) => disableOperator(postgresPool, id, w),
+  enableOperator: (id, w) => enableOperator(postgresPool, id, w),
+};
+const operatorCreateHandler = createOperatorCreateHandler(operatorHandlersDeps);
+const operatorDisableHandler = createOperatorDisableHandler(operatorHandlersDeps);
+const operatorEnableHandler = createOperatorEnableHandler(operatorHandlersDeps);
+const ownPasswordHandler = createOwnPasswordHandler({ operators });
+
+/**
+ * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
+ * handler — every kind absent from this map keeps stubbing 501 via
+ * `notImplementedHandler` below (tenant CRUD/permission grant-revoke/audit
+ * viewer arrive PR15/PR15/PR22). Purely data-driven, same "no enumeration to
+ * keep in sync" property the checkpoint's own dispatch condition already
+ * has — a kind added here needs no change to the dispatch condition itself.
+ */
+const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
+  "operator-create": operatorCreateHandler,
+  "operator-disable": operatorDisableHandler,
+  "operator-enable": operatorEnableHandler,
+  "own-password": ownPasswordHandler,
+};
 
 /**
  * Reads and JSON-parses a request body — the identical shape every existing
@@ -145,24 +185,51 @@ const server = createServer((req, res) => {
   // through `authorizeAndDispatch` BEFORE the switch below is ever reached —
   // `route.guard.access === "permission"` is a purely data-driven test, so a
   // future route added to `routing.ts`'s table is checkpointed automatically,
-  // with no enumeration by kind here to keep in sync. On refusal, the switch
-  // below is never entered at all; on success, `notImplementedHandler` still
-  // runs (no real business handler exists yet), but only AFTER `authorize`
-  // has already minted a real `AuthorizedOperator`.
-  if (route.guard.access === "permission") {
-    authorizeAndDispatch(req.headers.cookie, route.guard, { query: authorizationQuery }, { params: route.params }, notImplementedHandler)
-      .then((response) => {
-        res.writeHead(response.status, { "content-type": "application/json" });
-        res.end(response.body);
-      })
-      .catch(() => {
-        // Design §15: an unreachable Postgres at request time fails closed,
-        // never silently treated as authorized. This is the checkpoint's own
-        // equivalent of `tenant-lookup-failed` -> 503 (embed-handler.ts) —
-        // 500 here, since there is no tenant-vs-lookup distinction to draw.
-        res.writeHead(500, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: "authorization-check-failed" }));
-      });
+  // with no enumeration by kind here to keep in sync. `route.kind ===
+  // "own-password"` joins it explicitly (PR13, slice 11a): design §6.2's own
+  // table guards it `authenticated` only (task 7.7's disclosed three-member
+  // exemption — a permission gate here is unsatisfiable for a zero-permission
+  // operator), but `authorize` still validates session+`enabled` for it, the
+  // same deferred scope `index.ts`'s own prior docstring already named in
+  // advance. `logout` stays OUTSIDE this checkpoint, unchanged: its own
+  // idempotent-regardless-of-cookie behaviour (PR10d) needs no
+  // `AuthorizedOperator` at all. On refusal, `resolveHandler` below is never
+  // reached; on success, the resolved handler runs (a REAL one for
+  // `operator-create`/`operator-disable`/`operator-enable`/`own-password`,
+  // `notImplementedHandler` for every other kind still awaiting its own
+  // slice), only AFTER `authorize` has already minted a real
+  // `AuthorizedOperator`.
+  if (route.guard.access === "permission" || route.kind === "own-password") {
+    const handler = REAL_HANDLERS[route.kind] ?? notImplementedHandler;
+    const dispatch = (body: Record<string, unknown>) => {
+      const adminRequest: AdminRequest = { params: route.params, body };
+      authorizeAndDispatch(req.headers.cookie, route.guard, { query: authorizationQuery }, adminRequest, handler)
+        .then((response) => {
+          res.writeHead(response.status, { "content-type": "application/json" });
+          res.end(response.body);
+        })
+        .catch(() => {
+          // Design §15: an unreachable Postgres at request time fails closed,
+          // never silently treated as authorized. This is the checkpoint's own
+          // equivalent of `tenant-lookup-failed` -> 503 (embed-handler.ts) —
+          // 500 here, since there is no tenant-vs-lookup distinction to draw.
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "authorization-check-failed" }));
+        });
+    };
+    // `GET` routes (`tenant-list`/`tenant-detail`/`operator-list`/`audit-view`)
+    // carry no body to parse — same "read the body only for a method that
+    // can have one" shape `login-submit` already establishes below.
+    if (method === "GET") {
+      dispatch({});
+    } else {
+      readJsonBody(req)
+        .then(dispatch)
+        .catch(() => {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "malformed request body" }));
+        });
+    }
     return;
   }
 
@@ -198,9 +265,21 @@ const server = createServer((req, res) => {
       });
       return;
 
+    // Every `access: "permission"` kind below is already intercepted by the
+    // checkpoint `if` above and NEVER reaches this switch at runtime — they
+    // stay listed here only because Layer 1's exhaustive `switch` (design
+    // §6.3) demands a case for every real `AdminRouteKind` member, reachable
+    // or not. `own-password` is ABSENT from this list on purpose (not an
+    // omission): TypeScript's own control-flow narrowing already proves it
+    // unreachable here — the earlier `if` includes `route.kind ===
+    // "own-password"` and always `return`s, so by the time this switch runs,
+    // `route.kind`'s narrowed type no longer even contains that member; a
+    // stray `case "own-password":` here is a COMPILE ERROR (`TS2678`), not
+    // merely dead code — confirmed by trying it. `login-form`/`asset`
+    // (`access: "public"`) are the only two of this original group genuinely
+    // dispatched from here.
     case "login-form":
     case "asset":
-    case "own-password":
     case "tenant-list":
     case "tenant-detail":
     case "tenant-create":
