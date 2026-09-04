@@ -6,6 +6,7 @@ node_modules/
 dist/
 dist-iife/
 dist-app/
+dist-ui/
 build/
 *.tsbuildinfo
 

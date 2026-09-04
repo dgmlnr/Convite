@@ -72,6 +72,14 @@ module.exports = {
       to: { path: "^apps/admin/" },
     },
     {
+      name: "no-ui-framework-outside-admin",
+      severity: "error",
+      comment:
+        "Design §13.1/§5.2, task 13b.7: apps/admin is the ONLY app that lifts the zero-new-framework convention (decision #3684 item 5a) — nobody embeds the panel, unlike apps/widget-app, which apps/widget-app's own browser-safety.test.ts already fences from the OTHER side (a value import reachable from its bundle). react/react-dom/@radix-ui/tailwindcss reaching anywhere outside apps/admin would spread that lifted convention silently. `from.pathNot` on purpose, never `from.path`: scripts/dependency-cruiser-layer-coverage.test.ts counts only `from.path` rules as tier assignments, and a blanket `from.path` rule here would silently disarm this fence, the exact class of gap PR #98 found on transport-colyseus-client (Part A tasks §0.4's own recorded rule) — proven empirically before this rule existed: a temporary `import \"react\"` probe in apps/mint-server/src/index.ts produced `no dependency violations found` (288 modules/834 dependencies cruised, nothing flagged). Fenced under React specifically rather than under a framework-neutral name because the design's own rejected-Vue comparison (§13.1) notes this rule is STRONGER under React than it would have been under a Vue SFC setup: dependency-cruiser parses `.tsx` natively but has no `.vue` parser, so a Vue single-file component's own `<script>` imports would have been invisible to it.",
+      from: { pathNot: "^apps/admin/" },
+      to: { path: "(^react(-dom)?(/|$)|^@radix-ui/|^tailwindcss(/|$)|node_modules/(react(-dom)?|@radix-ui/[^/]+|tailwindcss)(/|$))" },
+    },
+    {
       name: "no-colyseus-outside-transport",
       severity: "error",
       comment:

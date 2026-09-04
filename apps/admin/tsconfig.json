@@ -6,7 +6,8 @@
     "noEmit": false,
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "lib": ["ES2022", "DOM"],
-    "types": ["node"]
+    "types": ["node", "vite/client"],
+    "jsx": "react-jsx"
   },
   "include": [
     "src"
