@@ -2,8 +2,15 @@ import { createServer, type IncomingMessage } from "node:http";
 
 import { createRateLimiter, createRedisRateLimiter } from "@hexdev/platform-core";
 import type { RateLimiter } from "@hexdev/platform-core";
-import { connectPostgres, connectRedis, createPostgresOperatorRepository, createPostgresOperatorSessionRepository } from "@hexdev/platform-core/node";
+import {
+  connectPostgres,
+  connectRedis,
+  createPostgresOperatorRepository,
+  createPostgresOperatorSessionRepository,
+  findOperatorAuthorizationContext,
+} from "@hexdev/platform-core/node";
 
+import { authorizeAndDispatch, type AdminHandler, type AuthorizationQuery } from "./authorization.js";
 import { isSameOriginRequest } from "./csrf.js";
 import { loadAdminConfig } from "./config.js";
 import { handleLoginRequest } from "./login-handler.js";
@@ -22,15 +29,32 @@ import { resolveAdminRoute } from "./routing.js";
  * structural here, not a policy, and this file's own imports are part of
  * what that fence verifies.
  *
- * STATUS (slice 8b of tenant-administration, COMPLETE): `login-submit` and
- * `logout` are wired to the real handlers built and unit-tested in isolation
- * (`login-handler.ts`/`logout-handler.ts`), against a REAL Postgres-backed
- * `OperatorRepository`/`OperatorSessionRepository` — this app's first
- * workspace dependency on `@hexdev/platform-core`. CSRF applies to every
- * non-GET route with no exemption (`csrf.ts`). Every OTHER route is still a
- * 501 stub. No authorization checkpoint exists yet (that is slice 9) — this
- * slice establishes WHO you are, not WHAT you may do; `own-password` and
- * every tenant/operator/audit route stay unimplemented until later slices.
+ * STATUS (slice 9 of tenant-administration, THIS PR): every
+ * `access: "permission"` route (design §6.2's route table) now passes
+ * through the single authorization checkpoint (`authorization.ts`,
+ * `authorizeAndDispatch`) BEFORE reaching its own (still-501) stub — a
+ * refusal never reaches `notImplementedHandler` at all, the same guarantee
+ * a REAL future handler touching `TenantAdminRepository` will inherit for
+ * free (`authorization.test.ts` proves this with a call-recording handler).
+ * `login-submit`/`logout` (slice 8b, unchanged) stay wired to their own real
+ * handlers against a REAL Postgres-backed `OperatorRepository`/
+ * `OperatorSessionRepository`.
+ *
+ * DELIBERATE SCOPE BOUNDARY, disclosed rather than silently decided: `logout`
+ * and `own-password` carry guard `access: "authenticated"` (design §6.2), so
+ * Domain K's own checkpoint requirement technically covers them too — but
+ * task 9's own list names permission-gated routes only (9.1/9.3), neither
+ * has a real handler needing an `AuthorizedOperator` yet (`own-password`
+ * arrives with Domain J's self-service password change; `logout`'s own
+ * idempotent-regardless-of-cookie behaviour, PR10d, is a settled, tested
+ * property this PR does not touch), and wiring the checkpoint's session-only
+ * branch onto them now would be unrequested scope change to already-shipped,
+ * already-tested behaviour. Deferred to whichever slice implements their
+ * real handlers, not overlooked.
+ *
+ * No tenant/operator/audit route has a REAL handler yet — this slice
+ * establishes WHAT an authenticated, authorized operator may reach, not the
+ * business logic behind any specific action (slices 11/12/14-16).
  */
 const config = loadAdminConfig(process.env);
 
@@ -40,6 +64,11 @@ const config = loadAdminConfig(process.env);
 const postgresPool = await connectPostgres(config.postgresUrl);
 const operators = createPostgresOperatorRepository(postgresPool);
 const sessions = createPostgresOperatorSessionRepository(postgresPool);
+
+// The authorization checkpoint's own one-query join (design §7, task 9.2),
+// bound to THIS process's own pool — the same "one knob per composition
+// root" shape every other Postgres-backed adapter above already follows.
+const authorizationQuery: AuthorizationQuery = (tokenHash) => findOperatorAuthorizationContext(postgresPool, tokenHash);
 
 // Same "one knob, both flip together" convention every other role's own
 // Redis-backed rate limiters already follow (`apps/mint-server/src/index.ts`,
@@ -77,6 +106,17 @@ function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   });
 }
 
+/**
+ * Every REAL permission-guarded route still stubs 501 in this slice (tenant
+ * CRUD/operator management/audit viewer arrive PR12+/slices 11-16) — but,
+ * unlike PR8c's own bare stub, this one is a genuine `AdminHandler` (design
+ * §6.3 Layer 2), reached ONLY after `authorize` succeeds. This is what
+ * "wired through the dispatcher" (task 9.4) means concretely: `actor` is a
+ * real, minted `AuthorizedOperator` by the time this runs, not a value some
+ * future handler will have to remember to thread through later.
+ */
+const notImplementedHandler: AdminHandler = async () => ({ status: 501, body: JSON.stringify({ error: "not-implemented" }) });
+
 /* c8 ignore start — the HTTP plumbing; `resolveAdminRoute`, `loadAdminConfig`,
  * `handleLoginRequest`, and `handleLogoutRequest` are what the tests pin,
  * exactly as `apps/mint-server/src/index.ts` already documents for its own
@@ -99,6 +139,32 @@ const server = createServer((req, res) => {
   }
 
   const route = resolveAdminRoute(method, url.pathname);
+
+  // THE SINGLE AUTHORIZATION CHECKPOINT (design §6.3 Layers 2-3/§7, spec
+  // Domain K, tasks 9.1-9.4): every `access: "permission"` route resolves
+  // through `authorizeAndDispatch` BEFORE the switch below is ever reached —
+  // `route.guard.access === "permission"` is a purely data-driven test, so a
+  // future route added to `routing.ts`'s table is checkpointed automatically,
+  // with no enumeration by kind here to keep in sync. On refusal, the switch
+  // below is never entered at all; on success, `notImplementedHandler` still
+  // runs (no real business handler exists yet), but only AFTER `authorize`
+  // has already minted a real `AuthorizedOperator`.
+  if (route.guard.access === "permission") {
+    authorizeAndDispatch(req.headers.cookie, route.guard, { query: authorizationQuery }, { params: route.params }, notImplementedHandler)
+      .then((response) => {
+        res.writeHead(response.status, { "content-type": "application/json" });
+        res.end(response.body);
+      })
+      .catch(() => {
+        // Design §15: an unreachable Postgres at request time fails closed,
+        // never silently treated as authorized. This is the checkpoint's own
+        // equivalent of `tenant-lookup-failed` -> 503 (embed-handler.ts) —
+        // 500 here, since there is no tenant-vs-lookup distinction to draw.
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "authorization-check-failed" }));
+      });
+    return;
+  }
 
   switch (route.kind) {
     case "login-submit":
