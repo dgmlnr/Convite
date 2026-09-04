@@ -54,7 +54,14 @@ describe("the public barrel is safe to bundle for a browser", () => {
    * test still means something if the file is renamed rather than deleted.
    */
   it("keeps the node-only entry point out of the barrel", () => {
-    expect(readFileSync(join(SRC, "index.ts"), "utf8")).not.toMatch(/from "\.\/(node|redis-client|postgres-client)\.js"/);
+    // `postgres-tenant-repository` is on this list even though its own `pg`
+    // import is type-only (`import type { Pool } from "pg"`, so the earlier
+    // value-import checks above would not catch it here) — design decision
+    // 1.4 places every Postgres-backed adapter behind `node.ts` regardless,
+    // for symmetry with `connectPostgres` and so a future write-side adapter
+    // (PR5) has one settled place to land rather than a per-adapter judgment
+    // call about whether its own import happens to be type-only today.
+    expect(readFileSync(join(SRC, "index.ts"), "utf8")).not.toMatch(/from "\.\/(node|redis-client|postgres-client|postgres-tenant-repository)\.js"/);
   });
 
   it("still ships that entry point for the composition roots that need it", () => {
@@ -62,5 +69,6 @@ describe("the public barrel is safe to bundle for a browser", () => {
     const nodeBarrel = readFileSync(join(SRC, "node.ts"), "utf8");
     expect(nodeBarrel).toMatch(/connectRedis/);
     expect(nodeBarrel).toMatch(/connectPostgres/);
+    expect(nodeBarrel).toMatch(/createPostgresTenantRepository/);
   });
 });

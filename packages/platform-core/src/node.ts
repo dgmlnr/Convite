@@ -24,6 +24,14 @@
  * it is the ONE value import of `pg` in this package, and every adapter that
  * consumes the `Pool` it returns takes `import type { Pool } from "pg"` —
  * type-only, erased at build, never reaching a browser bundle.
+ *
+ * `createPostgresTenantRepository` joins it too, even though its own `pg`
+ * import IS type-only and would not by itself put anything into the widget
+ * bundle (design decision 1.4): every Postgres-backed adapter lives behind
+ * this barrel on principle, not case-by-case per import shape, so a future
+ * write-side adapter (PR5) has one settled place to land instead of a fresh
+ * judgment call each time.
  */
 export { connectRedis } from "./redis-client.js";
 export { connectPostgres } from "./postgres-client.js";
+export { createPostgresTenantRepository } from "./postgres-tenant-repository.js";

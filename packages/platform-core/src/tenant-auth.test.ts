@@ -12,6 +12,7 @@ import {
 } from "./tenant-auth.js";
 import type { TenantId, TenantRecord } from "./tenant-auth.js";
 import { describeJtiReplayGuardContract } from "./jti-replay-guard.contract.js";
+import { describeTenantRepositoryContract } from "./tenant-repository.contract.js";
 
 /** Flips one character in the MIDDLE of the signature segment — not the
  * last character, whose base64url encoding can carry unused padding bits
@@ -105,6 +106,13 @@ describe("createStaticTenantRepository — theme sanitization (design §10 prima
     expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toBeUndefined();
   });
 });
+
+// The shared conformance suite (tenant-repository.contract.ts), run here
+// against THIS adapter — the same suite
+// `postgres-tenant-repository.postgres.test.ts` runs against the Postgres
+// adapter (design §1's Domain B: "a record written to Postgres is readable
+// through the exact same port shape the static adapter already satisfies").
+describeTenantRepositoryContract("static in-memory", async (records) => createStaticTenantRepository(records));
 
 describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, the second question a colour has to answer)", () => {
   // Shape validation asks "can this string escape the declaration it is
