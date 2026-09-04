@@ -25,6 +25,16 @@ function fakeTrucoModule(): GameModule<unknown, { readonly playerId: PlayerId },
   };
 }
 
+/** Ten years out, matching `scripts/dev-tenant-seed.mjs`'s own convention
+ * (tenant-administration slice 5/PR6b) and `tenant-auth.test.ts`'s identical
+ * fixture fix (slice 6, task 6.1): every test below is NOT itself about
+ * window enforcement (that lands in a later slice-6 PR, task 6.7/6.8) and
+ * needs a tenant that is unambiguously "currently paid up", or design
+ * #1.3's "zero window configured = inactive" rule (correctly, but
+ * unhelpfully for this file's OWN purpose) refuses every one of them the
+ * moment `mintSessionForEmbed` (tenant-auth.ts) starts enforcing it. */
+const FAR_FUTURE_VALID_UNTIL = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
+
 /** Generous limits by default so unrelated tests never trip rate limiting
  * — the dedicated describe block below overrides with tight limits. */
 async function deps(
@@ -37,6 +47,7 @@ async function deps(
       allowedOrigins: [ALLOWED_ORIGIN],
       entitledGames: overrides.entitledGames ?? [TRUCO_ID],
       theme: overrides.theme,
+      validUntil: FAR_FUTURE_VALID_UNTIL,
     },
   ]);
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));

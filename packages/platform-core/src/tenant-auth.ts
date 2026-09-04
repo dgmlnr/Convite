@@ -1,6 +1,7 @@
 import type { Clock, GameId, PlayerId } from "@hexdev/platform-contract";
 import { describeThemeContrastViolation, type ThemeOverride } from "@hexdev/widget-protocol";
 import { sanitizeTenantTheme } from "./tenant-theme.js";
+import { isTenantActive } from "./tenant-validity.js";
 
 /** A platform-wide tenant identifier. */
 export type TenantId = string & { readonly __brand: "TenantId" };
@@ -383,7 +384,9 @@ export function createJtiReplayGuard(options: JtiReplayGuardOptions): JtiReplayG
   };
 }
 
-export type EmbedMintResult = { readonly ok: true; readonly token: string } | { readonly ok: false; readonly reason: "unknown-tenant" | "origin-not-allowed" };
+export type EmbedMintResult =
+  | { readonly ok: true; readonly token: string }
+  | { readonly ok: false; readonly reason: "unknown-tenant" | "origin-not-allowed" | "tenant-not-active" | "tenant-lookup-failed" };
 
 async function mintForTenant(
   tenant: TenantRecord,
@@ -391,6 +394,48 @@ async function mintForTenant(
 ): Promise<EmbedMintResult> {
   const token = await args.issuer.mint({ tenantId: tenant.id, playerId: args.playerId, entitlements: tenant.entitledGames }, args.ttlSeconds);
   return { ok: true, token };
+}
+
+/**
+ * Resolves a tenant by embed key and enforces the two checks every choke
+ * point owes it BEFORE any caller-specific concern (origin allowlist,
+ * entitlement) is even reached: tenant-administration slice 6, design §2.4/
+ * §2.5/§15. Shared by `mintSessionForEmbed` and `renewSessionForWidget` so
+ * there is exactly ONE implementation of "resolve, then check the window",
+ * never two copies that could quietly diverge about the same tenant.
+ *
+ * TWO fail-closed branches, in the fixed order design §2.4 requires
+ * ("branch on isTenantActive immediately after tenant lookup", i.e. BEFORE
+ * any origin/entitlement check a caller adds afterward):
+ *
+ * 1. A rejecting repository (a request-time Postgres outage, design §15) is
+ *    caught here and reported as `tenant-lookup-failed`, never left to
+ *    propagate as an unhandled rejection — `undefined` already means "no
+ *    such tenant" (decision #3684 item... design §1.10), a different fact
+ *    a caught failure must not be confused with.
+ * 2. `isTenantActive` — the tenant exists but its paid validity window
+ *    (design §2.4, `tenant-validity.ts`) does not currently cover `now`.
+ *    `clock` defaults to `Date.now`, the same optional-with-default shape
+ *    `JtiReplayGuardOptions.clock` already uses in this same file — "the
+ *    injected Clock port, never `Date.now()` inside the domain" is
+ *    satisfied by making the default the ONLY place `Date.now` appears,
+ *    with every call site free to inject a fake one (this file's own
+ *    `renewSessionForWidget` mid-session-lapse test does exactly that).
+ */
+async function resolveActiveTenant(
+  repository: TenantRepository,
+  embedKey: string,
+  clock: Clock,
+): Promise<{ readonly ok: true; readonly tenant: TenantRecord } | { readonly ok: false; readonly reason: "unknown-tenant" | "tenant-not-active" | "tenant-lookup-failed" }> {
+  let tenant: TenantRecord | undefined;
+  try {
+    tenant = await repository.findByEmbedKey(embedKey);
+  } catch {
+    return { ok: false, reason: "tenant-lookup-failed" };
+  }
+  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
+  if (!isTenantActive(tenant, clock())) return { ok: false, reason: "tenant-not-active" };
+  return { ok: true, tenant };
 }
 
 /**
@@ -407,11 +452,13 @@ export async function mintSessionForEmbed(args: {
   readonly origin: string;
   readonly playerId: PlayerId;
   readonly ttlSeconds: number;
+  /** Tenant-administration slice 6, design §2.4: defaults to `Date.now`. */
+  readonly clock?: Clock;
 }): Promise<EmbedMintResult> {
-  const tenant = await args.repository.findByEmbedKey(args.embedKey);
-  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
-  if (!tenant.allowedOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
-  return mintForTenant(tenant, args);
+  const resolved = await resolveActiveTenant(args.repository, args.embedKey, args.clock ?? Date.now);
+  if (!resolved.ok) return resolved;
+  if (!resolved.tenant.allowedOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
+  return mintForTenant(resolved.tenant, args);
 }
 
 /**
@@ -450,9 +497,15 @@ export async function renewSessionForWidget(args: {
   readonly allowedWidgetOrigins: readonly string[];
   readonly playerId: PlayerId;
   readonly ttlSeconds: number;
+  /** Tenant-administration slice 6, design §2.4: defaults to `Date.now`. The
+   * whole reason this exists as an injectable argument rather than a bare
+   * `Date.now()` call: a tenant valid at mint time can lapse before the
+   * player ever renews, and that "mid-session" scenario is only reliably
+   * testable by advancing a fake clock, never a real wait. */
+  readonly clock?: Clock;
 }): Promise<EmbedMintResult> {
-  const tenant = await args.repository.findByEmbedKey(args.embedKey);
-  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
+  const resolved = await resolveActiveTenant(args.repository, args.embedKey, args.clock ?? Date.now);
+  if (!resolved.ok) return resolved;
   if (!args.allowedWidgetOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
-  return mintForTenant(tenant, args);
+  return mintForTenant(resolved.tenant, args);
 }
