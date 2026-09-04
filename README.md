@@ -88,6 +88,7 @@ multijugador el servidor es autoritativo y sí lo es.
 
 - Node.js 24 o superior
 - pnpm 11 o superior
+- Docker, para levantar Postgres localmente (`pnpm dev:server`, `pnpm run test:postgres`)
 
 Este proyecto usa pnpm exclusivamente. No usar `npm` ni `npx`.
 
@@ -131,15 +132,24 @@ Tres detalles que cuestan una tarde si no se saben:
   servir, así que el origen horneado y el servido no pueden separarse porque alguien corrió
   las dos mitades en el orden equivocado. Un bundle horneado para `localhost` no funciona
   desde otro dispositivo, en silencio y sin error en consola.
-- **El puerto 5173 no es decorativo.** Está en la lista blanca del tenant de desarrollo
-  (`DEV_TENANT` en `apps/server/src/config.ts`). Servir la página desde otro puerto hace que
-  el servidor la rechace, que es exactamente lo que debe pasar.
+- **El puerto 5173 no es decorativo.** Está en la lista blanca del tenant de desarrollo, que
+  este mismo script siembra en Postgres al arrancar. Servir la página desde otro puerto hace
+  que el servidor la rechace, que es exactamente lo que debe pasar.
 - **El navegador cachea `loader.js`.** Si cambiás algo y la página sigue vacía, recargá
   salteando la caché antes de buscar el problema en otro lado.
 
 `HEXDEV_ALLOW_DEV_DEFAULTS=true` va incluido en `dev:server`. La variable es deliberada: sin
 una clave de firma configurada, el servidor se niega a arrancar. El modo de desarrollo hay
 que pedirlo de forma explícita, nunca se asume.
+
+**Postgres ahora es obligatorio, no opcional.** Los dos roles leen el catálogo de tenants
+desde ahí — ya no existe un tenant hardcodeado en el config de cada rol. `pnpm dev:server`
+levanta su propio contenedor Postgres efímero (necesita Docker corriendo), aplica las
+migraciones y siembra un tenant de desarrollo antes de arrancar cualquiera de los dos roles.
+Sin Docker disponible y sin `HEXDEV_POSTGRES_URL` configurada a mano, el script se niega a
+arrancar con un mensaje que nombra las dos salidas. Si ya tenés un Postgres propio corriendo,
+exportá `HEXDEV_POSTGRES_URL` antes de correr el comando y el script lo usa tal cual, sin
+tocar Docker.
 
 Para escalar horizontalmente hace falta además `HEXDEV_REDIS_URL`. Sin ella todo corre en
 memoria, en un solo proceso. Con ella mal configurada, el servidor **no arranca**: caer en
@@ -178,7 +188,9 @@ la topología está probada y no solamente descrita.
 | `pnpm test:visual` | Regresión visual por captura de pantalla, dentro del contenedor de render pinneado (requiere Docker; ver `visual/README.md`) |
 | `pnpm test:visual:host` | La misma suite contra el navegador de tu máquina: chequeo rápido, no canónico |
 | `pnpm test:redis` | Propiedades entre instancias contra un Redis real en Docker |
-| `pnpm dev:server` | Compila y levanta el producto entero en `localhost`: ambos roles, el proxy y un sitio de prueba |
+| `pnpm run test:postgres` | El adaptador de tenants y el runner de migraciones contra un Postgres real en Docker |
+| `pnpm run db:migrate` | Aplica las migraciones pendientes contra `HEXDEV_POSTGRES_MIGRATE_URL` |
+| `pnpm dev:server` | Compila y levanta el producto entero en `localhost`: Postgres, ambos roles, el proxy y un sitio de prueba |
 | `pnpm dev:lan` | Lo mismo, en la dirección de red de esta máquina, para abrirlo desde otro dispositivo |
 | `pnpm dev:host` | Sólo el sitio de prueba, en `:5173` |
 | `pnpm typecheck` | Verificación de tipos de todo el workspace |
