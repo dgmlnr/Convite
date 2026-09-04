@@ -47,6 +47,12 @@
  * imports THIS barrel for real, its first workspace dependency on
  * `@hexdev/platform-core` (this app's own `no-signing-seed.test.ts` fence
  * stays satisfied: nothing here is the Ed25519 issuer).
+ *
+ * `findOperatorAuthorizationContext` (PR11, tenant-administration slice 9)
+ * is the authorization checkpoint's own one-query join (design §7) — same
+ * placement principle, same barrel: its `Pool` parameter is type-only, but
+ * every Postgres-touching function in this package lives behind `node.ts`
+ * on principle, not case-by-case per import shape.
  */
 export { connectRedis } from "./redis-client.js";
 export { connectPostgres } from "./postgres-client.js";
@@ -54,3 +60,4 @@ export { createPostgresTenantRepository } from "./postgres-tenant-repository.js"
 export { createPostgresTenantAdminRepository } from "./postgres-tenant-admin-repository.js";
 export { createPostgresOperatorRepository } from "./postgres-operator-repository.js";
 export { createPostgresOperatorSessionRepository } from "./postgres-operator-session-repository.js";
+export { findOperatorAuthorizationContext } from "./postgres-operator-authorization.js";
