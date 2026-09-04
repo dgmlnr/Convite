@@ -3,8 +3,7 @@ import { applyAction, createTeamMatch, getLegalActions, startHand } from "@hexde
 import type { Action, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createGameModuleRegistry } from "@hexdev/platform-core";
 import type { ApplyResult, BotStrategy, GameModule, SeatAssignment } from "@hexdev/platform-contract";
-import { loadServerConfig } from "./config.js";
-import { buildGameRegistry } from "./registry.js";
+import { MATCH_GAME_IDS, buildGameRegistry } from "./registry.js";
 
 /**
  * sdd-verify CRITICAL-3: `apps/server/src/index.ts`'s own `getConsultAsk`
@@ -190,12 +189,15 @@ describe("buildGameRegistry — the solitaire's registration (slice 9)", () => {
 /**
  * The match root's copy of the entitlement/module coherence fence that
  * `apps/mint-server/src/registry.test.ts` carries — same invariant, this
- * root's own config and its own registry: every id this root's tenants are
- * entitled to must resolve to a module here.
+ * root's own registry.
  *
- * This one is GREEN the moment it is written; the mint root is where the
- * invariant was actually broken. It is therefore a regression fence, not a
- * RED-first proof, and its only proof is the mutation recorded below.
+ * tenant-administration slice 3b UPDATE: entitlement no longer lives in
+ * either role's own env-parsed config — it lives in Postgres. `MATCH_GAME_IDS`
+ * (registry.ts) replaces `loadServerConfig(...).tenants[0].entitledGames`,
+ * derived from the SAME registration list `buildGameRegistry` composes
+ * with, so this is a construction-time regression fence (it can only fail
+ * if `registry.get` itself stops resolving an id this list names), not a
+ * RED-first proof — same standing this test already had before this slice.
  *
  * Resolved through `registry.get` rather than through `buildCatalog`,
  * because `registry.get` is what THIS root does with an entitled id:
@@ -207,25 +209,18 @@ describe("buildGameRegistry — the solitaire's registration (slice 9)", () => {
  * host the assertion. The mint root's copy uses `buildCatalog` for the
  * mirror-image reason: building that catalog is the only thing its registry
  * exists for.
- *
- * Deliberately a separate copy per root rather than a shared fixture: the
- * two roots carry independently configured `DEV_TENANT`s and independently
- * built registries, so they can drift apart without either fence noticing
- * the other's breakage — the argument `config.test.ts` already makes for
- * its own duplicated pair.
  */
-describe("buildGameRegistry — every entitled id resolves to a module on THIS root", () => {
-  it("registers a module for every game the dev tenant is entitled to", () => {
-    const entitled = loadServerConfig({ HEXDEV_ALLOW_DEV_DEFAULTS: "true" }).tenants[0]!.entitledGames;
+describe("MATCH_GAME_IDS / buildGameRegistry — every id resolves to a module on THIS root", () => {
+  it("registers a module for every game this role's registry lists", () => {
     const registry = buildGameRegistry();
 
-    // Fence setup: an empty entitlement list would make the assertion below
-    // vacuously true, which is how this class of test fails green.
-    expect(entitled.length, "fence setup: the dev tenant must be entitled to something").toBeGreaterThan(0);
+    // Fence setup: an empty list would make the assertion below vacuously
+    // true, which is how this class of test fails green.
+    expect(MATCH_GAME_IDS.length, "fence setup: the list must not be empty").toBeGreaterThan(0);
 
     // An id in here is one `onAuth` would happily admit and `MatchRoom`
     // could then never run — the diff names it.
-    expect(entitled.filter((gameId) => registry.get(gameId) === undefined)).toEqual([]);
+    expect(MATCH_GAME_IDS.filter((gameId) => registry.get(gameId) === undefined)).toEqual([]);
   });
 });
 

@@ -1,7 +1,3 @@
-import { findTenantRecordListProblem } from "@hexdev/platform-core";
-import type { TenantId, TenantRecord } from "@hexdev/platform-core";
-import type { GameId } from "@hexdev/platform-contract";
-
 export interface RateLimitConfig {
   readonly limit: number;
   readonly windowMs: number;
@@ -23,7 +19,16 @@ export interface ServerConfig {
    */
   readonly sessionPublicKey: string;
   readonly sessionTtlSeconds: number;
-  readonly tenants: readonly TenantRecord[];
+  /**
+   * Postgres connection string this role reads the tenant catalog through
+   * (tenant-administration slice 3b, design §1.8/§2.1) — `HEXDEV_TENANTS_JSON`
+   * and the checked-in `DEV_TENANT` fixture are gone. Joins the
+   * `sessionPublicKey` INVERTED-GUARD family below, deliberately NOT the
+   * optional `redisUrl` shape: Postgres is the system of record, so an
+   * unset value must fail closed at boot, never fall back to an empty
+   * in-memory catalog that silently serves nobody.
+   */
+  readonly postgresUrl: string;
   readonly joinIpRateLimit: RateLimitConfig;
   /** `MatchRoom.onAuth`'s WS-join origin re-validation target (see
    * `MatchRoomAuthOptions`'s own docstring for the real bug this closes: it
@@ -114,34 +119,6 @@ function readPositiveNumber(env: NodeJS.ProcessEnv, name: string, fallback: numb
   return value;
 }
 
-/**
- * Parses the tenants document, or refuses to start with a message an
- * operator can act on. A bare `SyntaxError: Unexpected token }` does not name
- * the variable it came from.
- *
- * The ELEMENTS are checked too, by `findTenantRecordListProblem` next to the
- * type itself — this used to claim they were while only checking
- * `Array.isArray` and then casting, which let a list of the wrong shape start
- * the process and surface much later as tenants that silently never match.
- * The rules live in `platform-core` because both roles read this same document
- * and two copies of them is how the two drift apart.
- */
-function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]): readonly TenantRecord[] {
-  const raw = env.HEXDEV_TENANTS_JSON;
-  if (raw === undefined) return fallback;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error("HEXDEV_TENANTS_JSON is set but is not valid JSON — refusing to start with an unreadable tenant list.", { cause: error });
-  }
-  const problem = findTenantRecordListProblem(parsed);
-  if (problem !== null) {
-    throw new Error(`HEXDEV_TENANTS_JSON ${problem} — refusing to start with an unusable tenant list.`);
-  }
-  return parsed as readonly TenantRecord[];
-}
-
 function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: string, defaultLimit: number): RateLimitConfig {
   return {
     limit: readPositiveNumber(env, limitVar, defaultLimit),
@@ -161,27 +138,14 @@ function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: stri
  * a real deployment. */
 const DEV_SESSION_PUBLIC_KEY = "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw"; // the Ed25519 public half of apps/mint-server's own DEV_SESSION_SIGNING_KEY
 
-/** A single fixture tenant so a fresh clone's server is curl-able with zero
- * setup. Not a secret — an embed key and an origin allowlist are meant to be
- * public (design §7: "same trust model as a Stripe publishable key"). Real
- * tenant administration (design §7: manual, v1 has no self-service) is a
- * config-file/`HEXDEV_TENANTS_JSON` concern, not this fixture's job. */
-const DEV_TENANT: TenantRecord = {
-  id: "dev-tenant" as TenantId,
-  embedKey: "pk_dev_local",
-  allowedOrigins: ["http://localhost:5173", "http://localhost:3000"],
-  entitledGames: [
-    "truco-argentino" as GameId,
-    "truco-argentino-2v2" as GameId,
-    "escoba-de-15" as GameId,
-    "escoba-de-15-2v2" as GameId,
-    // LAST, and the position is the shelf order a player sees:
-    // `groupBySection` gives a section the place of its first entry,
-    // so the catalog order this list produces is what puts "Fichas"
-    // under "Cartas" on screen one rather than above it.
-    "mahjong-solitario" as GameId,
-  ],
-};
+/**
+ * Local-dev-only Postgres connection string — the same "obviously insecure,
+ * checked into source, never reachable in production" shape as
+ * `DEV_SESSION_PUBLIC_KEY` above, and byte-identical to `apps/mint-server`'s
+ * own `DEV_POSTGRES_URL` (both roles read the same local database). See that
+ * constant's docstring for the full argument.
+ */
+const DEV_POSTGRES_URL = "postgres://postgres@localhost:5432/convite";
 
 /**
  * Reads the composition root's configuration from the process environment.
@@ -220,7 +184,21 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   // `loadServerConfig` stays synchronous (importing a key is unavoidably
   // async — Web Crypto has no sync digest/import) and pure (no crypto calls
   // of its own), matching every existing test in `config.test.ts`.
-  const tenants: readonly TenantRecord[] = readTenants(env, [DEV_TENANT]);
+  const postgresUrl = env.HEXDEV_POSTGRES_URL;
+  if (postgresUrl === undefined) {
+    if (nodeEnv === "production") {
+      throw new Error(
+        "HEXDEV_POSTGRES_URL must be set in production — refusing to start with no reachable Postgres. " +
+          "Postgres is the system of record, not an optional scaling adapter.",
+      );
+    }
+    if (!allowDevDefaults) {
+      throw new Error(
+        "HEXDEV_POSTGRES_URL must be set — refusing to start with no reachable Postgres. " +
+          "For local development only, set HEXDEV_ALLOW_DEV_DEFAULTS=true to opt in explicitly.",
+      );
+    }
+  }
   const port = readPositiveNumber(env, "PORT", DEFAULT_PORT, MAX_PORT);
   const queueBotFillSeconds = env.HEXDEV_QUEUE_BOT_FILL_SECONDS !== undefined ? Number(env.HEXDEV_QUEUE_BOT_FILL_SECONDS) : DEFAULT_QUEUE_BOT_FILL_SECONDS;
   // Fail-loud, same convention as the signing-key guard above: a NaN slips
@@ -239,7 +217,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
     port,
     sessionPublicKey: sessionPublicKey ?? DEV_SESSION_PUBLIC_KEY,
     sessionTtlSeconds: readPositiveNumber(env, "HEXDEV_SESSION_TTL_SECONDS", DEFAULT_TTL_SECONDS),
-    tenants,
+    postgresUrl: postgresUrl ?? DEV_POSTGRES_URL,
     joinIpRateLimit: readRateLimit(env, "HEXDEV_JOIN_IP_RATE_LIMIT", "HEXDEV_JOIN_IP_RATE_WINDOW_MS", DEFAULT_JOIN_IP_LIMIT),
     allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${port}`],
     redisUrl: env.HEXDEV_REDIS_URL,
