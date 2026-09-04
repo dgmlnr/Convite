@@ -31,7 +31,12 @@
  * this barrel on principle, not case-by-case per import shape, so a future
  * write-side adapter (PR5) has one settled place to land instead of a fresh
  * judgment call each time.
+ *
+ * `createPostgresTenantAdminRepository` (PR5, tenant-administration slice 4)
+ * is that write-side adapter arriving — same principle, same barrel, on the
+ * same theory rather than a fresh per-adapter judgment call.
  */
 export { connectRedis } from "./redis-client.js";
 export { connectPostgres } from "./postgres-client.js";
 export { createPostgresTenantRepository } from "./postgres-tenant-repository.js";
+export { createPostgresTenantAdminRepository } from "./postgres-tenant-admin-repository.js";
