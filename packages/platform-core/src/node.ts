@@ -41,9 +41,16 @@
  * every Postgres-backed adapter lives behind this barrel on principle, so a
  * future consumer (`apps/admin`'s composition root, slice 8b) has one
  * settled place to import it from.
+ *
+ * `createPostgresOperatorSessionRepository` (PR10, tenant-administration
+ * slice 8b) is that consumer arriving — `apps/admin`'s composition root now
+ * imports THIS barrel for real, its first workspace dependency on
+ * `@hexdev/platform-core` (this app's own `no-signing-seed.test.ts` fence
+ * stays satisfied: nothing here is the Ed25519 issuer).
  */
 export { connectRedis } from "./redis-client.js";
 export { connectPostgres } from "./postgres-client.js";
 export { createPostgresTenantRepository } from "./postgres-tenant-repository.js";
 export { createPostgresTenantAdminRepository } from "./postgres-tenant-admin-repository.js";
 export { createPostgresOperatorRepository } from "./postgres-operator-repository.js";
+export { createPostgresOperatorSessionRepository } from "./postgres-operator-session-repository.js";

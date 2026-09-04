@@ -38,6 +38,19 @@ export {
   mintSessionForEmbed,
   renewSessionForWidget,
 } from "./tenant-auth.js";
+// `OperatorRepository`/`OperatorSessionRepository` (tenant-administration
+// slices 8a/8b): both ports and their static in-memory adapters are pure —
+// no Node-only dependency, same class as `TenantRepository` above — so they
+// belong on THIS public barrel. Their Postgres adapters
+// (`createPostgresOperatorRepository`/`createPostgresOperatorSessionRepository`)
+// stay behind `node.ts`, same split. First real consumer:
+// `apps/admin/src/login-handler.ts`/`logout-handler.ts` (slice 8b, PR10) —
+// built in PR9 but unconsumed until now, which is why these exports were not
+// added until this PR.
+export type { CreateOperatorResult, OperatorDraft, OperatorId, OperatorRecord, OperatorRepository } from "./operator-repository.js";
+export { createStaticOperatorRepository } from "./operator-repository.js";
+export type { OperatorSessionRecord, OperatorSessionRepository } from "./operator-session-repository.js";
+export { createStaticOperatorSessionRepository } from "./operator-session-repository.js";
 // `isTenantActive` (tenant-administration slice 6, design §2.4): a PURE
 // function with no value import at all beyond the global `Intl` — unlike
 // `connectRedis`/`connectPostgres`/the Postgres adapters (which live behind
