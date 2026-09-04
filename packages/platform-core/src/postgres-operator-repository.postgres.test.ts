@@ -42,9 +42,10 @@ describe('createPostgresOperatorRepository — username uniqueness: "the constra
   it("refuses two concurrent creates racing for the SAME username — the datastore's own constraint decides, not a pre-check", async () => {
     await seedOperators([]);
     const repo = createPostgresOperatorRepository(pool);
+    const witness = async (exec: (sql: string, values: readonly unknown[]) => Promise<void>) => exec("SELECT 1", []);
     const [first, second] = await Promise.all([
-      repo.create({ id: "op-race-1" as OperatorId, username: "carrera", passwordHash: "scrypt$32768$8$1$c2FsdA==$a2V5" }),
-      repo.create({ id: "op-race-2" as OperatorId, username: "carrera", passwordHash: "scrypt$32768$8$1$c2FsdDI=$a2V5Mg==" }),
+      repo.create({ id: "op-race-1" as OperatorId, username: "carrera", passwordHash: "scrypt$32768$8$1$c2FsdA==$a2V5" }, witness),
+      repo.create({ id: "op-race-2" as OperatorId, username: "carrera", passwordHash: "scrypt$32768$8$1$c2FsdDI=$a2V5Mg==" }, witness),
     ]);
     const outcomes = [first, second].map((r) => r.ok);
     expect(outcomes.filter(Boolean)).toHaveLength(1);
@@ -58,7 +59,7 @@ describe("createPostgresOperatorRepository — SQL injection (threat matrix: eve
     const repo = createPostgresOperatorRepository(pool);
     const payload = "'); DROP TABLE operators;--";
 
-    const result = await repo.create({ id: "op-inj" as OperatorId, username: payload, passwordHash: "scrypt$32768$8$1$c2FsdA==$a2V5" });
+    const result = await repo.create({ id: "op-inj" as OperatorId, username: payload, passwordHash: "scrypt$32768$8$1$c2FsdA==$a2V5" }, async (exec) => exec("SELECT 1", []));
 
     expect(result.ok).toBe(true);
     // The real proof: `operators` still exists and is still queryable at
