@@ -10,6 +10,8 @@ import {
   disableOperator,
   enableOperator,
   findOperatorAuthorizationContext,
+  grantPermission,
+  revokePermission,
 } from "@hexdev/platform-core/node";
 
 import { authorizeAndDispatch, type AdminHandler, type AdminRequest, type AuthorizationQuery } from "./authorization.js";
@@ -19,6 +21,7 @@ import { handleLoginRequest } from "./login-handler.js";
 import { handleLogoutRequest } from "./logout-handler.js";
 import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
 import { createOwnPasswordHandler } from "./own-password-handler.js";
+import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 
 /**
@@ -107,18 +110,35 @@ const operatorEnableHandler = createOperatorEnableHandler(operatorHandlersDeps);
 const ownPasswordHandler = createOwnPasswordHandler({ operators });
 
 /**
+ * Slice 12's own real handlers (`permission-handlers.ts`) — `grantPermission`/
+ * `revokePermission` bound to THIS process's own pool, same "one knob per
+ * composition root" shape every Postgres-bound function above already
+ * follows. `revokePermission` reuses `withLastAccountManagerGuard` (design
+ * §8) internally; this composition root wires it exactly like
+ * `disableOperator` above, with no bespoke plumbing of its own.
+ */
+const permissionHandlersDeps: PermissionHandlersDeps = {
+  grantPermission: (id, permission, grantedBy, w) => grantPermission(postgresPool, id, permission, grantedBy, w),
+  revokePermission: (id, permission, w) => revokePermission(postgresPool, id, permission, w),
+};
+const permissionGrantHandler = createPermissionGrantHandler(permissionHandlersDeps);
+const permissionRevokeHandler = createPermissionRevokeHandler(permissionHandlersDeps);
+
+/**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
  * handler — every kind absent from this map keeps stubbing 501 via
- * `notImplementedHandler` below (tenant CRUD/permission grant-revoke/audit
- * viewer arrive PR15/PR15/PR22). Purely data-driven, same "no enumeration to
- * keep in sync" property the checkpoint's own dispatch condition already
- * has — a kind added here needs no change to the dispatch condition itself.
+ * `notImplementedHandler` below (tenant CRUD/audit viewer arrive PR16-22).
+ * Purely data-driven, same "no enumeration to keep in sync" property the
+ * checkpoint's own dispatch condition already has — a kind added here needs
+ * no change to the dispatch condition itself.
  */
 const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "operator-create": operatorCreateHandler,
   "operator-disable": operatorDisableHandler,
   "operator-enable": operatorEnableHandler,
   "own-password": ownPasswordHandler,
+  "operator-permissions-grant": permissionGrantHandler,
+  "operator-permissions-revoke": permissionRevokeHandler,
 };
 
 /**
