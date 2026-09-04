@@ -35,8 +35,15 @@
  * `createPostgresTenantAdminRepository` (PR5, tenant-administration slice 4)
  * is that write-side adapter arriving — same principle, same barrel, on the
  * same theory rather than a fresh per-adapter judgment call.
+ *
+ * `createPostgresOperatorRepository` (PR9, tenant-administration slice 8a)
+ * joins for the identical reason: its own `pg` import is type-only, but
+ * every Postgres-backed adapter lives behind this barrel on principle, so a
+ * future consumer (`apps/admin`'s composition root, slice 8b) has one
+ * settled place to import it from.
  */
 export { connectRedis } from "./redis-client.js";
 export { connectPostgres } from "./postgres-client.js";
 export { createPostgresTenantRepository } from "./postgres-tenant-repository.js";
 export { createPostgresTenantAdminRepository } from "./postgres-tenant-admin-repository.js";
+export { createPostgresOperatorRepository } from "./postgres-operator-repository.js";
