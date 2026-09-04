@@ -15,6 +15,17 @@ import type { TenantId, TenantRecord } from "./tenant-auth.js";
  * becomes that adapter's starting state, mirroring the read contract's own
  * shape. Genuinely async (a real Postgres seed is a round trip), unlike the
  * static factory's own synchronous construction.
+ *
+ * Every inline witness below runs `exec("SELECT 1", [])` — genuinely
+ * harmless SQL, not a placeholder string like the pre-task-10.6 `"x"` this
+ * file used to carry. Before task 10.6, `postgres-tenant-admin-repository.ts`
+ * always called `w(NOOP_EXEC)` (design's own docstring), so the literal text
+ * a witness passed to `exec` was never actually executed and "x" cost
+ * nothing. Task 10.6 makes the Postgres adapter run a witness's `exec` for
+ * REAL, inside the mutation's own transaction — on this suite's SUCCESS
+ * cases (a genuinely committed write), "x" would now be a real syntax error
+ * against Postgres. `countingWitness` below already used "SELECT 1"; this
+ * revision makes every inline witness consistent with it.
  */
 export function describeTenantAdminRepositoryContract(name: string, create: (seed: readonly TenantRecord[]) => Promise<TenantAdminRepository>): void {
   const tenantA: TenantRecord = {
@@ -50,20 +61,20 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
 
     it("refuses a duplicate embedKey on create, storing no second record (spec Domain C)", async () => {
       const repo = await create([tenantA]);
-      const result = await repo.create({ id: "tenant-c" as TenantId, embedKey: tenantA.embedKey, allowedOrigins: [], entitledGames: [] }, async (exec) => exec("x", []));
+      const result = await repo.create({ id: "tenant-c" as TenantId, embedKey: tenantA.embedKey, allowedOrigins: [], entitledGames: [] }, async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: false, reason: "embed-key-taken" });
       expect(await repo.list()).toEqual([tenantA]);
     });
 
     it("refuses a duplicate id on create, distinctly from a duplicate embedKey", async () => {
       const repo = await create([tenantA]);
-      const result = await repo.create({ id: tenantA.id, embedKey: "pk_live_something_else", allowedOrigins: [], entitledGames: [] }, async (exec) => exec("x", []));
+      const result = await repo.create({ id: tenantA.id, embedKey: "pk_live_something_else", allowedOrigins: [], entitledGames: [] }, async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: false, reason: "tenant-id-taken" });
     });
 
     it("refuses rotating into an embedKey already in use, leaving both records unchanged (spec Domain C)", async () => {
       const repo = await create([tenantA, tenantB]);
-      const result = await repo.rotateEmbedKey(tenantA.id, tenantB.embedKey, async (exec) => exec("x", []));
+      const result = await repo.rotateEmbedKey(tenantA.id, tenantB.embedKey, async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: false, reason: "embed-key-taken" });
       expect(await repo.findById(tenantA.id)).toEqual(tenantA);
       expect(await repo.findById(tenantB.id)).toEqual(tenantB);
@@ -71,7 +82,7 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
 
     it("rotates into a genuinely free embedKey", async () => {
       const repo = await create([tenantA]);
-      const result = await repo.rotateEmbedKey(tenantA.id, "pk_live_rotated", async (exec) => exec("x", []));
+      const result = await repo.rotateEmbedKey(tenantA.id, "pk_live_rotated", async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: true, tenant: { ...tenantA, embedKey: "pk_live_rotated" }, themeViolations: [] });
       expect((await repo.findById(tenantA.id))?.embedKey).toBe("pk_live_rotated");
     });
@@ -79,7 +90,7 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
     it("refuses every mutating method against an unknown tenant id", async () => {
       const repo = await create([]);
       const unknown = "does-not-exist" as TenantId;
-      const witness: WriteWitness = async (exec) => exec("x", []);
+      const witness: WriteWitness = async (exec) => exec("SELECT 1", []);
       expect(await repo.updateAllowedOrigins(unknown, [], witness)).toEqual({ ok: false, reason: "unknown-tenant" });
       expect(await repo.updateEntitledGames(unknown, [], witness)).toEqual({ ok: false, reason: "unknown-tenant" });
       expect(await repo.updateTheme(unknown, undefined, witness)).toEqual({ ok: false, reason: "unknown-tenant" });
@@ -89,7 +100,7 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
 
     it("drops an out-of-vocabulary theme token on write, never re-sanitizing on a later read (spec Domain C, write-time sanitization)", async () => {
       const repo = await create([tenantA]);
-      const result = await repo.updateTheme(tenantA.id, { "--gx-color-primary": "javascript:alert(1)" }, async (exec) => exec("x", []));
+      const result = await repo.updateTheme(tenantA.id, { "--gx-color-primary": "javascript:alert(1)" }, async (exec) => exec("SELECT 1", []));
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.tenant.theme).toEqual({});
@@ -103,7 +114,7 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
       const result = await repo.updateTheme(
         tenantA.id,
         { "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a", "--gx-color-accent": "#123456" },
-        async (exec) => exec("x", []),
+        async (exec) => exec("SELECT 1", []),
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -116,7 +127,7 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
       const repo = await create([tenantA]);
       const validFrom = 1_700_000_000_000;
       const validUntil = 1_700_086_400_000; // one day later
-      const result = await repo.setValidityWindow(tenantA.id, { validFrom, validUntil }, async (exec) => exec("x", []));
+      const result = await repo.setValidityWindow(tenantA.id, { validFrom, validUntil }, async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: true, tenant: { ...tenantA, validFrom, validUntil }, themeViolations: [] });
       // "Through the read port": `findById` is `TenantAdminRepository`'s own
       // read method, the same one every other mutating scenario in this
@@ -126,14 +137,14 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
 
     it("refuses an inverted window (validFrom >= validUntil), storing nothing (design §3's tenants_window_ordered, enforced at the port before any write)", async () => {
       const repo = await create([tenantA]);
-      const result = await repo.setValidityWindow(tenantA.id, { validFrom: 1_700_100_000_000, validUntil: 1_700_000_000_000 }, async (exec) => exec("x", []));
+      const result = await repo.setValidityWindow(tenantA.id, { validFrom: 1_700_100_000_000, validUntil: 1_700_000_000_000 }, async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: false, reason: "invalid-window" });
       expect((await repo.findById(tenantA.id))?.validUntil).toBeUndefined();
     });
 
     it("refuses setValidityWindow against an unknown tenant id", async () => {
       const repo = await create([]);
-      const result = await repo.setValidityWindow("does-not-exist" as TenantId, { validUntil: 1_700_000_000_000 }, async (exec) => exec("x", []));
+      const result = await repo.setValidityWindow("does-not-exist" as TenantId, { validUntil: 1_700_000_000_000 }, async (exec) => exec("SELECT 1", []));
       expect(result).toEqual({ ok: false, reason: "unknown-tenant" });
     });
 
