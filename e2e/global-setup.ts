@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getFreePorts } from "./support/free-ports.js";
 import { HARNESS_INFO_PATH, type HarnessInfo } from "./support/harness-info.js";
+import { provisionPostgres } from "../postgres-tests/global-setup.js";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -45,6 +46,25 @@ function runBuildStep(args: string[], env: NodeJS.ProcessEnv, description: strin
  * bakes its target origin in at BUILD time — every spec file's own server
  * process reuses this exact port (see `system.ts`), never a freshly
  * re-baked loader per file.
+ *
+ * ALSO PROVISIONS POSTGRES ONCE for the whole run (tenant-administration
+ * PR4e, closing the gap PR4d's own apply-progress disclosed rather than
+ * silently left broken). Both roles' `HEXDEV_TENANTS_JSON` fixture retired
+ * in PR4a/PR4b — their tenant catalogs live in Postgres now, so this harness
+ * needs a real database to hand them, exactly like `pnpm dev:server`
+ * (`scripts/dev-stack.mjs`) already needs one. Reuses
+ * `postgres-tests/global-setup.ts`'s own `provisionPostgres()` rather than
+ * inventing a second CI-branch/local-Docker mechanism: locally it starts a
+ * fresh throwaway Docker container (same as `pnpm run test:postgres`); in
+ * CI it connects to the `end to end` job's own `services:` Postgres
+ * container via `HEXDEV_TEST_POSTGRES_URL` (`.github/workflows/ci.yml`,
+ * mirroring the `postgres` job's identical shape). Either way, every
+ * migration is applied before any spec file runs. The connection string is
+ * NOT stored as an env var for the roles here — it rides in `HarnessInfo`
+ * instead, because each spec file's own `startSystem()` (not this file)
+ * seeds the actual fixture tenant row and decides both roles' env per call
+ * (see `system.ts`'s own doc comment for why that has to happen per spec
+ * file, not once here).
  */
 export default async function setup(): Promise<() => Promise<void>> {
   const [serverPort, hostPort] = await getFreePorts(2);
@@ -60,13 +80,19 @@ export default async function setup(): Promise<() => Promise<void>> {
   );
   runBuildStep(["--filter", "@hexdev/widget-app", "run", "build"], process.env, "building widget-app.js");
 
-  const info: HarnessInfo = { serverOrigin, hostOrigin, embedKey, sessionTtlSeconds: SESSION_TTL_SECONDS };
+  const { postgresUrl, stop: stopPostgres } = await provisionPostgres();
+
+  const info: HarnessInfo = { serverOrigin, hostOrigin, embedKey, sessionTtlSeconds: SESSION_TTL_SECONDS, postgresUrl };
   await mkdir(path.dirname(HARNESS_INFO_PATH), { recursive: true });
   await writeFile(HARNESS_INFO_PATH, JSON.stringify(info, null, 2), "utf8");
 
-  console.log(`[e2e:setup] bundles built — server origin will be ${serverOrigin}, host fixture origin will be ${hostOrigin} (each spec file starts its own process)`);
+  console.log(
+    `[e2e:setup] bundles built — server origin will be ${serverOrigin}, host fixture origin will be ${hostOrigin}, ` +
+      `Postgres ready at ${postgresUrl} (each spec file starts its own process and seeds its own tenant row)`,
+  );
 
   return async function teardown(): Promise<void> {
+    stopPostgres();
     await rm(HARNESS_INFO_PATH, { force: true });
   };
 }
