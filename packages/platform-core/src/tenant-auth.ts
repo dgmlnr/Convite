@@ -24,6 +24,22 @@ export interface TenantRecord {
   readonly allowedOrigins: readonly string[];
   readonly entitledGames: readonly GameId[];
   readonly theme?: ThemeOverride;
+  /**
+   * Paid validity window `[validFrom, validUntil)` (tenant-administration
+   * slice 5, design §2.2/§2.4). Both epoch-ms, matching this repo's own
+   * `Clock` shape (`() => number`, `rate-limiter.ts`) rather than `Date` —
+   * one time representation throughout, never two. The bounds are
+   * DELIBERATELY ASYMMETRIC: an unset `validUntil` fails CLOSED (inactive,
+   * see `tenant-validity.ts`'s "zero window = inactive"), an unset
+   * `validFrom` fails OPEN (no lower bound — pre-selling is a real
+   * operator workflow). See `tenant-validity.ts` for the actual enforcement
+   * logic; this interface only carries the two instants.
+   */
+  readonly validFrom?: number;
+  /** EXCLUSIVE upper bound — the start of the next Buenos Aires day for an
+   * operator-typed "paid through" date, never `23:59:59` of that date (see
+   * `tenant-validity.ts`'s `paidThroughToInstant` for why). */
+  readonly validUntil?: number;
 }
 
 /** Port: how a tenant is looked up. ASYNC (tenant-administration slice 1,
