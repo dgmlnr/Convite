@@ -1,6 +1,7 @@
 import { renewSessionForWidget } from "@hexdev/platform-core";
 import type { RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 import type { PlayerId } from "@hexdev/platform-contract";
+import { logTenantRefusal } from "./refusal-log.js";
 
 export interface SessionRenewDeps {
   readonly repository: TenantRepository;
@@ -52,7 +53,14 @@ export async function handleSessionRenewRequest(
   }
   const result = await renewSessionForWidget({ ...deps, embedKey, origin, playerId: playerId as PlayerId });
   if (!result.ok) {
-    return { status: 403, body: JSON.stringify({ error: result.reason }) };
+    // Tenant-administration slice 6 (task 6.9): the SAME "mint / renew" 503
+    // mapping design §15's failure-behavior table specifies for BOTH choke
+    // points, and the same structured, never-persisted log line
+    // `embed-handler.ts` uses — one shared implementation (`refusal-log.ts`),
+    // not two independently hand-rolled copies.
+    const status = result.reason === "tenant-lookup-failed" ? 503 : 403;
+    logTenantRefusal("session-renew", result.reason, embedKey, origin);
+    return { status, body: JSON.stringify({ error: result.reason }) };
   }
   return { status: 200, body: JSON.stringify({ token: result.token }) };
 }
