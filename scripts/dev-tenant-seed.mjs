@@ -17,13 +17,17 @@
  * default, or hardcode a game list of its own, or it becomes exactly the
  * kind of second, independently-drifting fixture this change removes.
  *
- * `validUntil` is DELIBERATELY NOT set here yet. Design §1.3 requires a dev
- * seed to carry a far-future `validUntil` once the validity window exists,
- * but as of this slice neither the `tenants.valid_until` column (migration
- * 002, slice 5) nor its enforcement (slice 6) has landed — inserting it now
- * would be a write against a column that does not exist. Flagged here for
- * slice 5/6 to extend this function, not silently deferred.
+ * `validUntil` is set far in the future (slice 5, task 5.10a, closing the gap
+ * PR4d's own docstring flagged): migration 002 gives `tenants.valid_until` a
+ * column, and "zero window configured = inactive" (design §1.3) is real
+ * enforcement from slice 6 onward — omitting it here would make the freshly
+ * seeded dev tenant existent but permanently refused at mint time. `now` is
+ * an explicit, injectable argument rather than a bare `Date.now()` call
+ * inside this pure function, matching this repo's own `Clock`-injection
+ * convention (`rate-limiter.ts`, `tenant-auth.ts`) so the ten-year offset
+ * stays deterministically testable.
  */
+const TEN_YEARS_MS = 10 * 365 * 24 * 60 * 60 * 1_000;
 
 /** The two loopback origins the mint role's retired `DEV_TENANT` fixture
  * used to ship, kept as the seed's own baseline so `pnpm dev:server` (served
@@ -31,10 +35,10 @@
 const LOOPBACK_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
 
 /**
- * @param {{ readonly id: string; readonly embedKey: string; readonly hostOrigin: string; readonly entitledGames: readonly string[] }} args
- * @returns {{ readonly id: string; readonly embedKey: string; readonly allowedOrigins: readonly string[]; readonly entitledGames: readonly string[] }}
+ * @param {{ readonly id: string; readonly embedKey: string; readonly hostOrigin: string; readonly entitledGames: readonly string[]; readonly now?: number }} args
+ * @returns {{ readonly id: string; readonly embedKey: string; readonly allowedOrigins: readonly string[]; readonly entitledGames: readonly string[]; readonly validUntil: number }}
  */
-export function buildDevTenantSeed({ id, embedKey, hostOrigin, entitledGames }) {
+export function buildDevTenantSeed({ id, embedKey, hostOrigin, entitledGames, now = Date.now() }) {
   return {
     id,
     embedKey,
@@ -43,5 +47,6 @@ export function buildDevTenantSeed({ id, embedKey, hostOrigin, entitledGames }) 
     // operator inspecting it would have to stop and explain to themselves.
     allowedOrigins: [...new Set([hostOrigin, ...LOOPBACK_ORIGINS])],
     entitledGames: [...entitledGames],
+    validUntil: now + TEN_YEARS_MS,
   };
 }

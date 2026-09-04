@@ -2,13 +2,14 @@ import type { GameId } from "@hexdev/platform-contract";
 import type { ThemeContrastViolation, ThemeOverride } from "@hexdev/widget-protocol";
 import type { TenantId, TenantRecord } from "./tenant-auth.js";
 import { sanitizeTenantTheme } from "./tenant-theme.js";
+import { isWindowOrdered } from "./tenant-validity.js";
 
 /**
  * Everything a `create` needs to hand in — the same five fields `TenantRecord`
- * carries today, none of which is `validFrom`/`validUntil`: those land on
- * `TenantRecord` in slice 5 (design §2.2/task 5.8), once migration 002 gives
- * them a column to round-trip through. See this file's own closing note for
- * why `setValidityWindow` itself is deferred whole, not merely its fields.
+ * carried before slice 5 added `validFrom`/`validUntil`. A fresh tenant is
+ * still created with NO window at all (design's own "zero window = inactive"
+ * argument, §1.3): the window is set afterward, through `setValidityWindow`
+ * below, never at creation.
  */
 export type TenantDraft = Pick<TenantRecord, "id" | "embedKey" | "allowedOrigins" | "entitledGames" | "theme">;
 
@@ -32,7 +33,7 @@ export type TenantDraft = Pick<TenantRecord, "id" | "embedKey" | "allowedOrigins
  */
 export type TenantWriteResult =
   | { readonly ok: true; readonly tenant: TenantRecord; readonly themeViolations: readonly ThemeContrastViolation[] }
-  | { readonly ok: false; readonly reason: "tenant-id-taken" | "embed-key-taken" | "unknown-tenant" };
+  | { readonly ok: false; readonly reason: "tenant-id-taken" | "embed-key-taken" | "unknown-tenant" | "invalid-window" };
 
 /**
  * A unit of work meant to run ATOMICALLY alongside the write it accompanies
@@ -75,25 +76,13 @@ export const NOOP_EXEC: (sql: string, values: readonly unknown[]) => Promise<voi
  * (tasks 4.12/4.13), which proves neither `mint-server` nor `server` can
  * reach one through their own dependency graph.
  *
- * SEVEN METHODS, not eight. Design §2.3's own interface sketch also lists
- * `setValidityWindow`; it is deliberately ABSENT here. Task 4.2's own count
- * ("7 methods") only reconciles with task 4.7's four-method list ("land
- * rotateEmbedKey, updateAllowedOrigins, updateEntitledGames,
- * setValidityWindow") if exactly one of those four does not actually land as
- * a real, adapter-backed method in THIS slice — and `setValidityWindow` is
- * the one task 4.7 itself flags with "(window field completion in slice
- * 5)". `TenantRecord` has no `validFrom`/`validUntil` until task 5.8, and
- * `migrations/002_*.sql` (the columns themselves) is task 5.7 — landing a
- * `setValidityWindow` body today would mean either running `UPDATE tenants
- * SET valid_from = ...` against columns that do not exist yet (a guaranteed
- * `42703 undefined_column` the moment anything ever called it, since nothing
- * calls it before `apps/admin` exists in slice 7 anyway) or returning
- * `ok:true` without persisting anything — silently lying to a future caller
- * about what "saved" means. Both are worse than deferring the whole method,
- * interface member included, to slice 5's own task 5.9/5.10, alongside the
- * `TenantRecord` field and migration it depends on — the same "land the
- * type, wire the real thing later" shape this file's own `WriteWitness`
- * already uses for the audit back-edge, just one slice sooner.
+ * EIGHT METHODS, now that `setValidityWindow` lands (tasks 5.9/5.10). PR5
+ * (§0.9/task 4.2) deliberately shipped only seven — `TenantRecord` had no
+ * `validFrom`/`validUntil` until task 5.8 and `migrations/002_*.sql` (the
+ * columns themselves) is task 5.7, so a body here would have meant either
+ * `UPDATE tenants SET valid_from = ...` against nonexistent columns or
+ * `ok:true` persisting nothing. Both preconditions now exist, so the method
+ * lands for real, on both adapters, in this slice.
  */
 export interface TenantAdminRepository {
   list(): Promise<readonly TenantRecord[]>;
@@ -103,6 +92,13 @@ export interface TenantAdminRepository {
   updateEntitledGames(id: TenantId, games: readonly GameId[], w: WriteWitness): Promise<TenantWriteResult>;
   updateTheme(id: TenantId, theme: ThemeOverride | undefined, w: WriteWitness): Promise<TenantWriteResult>;
   rotateEmbedKey(id: TenantId, embedKey: string, w: WriteWitness): Promise<TenantWriteResult>;
+  /** `window` fields are BOTH optional so a caller can clear one bound
+   * without touching the other (e.g. extending `validUntil` on a tenant
+   * that already has a `validFrom`) — `undefined` here always means "leave
+   * unset", never "leave unchanged", so every call replaces the record's
+   * whole window, matching how `updateAllowedOrigins`/`updateEntitledGames`
+   * already replace their own arrays wholesale rather than patching them. */
+  setValidityWindow(id: TenantId, window: { readonly validFrom?: number; readonly validUntil?: number }, w: WriteWitness): Promise<TenantWriteResult>;
 }
 
 /**
@@ -172,6 +168,15 @@ export function createStaticTenantAdminRepository(initial: readonly TenantRecord
       if (byEmbedKey.has(embedKey) && byEmbedKey.get(embedKey) !== existing) return { ok: false, reason: "embed-key-taken" };
       byEmbedKey.delete(existing.embedKey);
       const tenant: TenantRecord = { ...existing, embedKey };
+      store(tenant);
+      await w(NOOP_EXEC);
+      return { ok: true, tenant, themeViolations: [] };
+    },
+    async setValidityWindow(id, window, w) {
+      const existing = byId.get(id);
+      if (existing === undefined) return { ok: false, reason: "unknown-tenant" };
+      if (!isWindowOrdered(window)) return { ok: false, reason: "invalid-window" };
+      const tenant: TenantRecord = { ...existing, validFrom: window.validFrom, validUntil: window.validUntil };
       store(tenant);
       await w(NOOP_EXEC);
       return { ok: true, tenant, themeViolations: [] };

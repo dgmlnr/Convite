@@ -246,14 +246,21 @@ try {
   // starts empty on every run, but the `HEXDEV_POSTGRES_URL` escape hatch
   // above can point at a persistent database that already carries this
   // exact seed from a previous run.
+  //
+  // `valid_until` (migration 002, slice 5, task 5.10a): `buildDevTenantSeed`
+  // already computed a far-future instant above — this is the ONLY write
+  // path that ever needed a live database round trip, so passing it through
+  // here rather than re-deriving it keeps the seed's own "now" argument the
+  // single source of that value.
   await seedPool.query(
-    `INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games, valid_until)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (embed_key) DO UPDATE SET
        allowed_origins = EXCLUDED.allowed_origins,
        entitled_games  = EXCLUDED.entitled_games,
+       valid_until     = EXCLUDED.valid_until,
        updated_at      = now()`,
-    [seed.id, seed.embedKey, seed.allowedOrigins, seed.entitledGames],
+    [seed.id, seed.embedKey, seed.allowedOrigins, seed.entitledGames, new Date(seed.validUntil)],
   );
 } finally {
   await seedPool.end();

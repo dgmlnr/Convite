@@ -84,6 +84,7 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
       expect(await repo.updateEntitledGames(unknown, [], witness)).toEqual({ ok: false, reason: "unknown-tenant" });
       expect(await repo.updateTheme(unknown, undefined, witness)).toEqual({ ok: false, reason: "unknown-tenant" });
       expect(await repo.rotateEmbedKey(unknown, "pk_live_new", witness)).toEqual({ ok: false, reason: "unknown-tenant" });
+      expect(await repo.setValidityWindow(unknown, { validUntil: 1_700_000_000_000 }, witness)).toEqual({ ok: false, reason: "unknown-tenant" });
     });
 
     it("drops an out-of-vocabulary theme token on write, never re-sanitizing on a later read (spec Domain C, write-time sanitization)", async () => {
@@ -109,6 +110,31 @@ export function describeTenantAdminRepositoryContract(name: string, create: (see
         expect(result.tenant.theme).toEqual({ "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a" });
         expect(result.themeViolations).toHaveLength(1);
       }
+    });
+
+    it("setValidityWindow round-trips validFrom/validUntil through the read port (task 5.9, owed from PR5/§0.9 task 4.2's deferral)", async () => {
+      const repo = await create([tenantA]);
+      const validFrom = 1_700_000_000_000;
+      const validUntil = 1_700_086_400_000; // one day later
+      const result = await repo.setValidityWindow(tenantA.id, { validFrom, validUntil }, async (exec) => exec("x", []));
+      expect(result).toEqual({ ok: true, tenant: { ...tenantA, validFrom, validUntil }, themeViolations: [] });
+      // "Through the read port": `findById` is `TenantAdminRepository`'s own
+      // read method, the same one every other mutating scenario in this
+      // suite already uses to confirm a write actually persisted.
+      expect(await repo.findById(tenantA.id)).toEqual({ ...tenantA, validFrom, validUntil });
+    });
+
+    it("refuses an inverted window (validFrom >= validUntil), storing nothing (design §3's tenants_window_ordered, enforced at the port before any write)", async () => {
+      const repo = await create([tenantA]);
+      const result = await repo.setValidityWindow(tenantA.id, { validFrom: 1_700_100_000_000, validUntil: 1_700_000_000_000 }, async (exec) => exec("x", []));
+      expect(result).toEqual({ ok: false, reason: "invalid-window" });
+      expect((await repo.findById(tenantA.id))?.validUntil).toBeUndefined();
+    });
+
+    it("refuses setValidityWindow against an unknown tenant id", async () => {
+      const repo = await create([]);
+      const result = await repo.setValidityWindow("does-not-exist" as TenantId, { validUntil: 1_700_000_000_000 }, async (exec) => exec("x", []));
+      expect(result).toEqual({ ok: false, reason: "unknown-tenant" });
     });
 
     it("calls the write witness exactly once per successful write, zero times per refused write (design §2.3 point 4)", async () => {
