@@ -26,7 +26,7 @@ const SRC = dirname(fileURLToPath(import.meta.url));
  * specifier rather than to a file, so no `reachable` rule can cross a package
  * boundary here at all. A rule that cannot fire is decoration.
  */
-const NODE_ONLY_PACKAGES = ["ioredis"];
+const NODE_ONLY_PACKAGES = ["ioredis", "pg"];
 
 function reExportedModules(): readonly string[] {
   const barrel = readFileSync(join(SRC, "index.ts"), "utf8");
@@ -54,11 +54,13 @@ describe("the public barrel is safe to bundle for a browser", () => {
    * test still means something if the file is renamed rather than deleted.
    */
   it("keeps the node-only entry point out of the barrel", () => {
-    expect(readFileSync(join(SRC, "index.ts"), "utf8")).not.toMatch(/from "\.\/(node|redis-client)\.js"/);
+    expect(readFileSync(join(SRC, "index.ts"), "utf8")).not.toMatch(/from "\.\/(node|redis-client|postgres-client)\.js"/);
   });
 
   it("still ships that entry point for the composition roots that need it", () => {
     expect(readdirSync(SRC)).toContain("node.ts");
-    expect(readFileSync(join(SRC, "node.ts"), "utf8")).toMatch(/connectRedis/);
+    const nodeBarrel = readFileSync(join(SRC, "node.ts"), "utf8");
+    expect(nodeBarrel).toMatch(/connectRedis/);
+    expect(nodeBarrel).toMatch(/connectPostgres/);
   });
 });
