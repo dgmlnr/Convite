@@ -107,5 +107,9 @@ e2e/.harness/
 # redis-tests/global-setup.ts — see vitest.redis.config.ts)
 redis-tests/.harness/
 
+# Postgres integration harness runtime handoff (written by
+# postgres-tests/global-setup.ts — see vitest.postgres.config.ts)
+postgres-tests/.harness/
+
 # Capturas de trabajo en la raiz: artefactos de depuracion, nunca del repo.
 /*.png
