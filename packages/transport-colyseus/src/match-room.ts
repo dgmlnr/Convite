@@ -439,7 +439,7 @@ export class MatchRoom extends Room {
     if (origin === null || !auth.allowedWidgetOrigins.includes(origin)) {
       throw new Error("MatchRoom: join rejected, origin not allowed");
     }
-    const tenant = auth.repository.findById(claims.tenantId);
+    const tenant = await auth.repository.findById(claims.tenantId);
     if (tenant === undefined) {
       throw new Error("MatchRoom: join rejected, unknown tenant");
     }

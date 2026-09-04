@@ -25,12 +25,18 @@ export interface TenantRecord {
   readonly theme?: ThemeOverride;
 }
 
-/** Port: how a tenant is looked up. The v1 adapter below is a static
- * in-memory map — loading its records from a config file on disk (design
- * §7) is `apps/server`'s composition-root job, out of scope for this port. */
+/** Port: how a tenant is looked up. ASYNC (tenant-administration slice 1,
+ * design §2.1): the v1 static in-memory adapter below is the only
+ * implementation today, but the coming Postgres-backed adapter needs a real
+ * network round trip, and a port cannot widen from sync to async later
+ * without breaking every caller's signature — better to pay that cost once,
+ * before the second adapter exists, than to force a second breaking change.
+ * `createStaticTenantRepository` itself stays a SYNCHRONOUS factory (below);
+ * only the two closures it returns become async, so every one of the ~30
+ * construct-and-forward call sites across the repo is unaffected. */
 export interface TenantRepository {
-  findByEmbedKey(embedKey: string): TenantRecord | undefined;
-  findById(tenantId: TenantId): TenantRecord | undefined;
+  findByEmbedKey(embedKey: string): Promise<TenantRecord | undefined>;
+  findById(tenantId: TenantId): Promise<TenantRecord | undefined>;
 }
 
 /** Validates an incoming `theme` value, in BOTH senses, at the ONE choke
@@ -85,14 +91,22 @@ function sanitizeTenantTheme(theme: unknown, tenantId: TenantId): ThemeOverride 
  * can be reported against the record it came from — with many tenants in one
  * `HEXDEV_TENANTS_JSON`, a warning that cannot name which one is not
  * actionable.
+ *
+ * The FACTORY itself stays synchronous — construction is a pure in-memory
+ * `Map` build with no I/O, and keeping it sync means every existing
+ * construct-and-forward call site (composition roots, tests) needs zero
+ * changes. Only the two returned closures are `async`, matching the async
+ * `TenantRepository` port above; wrapping an already-resolved lookup in a
+ * promise here is free, and is exactly the shape a real Postgres adapter's
+ * `pool.query` will replace it with later.
  */
 export function createStaticTenantRepository(records: readonly TenantRecord[]): TenantRepository {
   const sanitized = records.map((record) => ({ ...record, theme: sanitizeTenantTheme(record.theme, record.id) }));
   const byEmbedKey = new Map(sanitized.map((record) => [record.embedKey, record]));
   const byId = new Map(sanitized.map((record) => [record.id, record]));
   return {
-    findByEmbedKey: (embedKey) => byEmbedKey.get(embedKey),
-    findById: (tenantId) => byId.get(tenantId),
+    findByEmbedKey: async (embedKey) => byEmbedKey.get(embedKey),
+    findById: async (tenantId) => byId.get(tenantId),
   };
 }
 
@@ -395,7 +409,7 @@ export async function mintSessionForEmbed(args: {
   readonly playerId: PlayerId;
   readonly ttlSeconds: number;
 }): Promise<EmbedMintResult> {
-  const tenant = args.repository.findByEmbedKey(args.embedKey);
+  const tenant = await args.repository.findByEmbedKey(args.embedKey);
   if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
   if (!tenant.allowedOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
   return mintForTenant(tenant, args);
@@ -438,7 +452,7 @@ export async function renewSessionForWidget(args: {
   readonly playerId: PlayerId;
   readonly ttlSeconds: number;
 }): Promise<EmbedMintResult> {
-  const tenant = args.repository.findByEmbedKey(args.embedKey);
+  const tenant = await args.repository.findByEmbedKey(args.embedKey);
   if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
   if (!args.allowedWidgetOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
   return mintForTenant(tenant, args);

@@ -46,37 +46,46 @@ const record = {
 };
 
 describe("createStaticTenantRepository", () => {
-  it("resolves a tenant by its embed key", () => {
+  it("resolves a tenant by its embed key", async () => {
     const repo = createStaticTenantRepository([record]);
-    expect(repo.findByEmbedKey("pk_live_t_a")).toEqual(record);
+    // Domain A: "The read port returns promises" is the acceptance criterion
+    // itself, not an implementation detail — asserted BEFORE awaiting so a
+    // regression back to a synchronous return value fails this line, not
+    // merely the eventual content check below (which `await` on a plain
+    // value would satisfy identically either way).
+    const lookup = repo.findByEmbedKey("pk_live_t_a");
+    expect(lookup).toBeInstanceOf(Promise);
+    expect(await lookup).toEqual(record);
   });
 
-  it("resolves a tenant by its id, and returns undefined for an unknown one", () => {
+  it("resolves a tenant by its id, and returns undefined for an unknown one", async () => {
     const repo = createStaticTenantRepository([record]);
-    expect(repo.findById(tenantId)).toEqual(record);
-    expect(repo.findById("does-not-exist" as TenantId)).toBeUndefined();
+    const lookup = repo.findById(tenantId);
+    expect(lookup).toBeInstanceOf(Promise);
+    expect(await lookup).toEqual(record);
+    expect(await repo.findById("does-not-exist" as TenantId)).toBeUndefined();
   });
 });
 
 describe("createStaticTenantRepository — theme sanitization (design §10 primary path: server-delivered, per-tenant brand theming)", () => {
-  it("keeps a tenant's validly-shaped theme tokens, reachable off the stored record", () => {
+  it("keeps a tenant's validly-shaped theme tokens, reachable off the stored record", async () => {
     const themed = { ...record, theme: { "--gx-color-primary": "#336699", "--gx-radius": "8px" } };
     const repo = createStaticTenantRepository([themed]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-primary": "#336699", "--gx-radius": "8px" });
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({ "--gx-color-primary": "#336699", "--gx-radius": "8px" });
   });
 
-  it("a tenant with no theme configured has no theme on the stored record — theming is optional, this is today's unchanged path", () => {
+  it("a tenant with no theme configured has no theme on the stored record — theming is optional, this is today's unchanged path", async () => {
     const repo = createStaticTenantRepository([record]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toBeUndefined();
   });
 
-  it("drops a hostile theme value (a CSS-injection attempt) rather than storing it — HEXDEV_TENANTS_JSON is deployment input, validated exactly like a host page's own override", () => {
+  it("drops a hostile theme value (a CSS-injection attempt) rather than storing it — HEXDEV_TENANTS_JSON is deployment input, validated exactly like a host page's own override", async () => {
     const hostile = { ...record, theme: { "--gx-color-primary": "javascript:alert(1)" } };
     const repo = createStaticTenantRepository([hostile]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({});
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({});
   });
 
-  it("drops a key outside the closed vocabulary, including a prototype-pollution-shaped one — the loop stays driven by the vocabulary, never by the input's own keys", () => {
+  it("drops a key outside the closed vocabulary, including a prototype-pollution-shaped one — the loop stays driven by the vocabulary, never by the input's own keys", async () => {
     // `as unknown as TenantRecord`: deliberately NOT type-safe, mirroring how
     // a real hostile value actually arrives at runtime —
     // `apps/server/src/config.ts` reads `HEXDEV_TENANTS_JSON` via
@@ -86,14 +95,14 @@ describe("createStaticTenantRepository — theme sanitization (design §10 prima
     // repository construction step exists to guard against.
     const hostile = { ...record, theme: { "--gx-not-a-real-token": "#000000", __proto__: { polluted: true } } } as unknown as TenantRecord;
     const repo = createStaticTenantRepository([hostile]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({});
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({});
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
-  it("treats a malformed (non-object) theme value as no theme, rather than throwing", () => {
+  it("treats a malformed (non-object) theme value as no theme, rather than throwing", async () => {
     const malformed = { ...record, theme: "not-an-object" } as unknown as TenantRecord;
     const repo = createStaticTenantRepository([malformed]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toBeUndefined();
   });
 });
 
@@ -119,7 +128,7 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
     warn.mockRestore();
   });
 
-  it("drops the audit's dark tenant accent while keeping every pair that passes — a partial drop, so a tenant loses only the colour that was actually unreadable", () => {
+  it("drops the audit's dark tenant accent while keeping every pair that passes — a partial drop, so a tenant loses only the colour that was actually unreadable", async () => {
     const hostile = {
       ...record,
       theme: { "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a", "--gx-color-accent": "#123456" },
@@ -127,7 +136,7 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
 
     const repo = createStaticTenantRepository([hostile]);
 
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a" });
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({ "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a" });
   });
 
   it("says so out loud at construction, naming the tenant, the pair and the measured ratio", () => {
@@ -148,7 +157,7 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
     expect(warnings[0]).toContain("--gx-color-accent");
   });
 
-  it("never throws over a colour — including a shape-valid but MALFORMED one, and one tenant's bad brand must not stop the repository or any OTHER tenant in the same deploy config from being built", () => {
+  it("never throws over a colour — including a shape-valid but MALFORMED one, and one tenant's bad brand must not stop the repository or any OTHER tenant in the same deploy config from being built", async () => {
     // `hsl(.,50%,50%)` passes COLOR_PATTERN (the `.` is inside its numeric
     // class) and parses to a NaN hue. Without a finite guard that crashed the
     // whole repository construction — every tenant in one HEXDEV_TENANTS_JSON
@@ -164,11 +173,16 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
 
     const repo = createStaticTenantRepository([hostile, healthy]);
 
-    expect(repo.findByEmbedKey("pk_live_hostile")?.theme).toEqual({});
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-accent": "#e8c877" });
+    expect((await repo.findByEmbedKey("pk_live_hostile"))?.theme).toEqual({});
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({ "--gx-color-accent": "#e8c877" });
   });
 
-  it("stays silent for a tenant whose theme passes — a warning that fires for healthy config is a warning nobody reads", () => {
+  // NOTE (PR1 slice 1 apply): this test does not call findByEmbedKey/findById
+  // at all — it only asserts on the `warnings` spy — so it needs no `await`.
+  // Converted to `async` anyway purely to match the tasks artifact's literal
+  // line enumeration (line 171 was listed alongside 9 blocks that DO call the
+  // now-async port); harmless no-op since the callback never awaits.
+  it("stays silent for a tenant whose theme passes — a warning that fires for healthy config is a warning nobody reads", async () => {
     createStaticTenantRepository([{ ...record, theme: { "--gx-color-surface": "#1c1c1c", "--gx-color-on-surface": "#f2f2f2" } }]);
 
     expect(warnings).toEqual([]);
