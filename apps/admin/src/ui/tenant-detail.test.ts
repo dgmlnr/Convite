@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { argentineDateToIso, buildTenantDetailView, parseListInput, type TenantDetailApiRow } from "./tenant-detail.js";
+import { argentineDateToIso, buildEmbedSnippet, buildTenantDetailView, parseListInput, type TenantDetailApiRow } from "./tenant-detail.js";
 
 function row(overrides: Partial<TenantDetailApiRow>): TenantDetailApiRow {
   return { id: "acme", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" }, ...overrides };
@@ -71,5 +71,25 @@ describe("parseListInput", () => {
     // array, never an error and never a single blank-string entry.
     expect(parseListInput("")).toEqual([]);
     expect(parseListInput("   \n  ")).toEqual([]);
+  });
+});
+
+/**
+ * `buildEmbedSnippet` (task 15b.2, design Domain F: "the panel hands over
+ * ready-to-use widget consumption URLs ... derived from that tenant's own
+ * embedKey"). The loader's OWN required attribute is `data-embed-key`
+ * (`packages/widget-sdk/src/widget-config.ts:33` — the exact string this
+ * function must emit, not a guess). No mint-server origin is known to
+ * `apps/admin` (deliberately — design §19's own "production deployment
+ * topology... remains out of scope," and no config wiring exists to cross
+ * that composition-root boundary), so the `src` carries an explicit
+ * placeholder domain rather than a fabricated one.
+ */
+describe("buildEmbedSnippet", () => {
+  it("embeds the tenant's REAL embedKey in the data-embed-key attribute the loader actually reads", () => {
+    const snippet = buildEmbedSnippet("pk_live_acme_real_key");
+    expect(snippet).toContain('data-embed-key="pk_live_acme_real_key"');
+    expect(snippet).toContain("<script");
+    expect(snippet).toContain("loader.js");
   });
 });

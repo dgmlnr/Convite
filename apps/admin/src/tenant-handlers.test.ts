@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { OperatorId, TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
 
 import type { AuthorizedOperator } from "./authorization.js";
-import { createTenantDetailHandler, createTenantGamesHandler, createTenantListHandler, createTenantOriginsHandler, createTenantWindowHandler } from "./tenant-handlers.js";
+import {
+  createTenantDetailHandler,
+  createTenantGamesHandler,
+  createTenantListHandler,
+  createTenantOriginsHandler,
+  createTenantRotateKeyHandler,
+  createTenantWindowHandler,
+} from "./tenant-handlers.js";
 
 /** Same construction `operator-handlers.test.ts` already establishes — the
  * only place a bare-object `AuthorizedOperator` is ever built outside
@@ -79,11 +86,17 @@ function writableTenantRepo(initial: TenantRecord | undefined): { repo: TenantAd
       await w(capturingExec);
       return { ok: true, tenant: current, themeViolations: [] };
     },
-    updateTheme: async () => {
-      throw new Error("not used by these handlers");
+    updateTheme: async (id, theme, w) => {
+      if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
+      current = { ...current, theme };
+      await w(capturingExec);
+      return { ok: true, tenant: current, themeViolations: [] };
     },
-    rotateEmbedKey: async () => {
-      throw new Error("not used by these handlers");
+    rotateEmbedKey: async (id, embedKey, w) => {
+      if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
+      current = { ...current, embedKey };
+      await w(capturingExec);
+      return { ok: true, tenant: current, themeViolations: [] };
     },
     setValidityWindow: async (id, window, w) => {
       if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
@@ -363,5 +376,58 @@ describe("createTenantWindowHandler", () => {
     const handler = createTenantWindowHandler({ clock: () => NOW, tenants: repo });
     const response = await handler({ params: { id: "ghost" }, body: { validUntil: "2026-08-30" } }, ACTOR);
     expect(response.status).toBe(404);
+  });
+});
+
+/**
+ * `createTenantRotateKeyHandler` — `POST /tenants/:id/embed-key/rotate`
+ * (task 15b.1/15b.2, permission `tenant.embed-key.rotate`). Rotation is
+ * DESTRUCTIVE (launch prompt §3: "breaks the tenant's live page until they
+ * update it") — this handler's own job is only to generate a fresh key and
+ * persist it atomically with its audit entry; the UI's own confirmation
+ * step (`TenantDetailScreen.tsx`, a later commit in this same PR) is what
+ * makes the consequence visible BEFORE the operator commits. Genuine RED,
+ * confirmed before this handler existed: `createTenantRotateKeyHandler is
+ * not a function`.
+ */
+describe("createTenantRotateKeyHandler", () => {
+  it("generates a FRESH pk_live_ key (never the operator's input — there is none), persists it, and audits tenant.embed-key.rotated with the real before/after", async () => {
+    const { repo, execCalls } = writableTenantRepo(tenant({ id: "acme" as TenantId, embedKey: "pk_live_old_key" }));
+    const handler = createTenantRotateKeyHandler({ clock: () => NOW, tenants: repo, generateEmbedKey: () => "pk_live_freshly_generated" });
+
+    const response = await handler({ params: { id: "acme" } }, ACTOR);
+
+    expect(response.status).toBe(200);
+    const body = JSON.parse(response.body) as { readonly tenant: { readonly embedKey: string } };
+    expect(body.tenant.embedKey).toBe("pk_live_freshly_generated");
+    expect((await repo.findById("acme" as TenantId))?.embedKey).toBe("pk_live_freshly_generated");
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]?.values).toEqual(expect.arrayContaining(["tenant.embed-key.rotated", JSON.stringify({ embedKey: { before: "pk_live_old_key", after: "pk_live_freshly_generated" } })]));
+  });
+
+  it("returns 404 for a tenant nobody created", async () => {
+    const { repo } = writableTenantRepo(undefined);
+    const handler = createTenantRotateKeyHandler({ clock: () => NOW, tenants: repo, generateEmbedKey: () => "pk_live_whatever" });
+    const response = await handler({ params: { id: "ghost" } }, ACTOR);
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 400 with no id param", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantRotateKeyHandler({ clock: () => NOW, tenants: repo, generateEmbedKey: () => "pk_live_whatever" });
+    expect((await handler({}, ACTOR)).status).toBe(400);
+  });
+});
+
+describe("generateEmbedKey (default, production path)", () => {
+  it("produces a pk_live_-prefixed key from real crypto.randomBytes(32), unique across two calls", async () => {
+    const { generateEmbedKey } = await import("./tenant-handlers.js");
+    const a = generateEmbedKey();
+    const b = generateEmbedKey();
+    expect(a.startsWith("pk_live_")).toBe(true);
+    expect(a).not.toBe(b);
+    // base64url(32 bytes) is 43 chars, no padding — same encoding
+    // `generateSessionToken` (session-cookie.ts) already establishes.
+    expect(a.length).toBe("pk_live_".length + 43);
   });
 });

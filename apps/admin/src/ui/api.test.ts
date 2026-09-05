@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout, postTenantGames, postTenantOrigins, postTenantWindow } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantWindow } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -324,6 +324,54 @@ describe("postTenantWindow", () => {
       vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
     );
     await expect(postTenantWindow("ghost", "2026-08-30")).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+});
+
+/**
+ * `postRotateEmbedKey` (task 15b.1/15b.2) — posts with NO body at all (the
+ * new key is entirely server-generated). Genuine RED, confirmed before it
+ * existed: `postRotateEmbedKey is not exported`.
+ */
+describe("postRotateEmbedKey", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts to /tenants/:id/embed-key/rotate, same-origin, cookie-bearing, and returns the fresh key", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ tenant: { id: "acme", embedKey: "pk_live_freshly_rotated", allowedOrigins: [], entitledGames: [], status: { kind: "active" } } }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postRotateEmbedKey("acme");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/tenants/acme/embed-key/rotate");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    expect(outcome).toEqual({ ok: true, tenant: { id: "acme", embedKey: "pk_live_freshly_rotated", allowedOrigins: [], entitledGames: [], status: { kind: "active" } } });
+  });
+
+  it("maps a 404 to unknown-tenant", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
+    );
+    await expect(postRotateEmbedKey("ghost")).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postRotateEmbedKey("acme")).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });
 

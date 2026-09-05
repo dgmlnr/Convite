@@ -1,10 +1,10 @@
 import { useEffect, useState, type JSX } from "react";
 
-import { getTenantDetail, postTenantGames, postTenantOrigins, postTenantWindow, type TenantWriteOutcome } from "./api.js";
+import { getTenantDetail, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantWindow, type TenantWriteOutcome } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { COPY } from "./copy.js";
-import { argentineDateToIso, buildTenantDetailView, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
+import { argentineDateToIso, buildEmbedSnippet, buildTenantDetailView, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
 
 export interface TenantDetailScreenProps {
   readonly tenantId: string;
@@ -167,6 +167,90 @@ function WindowFieldEditor({ label, emptyCopy, initialText, onSave, onSaved }: W
   );
 }
 
+interface EmbedKeySectionProps {
+  readonly embedKey: string;
+  readonly onRotate: () => Promise<TenantWriteOutcome>;
+  readonly onRotated: (tenant: TenantDetailApiRow) => void;
+}
+
+type RotateState = { readonly kind: "idle" } | { readonly kind: "confirming" } | { readonly kind: "rotating" } | { readonly kind: "rotated" } | { readonly kind: "error"; readonly message: string };
+
+/**
+ * Embed key + snippet + rotation (task 15b.1/15b.2). ROTATION IS
+ * DESTRUCTIVE AND MADE VISIBLE BEFORE IT COMMITS (launch prompt §3): clicking
+ * "Rotar clave" does NOT rotate anything — it only opens a `confirming` gate
+ * naming the exact consequence ("the tenant's live page breaks until they
+ * update it"), and the network call happens ONLY from the confirm button
+ * inside that gate. `copied` resets whenever a rotation actually completes
+ * (a stale "¡Copiado!" from the PREVIOUS key would be actively misleading
+ * once the visible snippet has changed underneath it).
+ */
+function EmbedKeySection({ embedKey, onRotate, onRotated }: EmbedKeySectionProps): JSX.Element {
+  const [rotateState, setRotateState] = useState<RotateState>({ kind: "idle" });
+  const [copied, setCopied] = useState(false);
+  const snippet = buildEmbedSnippet(embedKey);
+
+  async function handleConfirmRotate(): Promise<void> {
+    setRotateState({ kind: "rotating" });
+    setCopied(false);
+    const outcome = await onRotate();
+    if (!outcome.ok) {
+      setRotateState({
+        kind: "error",
+        message: outcome.reason === "missing-permission" ? COPY.tenantDetailEditMissingPermission : outcome.reason === "unknown-tenant" ? COPY.tenantDetailEditUnknownTenant : COPY.tenantDetailEditGenericError,
+      });
+      return;
+    }
+    onRotated(outcome.tenant);
+    setRotateState({ kind: "rotated" });
+  }
+
+  async function handleCopy(): Promise<void> {
+    await navigator.clipboard.writeText(snippet);
+    setCopied(true);
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold">{COPY.tenantDetailSnippetLabel}</h2>
+      <pre className="whitespace-pre-wrap break-all rounded-md border border-border bg-background px-3 py-2 font-mono text-xs">{snippet}</pre>
+      <Button variant="outline" size="sm" onClick={() => void handleCopy()}>
+        {copied ? COPY.tenantDetailCopied : COPY.tenantDetailCopySnippet}
+      </Button>
+
+      {rotateState.kind === "idle" ? (
+        <Button variant="outline" size="sm" onClick={() => setRotateState({ kind: "confirming" })}>
+          {COPY.tenantDetailRotateButton}
+        </Button>
+      ) : null}
+
+      {rotateState.kind === "confirming" ? (
+        <div className="flex flex-col gap-2 rounded-md border border-destructive p-3">
+          <p className="text-sm text-destructive" role="alert">
+            {COPY.tenantDetailRotateWarning}
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => void handleConfirmRotate()}>
+              {COPY.tenantDetailRotateConfirm}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setRotateState({ kind: "idle" })}>
+              {COPY.tenantDetailRotateCancel}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {rotateState.kind === "rotating" ? <p className="text-sm text-primary-foreground/70">{COPY.tenantDetailRotating}</p> : null}
+      {rotateState.kind === "rotated" ? <p className="text-sm text-primary">{COPY.tenantDetailRotateSuccess}</p> : null}
+      {rotateState.kind === "error" ? (
+        <p className="text-sm text-destructive" role="alert">
+          {rotateState.message}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * The tenant detail screen (task 15a's own necessary prerequisite) — origins
  * and games are now EDITABLE (tasks 15a.1-15a.4): a free-text field per
@@ -228,6 +312,11 @@ export function TenantDetailScreen({ tenantId, onBack }: TenantDetailScreenProps
             <p className="text-xs text-primary-foreground/70">
               {COPY.tenantEmbedKeyLabel}: {state.view.embedKey}
             </p>
+            <EmbedKeySection
+              embedKey={state.view.embedKey}
+              onRotate={() => postRotateEmbedKey(tenantId)}
+              onRotated={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
+            />
             <ListFieldEditor
               label={COPY.tenantDetailOriginsLabel}
               emptyCopy={COPY.tenantDetailOriginsEmpty}

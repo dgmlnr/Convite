@@ -62,4 +62,14 @@ export const COPY = {
   tenantDetailEditGenericError: "No se pudo guardar. Probá de nuevo.",
   tenantDetailWindowPlaceholder: "DD/MM/AAAA",
   tenantDetailWindowInvalidFormat: "Ingresá la fecha como DD/MM/AAAA.",
+  tenantDetailSnippetLabel: "Fragmento para insertar",
+  tenantDetailCopySnippet: "Copiar fragmento",
+  tenantDetailCopied: "¡Copiado!",
+  tenantDetailRotateButton: "Rotar clave",
+  tenantDetailRotateWarning:
+    "Rotar la clave rompe la página en vivo del inquilino de inmediato: el fragmento que tienen instalado deja de funcionar hasta que lo actualicen con la clave nueva. Esta acción no se puede deshacer.",
+  tenantDetailRotateConfirm: "Confirmar rotación",
+  tenantDetailRotateCancel: "Cancelar",
+  tenantDetailRotateSuccess: "Clave rotada. Copiá el fragmento nuevo antes de salir de esta pantalla.",
+  tenantDetailRotating: "Rotando…",
 } as const;
