@@ -462,6 +462,72 @@ export async function postPermissionRevoke(operatorId: string, permission: Permi
 }
 
 /**
+ * `GET /audit`'s own wire row (task 16b.2) — the exact shape
+ * `apps/admin/src/audit-query.ts`'s own `AuditEntryRow` serializes to JSON
+ * through `audit-handlers.ts`'s `createAuditViewHandler`. `action` stays a
+ * plain `string` here, never the server's own closed `AuditAction` type —
+ * this client never validates it, only displays it (a later view-model
+ * maps it to Spanish through `copy.ts`'s own closed label table, itself
+ * keyed by the SAME closed vocabulary, so an unrecognised value simply has
+ * no label rather than crashing).
+ */
+export interface AuditEntryApiRow {
+  readonly id: number;
+  readonly occurredAt: number;
+  readonly actorUsername: string;
+  readonly action: string;
+  readonly targetTenantId?: string;
+  readonly targetOperatorId?: string;
+  readonly changes?: Readonly<Record<string, { readonly before: unknown; readonly after: unknown }>>;
+}
+
+/** The viewer's own four filters (spec Domain L) — every field a plain,
+ * already-serializable string, so `getAuditEntries` never has to interpret
+ * a date or validate an action name itself; the server (`audit-handlers.ts`)
+ * owns both. */
+export interface AuditQueryParams {
+  readonly actor?: string;
+  readonly tenant?: string;
+  readonly action?: string;
+  /** ISO 8601 datetime, inclusive lower bound. */
+  readonly from?: string;
+  /** ISO 8601 datetime, exclusive upper bound. */
+  readonly to?: string;
+}
+
+export type AuditListOutcome =
+  | { readonly ok: true; readonly entries: readonly AuditEntryApiRow[] }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "network-error" };
+
+/**
+ * `GET /audit` (task 16b.2). Every filter is OMITTED from the query string
+ * entirely when absent or empty, never sent as an empty value — a request
+ * with no filters is a bare `GET /audit`, matching `audit-handlers.ts`'s
+ * own "no query string means no filters" shape exactly, with no empty-string
+ * special-casing needed on either side.
+ */
+export async function getAuditEntries(params: AuditQueryParams = {}): Promise<AuditListOutcome> {
+  const search = new URLSearchParams();
+  if (params.actor !== undefined && params.actor !== "") search.set("actor", params.actor);
+  if (params.tenant !== undefined && params.tenant !== "") search.set("tenant", params.tenant);
+  if (params.action !== undefined && params.action !== "") search.set("action", params.action);
+  if (params.from !== undefined && params.from !== "") search.set("from", params.from);
+  if (params.to !== undefined && params.to !== "") search.set("to", params.to);
+  const query = search.toString();
+
+  let response: Response;
+  try {
+    response = await fetch(`/audit${query === "" ? "" : `?${query}`}`, { headers: { accept: "application/json" }, credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly entries: readonly AuditEntryApiRow[] };
+  return { ok: true, entries: body.entries };
+}
+
+/**
  * `POST /logout` — idempotent by construction on the server side
  * (`logout-handler.ts`'s own docstring: "every case still returns 200 with
  * a clearing cookie"), so this client never inspects the response at all:

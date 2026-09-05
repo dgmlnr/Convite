@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  getAuditEntries,
   getOperators,
   getTenantDetail,
   getTenants,
@@ -720,6 +721,79 @@ describe("postPermissionRevoke", () => {
   it("maps a 404 to not-granted", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "not-granted" }), { status: 404 })));
     await expect(postPermissionRevoke("op-target", "tenant.create")).resolves.toEqual({ ok: false, reason: "not-granted" });
+  });
+});
+
+/**
+ * `getAuditEntries` (task 16b.2) — `GET /audit`'s own four filters (actor,
+ * tenant, action, date range) become query-string parameters, only when
+ * present: an omitted/empty filter never appears in the URL at all, so a
+ * request with no filters is a bare `GET /audit`, never `GET /audit?actor=`
+ * with an empty value the server would have to special-case.
+ */
+describe("getAuditEntries", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches /audit with no query string when no filter is given", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ entries: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await getAuditEntries();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/audit");
+    expect(init).toMatchObject({ credentials: "include" });
+    expect(outcome).toEqual({ ok: true, entries: [] });
+  });
+
+  it("filtering by target tenant shows only that tenant's entries — task 16b.1's own scenario, at the client layer", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ entries: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAuditEntries({ tenant: "acme" });
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/audit?tenant=acme");
+  });
+
+  it("combines every given filter into one query string, omitting anything empty or undefined", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ entries: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAuditEntries({ actor: "ana", tenant: "", action: "permission.granted", from: "2026-08-01T00:00:00.000Z" });
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/audit?actor=ana&action=permission.granted&from=2026-08-01T00%3A00%3A00.000Z");
+  });
+
+  it("returns the parsed entries verbatim on success", async () => {
+    const entry = { id: 1, occurredAt: 1_700_000_000_000, actorUsername: "ana", action: "tenant.created", targetTenantId: "acme" };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ entries: [entry] }), { status: 200 })));
+
+    await expect(getAuditEntries()).resolves.toEqual({ ok: true, entries: [entry] });
+  });
+
+  it("maps a 403 to missing-permission", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 403 })));
+    await expect(getAuditEntries()).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps any other non-200 to no-session", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
+    await expect(getAuditEntries()).resolves.toEqual({ ok: false, reason: "no-session" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(getAuditEntries()).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });
 
