@@ -15,12 +15,21 @@ import { defineConfig } from "vitest/config";
  * applies every migration against it before any spec file (see
  * `postgres-tests/global-setup.ts`), then tears it down afterward — this
  * suite requires Docker; there is no fallback path.
+ *
+ * `apps/**` joins the include list at tenant-administration slice 16b —
+ * this suite's FIRST app-level member. `audit-query.ts` deliberately lives
+ * in `apps/admin`, not `packages/platform-core` (design §10's own layering
+ * argument, identical to why `audit-log.ts`'s write side lives there too),
+ * so its own real-Postgres proof cannot live under `packages/**` without
+ * importing an `apps/admin/src/*` module from outside `apps/admin/` —
+ * exactly what `.dependency-cruiser.cjs`'s own `no-admin-internals-outside-admin`
+ * rule forbids. The test must sit where the code it proves already lives.
  */
 export default defineConfig({
   test: {
     name: "postgres",
     environment: "node",
-    include: ["postgres-tests/**/*.postgres.test.ts", "packages/**/*.postgres.test.ts"],
+    include: ["postgres-tests/**/*.postgres.test.ts", "packages/**/*.postgres.test.ts", "apps/**/*.postgres.test.ts"],
     globalSetup: ["./postgres-tests/global-setup.ts"],
     // Serial: every spec file shares ONE Postgres container and its ONE
     // `schema_migrations` row set — running them concurrently would make
