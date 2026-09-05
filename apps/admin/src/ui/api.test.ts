@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout, postTenantOrigins } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -174,6 +174,64 @@ describe("getTenantDetail", () => {
       }),
     );
     await expect(getTenantDetail("acme")).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `postTenantOrigins`/`postTenantGames` (tasks 15a.1-15a.4) — same
+ * fetch-stub discipline as every client function above. Genuine RED,
+ * confirmed before either existed: `postTenantOrigins is not exported` /
+ * `postTenantGames is not exported`.
+ */
+describe("postTenantOrigins", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the origins array to /tenants/:id/origins, same-origin, cookie-bearing, and returns the fresh detail row", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ tenant: { id: "acme", embedKey: "pk_live_acme", allowedOrigins: ["https://new.example"], entitledGames: [], status: { kind: "no-window" } } }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postTenantOrigins("acme", ["https://new.example"]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/tenants/acme/origins");
+    expect(init).toMatchObject({ method: "POST", credentials: "include", headers: { "content-type": "application/json" } });
+    expect(JSON.parse(init.body)).toEqual({ origins: ["https://new.example"] });
+    expect(outcome).toEqual({ ok: true, tenant: { id: "acme", embedKey: "pk_live_acme", allowedOrigins: ["https://new.example"], entitledGames: [], status: { kind: "no-window" } } });
+  });
+
+  it("maps a 404 to unknown-tenant", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
+    );
+    await expect(postTenantOrigins("ghost", [])).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+
+  it("maps a 403 to missing-permission", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "missing-permission" }), { status: 403 })),
+    );
+    await expect(postTenantOrigins("acme", [])).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postTenantOrigins("acme", [])).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });
 

@@ -115,6 +115,38 @@ export async function getTenantDetail(id: string): Promise<TenantDetailOutcome> 
   return { ok: true, tenant: body.tenant };
 }
 
+export type TenantWriteOutcome =
+  | { readonly ok: true; readonly tenant: TenantDetailApiRow }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "unknown-tenant" | "invalid-payload" | "network-error" };
+
+/**
+ * `POST /tenants/:id/origins` (tasks 15a.1/15a.2). Same four-way session/
+ * permission/network mapping `getTenantDetail` already establishes, plus
+ * `invalid-payload` for the handler's own 400 (a malformed body — never
+ * reachable through this app's own editor, which always sends a real
+ * string array via `parseListInput`, but a real status this client must
+ * still map rather than silently swallow).
+ */
+export async function postTenantOrigins(id: string, origins: readonly string[]): Promise<TenantWriteOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/tenants/${encodeURIComponent(id)}/origins`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ origins }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-tenant" };
+  if (response.status === 400) return { ok: false, reason: "invalid-payload" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
+  return { ok: true, tenant: body.tenant };
+}
+
 /**
  * `POST /logout` — idempotent by construction on the server side
  * (`logout-handler.ts`'s own docstring: "every case still returns 200 with
