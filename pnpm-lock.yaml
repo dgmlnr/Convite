@@ -42,6 +42,12 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.1.2)(@vitest/browser-playwright@4.1.10)(vite@8.2.0(@types/node@26.1.2))
 
+  apps/admin:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
   apps/mint-server:
     dependencies:
       '@hexdev/escoba-module':

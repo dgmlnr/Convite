@@ -1,0 +1,12 @@
+{
+  "name": "@hexdev/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
+  }
+}
