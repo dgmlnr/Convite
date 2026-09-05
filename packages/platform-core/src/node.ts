@@ -84,3 +84,9 @@ export { grantPermission, revokePermission } from "./operator-permissions.js";
 // barrel: a plain `Pool` read, no port, no static double (see this
 // function's own docstring for why).
 export { listOperatorsWithPermissions } from "./operator-directory.js";
+// `assertSchemaUpToDate` (sdd-verify's own finding 3, design Part A §4/
+// Part B §15): `apps/admin`'s own boot-time schema-version READ — never a
+// migration run, only `pnpm db:migrate` (the owner) may ever apply one.
+// Lives behind this barrel for the same reason `runMigrations` itself does
+// not sit on the public one: it takes a real `Pool`-shaped query function.
+export { assertSchemaUpToDate } from "./postgres-migrations.js";

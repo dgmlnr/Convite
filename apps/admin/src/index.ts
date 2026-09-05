@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createRateLimiter, createRedisRateLimiter } from "@hexdev/platform-core";
 import type { RateLimiter } from "@hexdev/platform-core";
 import {
+  assertSchemaUpToDate,
   connectPostgres,
   connectRedis,
   createPostgresOperatorRepository,
@@ -94,6 +95,17 @@ const adminUiDistDir = fileURLToPath(new URL("../dist-ui", import.meta.url));
 // already establish for their own Postgres pools — an unreachable database
 // at boot must crash this process, never let it start half-wired.
 const postgresPool = await connectPostgres(config.postgresUrl);
+
+// sdd-verify finding 3 (design Part A §4/Part B §15): a READ, never a
+// migration run — only `pnpm db:migrate`, holding the OWNER url, may ever
+// apply one (§4's own argument: a process holding DDL can `DROP TABLE
+// audit_entries`, defeating the audit log's only real append-only
+// enforcement). Crashes boot loudly, with both version numbers in the
+// message, exactly like every other "unreachable/misconfigured datastore"
+// failure in this fleet — never a silent start against a stale schema that
+// would otherwise fail later, at query time, inside some unrelated handler.
+await assertSchemaUpToDate((sql) => postgresPool.query(sql));
+
 const operators = createPostgresOperatorRepository(postgresPool);
 const sessions = createPostgresOperatorSessionRepository(postgresPool);
 const tenants = createPostgresTenantAdminRepository(postgresPool);
