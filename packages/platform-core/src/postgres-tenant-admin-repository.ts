@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { SELECT_COLUMNS, toTenantRecord, type TenantRow } from "./postgres-tenant-repository.js";
 import { NOOP_EXEC, type TenantAdminRepository, type TenantWriteResult, type WriteWitness } from "./tenant-admin.js";
 import { sanitizeTenantTheme } from "./tenant-theme.js";
+import { isWindowOrdered } from "./tenant-validity.js";
 
 /**
  * Postgres-backed `TenantAdminRepository` (design §2.3/§3, decision 4):
@@ -107,6 +108,24 @@ export function createPostgresTenantAdminRepository(pool: Pool): TenantAdminRepo
       } catch (error) {
         return mapUniqueViolation(error);
       }
+    },
+    // `isWindowOrdered` is the PRIMARY enforcer, checked before any query —
+    // migration 002's `tenants_window_ordered` CHECK is defense-in-depth for
+    // a write reaching this table through some other path, not the mechanism
+    // this method itself relies on (see that migration's own docstring).
+    // `new Date(ms)`/`null`: the write-side half of design §3's "adapters
+    // convert `timestamptz` ↔ `Date` ↔ `.getTime()`" — `node-postgres`
+    // serializes a `Date` as a proper `timestamptz` literal, never a
+    // hand-built string.
+    async setValidityWindow(id, window, w) {
+      if (!isWindowOrdered(window)) return { ok: false, reason: "invalid-window" };
+      const { rows } = await pool.query<TenantRow>(
+        `UPDATE tenants SET valid_from = $2, valid_until = $3, updated_at = now() WHERE id = $1 RETURNING ${SELECT_COLUMNS}`,
+        [id, window.validFrom === undefined ? null : new Date(window.validFrom), window.validUntil === undefined ? null : new Date(window.validUntil)],
+      );
+      if (rows[0] === undefined) return { ok: false, reason: "unknown-tenant" };
+      await w(NOOP_EXEC);
+      return { ok: true, tenant: toTenantRecord(rows[0]), themeViolations: [] };
     },
   };
 }

@@ -42,9 +42,16 @@ export interface TenantRow {
   readonly allowed_origins: readonly string[];
   readonly entitled_games: readonly string[];
   readonly theme: unknown;
+  /** `timestamptz` columns (migration 002) — `node-postgres` decodes these
+   * as `Date | null`, never a string, so `toTenantRecord` below converts
+   * `Date` → `.getTime()` exactly once, in the ONE place both adapters
+   * share (design §3: "adapters convert `timestamptz` ↔ `Date` ↔
+   * `.getTime()`"). */
+  readonly valid_from: Date | null;
+  readonly valid_until: Date | null;
 }
 
-export const SELECT_COLUMNS = "id, embed_key, allowed_origins, entitled_games, theme";
+export const SELECT_COLUMNS = "id, embed_key, allowed_origins, entitled_games, theme, valid_from, valid_until";
 
 /**
  * Exported (not merely module-private) so `postgres-tenant-admin-repository.ts`
@@ -60,6 +67,8 @@ export function toTenantRecord(row: TenantRow): TenantRecord {
     allowedOrigins: row.allowed_origins,
     entitledGames: row.entitled_games,
     theme: sanitizeThemeFromStorage(row.theme),
+    validFrom: row.valid_from === null ? undefined : row.valid_from.getTime(),
+    validUntil: row.valid_until === null ? undefined : row.valid_until.getTime(),
   };
 }
 

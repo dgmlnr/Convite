@@ -51,4 +51,31 @@ describe("buildDevTenantSeed", () => {
 
     expect(seed.allowedOrigins).toEqual(["http://10.0.0.5:2567", "http://localhost:5173", "http://localhost:3000"]);
   });
+
+  /**
+   * Carried gap from PR4d, closed here now that the column exists
+   * (tenant-administration slice 5, task 5.10a). Before migration 002 this
+   * function could not set `validUntil` at all — nothing to write it to.
+   * Now that "zero window configured = inactive" is real enforcement
+   * (design §1.3), omitting it here would silently kill `pnpm dev:server`
+   * the moment slice 6 wires enforcement: every dev tenant would be
+   * refused at mint time despite existing. `now` is an injectable
+   * argument, not a bare `Date.now()` call, so this stays deterministically
+   * testable without faking global time.
+   */
+  it("sets a validUntil far enough in the future that the dev tenant never goes inactive", () => {
+    const now = 1_700_000_000_000;
+    const seed = buildDevTenantSeed({ id: "x", embedKey: "y", hostOrigin: "http://localhost:5173", entitledGames: [], now });
+
+    expect(seed.validUntil).toBeGreaterThan(now + 365 * 24 * 60 * 60 * 1000);
+  });
+
+  it("derives validUntil from the given now, not from real wall-clock time", () => {
+    const earlyNow = 0;
+    const laterNow = 10_000_000_000;
+    const earlySeed = buildDevTenantSeed({ id: "x", embedKey: "y", hostOrigin: "http://localhost:5173", entitledGames: [], now: earlyNow });
+    const laterSeed = buildDevTenantSeed({ id: "x", embedKey: "y", hostOrigin: "http://localhost:5173", entitledGames: [], now: laterNow });
+
+    expect(laterSeed.validUntil - earlySeed.validUntil).toBe(laterNow - earlyNow);
+  });
 });
