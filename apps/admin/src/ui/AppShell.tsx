@@ -2,22 +2,18 @@ import { useCallback, useEffect, useState, type JSX } from "react";
 
 import { getTenants, postLogout } from "./api.js";
 import { AppNav, type AppScreen } from "./AppNav.js";
+import { resolveAppShellView, type ShellProbeState } from "./app-shell-routing.js";
 import { AuditViewerScreen } from "./AuditViewerScreen.js";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { LoginScreen } from "./LoginScreen.js";
 import { OperatorsScreen } from "./OperatorsScreen.js";
-import { buildTenantListRows, type TenantListRow } from "./tenant-list.js";
+import { buildTenantListRows } from "./tenant-list.js";
 import { TenantCreateScreen } from "./TenantCreateScreen.js";
 import { TenantDetailScreen } from "./TenantDetailScreen.js";
 import { TenantListScreen } from "./TenantListScreen.js";
 
-type ShellState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "login" }
-  | { readonly kind: "missing-permission" }
-  | { readonly kind: "error" }
-  | { readonly kind: "tenants"; readonly rows: readonly TenantListRow[] };
+type ShellState = ShellProbeState;
 
 /**
  * The session-aware shell (task 14.2) — the single place that decides
@@ -42,6 +38,35 @@ type ShellState =
  * before this shell ever received a response. A bug in this component could
  * at most show the wrong LOADING state; it could never grant access the
  * server itself withheld.
+ *
+ * SDD-VERIFY FINDING 1 ("el rbac que no llegaba a ningun lado"), closed
+ * here: the actual screen-selection DECISION now lives in
+ * `resolveAppShellView` (`app-shell-routing.ts`), a pure function proven by
+ * its own unit test — this component only renders whatever it returns. The
+ * bug it fixes: `creatingTenant`/`selectedTenantId` used to be checked AFTER
+ * `state.kind === "missing-permission" || state.kind === "error"`, so an
+ * operator whose OWN tenant-list read was refused (because that read reuses
+ * `tenant.origins.edit`, design §19's disclosed vocabulary bend) could never
+ * reach `TenantCreateScreen` — the "Crear inquilino" button lived inside
+ * `TenantListScreen`, which never rendered for them at all. Granting
+ * `tenant.create` alone granted nothing usable. The missing-permission/error
+ * screen below now carries its OWN "Crear inquilino" button, reachable
+ * regardless of why the tenant list itself failed — clicking it still calls
+ * the real `POST /tenants` through the same checkpoint, and a genuine 403 is
+ * still handled gracefully by `TenantCreateScreen`'s own existing
+ * `missing-permission` state, unchanged by this fix.
+ *
+ * WHAT THIS FIX DOES NOT CLOSE, DISCLOSED RATHER THAN PAPERED OVER:
+ * `tenant.games.edit`/`tenant.window.edit`/`tenant.embed-key.rotate` still
+ * cannot be reached ALONE, without also holding `tenant.origins.edit` —
+ * their editors live on `TenantDetailScreen`, which needs a tenant id, and
+ * this app's only two ways to obtain one (the tenant list, or creating a
+ * fresh tenant) both either need `tenant.origins.edit` themselves or hand
+ * back a tenant this same operator then cannot open for lack of it. Closing
+ * that would mean either inventing a `tenant.view` read permission or
+ * widening which permissions satisfy `GET /tenants/:id`'s own guard — both
+ * are taxonomy/authorization decisions for a maintainer, not a client
+ * reachability bug, so this fix does not invent either.
  */
 export function AppShell(): JSX.Element {
   const [state, setState] = useState<ShellState>({ kind: "loading" });
@@ -105,53 +130,64 @@ export function AppShell(): JSX.Element {
   // docstring has the full account): white reads ~16:1 against
   // `bg-background`, the exact same pairing the login button already
   // proves legible.
-  if (state.kind === "loading") {
+  const view = resolveAppShellView({ shellState: state, screen, creatingTenant, selectedTenantId });
+
+  if (view.kind === "loading") {
     return <main className="flex min-h-screen items-center justify-center bg-background text-primary-foreground">{COPY.tenantListLoading}</main>;
   }
 
-  if (state.kind === "login") {
+  if (view.kind === "login") {
     return <LoginScreen onLoginSuccess={() => void loadTenants()} />;
   }
 
-  // Slice 16's own top-level screen switch (phases 16a/16b) — runs BEFORE any
-  // tenant-specific state below, so an operator who cannot see the TENANT
-  // list (e.g. holds only `operators.manage`) is never stuck on that
-  // screen's own missing-permission message with no way out: each
-  // destination owns its own independent fetch and permission check via its
-  // own `AppNav`, the only way back to any other destination once logged in.
-  if (screen === "operators") {
+  if (view.kind === "operators") {
     return <OperatorsScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
   }
 
-  if (screen === "audit") {
+  if (view.kind === "audit") {
     return <AuditViewerScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
   }
 
-  if (state.kind === "missing-permission" || state.kind === "error") {
+  // sdd-verify finding 1, closed here: reached regardless of the tenant
+  // list's own outcome — an operator holding only `tenant.create` gets here
+  // even though `state.kind` is `missing-permission`.
+  if (view.kind === "create-tenant") {
+    return <TenantCreateScreen onBack={() => setCreatingTenant(false)} onCreated={handleTenantCreated} />;
+  }
+
+  // Same fix, same reachability: a KNOWN tenant id (from a prior successful
+  // list load, or from just having created one) reaches the detail screen
+  // even if the list itself is now refused or erroring.
+  if (view.kind === "tenant-detail") {
+    return <TenantDetailScreen tenantId={view.tenantId} onBack={handleBackFromDetail} />;
+  }
+
+  if (view.kind === "tenant-list-missing-permission" || view.kind === "tenant-list-error") {
     return (
       <div className="min-h-screen bg-background text-primary-foreground">
         <AppNav current="tenants" onNavigate={setScreen} onLogout={() => void handleLogout()} />
         <main className="flex flex-col items-center justify-center gap-4 p-6">
-          <p className="text-sm text-primary-foreground/70">{state.kind === "missing-permission" ? COPY.tenantListMissingPermission : COPY.tenantListGenericError}</p>
-          <Button variant="outline" onClick={() => void loadTenants()}>
-            {COPY.retry}
-          </Button>
+          <p className="text-sm text-primary-foreground/70">{view.kind === "tenant-list-missing-permission" ? COPY.tenantListMissingPermission : COPY.tenantListGenericError}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => void loadTenants()}>
+              {COPY.retry}
+            </Button>
+            {/* sdd-verify finding 1: "Crear inquilino" no longer lives ONLY
+             * inside `TenantListScreen` — `POST /tenants` needs only
+             * `tenant.create`, never the tenant-list read's own
+             * `tenant.origins.edit`, so an operator refused HERE can still
+             * reach the creation form. A genuine 403 there is still handled
+             * gracefully by `TenantCreateScreen`'s own existing state. */}
+            <Button onClick={() => setCreatingTenant(true)}>{COPY.tenantListCreateButton}</Button>
+          </div>
         </main>
       </div>
     );
   }
 
-  if (creatingTenant) {
-    return <TenantCreateScreen onBack={() => setCreatingTenant(false)} onCreated={handleTenantCreated} />;
-  }
-
-  if (selectedTenantId !== undefined) {
-    return <TenantDetailScreen tenantId={selectedTenantId} onBack={handleBackFromDetail} />;
-  }
-
   return (
     <TenantListScreen
-      rows={state.rows}
+      rows={view.rows}
       onLogout={() => void handleLogout()}
       onSelectTenant={setSelectedTenantId}
       onCreateTenant={() => setCreatingTenant(true)}
