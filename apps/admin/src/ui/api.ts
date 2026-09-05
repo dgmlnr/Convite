@@ -117,6 +117,47 @@ export async function getTenantDetail(id: string): Promise<TenantDetailOutcome> 
   return { ok: true, tenant: body.tenant };
 }
 
+export type TenantCreateOutcome =
+  | { readonly ok: true; readonly tenant: TenantDetailApiRow }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "tenant-id-taken" | "embed-key-taken" | "invalid-payload" | "network-error" };
+
+/**
+ * `POST /tenants` (permission `tenant.create`, the gap slice 15 flagged but
+ * never built) — the operator supplies ONLY `id`; `embedKey` is ALWAYS
+ * system-generated server-side (`tenant-handlers.ts`'s own
+ * `createTenantCreateHandler` docstring), so this client never has one to
+ * send. Both `tenant-id-taken` (the reachable collision an operator can
+ * actually trigger by typing an id already in use) and `embed-key-taken`
+ * (near-unreachable, but never assumed impossible — same discipline
+ * `postRotateEmbedKey` below already establishes) surface as their OWN
+ * distinct reason, never collapsed into a generic error: launch prompt §1's
+ * own "surface its refusal reason honestly rather than re-implementing the
+ * check in front of it," read literally through to this client's own return
+ * type.
+ */
+export async function postTenantCreate(id: string): Promise<TenantCreateOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/tenants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ id }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 400) return { ok: false, reason: "invalid-payload" };
+  if (response.status === 409) {
+    const body = (await response.json()) as { readonly error: string };
+    return { ok: false, reason: body.error === "embed-key-taken" ? "embed-key-taken" : "tenant-id-taken" };
+  }
+  if (response.status !== 201) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
+  return { ok: true, tenant: body.tenant };
+}
+
 export type TenantWriteOutcome =
   | { readonly ok: true; readonly tenant: TenantDetailApiRow }
   | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "unknown-tenant" | "invalid-payload" | "network-error" };

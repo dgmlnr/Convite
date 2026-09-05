@@ -5,6 +5,7 @@ import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { LoginScreen } from "./LoginScreen.js";
 import { buildTenantListRows, type TenantListRow } from "./tenant-list.js";
+import { TenantCreateScreen } from "./TenantCreateScreen.js";
 import { TenantDetailScreen } from "./TenantDetailScreen.js";
 import { TenantListScreen } from "./TenantListScreen.js";
 
@@ -47,6 +48,10 @@ export function AppShell(): JSX.Element {
   // is on screen, the same "shell decides which screen, screen owns its own
   // data" split already established for `LoginScreen`/`TenantListScreen`.
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
+  // The gap slice 15 flagged but never built (`POST /tenants`) — WHETHER the
+  // create form is on screen, the same "shell decides which screen, screen
+  // owns its own data" split `selectedTenantId` above already establishes.
+  const [creatingTenant, setCreatingTenant] = useState(false);
 
   const loadTenants = useCallback(async (): Promise<void> => {
     setState({ kind: "loading" });
@@ -65,6 +70,24 @@ export function AppShell(): JSX.Element {
   const handleLogout = useCallback(async (): Promise<void> => {
     await postLogout();
     setState({ kind: "login" });
+  }, []);
+
+  // Refreshes the list on the way back from a tenant's detail screen — load-
+  // bearing for creation specifically: without this, a freshly created
+  // tenant would vanish from view the moment the operator leaves its own
+  // detail screen, since `state.rows` still holds the pre-creation snapshot.
+  const handleBackFromDetail = useCallback((): void => {
+    setSelectedTenantId(undefined);
+    void loadTenants();
+  }, [loadTenants]);
+
+  // The gap slice 15 flagged but never built — on success, land on the
+  // freshly created tenant's OWN detail screen (launch prompt: "create, land
+  // on the tenant's own detail screen, configure origins/games/window
+  // there"), never back on the list.
+  const handleTenantCreated = useCallback((id: string): void => {
+    setCreatingTenant(false);
+    setSelectedTenantId(id);
   }, []);
 
   // `text-primary-foreground` everywhere below, never `text-foreground`
@@ -96,9 +119,13 @@ export function AppShell(): JSX.Element {
     );
   }
 
-  if (selectedTenantId !== undefined) {
-    return <TenantDetailScreen tenantId={selectedTenantId} onBack={() => setSelectedTenantId(undefined)} />;
+  if (creatingTenant) {
+    return <TenantCreateScreen onBack={() => setCreatingTenant(false)} onCreated={handleTenantCreated} />;
   }
 
-  return <TenantListScreen rows={state.rows} onLogout={() => void handleLogout()} onSelectTenant={setSelectedTenantId} />;
+  if (selectedTenantId !== undefined) {
+    return <TenantDetailScreen tenantId={selectedTenantId} onBack={handleBackFromDetail} />;
+  }
+
+  return <TenantListScreen rows={state.rows} onLogout={() => void handleLogout()} onSelectTenant={setSelectedTenantId} onCreateTenant={() => setCreatingTenant(true)} />;
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantTheme, postTenantWindow } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout, postRotateEmbedKey, postTenantCreate, postTenantGames, postTenantOrigins, postTenantTheme, postTenantWindow } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -174,6 +174,77 @@ describe("getTenantDetail", () => {
       }),
     );
     await expect(getTenantDetail("acme")).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `postTenantCreate` (the gap slice 15 flagged but never built — `POST
+ * /tenants`, permission `tenant.create`) — same fetch-stub discipline as
+ * every client function above. Genuine RED, confirmed before it existed:
+ * `postTenantCreate is not exported`.
+ */
+describe("postTenantCreate", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the id to /tenants, same-origin, cookie-bearing, and returns the freshly created detail row", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ tenant: { id: "acme", embedKey: "pk_live_fresh", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" } } }), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postTenantCreate("acme");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/tenants");
+    expect(init).toMatchObject({ method: "POST", credentials: "include", headers: { "content-type": "application/json" } });
+    expect(JSON.parse(init.body)).toEqual({ id: "acme" });
+    expect(outcome).toEqual({ ok: true, tenant: { id: "acme", embedKey: "pk_live_fresh", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" } } });
+  });
+
+  it("maps a 409 tenant-id-taken response, the reachable database-arbitrated collision, distinct from any other refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "tenant-id-taken" }), { status: 409 })),
+    );
+    await expect(postTenantCreate("acme")).resolves.toEqual({ ok: false, reason: "tenant-id-taken" });
+  });
+
+  it("maps a 409 embed-key-taken response distinctly, even though an operator can never type an embed key", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "embed-key-taken" }), { status: 409 })),
+    );
+    await expect(postTenantCreate("acme")).resolves.toEqual({ ok: false, reason: "embed-key-taken" });
+  });
+
+  it("maps a 403 to missing-permission", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "missing-permission" }), { status: 403 })),
+    );
+    await expect(postTenantCreate("acme")).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps a 400 to invalid-payload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "missing-tenant-id" }), { status: 400 })),
+    );
+    await expect(postTenantCreate("")).resolves.toEqual({ ok: false, reason: "invalid-payload" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postTenantCreate("acme")).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });
 
