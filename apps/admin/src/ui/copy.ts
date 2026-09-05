@@ -90,4 +90,62 @@ export const COPY = {
   tenantCreateEmbedKeyTaken: "Se generó una clave que ya está en uso. Probá crear el inquilino de nuevo.",
   tenantCreateMissingPermission: "Tu cuenta no tiene permiso para crear inquilinos.",
   tenantCreateGenericError: "No se pudo crear el inquilino. Probá de nuevo.",
+  // Shared top nav (slice 16, phases 16a/16b) — every destination is ALWAYS
+  // shown, client-side gating is UX only (same discipline "Crear inquilino"
+  // already establishes): the single authorization checkpoint refuses
+  // server-side exactly as it always has, and each destination's own screen
+  // renders its own honest missing-permission message once requested.
+  navTenants: "Inquilinos",
+  navOperators: "Operadores",
+  navAudit: "Auditoría",
+  // Operators + permission matrix screen (phase 16a) — ONE screen, not
+  // four, since the operator list, the create form, the disable/enable
+  // actions and the permission matrix all operate on the SAME small
+  // dataset (`GET /operators`, design §7's own "single-digit operators"
+  // scale).
+  operatorsTitle: "Operadores",
+  operatorsLoading: "Cargando operadores…",
+  operatorsMissingPermission: "Tu cuenta no tiene permiso para gestionar operadores.",
+  operatorsGenericError: "No se pudieron cargar los operadores. Probá de nuevo.",
+  operatorsEmpty: "Todavía no hay operadores cargados.",
+  operatorsCreateTitle: "Crear operador",
+  operatorsUsernameLabel: "Usuario",
+  operatorsPasswordLabel: "Contraseña inicial",
+  operatorsCreateSubmit: "Crear",
+  operatorsCreateSubmitting: "Creando…",
+  operatorsCreateMissingFields: "Ingresá un usuario y una contraseña.",
+  operatorsCreateUsernameTaken: "Ese usuario ya existe. Probá con otro.",
+  operatorsCreateMissingPermission: "Tu cuenta no tiene permiso para crear operadores.",
+  operatorsCreateGenericError: "No se pudo crear el operador. Probá de nuevo.",
+  operatorsColumnUsername: "Usuario",
+  operatorsColumnStatus: "Estado",
+  operatorsEnabledLabel: "Habilitado",
+  operatorsDisabledLabel: "Deshabilitado",
+  operatorsDisableButton: "Deshabilitar",
+  operatorsEnableButton: "Habilitar",
+  operatorsPermissionsTitle: "Permisos",
+  /**
+   * ONE hint sentence for BOTH the disable button and the operators.manage
+   * checkbox on the SOLE account manager's own row (launch prompt: "make
+   * the constraint legible in the UI before it fires, not only after") —
+   * `permission-matrix.ts`'s own `wouldTripLastAccountManagerGuard` and
+   * `OperatorsScreen.tsx`'s own disable-button guard both point at this
+   * SAME string, since both actions trip the identical server-side
+   * `withLastAccountManagerGuard`.
+   */
+  operatorsSoleAccountManagerHint: "Es el único operador habilitado que puede gestionar cuentas. Deshabilitarlo o quitarle este permiso sería rechazado por el servidor.",
+  operatorsLastAccountManagerRefused: "El servidor rechazó la acción: dejaría sin ningún operador habilitado para gestionar cuentas.",
+  // The seven real permissions (design §6.1) — NO eighth, NO fake "role"
+  // grouping (launch prompt §1): this is a flat translation of the closed
+  // vocabulary `apps/admin/src/permissions.ts` already fixes, never a
+  // second taxonomy invented for display.
+  permissionLabels: {
+    "tenant.create": "Crear inquilinos",
+    "tenant.origins.edit": "Editar orígenes",
+    "tenant.games.edit": "Editar juegos",
+    "tenant.window.edit": "Editar período de pago",
+    "tenant.embed-key.rotate": "Rotar clave de inserción",
+    "operators.manage": "Gestionar operadores",
+    "audit.view": "Ver auditoría",
+  },
 } as const;
