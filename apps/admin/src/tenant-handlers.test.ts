@@ -4,6 +4,7 @@ import { sanitizeThemeOverride, validateThemeContrast } from "@hexdev/widget-pro
 
 import type { AuthorizedOperator } from "./authorization.js";
 import {
+  createTenantCreateHandler,
   createTenantDetailHandler,
   createTenantGamesHandler,
   createTenantListHandler,
@@ -161,6 +162,138 @@ describe("createTenantListHandler", () => {
     const response = await handler({}, {} as never);
     expect(response.status).toBe(200);
     expect(JSON.parse(response.body)).toEqual({ tenants: [] });
+  });
+});
+
+/**
+ * A minimal, PURPOSE-BUILT fake for `createTenantCreateHandler`'s own tests —
+ * genuinely tracks id/embedKey collisions with the SAME two-map shape
+ * `createStaticTenantAdminRepository`'s own `create` method uses
+ * (`tenant-admin.ts`), so a duplicate-id/duplicate-embed-key refusal is
+ * PROVEN against a real collision, never merely asserted against a mock's
+ * call arguments — and captures every `exec` call the write's own
+ * `WriteWitness` makes, the identical division of labor `writableTenantRepo`
+ * above already establishes: this fake proves the HTTP-level wiring; the
+ * REAL SQLSTATE-23505-backed proof is
+ * `postgres-tenant-admin-repository.postgres.test.ts`'s own job.
+ */
+function creatableTenantRepo(existing: readonly TenantRecord[] = []): { repo: TenantAdminRepository; execCalls: { readonly sql: string; readonly values: readonly unknown[] }[] } {
+  const byId = new Map(existing.map((record) => [record.id, record]));
+  const byEmbedKey = new Map(existing.map((record) => [record.embedKey, record]));
+  const execCalls: { readonly sql: string; readonly values: readonly unknown[] }[] = [];
+  const capturingExec = async (sql: string, values: readonly unknown[]): Promise<void> => {
+    execCalls.push({ sql, values });
+  };
+  const repo: TenantAdminRepository = {
+    list: async () => [...byId.values()],
+    findById: async (id) => byId.get(id),
+    create: async (draft, w) => {
+      if (byId.has(draft.id)) return { ok: false, reason: "tenant-id-taken" };
+      if (byEmbedKey.has(draft.embedKey)) return { ok: false, reason: "embed-key-taken" };
+      const record: TenantRecord = { id: draft.id, embedKey: draft.embedKey, allowedOrigins: draft.allowedOrigins, entitledGames: draft.entitledGames, theme: draft.theme };
+      byId.set(record.id, record);
+      byEmbedKey.set(record.embedKey, record);
+      await w(capturingExec);
+      return { ok: true, tenant: record, themeViolations: [] };
+    },
+    updateAllowedOrigins: async () => {
+      throw new Error("not used by this handler");
+    },
+    updateEntitledGames: async () => {
+      throw new Error("not used by this handler");
+    },
+    updateTheme: async () => {
+      throw new Error("not used by this handler");
+    },
+    rotateEmbedKey: async () => {
+      throw new Error("not used by this handler");
+    },
+    setValidityWindow: async () => {
+      throw new Error("not used by this handler");
+    },
+  };
+  return { repo, execCalls };
+}
+
+/**
+ * `createTenantCreateHandler` — `POST /tenants` (the gap slice 15 flagged
+ * but never built: design Domain F names "create a tenant" as in-scope CRUD,
+ * `tasks-b` never itemized it — closed here, not in a fresh slice 16).
+ *
+ * Genuine RED, confirmed before this handler existed:
+ * `SyntaxError: The requested module './tenant-handlers.js' does not
+ * provide an export named 'createTenantCreateHandler'`.
+ */
+describe("createTenantCreateHandler", () => {
+  it("creates a tenant with empty origins/games, no window, and a system-generated embedKey; audits tenant.created", async () => {
+    const { repo, execCalls } = creatableTenantRepo([]);
+    const handler = createTenantCreateHandler({ clock: () => NOW, tenants: repo, generateEmbedKey: () => "pk_live_fixed" });
+
+    const response = await handler({ body: { id: "acme" } }, ACTOR);
+
+    expect(response.status).toBe(201);
+    const body = JSON.parse(response.body) as {
+      readonly tenant: { readonly id: string; readonly embedKey: string; readonly allowedOrigins: readonly string[]; readonly entitledGames: readonly string[]; readonly status: { readonly kind: string } };
+    };
+    // Never operator-typed (design §3's "system-generated" requirement) —
+    // the response carries whatever the injected generator produced, never
+    // an echo of anything the request body supplied (it supplied nothing).
+    expect(body.tenant).toEqual({ id: "acme", embedKey: "pk_live_fixed", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" } });
+    // A freshly created tenant is legitimately INACTIVE (design §1.3) — never
+    // forced into an "active" status by fabricating a window this handler
+    // was never asked to set.
+    expect(body.tenant.status.kind).toBe("no-window");
+
+    expect(execCalls).toHaveLength(1);
+    const [{ values }] = execCalls;
+    expect(values[3]).toBe("tenant.created"); // action, migration 004 column order
+  });
+
+  it("refuses a duplicate tenant id with 409, the database-arbitrated collision an operator can actually reach through this screen", async () => {
+    const { repo, execCalls } = creatableTenantRepo([{ id: "acme" as TenantId, embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [] }]);
+    const handler = createTenantCreateHandler({ clock: () => NOW, tenants: repo, generateEmbedKey: () => "pk_live_new" });
+
+    const response = await handler({ body: { id: "acme" } }, ACTOR);
+
+    expect(response.status).toBe(409);
+    expect(JSON.parse(response.body)).toEqual({ error: "tenant-id-taken" });
+    // No audit entry for a refused write (design §9/§10's own "a mutation
+    // without its audit entry cannot commit" — here, no mutation happened
+    // at all, so the witness itself must never have run).
+    expect(execCalls).toHaveLength(0);
+  });
+
+  /**
+   * `embedKey` is system-generated, never operator-typed (design §3) — this
+   * makes a real collision through the actual screen astronomically
+   * unlikely (two independent 32-byte random draws), but the discriminated
+   * `embed-key-taken` refusal must stay reachable rather than assumed
+   * impossible, the SAME discipline `createTenantRotateKeyHandler`'s own
+   * docstring already establishes for its own near-unreachable case. Proven
+   * here by forcing the injected generator to collide, the only way this
+   * branch is reachable at all without a real cryptographic coincidence.
+   */
+  it("refuses a colliding system-generated embedKey with 409, even though an operator can never type one", async () => {
+    const { repo, execCalls } = creatableTenantRepo([{ id: "acme" as TenantId, embedKey: "pk_live_dup", allowedOrigins: [], entitledGames: [] }]);
+    const handler = createTenantCreateHandler({ clock: () => NOW, tenants: repo, generateEmbedKey: () => "pk_live_dup" });
+
+    const response = await handler({ body: { id: "beta" } }, ACTOR);
+
+    expect(response.status).toBe(409);
+    expect(JSON.parse(response.body)).toEqual({ error: "embed-key-taken" });
+    expect(execCalls).toHaveLength(0);
+  });
+
+  it("refuses a missing/blank tenant id with 400, never calling the repository at all", async () => {
+    const handler = createTenantCreateHandler({ clock: () => NOW, tenants: tenantsWith([]) });
+
+    const missing = await handler({ body: {} }, ACTOR);
+    expect(missing.status).toBe(400);
+    expect(JSON.parse(missing.body)).toEqual({ error: "missing-tenant-id" });
+
+    const blank = await handler({ body: { id: "   " } }, ACTOR);
+    expect(blank.status).toBe(400);
+    expect(JSON.parse(blank.body)).toEqual({ error: "missing-tenant-id" });
   });
 });
 

@@ -63,6 +63,58 @@ export function createTenantListHandler(deps: TenantHandlersDeps): AdminHandler 
 }
 
 /**
+ * `POST /tenants` (permission `tenant.create`, guarded since slice 7/PR8b —
+ * the gap slice 15 flagged but never built: design Domain F names "create a
+ * tenant" as in-scope CRUD, `tasks-b` never itemized it, closed here rather
+ * than folded into slice 16).
+ *
+ * The operator supplies ONLY `id` — `embedKey` is ALWAYS system-generated
+ * (design §3's own "system-generated" requirement, this file's own
+ * `generateEmbedKey`, reused verbatim rather than reinvented — the SAME
+ * function `createTenantRotateKeyHandler` already calls). `allowedOrigins`/
+ * `entitledGames` both start empty and no validity window is set at all
+ * (design §1.3/decisions #3684, carried forward from `tenant-record-shape.ts`'s
+ * own retired docstring, PR4c: "created, no origin configured yet" is a
+ * legitimate state, never forced non-empty here) — the freshly created
+ * tenant is therefore legitimately INACTIVE (`describeTenantStatus` reports
+ * `no-window`) until the operator sets a window on the detail screen this
+ * handler's own caller lands on next (launch prompt: "create, land on the
+ * tenant's own detail screen, configure origins/games/window there" — this
+ * handler never accepts origins/games/window fields itself, on purpose).
+ *
+ * UNIQUENESS IS ARBITRATED BY THE DATASTORE, NEVER BY A PRE-CHECK (launch
+ * prompt §1, design §3's own "the constraint enforces, the catch
+ * translates"): this handler never calls `findById` before writing — it
+ * submits straight to `create` and relays whichever discriminated refusal
+ * comes back. `tenant-id-taken` is the reachable collision an operator can
+ * actually trigger (typing an id already in use); `embed-key-taken` stays
+ * discriminated rather than assumed impossible, the SAME "near-unreachable
+ * but reachable" discipline `createTenantRotateKeyHandler`'s own docstring
+ * already establishes for its own case — two independently-generated
+ * 32-byte keys colliding by chance is astronomically unlikely, but the
+ * refusal path is proven here (`tenant-handlers.test.ts`) by forcing the
+ * generator, the only way to reach it without a real cryptographic
+ * coincidence.
+ */
+export function createTenantCreateHandler(deps: TenantHandlersDeps): AdminHandler {
+  return async (req, actor) => {
+    const rawId = req.body?.id;
+    if (typeof rawId !== "string" || rawId.trim() === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
+    const id = rawId.trim() as TenantId;
+
+    const embedKey = (deps.generateEmbedKey ?? generateEmbedKey)();
+    const witness = tenantAuditWitness(deps, actor, {
+      action: "tenant.created",
+      targetTenantId: id,
+      changes: { id: { before: null, after: id }, embedKey: { before: null, after: embedKey } },
+    });
+    const result = await deps.tenants.create({ id, embedKey, allowedOrigins: [], entitledGames: [], theme: undefined }, witness);
+    if (!result.ok) return { status: 409, body: JSON.stringify({ error: result.reason }) };
+    return { status: 201, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
+  };
+}
+
+/**
  * `GET /tenants/:id` (slice 15's own necessary, disclosed prerequisite —
  * not itemized as its own numbered task in Phase 15a, same class of
  * plumbing PR4e's "remediation, not itemized originally" already

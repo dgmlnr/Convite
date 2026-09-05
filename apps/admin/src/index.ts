@@ -27,6 +27,7 @@ import { createPermissionGrantHandler, createPermissionRevokeHandler, type Permi
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 import { serveBuiltAsset, serveIndexHtml } from "./static-app.js";
 import {
+  createTenantCreateHandler,
   createTenantDetailHandler,
   createTenantGamesHandler,
   createTenantListHandler,
@@ -154,6 +155,11 @@ const permissionRevokeHandler = createPermissionRevokeHandler(permissionHandlers
  * methods on this same port.
  */
 const tenantListHandler = createTenantListHandler({ tenants });
+// The gap slice 15 flagged but never built (`apply-progress-h`'s own
+// disclosed deviation 5, closed here): `POST /tenants`, guarded since
+// slice 7/PR8b but stubbed 501 until now. Builds its own `WriteWitness` the
+// same shape every other mutating tenant handler below already does.
+const tenantCreateHandler = createTenantCreateHandler({ tenants });
 // Slice 15's own first real handler beyond the list — `GET /tenants/:id`,
 // the read side of tenant detail CRUD. Same "no `WriteWitness` here" reason
 // as `tenantListHandler` above: this is a read, and design §2.3's
@@ -187,6 +193,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "operator-permissions-grant": permissionGrantHandler,
   "operator-permissions-revoke": permissionRevokeHandler,
   "tenant-list": tenantListHandler,
+  "tenant-create": tenantCreateHandler,
   "tenant-detail": tenantDetailHandler,
   "tenant-origins": tenantOriginsHandler,
   "tenant-games": tenantGamesHandler,
