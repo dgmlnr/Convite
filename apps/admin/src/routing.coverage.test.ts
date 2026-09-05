@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PERMISSIONS, type Permission } from "./permissions.js";
-import { ADMIN_ROUTE_TABLE } from "./routing.js";
+import { ADMIN_ROUTE_TABLE, requiresAuthorizationCheckpoint } from "./routing.js";
 
 /**
  * The table-coverage fence (task 7.7/7.8, design §6.3 Layer 3), modelled on
@@ -63,5 +63,55 @@ describe("admin route table coverage (design §6.3, spec Domain K, decisions #36
     );
     const ungrantedAnywhere = PERMISSIONS.filter((permission) => !named.has(permission));
     expect(ungrantedAnywhere).toEqual([]);
+  });
+});
+
+/**
+ * `requiresAuthorizationCheckpoint` (sdd-verify's own finding 4) — closes a
+ * hole this fence above could not: `index.ts`'s own dispatcher used to run
+ * `authorizeAndDispatch` when `route.guard.access === "permission" ||
+ * route.kind === "own-password"`, a condition data-driven for `permission`
+ * but hand-listed BY KIND for the entire `authenticated` half of
+ * `RouteAccess`. A future route declared `access: "authenticated"` (this
+ * fence's own three-member exemption set already permits one, by design)
+ * would satisfy every existing check above yet never reach the checkpoint at
+ * all — `authorize`'s own session/`enabled` validation would simply never
+ * run for it. `logout` is the ONE deliberate exception (PR10d's own
+ * idempotent-regardless-of-cookie design, needing no `AuthorizedOperator`);
+ * every OTHER `authenticated` route, present or future, is checkpointed
+ * automatically.
+ *
+ * Genuine RED, confirmed before this function existed: `has no exported
+ * member 'requiresAuthorizationCheckpoint'`.
+ */
+describe("requiresAuthorizationCheckpoint (design §6.3 Layers 2-3, sdd-verify finding 4)", () => {
+  it("checkpoints every permission-guarded route regardless of kind", () => {
+    expect(requiresAuthorizationCheckpoint({ kind: "tenant-list", guard: { access: "permission", permission: "tenant.origins.edit" } })).toBe(true);
+  });
+
+  it("does not checkpoint a public route", () => {
+    expect(requiresAuthorizationCheckpoint({ kind: "login-form", guard: { access: "public" } })).toBe(false);
+  });
+
+  it("still exempts exactly logout from the authenticated checkpoint (PR10d's own idempotent-regardless-of-cookie design)", () => {
+    expect(requiresAuthorizationCheckpoint({ kind: "logout", guard: { access: "authenticated" } })).toBe(false);
+  });
+
+  it("still checkpoints own-password (design §6.2's own authenticated exemption for a zero-permission operator)", () => {
+    expect(requiresAuthorizationCheckpoint({ kind: "own-password", guard: { access: "authenticated" } })).toBe(true);
+  });
+
+  /** THE EXACT REGRESSION CASE the finding names: a hypothetical FUTURE
+   * route, any kind other than `logout`, guarded `authenticated` — never
+   * hand-listed by kind, checkpointed purely because its guard says so. */
+  it("checkpoints a hypothetical future authenticated route other than logout, with no kind-by-kind list to keep in sync", () => {
+    expect(requiresAuthorizationCheckpoint({ kind: "asset", guard: { access: "authenticated" } })).toBe(true);
+  });
+
+  it("every route actually in ADMIN_ROUTE_TABLE agrees with the fixed check order (permission wins, then authenticated-except-logout, else public)", () => {
+    for (const route of ADMIN_ROUTE_TABLE) {
+      const expected = route.guard.access === "permission" || (route.guard.access === "authenticated" && route.kind !== "logout");
+      expect(requiresAuthorizationCheckpoint(route)).toBe(expected);
+    }
   });
 });
