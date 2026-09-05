@@ -16,19 +16,51 @@ describe("buildAuditQueryParams", () => {
     expect(buildAuditQueryParams(inputs)).toMatchObject({ actor: "ana", tenant: "acme", action: "permission.granted" });
   });
 
-  it("converts 'from' into the start of that day, UTC midnight", () => {
+  /**
+   * sdd-verify finding 5, closed here: this filter USED TO emit UTC-day
+   * boundaries (`${from}T00:00:00.000Z`) while `formatAuditTimestamp` below
+   * renders in Buenos Aires time — a 3-hour skew between what the operator
+   * READS and what the filter actually MATCHES. Buenos Aires has been UTC-3
+   * with no DST since 2009 (`formatAuditTimestamp`'s own test below), so
+   * "start of 2026-08-01 in Buenos Aires" is `2026-08-01T03:00:00.000Z`, not
+   * UTC midnight. `paidThroughToInstant` (`@hexdev/platform-core`, already
+   * exported from tenant-administration slice 5) is the ONE place this
+   * repo does a Buenos-Aires-day-boundary conversion — this filter now uses
+   * it directly for `to`, and for `precedingIsoDate(from)` to get the SAME
+   * boundary one calendar day earlier, rather than writing a second
+   * timezone conversion of its own.
+   */
+  it("converts 'from' into the start of that day IN BUENOS AIRES, not UTC midnight", () => {
     const inputs: AuditFilterInputs = { ...EMPTY_AUDIT_FILTER_INPUTS, from: "2026-08-01" };
-    expect(buildAuditQueryParams(inputs).from).toBe("2026-08-01T00:00:00.000Z");
+    expect(buildAuditQueryParams(inputs).from).toBe("2026-08-01T03:00:00.000Z");
   });
 
-  it("converts 'to' into the START OF THE NEXT DAY — the operator picks an INCLUSIVE end date, but the server's own bound is EXCLUSIVE (audit-query.ts's occurredTo, occurred_at < $n); without this conversion, entries on the picked end day would be silently excluded", () => {
+  it("converts 'to' into the START OF THE NEXT DAY IN BUENOS AIRES — the operator picks an INCLUSIVE end date, but the server's own bound is EXCLUSIVE (audit-query.ts's occurredTo, occurred_at < $n); without this conversion, entries on the picked end day would be silently excluded", () => {
     const inputs: AuditFilterInputs = { ...EMPTY_AUDIT_FILTER_INPUTS, to: "2026-08-31" };
-    expect(buildAuditQueryParams(inputs).to).toBe("2026-09-01T00:00:00.000Z");
+    expect(buildAuditQueryParams(inputs).to).toBe("2026-09-01T03:00:00.000Z");
   });
 
-  it("a 'to' date at a month/year boundary rolls over correctly", () => {
+  it("a 'to' date at a month/year boundary rolls over correctly, still in Buenos Aires time", () => {
     const inputs: AuditFilterInputs = { ...EMPTY_AUDIT_FILTER_INPUTS, to: "2026-12-31" };
-    expect(buildAuditQueryParams(inputs).to).toBe("2027-01-01T00:00:00.000Z");
+    expect(buildAuditQueryParams(inputs).to).toBe("2027-01-01T03:00:00.000Z");
+  });
+
+  it("a 'from' date at a month/year boundary rolls BACKWARD correctly (precedingIsoDate crossing into the prior year)", () => {
+    const inputs: AuditFilterInputs = { ...EMPTY_AUDIT_FILTER_INPUTS, from: "2027-01-01" };
+    expect(buildAuditQueryParams(inputs).from).toBe("2027-01-01T03:00:00.000Z");
+  });
+
+  /** THE EXACT SCENARIO the finding names: an entry at 22:00 Buenos Aires
+   * time on the 3rd renders as the 3rd (`formatAuditTimestamp`) and must
+   * ALSO be matched by a filter for the 3rd, not silently pushed into a
+   * "4th" UTC-day bucket it never visually belongs to. */
+  it("an entry at 22:00 Buenos Aires time on the 3rd is both rendered AND filtered as the 3rd, closing the 3-hour skew", () => {
+    const occurredAt = Date.UTC(2026, 7, 4, 1, 0, 0); // 2026-08-03 22:00 in America/Argentina/Buenos_Aires
+    expect(formatAuditTimestamp(occurredAt)).toBe("03/08/2026 22:00");
+
+    const filterForThe3rd = buildAuditQueryParams({ ...EMPTY_AUDIT_FILTER_INPUTS, from: "2026-08-03", to: "2026-08-03" });
+    expect(occurredAt).toBeGreaterThanOrEqual(new Date(filterForThe3rd.from!).getTime());
+    expect(occurredAt).toBeLessThan(new Date(filterForThe3rd.to!).getTime());
   });
 });
 
