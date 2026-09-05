@@ -96,16 +96,25 @@ export default defineConfig({
           // themselves are `*.e2e.test.ts` at the `e2e/` root and belong to
           // the separate, opt-in `pnpm test:e2e` project, which spawns real
           // servers and a real browser.
-          include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "scripts/**/*.test.ts", "e2e/support/**/*.test.ts"],
+          // `postgres-tests/` is in here for the identical reason:
+          // `global-setup.ts`'s own pure argv-building helpers
+          // (`containerNameFor`, `dockerRunArgs`) are proven here, fast and
+          // Docker-free; the `*.postgres.test.ts` specs that DO need a real
+          // Postgres belong to the separate, opt-in `pnpm run test:postgres`
+          // project and are excluded below, same discipline as `.redis.test.ts`.
+          include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "scripts/**/*.test.ts", "e2e/support/**/*.test.ts", "postgres-tests/*.test.ts"],
           // `.redis.test.ts` files require a real Redis (Docker container)
           // and run only via the separate `pnpm test:redis` project
           // (`vitest.redis.config.ts`) — the default unit suite stays
           // genuinely Redis-free, matching the in-memory default deployment.
+          // `.postgres.test.ts` files are the identical shape for
+          // Postgres — real container, separate opt-in `pnpm run
+          // test:postgres` project (`vitest.postgres.config.ts`).
           // `.visual.test.ts` files require the separate, opt-in
           // `pnpm test:visual` project (`vitest.visual.config.ts`) — same
           // "not part of `pnpm test`" discipline as `.redis.test.ts` below,
           // for the reason documented in that config's own header comment.
-          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/*.visual.test.ts", "**/*.scene.test.ts", "**/dist/**", "**/node_modules/**"],
+          exclude: ["**/*.browser.test.ts", "**/*.redis.test.ts", "**/*.postgres.test.ts", "**/*.visual.test.ts", "**/*.scene.test.ts", "**/dist/**", "**/node_modules/**"],
         },
       },
       {

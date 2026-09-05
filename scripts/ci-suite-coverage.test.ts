@@ -71,6 +71,10 @@ const TRIAGE: Readonly<Record<string, SuiteTriage>> = {
     script: "test:e2e",
     ciCommand: "pnpm run test:e2e",
   },
+  "vitest.postgres.config.ts": {
+    script: "test:postgres",
+    ciCommand: "pnpm run test:postgres",
+  },
   "vitest.redis.config.ts": {
     script: "test:redis",
     ciCommand: null,
