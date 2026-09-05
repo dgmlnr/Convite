@@ -55,4 +55,9 @@ export const COPY = {
   tenantDetailGamesEmpty: "Sin juegos habilitados todavía.",
   tenantDetailValidUntilLabel: "Pagado hasta",
   tenantDetailValidUntilEmpty: "Sin período configurado.",
+  tenantDetailSave: "Guardar",
+  tenantDetailSaving: "Guardando…",
+  tenantDetailEditMissingPermission: "Tu cuenta no tiene permiso para editar este campo.",
+  tenantDetailEditUnknownTenant: "Este inquilino ya no existe.",
+  tenantDetailEditGenericError: "No se pudo guardar. Probá de nuevo.",
 } as const;

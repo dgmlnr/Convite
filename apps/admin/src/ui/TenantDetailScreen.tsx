@@ -1,9 +1,9 @@
 import { useEffect, useState, type JSX } from "react";
 
-import { getTenantDetail } from "./api.js";
+import { getTenantDetail, postTenantGames, postTenantOrigins, type TenantWriteOutcome } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
-import { buildTenantDetailView, type TenantDetailView } from "./tenant-detail.js";
+import { buildTenantDetailView, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
 
 export interface TenantDetailScreenProps {
   readonly tenantId: string;
@@ -27,14 +27,84 @@ const STATUS_BADGE_CLASS: Readonly<Record<TenantDetailView["statusKind"], string
   "no-window": "bg-muted text-muted-foreground",
 };
 
+interface ListFieldEditorProps {
+  readonly label: string;
+  readonly emptyCopy: string;
+  /** The CURRENT server value, newline-joined (`tenant-detail.ts`'s own
+   * `originsText`/`gamesText`) — this component owns its own edit buffer
+   * (`text` state below) so keystrokes never round-trip through the parent;
+   * it resyncs to a fresh `initialText` whenever the parent's own view
+   * changes (a successful save, or a genuinely different tenant loaded). */
+  readonly initialText: string;
+  readonly onSave: (list: readonly string[]) => Promise<TenantWriteOutcome>;
+  readonly onSaved: (tenant: TenantDetailApiRow) => void;
+}
+
 /**
- * The tenant detail screen (task 15a's own necessary prerequisite) — THIS
- * PR renders it READ-ONLY: id, status, embed key, origins, games, and the
- * current paid-through date. The origin/game/window editors, embed-key
- * rotation, and theme editor all arrive in later PRs of this same slice,
- * extending this exact component rather than replacing it — the identical
- * "grow the same screen incrementally" convention `copy.ts`'s own header
- * already establishes for its string table.
+ * Shared by the origins and games editors below (tasks 15a.1-15a.4) —
+ * structurally identical fields, same save/error/loading shape. Submits
+ * through `parseListInput` (never a raw split the caller re-derives), so
+ * "created, no origin/game configured yet" (an empty textarea) is a
+ * legitimate save, never a client-side validation error (design §1.3).
+ */
+function ListFieldEditor({ label, emptyCopy, initialText, onSave, onSaved }: ListFieldEditorProps): JSX.Element {
+  const [text, setText] = useState(initialText);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    setText(initialText);
+  }, [initialText]);
+
+  async function handleSave(): Promise<void> {
+    setSaving(true);
+    setError(undefined);
+    const outcome = await onSave(parseListInput(text));
+    setSaving(false);
+    if (!outcome.ok) {
+      setError(
+        outcome.reason === "missing-permission"
+          ? COPY.tenantDetailEditMissingPermission
+          : outcome.reason === "unknown-tenant"
+            ? COPY.tenantDetailEditUnknownTenant
+            : COPY.tenantDetailEditGenericError,
+      );
+      return;
+    }
+    onSaved(outcome.tenant);
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold">{label}</h2>
+      <textarea
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder={emptyCopy}
+        rows={4}
+        disabled={saving}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm shadow-sm placeholder:text-muted-foreground placeholder:font-sans focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      />
+      {error !== undefined ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+        {saving ? COPY.tenantDetailSaving : COPY.tenantDetailSave}
+      </Button>
+    </section>
+  );
+}
+
+/**
+ * The tenant detail screen (task 15a's own necessary prerequisite) — origins
+ * and games are now EDITABLE (tasks 15a.1-15a.4): a free-text field per
+ * list, saved through `postTenantOrigins`/`postTenantGames`. The window
+ * editor, embed-key rotation, and theme editor all arrive in later PRs of
+ * this same slice, extending this exact component rather than replacing it
+ * — the identical "grow the same screen incrementally" convention
+ * `copy.ts`'s own header already establishes for its string table.
  *
  * SELF-CONTAINED LOADING/ERROR STATE (same shape `LoginScreen.tsx` already
  * establishes for its own submit state): `AppShell` only ever decides WHICH
@@ -88,22 +158,20 @@ export function TenantDetailScreen({ tenantId, onBack }: TenantDetailScreenProps
             <p className="text-xs text-primary-foreground/70">
               {COPY.tenantEmbedKeyLabel}: {state.view.embedKey}
             </p>
-            <section className="flex flex-col gap-1">
-              <h2 className="text-sm font-semibold">{COPY.tenantDetailOriginsLabel}</h2>
-              {state.view.originsText === "" ? (
-                <p className="text-sm text-primary-foreground/70">{COPY.tenantDetailOriginsEmpty}</p>
-              ) : (
-                <pre className="whitespace-pre-wrap text-sm">{state.view.originsText}</pre>
-              )}
-            </section>
-            <section className="flex flex-col gap-1">
-              <h2 className="text-sm font-semibold">{COPY.tenantDetailGamesLabel}</h2>
-              {state.view.gamesText === "" ? (
-                <p className="text-sm text-primary-foreground/70">{COPY.tenantDetailGamesEmpty}</p>
-              ) : (
-                <pre className="whitespace-pre-wrap text-sm">{state.view.gamesText}</pre>
-              )}
-            </section>
+            <ListFieldEditor
+              label={COPY.tenantDetailOriginsLabel}
+              emptyCopy={COPY.tenantDetailOriginsEmpty}
+              initialText={state.view.originsText}
+              onSave={(list) => postTenantOrigins(tenantId, list)}
+              onSaved={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
+            />
+            <ListFieldEditor
+              label={COPY.tenantDetailGamesLabel}
+              emptyCopy={COPY.tenantDetailGamesEmpty}
+              initialText={state.view.gamesText}
+              onSave={(list) => postTenantGames(tenantId, list)}
+              onSaved={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
+            />
             <section className="flex flex-col gap-1">
               <h2 className="text-sm font-semibold">{COPY.tenantDetailValidUntilLabel}</h2>
               <p className="text-sm">{state.view.validUntilInput === "" ? COPY.tenantDetailValidUntilEmpty : state.view.validUntilInput}</p>
