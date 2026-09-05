@@ -83,7 +83,11 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
 
   beforeEach(async () => {
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("reconnect-live-secret"));
-    const repository = createStaticTenantRepository([{ id: TENANT_ID, embedKey: "pk_reconnect", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-reconnect"] }]);
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
+    const repository = createStaticTenantRepository([
+      { id: TENANT_ID, embedKey: "pk_reconnect", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-reconnect"], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
+    ]);
     const registry = createGameModuleRegistry([reconnectModule]);
     const httpServer = createServer();
     const auth = {

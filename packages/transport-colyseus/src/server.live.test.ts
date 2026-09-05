@@ -88,8 +88,10 @@ describe("createMatchServer — live WebSocket integration (the composition root
 
   beforeEach(async () => {
     const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("live-test-secret"));
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
     const repository = createStaticTenantRepository([
-      { id: TENANT_ID, embedKey: "pk_live", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-live"] },
+      { id: TENANT_ID, embedKey: "pk_live", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-live"], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
     ]);
     const registry = createGameModuleRegistry([{ module: liveModule, requestSystemAction: (state) => ((state as LiveState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) }]);
     const httpServer = createServer();

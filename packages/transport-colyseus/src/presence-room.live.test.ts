@@ -312,8 +312,10 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
     const pool = createMatchmakingPool();
     const httpServer = createServer();
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("handoff-live-secret"));
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
     const repository = createStaticTenantRepository([
-      { id: TENANT_ID, embedKey: "pk_handoff", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [HANDOFF_GAME_ID] },
+      { id: TENANT_ID, embedKey: "pk_handoff", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [HANDOFF_GAME_ID], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
     ]);
     const auth = {
       verifier: await createSessionTokenVerifier(issuer.publicKey),
@@ -595,8 +597,10 @@ describe("PresenceRoom — N-seat group hand-off (PR-2a: seatCount from module m
     const pool = createMatchmakingPool();
     const httpServer = createServer();
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("group-live-secret"));
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
     const repository = createStaticTenantRepository([
-      { id: TENANT_ID, embedKey: "pk_group", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GROUP_GAME_ID] },
+      { id: TENANT_ID, embedKey: "pk_group", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GROUP_GAME_ID], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
     ]);
     const auth = {
       verifier: await createSessionTokenVerifier(issuer.publicKey),
@@ -888,8 +892,10 @@ describe("PresenceRoom — bot-fill degradation of long-waiting multi-seat queue
     const pool = createMatchmakingPool();
     const httpServer = createServer();
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("degrade-live-secret"));
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
     const repository = createStaticTenantRepository([
-      { id: TENANT_ID, embedKey: "pk_degrade", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GROUP_GAME_ID, DUO_GAME_ID] },
+      { id: TENANT_ID, embedKey: "pk_degrade", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GROUP_GAME_ID, DUO_GAME_ID], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
     ]);
     const auth = {
       verifier: await createSessionTokenVerifier(issuer.publicKey),

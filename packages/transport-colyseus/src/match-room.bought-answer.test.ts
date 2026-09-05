@@ -90,8 +90,10 @@ const DEFAULT_RNG = (): number => 0.5;
 async function createAuth() {
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey(SECRET));
   const verifier = await createSessionTokenVerifier(issuer.publicKey);
+  // `validUntil` far in the future (tenant-administration slice 6): a real
+  // join now enforces the validity window (`MatchRoom.onAuth`).
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_bought", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-bought"] },
+    { id: TENANT_ID, embedKey: "pk_bought", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-bought"], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
   ]);
   const joinRateLimiter: RateLimiter = createRateLimiter({ limit: 1000, windowMs: 60_000 });
   return { issuer, verifier, repository, replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), joinRateLimiter, allowedWidgetOrigins: [ALLOWED_ORIGIN] };

@@ -66,7 +66,11 @@ const P1 = "seat-1-player" as PlayerId;
 async function createAuth() {
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey(SECRET));
   const verifier = await createSessionTokenVerifier(issuer.publicKey);
-  const repository = createStaticTenantRepository([{ id: TENANT_ID, embedKey: "pk_fixture4", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-4seat", "fixture-4seat-signal"] }]);
+  // `validUntil` far in the future (tenant-administration slice 6): a real
+  // join now enforces the validity window (`MatchRoom.onAuth`).
+  const repository = createStaticTenantRepository([
+    { id: TENANT_ID, embedKey: "pk_fixture4", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-4seat", "fixture-4seat-signal"], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
+  ]);
   const joinRateLimiter: RateLimiter = createRateLimiter({ limit: 1000, windowMs: 60_000 });
   return { issuer, verifier, repository, replayGuard: createJtiReplayGuard({ ttlMs: 60_000 }), joinRateLimiter, allowedWidgetOrigins: [ALLOWED_ORIGIN] };
 }

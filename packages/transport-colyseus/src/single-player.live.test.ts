@@ -69,7 +69,11 @@ describe("MatchRoom — single-player vs bot over a real WebSocket (spec: Single
 
   beforeEach(async () => {
     const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("solo-live-secret"));
-    const repository = createStaticTenantRepository([{ id: TENANT_ID, embedKey: "pk_solo", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-solo"] }]);
+    // `validUntil` far in the future (tenant-administration slice 6): a real
+    // join now enforces the validity window (`MatchRoom.onAuth`).
+    const repository = createStaticTenantRepository([
+      { id: TENANT_ID, embedKey: "pk_solo", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["fixture-solo"], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
+    ]);
     const registry = createGameModuleRegistry([soloModule]);
     const httpServer = createServer();
     const auth = {
