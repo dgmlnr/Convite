@@ -55,17 +55,18 @@ describe("the public barrel is safe to bundle for a browser", () => {
    */
   it("keeps the node-only entry point out of the barrel", () => {
     // `postgres-tenant-repository`/`postgres-tenant-admin-repository`/
-    // `postgres-operator-repository` are on this list even though their own
-    // `pg` import is type-only (`import type { Pool } from "pg"`, so the
-    // earlier value-import checks above would not catch any of them here) —
-    // design decision 1.4 places every Postgres-backed adapter behind
-    // `node.ts` regardless, for symmetry with `connectPostgres` and so each
-    // write-side adapter (PR5's `postgres-tenant-admin-repository`, PR9's
-    // `postgres-operator-repository`, both included) has one settled place
-    // to land rather than a per-adapter judgment call about whether its own
-    // import happens to be type-only today.
+    // `postgres-operator-repository`/`postgres-operator-session-repository`
+    // are on this list even though their own `pg` import is type-only
+    // (`import type { Pool } from "pg"`, so the earlier value-import checks
+    // above would not catch any of them here) — design decision 1.4 places
+    // every Postgres-backed adapter behind `node.ts` regardless, for symmetry
+    // with `connectPostgres` and so each write-side adapter (PR5's
+    // `postgres-tenant-admin-repository`, PR9's `postgres-operator-repository`,
+    // PR10's `postgres-operator-session-repository`, all included) has one
+    // settled place to land rather than a per-adapter judgment call about
+    // whether its own import happens to be type-only today.
     expect(readFileSync(join(SRC, "index.ts"), "utf8")).not.toMatch(
-      /from "\.\/(node|redis-client|postgres-client|postgres-tenant-repository|postgres-tenant-admin-repository|postgres-operator-repository)\.js"/,
+      /from "\.\/(node|redis-client|postgres-client|postgres-tenant-repository|postgres-tenant-admin-repository|postgres-operator-repository|postgres-operator-session-repository)\.js"/,
     );
   });
 
@@ -80,5 +81,9 @@ describe("the public barrel is safe to bundle for a browser", () => {
     // SAME structural guarantee tenant credentials already have — never
     // reachable from the public, browser-bundled barrel.
     expect(nodeBarrel).toMatch(/createPostgresOperatorRepository/);
+    // PR10 (tenant-administration slice 8b): operator SESSIONS get the
+    // identical guarantee — the login/logout wiring never risks a browser
+    // bundle pulling in `pg`.
+    expect(nodeBarrel).toMatch(/createPostgresOperatorSessionRepository/);
   });
 });
