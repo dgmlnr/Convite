@@ -105,6 +105,17 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
     allowedOrigins: [info.hostOrigin],
     entitledGames: ["truco-argentino", ...(options.extraEntitledGames ?? [])],
     theme: options.tenantTheme,
+    // Ten years out, matching `scripts/dev-tenant-seed.mjs`/`dev-stack.mjs`'s
+    // own convention (tenant-administration slice 5, task 5.10a): this
+    // harness's own seed had no window at all until slice 6's own runtime
+    // enforcement (`mintSessionForEmbed`) made that a real, reachable
+    // refusal instead of a dormant field — confirmed the hard way, a
+    // genuine `page.waitForSelector("iframe")` TimeoutError, every one of
+    // the 8 e2e spec files, before this field was added (apply-progress has
+    // the full transcript). PR6b's own apply-progress flagged this exact gap
+    // in advance ("e2e's own tenant seeding sets no window and nothing yet
+    // checks one") — this is that gap closing.
+    validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000,
   };
 
   const serverEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -139,14 +150,22 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
   const seedPool = await connectPostgres(info.postgresUrl);
   try {
     await seedPool.query(
-      `INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games, theme)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games, theme, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (embed_key) DO UPDATE SET
          allowed_origins = EXCLUDED.allowed_origins,
          entitled_games  = EXCLUDED.entitled_games,
          theme           = EXCLUDED.theme,
+         valid_until     = EXCLUDED.valid_until,
          updated_at      = now()`,
-      [tenant.id, tenant.embedKey, tenant.allowedOrigins, tenant.entitledGames, tenant.theme === undefined ? null : JSON.stringify(tenant.theme)],
+      [
+        tenant.id,
+        tenant.embedKey,
+        tenant.allowedOrigins,
+        tenant.entitledGames,
+        tenant.theme === undefined ? null : JSON.stringify(tenant.theme),
+        new Date(tenant.validUntil),
+      ],
     );
   } finally {
     await seedPool.end();

@@ -10,12 +10,20 @@ const WIDGET_ORIGIN = "https://play.hexdev.example";
 const CLIENT_IP = "203.0.113.1";
 const TRUCO_ID = "truco-argentino" as GameId;
 const PLAYER_ID = "player-a" as PlayerId;
+/** Ten years out, matching `scripts/dev-tenant-seed.mjs`'s own convention
+ * (tenant-administration slice 5/PR6b) and `tenant-auth.test.ts`'s identical
+ * fixture fix (slice 6, task 6.3): every test below is NOT itself about
+ * window enforcement (that lands in a later slice-6 PR, task 6.9) and needs
+ * a tenant that is unambiguously "currently paid up", or design #1.3's
+ * "zero window configured = inactive" rule refuses every one of them the
+ * moment `renewSessionForWidget` (tenant-auth.ts) starts enforcing it. */
+const FAR_FUTURE_VALID_UNTIL = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
 
 /** Generous limits by default, same convention as embed-handler.test.ts's
  * own `deps()` — the dedicated rate-limiting describe block below overrides. */
 async function deps(overrides: { ipLimit?: number; keyLimit?: number } = {}) {
   const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [TENANT_HOST_ORIGIN], entitledGames: [TRUCO_ID] },
+    { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [TENANT_HOST_ORIGIN], entitledGames: [TRUCO_ID], validUntil: FAR_FUTURE_VALID_UNTIL },
   ]);
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
   return {
