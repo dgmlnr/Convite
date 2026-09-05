@@ -50,6 +50,9 @@ importers:
       '@hexdev/widget-frontdoor':
         specifier: workspace:*
         version: link:../../packages/widget-frontdoor
+      '@hexdev/widget-protocol':
+        specifier: workspace:*
+        version: link:../../packages/widget-protocol
       '@radix-ui/react-slot':
         specifier: ^1.3.3
         version: 1.3.3(@types/react@19.2.18)(react@19.2.8)
