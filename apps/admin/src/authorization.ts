@@ -110,9 +110,17 @@ export async function authorize(cookieHeader: string | undefined, guard: RouteAc
  * deliberately NOT `node:http`'s own `IncomingMessage`/`ServerResponse`,
  * mirroring `LoginRequestDeps`/`LogoutRequestDeps`'s own framework-agnostic
  * shape so a handler stays testable without a bound socket.
+ *
+ * `body` (PR13, tenant-administration slice 11a): the FIRST permission/
+ * authenticated-guarded route with a real handler that needs one — every
+ * route before this slice either read no body (`GET`) or was `login-submit`/
+ * `logout`, both wired outside this checkpoint entirely and parsing their own
+ * body directly in `index.ts`. Parsed once, by `index.ts`, before
+ * `authorizeAndDispatch` runs, so a handler never touches `node:http` itself.
  */
 export interface AdminRequest {
   readonly params?: Readonly<Record<string, string>>;
+  readonly body?: Readonly<Record<string, unknown>>;
 }
 
 export interface AdminResponse {
