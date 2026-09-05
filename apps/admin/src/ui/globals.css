@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+/**
+ * Tailwind v4 FULL-COLOR MODE, pinned EXPLICITLY (task 13b.1, Part A tasks
+ * §0.3) — the whole reason this block exists rather than trusting a
+ * default. `@theme inline` re-exposes each shadcn CSS custom property as a
+ * Tailwind utility color (`bg-primary`, `text-primary-foreground`, …)
+ * verbatim, with no `hsl(...)` wrapper anywhere: the value flowing through
+ * is whatever `--primary` etc. currently resolve to, full color and all —
+ * shadcn's OWN stock literals below, for now. The next PR (rebanada 13b's
+ * own token bridge) replaces the five properties this comment names with
+ * `var(--gx-*)` references onto `widget-protocol`'s own tokens; this PR is
+ * the scaffold alone, deliberately unconsumed by that seam.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+}
+
+/** shadcn's own stock palette (a plain "zinc" recipe) — every one of these
+ * five identity colors is replaced by the token bridge in the next PR. */
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
+  --accent: #f5f5f5;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --border: #e5e5e5;
+  --ring: #a3a3a3;
+}
