@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { createRateLimiter, createRedisRateLimiter, createSessionTokenIssuer, createStaticTenantRepository } from "@hexdev/platform-core";
-import { connectRedis } from "@hexdev/platform-core/node";
+import { createRateLimiter, createRedisRateLimiter, createSessionTokenIssuer } from "@hexdev/platform-core";
+import { connectPostgres, connectRedis, createPostgresTenantRepository } from "@hexdev/platform-core/node";
 import type { RateLimiter } from "@hexdev/platform-core";
 import {
   handleEmbedRequest,
@@ -47,7 +47,14 @@ import { prefersHtml, resolveRoute } from "./routing.js";
  * changeover, and the match role dropping its seed, is the next unit.
  */
 const config = loadMintConfig(process.env);
-const repository = createStaticTenantRepository(config.tenants);
+// Same "throw, crash boot" convention as `connectRedis`/`createSessionTokenIssuer`
+// below (design §1.10/§15, tenant-administration slice 3b): Postgres is the
+// system of record, so an unreachable database at boot must crash this
+// process, never fall back to an empty in-memory catalog that silently
+// serves nobody. `createPostgresTenantRepository` never returns `undefined`
+// for a failed query either — see that adapter's own docstring.
+const postgresPool = await connectPostgres(config.postgresUrl);
+const repository = createPostgresTenantRepository(postgresPool);
 // `await` here is deliberate, the same "throw, crash boot" convention the
 // match role uses for its own key material: a missing OR malformed
 // HEXDEV_SESSION_SIGNING_KEY throws INSIDE createSessionTokenIssuer, never
