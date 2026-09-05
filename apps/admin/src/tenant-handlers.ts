@@ -1,9 +1,19 @@
+import crypto from "node:crypto";
 import type { TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
 import { describeTenantStatus, instantToPaidThrough, paidThroughToInstant, type TenantStatus } from "@hexdev/platform-core";
 import type { ThemeOverride } from "@hexdev/widget-protocol";
 
 import type { AdminHandler, AuthorizedOperator } from "./authorization.js";
 import { appendAuditEntry, type AuditEntryInput } from "./audit-log.js";
+
+/** `pk_live_` + 32 random bytes, base64url — design §3's own "system-
+ * generated" requirement (never operator-typed, so `embed-key-taken` is
+ * structurally near-unreachable). SAME entropy/encoding
+ * `session-cookie.ts`'s own `generateSessionToken` already establishes for
+ * an unrelated secret — reused, not reinvented. */
+export function generateEmbedKey(): string {
+  return `pk_live_${crypto.randomBytes(32).toString("base64url")}`;
+}
 
 /**
  * `GET /` (task 14.4, design §6.2's own `tenant-list` route — permission
@@ -27,6 +37,10 @@ export interface TenantHandlersDeps {
    * other choke point in this codebase already establishes, so a test can
    * "travel in time" without faking global timers. */
   readonly clock?: () => number;
+  /** Test seam — production never passes this (`generateEmbedKey` default),
+   * same shape `operator-handlers.ts`'s own `generateOperatorId` already
+   * establishes. */
+  readonly generateEmbedKey?: () => string;
 }
 
 export interface TenantListRow {
@@ -229,6 +243,41 @@ export function createTenantWindowHandler(deps: TenantHandlersDeps): AdminHandle
     });
     const result = await deps.tenants.setValidityWindow(id as TenantId, { validFrom: existing?.validFrom, validUntil }, witness);
     if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : 400, body: JSON.stringify({ error: result.reason }) };
+    return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
+  };
+}
+
+/**
+ * `POST /tenants/:id/embed-key/rotate` (task 15b.1/15b.2, permission
+ * `tenant.embed-key.rotate`). ROTATION IS DESTRUCTIVE (launch prompt §3):
+ * the tenant's OWN live page keeps embedding the OLD key, which stops
+ * resolving the instant this commits — this handler's only job is to
+ * generate a fresh key and persist it atomically with its audit entry; the
+ * UI's own confirmation step (`TenantDetailScreen.tsx`) is what makes that
+ * consequence visible to the operator BEFORE they reach this route at all.
+ *
+ * The new key is ALWAYS system-generated (`generateEmbedKey`), never
+ * operator-typed — there is no request body to read at all, unlike every
+ * other write handler in this file. `rotateEmbedKey`'s own uniqueness
+ * invariant (design §2.3 point 2) is enforced by the SAME datastore
+ * constraint `create` relies on; at 256 bits of entropy a real collision
+ * never happens in practice, but the discriminated `embed-key-taken`
+ * refusal stays reachable rather than assumed impossible.
+ */
+export function createTenantRotateKeyHandler(deps: TenantHandlersDeps): AdminHandler {
+  return async (req, actor) => {
+    const id = req.params?.id;
+    if (id === undefined || id === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
+
+    const existing = await deps.tenants.findById(id as TenantId);
+    const newKey = (deps.generateEmbedKey ?? generateEmbedKey)();
+    const witness = tenantAuditWitness(deps, actor, {
+      action: "tenant.embed-key.rotated",
+      targetTenantId: id as TenantId,
+      changes: { embedKey: { before: existing?.embedKey ?? null, after: newKey } },
+    });
+    const result = await deps.tenants.rotateEmbedKey(id as TenantId, newKey, witness);
+    if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : result.reason === "embed-key-taken" ? 409 : 400, body: JSON.stringify({ error: result.reason }) };
     return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
   };
 }

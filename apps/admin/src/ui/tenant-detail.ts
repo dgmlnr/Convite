@@ -96,3 +96,18 @@ export function parseListInput(text: string): readonly string[] {
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
 }
+
+/**
+ * "Ready-to-use widget consumption" (task 15b.2, design Domain F) — the
+ * exact `<script>` shape `packages/widget-sdk/src/loader.ts` expects:
+ * `data-embed-key` is the loader's own REQUIRED attribute
+ * (`widget-config.ts:33`, `scriptTag.getAttribute("data-embed-key")`), not a
+ * convention this module invents. `apps/admin` has no wired knowledge of
+ * `apps/mint-server`'s own public origin (design §19's own disclosed
+ * out-of-scope item — a fourth composition root, deliberately not exposed
+ * to this one), so the `src` domain is an explicit, honestly-labelled
+ * placeholder the operator replaces, never a fabricated real-looking URL.
+ */
+export function buildEmbedSnippet(embedKey: string): string {
+  return `<script src="https://TU-DOMINIO-DE-CONVITE/loader.js" data-embed-key="${embedKey}"></script>`;
+}

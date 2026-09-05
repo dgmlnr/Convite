@@ -193,6 +193,24 @@ export async function postTenantWindow(id: string, validUntilIso: string): Promi
   return { ok: true, tenant: body.tenant };
 }
 
+/** `POST /tenants/:id/embed-key/rotate` (task 15b.1/15b.2) — no body at all:
+ * the new key is entirely server-generated, never operator-typed. The
+ * UI's own confirmation step happens BEFORE this is ever called (launch
+ * prompt §3: rotation is destructive). */
+export async function postRotateEmbedKey(id: string): Promise<TenantWriteOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/tenants/${encodeURIComponent(id)}/embed-key/rotate`, { method: "POST", credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-tenant" };
+  if (response.status !== 200) return { ok: false, reason: "invalid-payload" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
+  return { ok: true, tenant: body.tenant };
+}
+
 /**
  * `POST /logout` — idempotent by construction on the server side
  * (`logout-handler.ts`'s own docstring: "every case still returns 200 with
