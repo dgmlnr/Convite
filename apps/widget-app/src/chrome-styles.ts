@@ -69,14 +69,20 @@ export function buildChromeStylesheet(): string {
   --hx-text-meta: 0.75rem;
   --hx-text-label: 0.7rem;
   --hx-tracking-label: 0.08em;
-  /* PR-EST: the lobby had no display size at all — its title computed to
-   * 21.6px, which is why the screen read as a form and not as a front door.
-   * Fluid so one token covers a phone and a desktop, and the ceiling is
-   * deliberate: 48px is large enough to carry the screen, small enough that a
-   * tenant's own page still frames it. Tracking goes NEGATIVE because that is
-   * what large type wants — the label tracking below is its mirror image. */
-  --hx-text-display-hero: clamp(2rem, 6vw, 4.25rem);
-  --hx-tracking-hero: -0.02em;
+  /* PR-EST gave the lobby a display size at all — its title used to compute
+   * to 21.6px, which read as a form, not a front door. PR-VDR (the vidriera
+   * pass) HALVED that ceiling: measured on a real render (mahjong-front-
+   * door-wide/-narrow, game-list-two-wide/-narrow), 68px of beveled gold left
+   * a 3x jump to the next size down (card name, --hx-text-heading, 21.6px)
+   * with nothing between. Halved, the hero clears every smaller size even at
+   * its own smallest clamp step. cqw, not vw, for the same reason table-
+   * styles.ts's FU-4 already argues: read by a descendant of .convite-
+   * chrome's own query container, it answers to the widget's box, not to
+   * whatever host page it sits in. */
+  --hx-text-display-hero: clamp(1.75rem, 3.6cqw, 2.5rem);
+  /* Loosened one step from -0.02em along with the shrink: tuned for a 68px
+   * ceiling, it read tight rather than sturdy at 40px. */
+  --hx-tracking-hero: -0.01em;
   /* One step between --hx-text-title and the hero: the game's own name. It was
    * sharing --hx-text-title with everything else, so nothing on the card
    * announced what the card WAS. */
@@ -510,22 +516,49 @@ export function buildChromeStylesheet(): string {
 /* START-ALIGNED, NOT CENTRED like .hexdev-chrome-title. Centring everything
    turns a lobby into a poster; a shelf label belongs at the edge its own
    cards begin at, which is what makes it read as a label rather than as a
-   second title. One step below the game names under it (--hx-text-title vs
-   --hx-text-heading): a shelf names a group of games, it is not one. */
+   second title. Still one step below the game names under it, unchanged by
+   the vidriera pass below (1.3rem here, --hx-text-heading's 1.35rem there):
+   a shelf names a group of games, it is not one.
+
+   PR-VDR (the vidriera pass): weight, size and colour bumped together —
+   on a real render (mahjong-front-door-wide/-narrow) the three were one
+   defect, not three: "Cartas"/"Fichas" at 700/1.1rem/--hx-felt-ink-soft read
+   as a caption stapled to the row, not as the h2 game-list.ts's own DOM
+   actually gives it. --hx-felt-ink, not -soft: the soft ink is for copy that
+   should stay quiet, and a shelf heading is the opposite of quiet by design.
+
+   A LITERAL 1.3rem, deliberately not --hx-text-title: that token is the
+   FELT's too (table-styles.ts's señas signal, match-over score, leave
+   title — all captured by the four committed visual baselines), and
+   design-token-parity.test.ts requires it identical in both stylesheets.
+   Widening it here would have grown three unrelated felt readouts and moved
+   a baseline this change has no business touching. */
 .hexdev-chrome-section-title {
   margin: 0;
   font-family: var(--gx-font-family, var(--hx-font-display));
-  font-size: var(--hx-text-title);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   text-align: start;
-  color: var(--hx-felt-ink-soft);
+  color: var(--hx-felt-ink);
   text-shadow: var(--hx-ink-shadow);
+}
+/* THE GAP GETS THE SAME PROMOTION, scoped to the headed case alone: a
+   shelf that carries real weight also needs real air between itself and the
+   row it names, or the weight reads as a bigger font rather than as a
+   separate level. .hexdev-chrome-games's own unheaded default (one tier up)
+   stays exactly --hx-space-lg — this is additive to a DIFFERENT selector,
+   never a redeclaration of that rule. */
+.hexdev-chrome-section-title + .hexdev-chrome-games {
+  margin-top: var(--hx-space-xl);
 }
 
 @container hexdev-chrome (min-width: 1024px) {
-  /* THE ONE THING THIS TIER CHANGES: more air around the whole screen when
-   * there is room for it.
+  /* THE ONE THING THIS BLOCK CHANGES: more air around the whole screen when
+   * there is room for it. (A second 1024px block exists further down,
+   * scoped to screen one's own game-choice cards — a new block on purpose,
+   * so this one's own history below, about what NOT to repeat, stays about
+   * exactly the rules it still holds.)
    *
    * It used to carry seven more rules -- the header, the fan, the fan's
    * cards, the deal animation and its keyframes, the instruction, the
@@ -559,52 +592,44 @@ export function buildChromeStylesheet(): string {
  * this stylesheet — the display stack only lands when they named none, where
  * the alternative was system-ui at 48px, which is a heading in a vacuum. It
  * is a system stack on purpose: this widget mounts inside somebody else's
- * page and has no business adding a font request they never asked for. */
+ * page and has no business adding a font request they never asked for.
+ *
+ * PR-VDR (the vidriera pass) REMOVED THE BEVEL. The gradient-clipped,
+ * triple-drop-shadow title this rule used to paint read, on a real render
+ * (mahjong-front-door-wide/-narrow), as a heading from a more ornamented
+ * screen than the flat one under it — cards, shelves and buttons are all
+ * flat here, and only the title fought them for attention it did not need,
+ * at a size (68px) that left no room to the next size down. Flat --hx-gold
+ * and an ordinary text-shadow match that register; --hx-text-display-hero
+ * (above) carries the size half of the same argument. */
 .hexdev-chrome-title {
   margin: 0;
   font-family: var(--gx-font-family, var(--hx-font-display));
   font-size: var(--hx-text-display-hero);
   font-weight: 800;
   letter-spacing: var(--hx-tracking-hero);
-  /* 1.22 AND NOT the 1.05 a display line wants, and the reason is the gold
-   * below, not the leading.
-   *
-   * background-clip: text paints the gradient into the element's BACKGROUND
-   * BOX and uses the glyphs as a mask. Anything that sticks out of that box
-   * receives no paint at all — so at 1.05 the box was 34px, Georgia at 32px
-   * needs about 37px between its accents and its descenders, and the tail of
-   * every g and j and the accent on the Í were simply cut off. Not clipped by
-   * an overflow: unpainted.
-   *
-   * Reported from looking at the screen, and no test in this repo could have
-   * caught it: every computed value was correct. The fence below is the
-   * proxy — it refuses a line box too short to hold the font. */
-  line-height: 1.22;
-  /* GOLD, AND CLIPPED TO THE GLYPHS, because a flat fill at this size reads as
-   * a heading and a gradient reads as an object — the difference between
-   * type that is set and type that is MADE. Light at the top, deep at the
-   * bottom: the same direction the felt above is lit from, so the two agree
-   * about where the light is.
-   *
-   * "color" stays declared and is what any browser without background-clip
-   * paints instead. Not a formality: unclipped, the fallback is a gold word
-   * on felt, which is fine — the failure mode is plainer, never invisible. */
+  /* 1.15, not the tighter 1.05 a display line would otherwise want: this
+   * rule no longer clips its fill to the glyphs (see the flat colour below,
+   * and game-screen.browser.test.ts's "the front-door title is a flat fill,
+   * not clipped gold"), so 1.15 is an ordinary comfortable leading, not a
+   * height reserved against being cut off. */
+  line-height: 1.15;
   color: var(--hx-gold);
-  background-image: linear-gradient(180deg, #fbeec6 0%, var(--hx-gold) 42%, var(--hx-gold-edge) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: var(--hx-emboss);
+  text-shadow: var(--hx-ink-shadow);
 }
 
 /* One line under the title, and it earns its place by being the only thing on
  * this screen that is not an instruction. Everything else here tells the
- * player what to do; this says what the place IS. Kept to --hx-text-body and
- * 70% so it reads as a breath rather than as a second heading — the moment it
- * competes with the title, both lose. */
+ * player what to do; this says what the place IS.
+ *
+ * PR-VDR bumped it from --hx-text-body's shared 0.9rem to a literal 1rem —
+ * a literal, not a widened token, because that token also sizes every chrome
+ * button, the status card and the modality blurb. The real fix was the
+ * title SHRINKING (above); this closes the rest of the same "sin escalón
+ * intermedio" gap between hero and body copy. */
 .hexdev-chrome-tagline {
   margin: 6px 0 0;
-  font-size: var(--hx-text-body);
+  font-size: 1rem;
   line-height: var(--hx-leading);
   color: var(--hx-felt-ink-soft);
   text-shadow: var(--hx-ink-shadow);
@@ -688,6 +713,17 @@ padding: 20px 16px 18px;
    would only mean one game has not chosen its cards yet, which is not a
    fact about the game and should not make its card look unfinished. */
 min-height: 172px;
+/* PR-VDR (the vidriera pass): CONTRAST — an OVERRIDE of the base
+ * .hexdev-game-card panel further down, never an edit to it: that rule also
+ * draws every modality card on screen two (game-screen.ts), untouched here.
+ *
+ * MEASURED: on a real render (game-list-two-wide/-narrow, mahjong-front-
+ * door-wide/-narrow) the base panel's ~5.5% white tint and ~7% inset ring
+ * read as barely-there against a similarly green felt — an outline, not an
+ * object. Doubled the tint, more than doubled the ring; the lift-* shadow
+ * trio is unchanged. */
+background: rgba(255, 255, 255, 0.11);
+box-shadow: var(--hx-lift-edge), var(--hx-lift-contact), var(--hx-lift-ambient), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
 /* NOTHING TO RESERVE. The rule above reserves the height a hand of faces
@@ -743,12 +779,20 @@ flex: 1 1 auto;
 min-height: 0;
 }
 
+/* PR-VDR: cqw, not vw — table-styles.ts's own seat gutters (FU-4) already
+ * argue the general case. This clamp used to scale against the raw browser
+ * viewport, the WRONG box for an embedded widget: a narrow embed on a wide
+ * host page grew these faces past the card's own room, and the more common
+ * shape — a widget filling most of a narrower host — starved them instead,
+ * since 5.5vw of a small viewport floored regardless of the CARD's own
+ * width. cqw resolves against .convite-chrome's own inline size, the box
+ * this fan actually lives in. */
 .hexdev-game-card-face {
 --mid: calc((var(--n) - 1) / 2);
 --offset: calc(var(--i) - var(--mid));
-width: clamp(46px, 5.5vw, 62px);
+width: clamp(46px, 5.5cqw, 62px);
 height: auto;
-margin: 0 calc(clamp(46px, 5.5vw, 62px) * -0.12);
+margin: 0 calc(clamp(46px, 5.5cqw, 62px) * -0.12);
 border-radius: 4px;
 /* SQUARED, NOT abs(), and z-index the same way -- both copied from the
    door's own fan a few rules up, including its reasons. abs() is recent
@@ -760,6 +804,52 @@ transform:
   rotate(calc(var(--offset) * 6deg));
 z-index: calc(10 - var(--offset) * var(--offset));
 box-shadow: var(--hx-lift-contact), var(--hx-lift-ambient);
+}
+
+/* PR-VDR: THE ART GROWS HERE. Screen one's game-choice row and screen two's
+ * modality row shared one grid rule (720px tier, above) with no tier past
+ * it, so a card at 1024px measured the same 352px as at 720px — the extra
+ * 300px+ of a real desktop bought nothing but idle felt, and the FACE inside
+ * was additionally capped by the vw-not-cqw defect fixed above. Exactly the
+ * inversion the product direction named: "en angosto las tarjetas son altas
+ * y el arte se ve grande; en ancho la grilla las achata".
+ *
+ * SCOPED TO :has(.hexdev-game-card--choice), never a repaint of the shared
+ * base rules (720px tier grid; the card's own min-height, above): those also
+ * draw screen two's modality row, whose own hard-pixel fence
+ * (game-screen.browser.test.ts's "the games row shares the header's band")
+ * asserts an EXACT 352px at this same tier.
+ *
+ * PLACED AFTER EVERY RULE IT OVERRIDES, deliberately: the min-height rule
+ * above carries the IDENTICAL selector, same (0,2,0) specificity, so a first
+ * attempt at this block placed higher in the file lost the tie to SOURCE
+ * ORDER and measured 172px regardless of the @container match — the exact
+ * scar the 1024px padding block above already carries once.
+ *
+ * THE BAND'S CAP GROWS TOO (58rem, up from the 46rem it shares with the
+ * header) — deliberate, since the header shrank in this same pass and
+ * widening it back would undo that. AND SO DOES THE SHELF WRAPPER'S cap,
+ * one rule below: .hexdev-chrome-section sizes itself to min(46rem, 100%) —
+ * a real WIDTH, not a max-width — and is .hexdev-chrome-games's PARENT, so
+ * raising only the band's own max-width left it capped at 736px regardless.
+ * A single, unheaded shelf has no such wrapper and never exposed this;
+ * found by measuring the SHELVED scene (mahjong-front-door-wide) rather
+ * than the unheaded one. */
+@container hexdev-chrome (min-width: 1024px) {
+  .hexdev-chrome-games:has(.hexdev-game-card--choice) {
+    max-width: 58rem;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 28rem));
+  }
+  .hexdev-chrome-section:has(.hexdev-game-card--choice) {
+    width: min(58rem, 100%);
+  }
+  .convite-chrome .hexdev-game-card--choice {
+    min-height: 228px;
+  }
+  .hexdev-game-card-face {
+    width: clamp(64px, 8cqw, 100px);
+    margin: 0 calc(clamp(64px, 8cqw, 100px) * -0.12);
+  }
 }
 
 /* The way back out, and it is deliberately quiet: a player who wants it will

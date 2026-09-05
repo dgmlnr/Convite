@@ -74,14 +74,14 @@ export function buildTableStylesheet(): string {
   --hx-text-meta: 0.75rem;
   --hx-text-label: 0.7rem;
   --hx-tracking-label: 0.08em;
-  /* PR-EST: the lobby had no display size at all — its title computed to
-   * 21.6px, which is why the screen read as a form and not as a front door.
-   * Fluid so one token covers a phone and a desktop, and the ceiling is
-   * deliberate: 48px is large enough to carry the screen, small enough that a
-   * tenant's own page still frames it. Tracking goes NEGATIVE because that is
-   * what large type wants — the label tracking below is its mirror image. */
-  --hx-text-display-hero: clamp(2rem, 6vw, 4.25rem);
-  --hx-tracking-hero: -0.02em;
+  /* PR-EST gave the lobby a display size at all; PR-VDR (the vidriera pass,
+   * chrome-styles.ts) later halved the ceiling and flattened the tracking —
+   * see that file's own docblock for the render that motivated it. Declared
+   * here anyway, at the identical value, for cross-stylesheet token parity
+   * only (design-token-parity.test.ts): the felt has no front-door hero of
+   * its own and reads neither of these two tokens. */
+  --hx-text-display-hero: clamp(1.75rem, 3.6cqw, 2.5rem);
+  --hx-tracking-hero: -0.01em;
   /* One step between --hx-text-title and the hero: the game's own name. It was
    * sharing --hx-text-title with everything else, so nothing on the card
    * announced what the card WAS. */
