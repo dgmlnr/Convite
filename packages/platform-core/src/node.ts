@@ -19,5 +19,11 @@
  * `.dependency-cruiser.cjs` enforces the same rule mechanically, so this
  * docstring is not the only thing standing between the invariant and the
  * next edit.
+ *
+ * `connectPostgres` joins it for the identical reason (design decision 1.5):
+ * it is the ONE value import of `pg` in this package, and every adapter that
+ * consumes the `Pool` it returns takes `import type { Pool } from "pg"` —
+ * type-only, erased at build, never reaching a browser bundle.
  */
 export { connectRedis } from "./redis-client.js";
+export { connectPostgres } from "./postgres-client.js";

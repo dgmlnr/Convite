@@ -56,6 +56,14 @@ module.exports = {
       to: { path: "^apps/" },
     },
     {
+      name: "no-pg-outside-platform-core",
+      severity: "error",
+      comment:
+        "Every Postgres adapter takes an already-constructed `pg` Pool behind `import type { Pool } from \"pg\"` (design decision 1.5, mirrors redis-rate-limiter.ts:1's `import type { Redis } from \"ioredis\"`); the ONE value import of `pg` (`new Pool(...)`) is confined to packages/platform-core/src/postgres-client.ts. `from.pathNot` on purpose, never `from.path`: scripts/dependency-cruiser-layer-coverage.test.ts counts only `from.path` rules as tier assignments, and a blanket `from.path` rule here would silently disarm that fence, the same class of gap PR #98 found on transport-colyseus-client. `browser-safety.test.ts`'s `NODE_ONLY_PACKAGES` catches a value import re-exported from the public barrel; this rule catches the same value import reached from ANY package or app, not just the barrel — depcruise's own `doNotFollow: node_modules` cannot see a workspace-package-to-workspace-package edge cross a barrel, but it resolves a plain npm specifier like `pg` directly, which is exactly what this rule needs.",
+      from: { pathNot: "^packages/platform-core/src" },
+      to: { path: "(^pg(/|$)|node_modules/pg(/|$))" },
+    },
+    {
       name: "no-colyseus-outside-transport",
       severity: "error",
       comment:
