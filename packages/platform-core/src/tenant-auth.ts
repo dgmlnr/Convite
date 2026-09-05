@@ -1,5 +1,6 @@
 import type { Clock, GameId, PlayerId } from "@hexdev/platform-contract";
-import { describeThemeContrastViolation, sanitizeThemeOverride, validateThemeContrast, type ThemeOverride } from "@hexdev/widget-protocol";
+import { describeThemeContrastViolation, type ThemeOverride } from "@hexdev/widget-protocol";
+import { sanitizeTenantTheme } from "./tenant-theme.js";
 
 /** A platform-wide tenant identifier. */
 export type TenantId = string & { readonly __brand: "TenantId" };
@@ -39,58 +40,34 @@ export interface TenantRepository {
   findById(tenantId: TenantId): Promise<TenantRecord | undefined>;
 }
 
-/** Validates an incoming `theme` value, in BOTH senses, at the ONE choke
- * point every `TenantRecord` passes through on its way into a repository,
- * regardless of where the record came from (`apps/server`'s
- * `HEXDEV_TENANTS_JSON`-parsed deploy config, or a hardcoded dev/test
- * fixture). `JSON.parse(...) as TenantRecord[]`
- * (`apps/server/src/config.ts`) is a TYPE ASSERTION, not a runtime guarantee
- * — a malformed deploy value would otherwise reach this far with no check at
- * all.
- *
- * TWO QUESTIONS, one pass. `sanitizeThemeOverride` asks whether a value could
- * escape the declaration it is assigned into; `validateThemeContrast` (Tanda
- * 3, WCAG 2.x SC 1.4.3) asks whether a human could read the result. Both are
- * properties of the same untrusted value, so both are answered here, and both
- * are REUSED from `@hexdev/widget-protocol` rather than reimplemented (apply
- * prompt's own instruction): a closed token vocabulary and a contrast rule
- * must not exist twice with two chances to drift apart.
- *
- * DROPS, PER PAIR, NEVER THROWS. A non-object `theme` (or none at all)
- * becomes `undefined`; a shape-invalid token is dropped; a colour pairing
- * under 4.5:1 takes that pair back to the widget's own defaults while every
- * pair that passes survives untouched. Nothing here is a thrown error, and
- * that is a deliberate departure from the fail-loud, crash-boot convention
- * `createSessionTokenIssuer` and `redis-client.ts` follow — for a reason that
- * does not apply to them. A malformed signing key means this process cannot
- * do its job safely at all; malformed deploy config, or an unreadable brand
- * colour, means ONE tenant's token falls back to ours while everything else,
- * including every OTHER tenant in the same JSON, keeps working. Refusing to
- * boot over a hex value would be the wrong trade.
- *
- * BUT NOT SILENTLY, which is the one thing the sanitizer's own drop-silently
- * posture gets wrong for a contrast failure: an operator is left staring at a
- * brand that did not apply with nothing to go on. Each dropped pair is warned
- * about with the tenant, the pair, and the measured ratio — everything needed
- * to fix the config in one line. `console.warn`, not `console.error`: this is
- * boot-loud, not boot-fatal, and the process is fine. */
-function sanitizeTenantTheme(theme: unknown, tenantId: TenantId): ThemeOverride | undefined {
-  if (theme === null || typeof theme !== "object") return undefined;
-  const validated = validateThemeContrast(sanitizeThemeOverride(theme as Readonly<Record<string, unknown>>));
-  for (const violation of validated.violations) {
-    console.warn(`createStaticTenantRepository: tenant "${tenantId}" — ${describeThemeContrastViolation(violation)}`);
-  }
-  return validated.theme;
-}
-
 /**
  * Builds the v1 static in-memory `TenantRepository`, running every record's
- * `theme` through `sanitizeTenantTheme` (see its own docstring for what that
- * validates and why it drops rather than throws) before any of it is readable
- * off the repository. The tenant's own id is threaded in so a dropped token
- * can be reported against the record it came from — with many tenants in one
- * `HEXDEV_TENANTS_JSON`, a warning that cannot name which one is not
- * actionable.
+ * `theme` through the SHARED `sanitizeTenantTheme` (tenant-administration
+ * slice 4, `tenant-theme.ts` — see its own docstring for what that validates
+ * and why it drops rather than throws, and why the logging decision moved
+ * out of the pure computation) before any of it is readable off the
+ * repository. This is the ONE choke point every `TenantRecord` passes
+ * through on its way into a repository, regardless of where the record came
+ * from (`apps/server`'s `HEXDEV_TENANTS_JSON`-parsed deploy config, or a
+ * hardcoded dev/test fixture) — `JSON.parse(...) as TenantRecord[]`
+ * (`apps/server/src/config.ts`) is a TYPE ASSERTION, not a runtime guarantee,
+ * so a malformed deploy value would otherwise reach this far unchecked.
+ *
+ * DROPS, PER PAIR, NEVER THROWS — a deliberate departure from the fail-loud,
+ * crash-boot convention `createSessionTokenIssuer` and `redis-client.ts`
+ * follow, for a reason that does not apply to them: malformed deploy config,
+ * or an unreadable brand colour, means ONE tenant's token falls back to ours
+ * while every OTHER tenant in the same JSON keeps working. Refusing to boot
+ * over a hex value would be the wrong trade.
+ *
+ * BUT NOT SILENTLY: each dropped pair is warned about here, at construction,
+ * with the tenant, the pair and the measured ratio — everything needed to
+ * fix the config in one line. `console.warn`, not `console.error`: this is
+ * boot-loud, not boot-fatal, and the process is fine. The write port
+ * (`tenant-admin.ts`) uses the SAME shared sanitizer but hands its
+ * `violations` back to the CALLER on `TenantWriteResult.ok:true` instead of
+ * logging them — an operator editing a tenant through a future panel reads a
+ * response, not a server log.
  *
  * The FACTORY itself stays synchronous — construction is a pure in-memory
  * `Map` build with no I/O, and keeping it sync means every existing
@@ -101,7 +78,13 @@ function sanitizeTenantTheme(theme: unknown, tenantId: TenantId): ThemeOverride 
  * `pool.query` will replace it with later.
  */
 export function createStaticTenantRepository(records: readonly TenantRecord[]): TenantRepository {
-  const sanitized = records.map((record) => ({ ...record, theme: sanitizeTenantTheme(record.theme, record.id) }));
+  const sanitized = records.map((record) => {
+    const { theme, violations } = sanitizeTenantTheme(record.theme);
+    for (const violation of violations) {
+      console.warn(`createStaticTenantRepository: tenant "${record.id}" — ${describeThemeContrastViolation(violation)}`);
+    }
+    return { ...record, theme };
+  });
   const byEmbedKey = new Map(sanitized.map((record) => [record.embedKey, record]));
   const byId = new Map(sanitized.map((record) => [record.id, record]));
   return {

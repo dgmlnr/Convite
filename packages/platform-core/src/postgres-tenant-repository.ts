@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
-import { sanitizeThemeOverride, validateThemeContrast, type ThemeOverride } from "@hexdev/widget-protocol";
+import type { ThemeOverride } from "@hexdev/widget-protocol";
 import type { TenantId, TenantRecord, TenantRepository } from "./tenant-auth.js";
+import { sanitizeTenantTheme } from "./tenant-theme.js";
 
 /**
  * Postgres-backed `TenantRepository` (design §1.4/§1.5/§2.1, decision 4):
@@ -11,35 +12,31 @@ import type { TenantId, TenantRecord, TenantRepository } from "./tenant-auth.js"
  * "ioredis"`; the ONE value import of `pg` in this package stays confined to
  * `postgres-client.ts` (decision 1.5).
  *
- * THEME SANITIZATION AT READ TIME — an explicit, temporary decision, not a
- * silent drop of the behavior `createStaticTenantRepository` already has.
- * Design §2.3/task 4.9 moves sanitization to WRITE time once
- * `TenantAdminRepository` lands (PR5): a write validates once, and every
- * later read simply trusts the stored value. This PR ships a READ-ONLY
- * adapter with no write port at all, so a row can only reach `tenants`
- * through a raw seed script or a migration — neither validates anything.
- * Trusting `theme jsonb` as-is here would mean a hostile value seeded
- * outside the (not-yet-existing) write path renders unfiltered on a
- * tenant's own embed page — exactly the CSS-injection
- * `createStaticTenantRepository`'s own construction-time sanitizer exists to
- * stop. So this reads it through the SAME two `@hexdev/widget-protocol`
- * primitives that function calls (`sanitizeThemeOverride` +
- * `validateThemeContrast`), but deliberately WITHOUT its `console.warn`:
- * that warning fires once, at boot, for a config file an operator can fix in
- * one place; warning on every REQUEST for a value already sitting in the
- * datastore would be per-request log noise with no new information, for a
- * state PR5 makes structurally unreachable anyway (a write that fails
- * contrast validation never commits a hostile value in the first place, so
- * there is nothing left here to warn ABOUT once PR5 lands). PR5 can then
- * decide whether this read-time pass becomes pure defense-in-depth or is
- * removed as redundant — not a question this PR answers for it.
+ * THEME SANITIZATION AT READ TIME — SETTLED, PR5: kept as defense-in-depth,
+ * not removed as redundant. PR3 (this adapter's own first landing) called
+ * this an explicit, temporary decision because it shipped with no write port
+ * at all; task 4.9 asked PR5 to revisit it now that
+ * `TenantAdminRepository.create`/`updateTheme` (`tenant-admin.ts`) validate a
+ * theme once, at write time, through the SAME shared `sanitizeTenantTheme`
+ * (`tenant-theme.ts`). The reason this stays rather than drops: the write
+ * port is not the only way a row reaches `tenants`. `scripts/dev-stack.mjs`
+ * (PR4d) and the e2e harness (`e2e/support/system.ts`, PR4e) both still
+ * INSERT/UPSERT a tenant row directly against Postgres, bypassing
+ * `TenantAdminRepository` entirely and by design — neither is a route
+ * `apps/admin` will ever serve, so neither should have to go through it. A
+ * hostile theme value seeded through either of those two still-live raw-SQL
+ * paths would render unfiltered on a tenant's own embed page if this read
+ * pass were removed. Kept, deliberately WITHOUT the `console.warn` the write
+ * port surfaces via `themeViolations` instead (see `tenant-admin.ts`'s own
+ * docstring): a warning on every request for a value already sitting in the
+ * datastore would be per-request log noise, and the write path is what an
+ * operator actually reads a violation report from now.
  */
 function sanitizeThemeFromStorage(theme: unknown): ThemeOverride | undefined {
-  if (theme === null || typeof theme !== "object") return undefined;
-  return validateThemeContrast(sanitizeThemeOverride(theme as Readonly<Record<string, unknown>>)).theme;
+  return sanitizeTenantTheme(theme).theme;
 }
 
-interface TenantRow {
+export interface TenantRow {
   readonly id: string;
   readonly embed_key: string;
   readonly allowed_origins: readonly string[];
@@ -47,9 +44,16 @@ interface TenantRow {
   readonly theme: unknown;
 }
 
-const SELECT_COLUMNS = "id, embed_key, allowed_origins, entitled_games, theme";
+export const SELECT_COLUMNS = "id, embed_key, allowed_origins, entitled_games, theme";
 
-function toTenantRecord(row: TenantRow): TenantRecord {
+/**
+ * Exported (not merely module-private) so `postgres-tenant-admin-repository.ts`
+ * (tenant-administration slice 4) maps its own `RETURNING` rows through the
+ * IDENTICAL logic — one row shape, one place that knows it, rather than a
+ * second hand-copied mapper drifting from this one the next time a column is
+ * added.
+ */
+export function toTenantRecord(row: TenantRow): TenantRecord {
   return {
     id: row.id as TenantId,
     embedKey: row.embed_key,
