@@ -33,6 +33,16 @@ export interface GameListCallbacks {
   readonly onOpenGame: (family: GameFamily) => void;
 }
 
+/** The URL half of a `CardArtItem` — an `<img>`, exactly as every card face
+ * rendered before that field's contract widened to also accept markup. */
+function imageFace(src: string): HTMLImageElement {
+  const face = document.createElement("img");
+  face.src = src;
+  face.alt = "";
+  face.decoding = "async";
+  return face;
+}
+
 export function renderGameList(container: HTMLElement, sections: readonly GameSection[], callbacks: GameListCallbacks): void {
   ensureChromeStyles(container.ownerDocument);
   // THE SAME SHELL CLASS SCREEN TWO SETS, and it is not decoration: it
@@ -155,12 +165,15 @@ export function renderGameList(container: HTMLElement, sections: readonly GameSe
         fan.className = "hexdev-game-card-art";
         fan.setAttribute("aria-hidden", "true");
         fan.style.setProperty("--n", String(art.length));
-        for (const [index, src] of art.entries()) {
-          const face = document.createElement("img");
-          face.className = "hexdev-game-card-face";
-          face.src = src;
-          face.alt = "";
-          face.decoding = "async";
+        for (const [index, item] of art.entries()) {
+          // A STRING IS STILL A URL, exactly as before this field's contract
+          // widened: truco's and escoba's own arrays draw down this branch
+          // unchanged. Anything else is a `MahjongCardArtTile` (or any future
+          // game's own equivalent) — a factory this shell calls without ever
+          // learning what it built, the same way it never learns what a URL
+          // points at.
+          const face = typeof item === "string" ? imageFace(item) : item.render(document);
+          face.classList.add("hexdev-game-card-face");
           face.style.setProperty("--i", String(index));
           fan.appendChild(face);
         }
