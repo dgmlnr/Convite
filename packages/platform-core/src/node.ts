@@ -61,3 +61,8 @@ export { createPostgresTenantAdminRepository } from "./postgres-tenant-admin-rep
 export { createPostgresOperatorRepository } from "./postgres-operator-repository.js";
 export { createPostgresOperatorSessionRepository } from "./postgres-operator-session-repository.js";
 export { findOperatorAuthorizationContext } from "./postgres-operator-authorization.js";
+// `disableOperator`/`enableOperator` (PR13, tenant-administration slice 11a,
+// design §7/§8): standalone Postgres-bound functions, not port methods
+// (`operator-repository.ts`'s own docstring explains why) — they take a real
+// `Pool` directly, same placement principle as every adapter above.
+export { disableOperator, enableOperator } from "./operator-lifecycle.js";
