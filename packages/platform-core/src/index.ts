@@ -51,6 +51,12 @@ export type { CreateOperatorResult, OperatorDraft, OperatorId, OperatorRecord, O
 export { createStaticOperatorRepository } from "./operator-repository.js";
 export type { OperatorSessionRecord, OperatorSessionRepository } from "./operator-session-repository.js";
 export { createStaticOperatorSessionRepository } from "./operator-session-repository.js";
+// `OperatorAuthorizationContext` (tenant-administration slice 9, design §7):
+// a PURE type with no Node/Postgres dependency of its own — same class as
+// `OperatorRecord` above — so it belongs on THIS public barrel even though
+// its only producer (`findOperatorAuthorizationContext`) stays behind
+// `node.ts`, the same port/adapter split every other pair here follows.
+export type { OperatorAuthorizationContext } from "./operator-authorization.js";
 // `isTenantActive` (tenant-administration slice 6, design §2.4): a PURE
 // function with no value import at all beyond the global `Intl` — unlike
 // `connectRedis`/`connectPostgres`/the Postgres adapters (which live behind

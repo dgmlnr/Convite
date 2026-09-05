@@ -66,7 +66,7 @@ describe("the public barrel is safe to bundle for a browser", () => {
     // settled place to land rather than a per-adapter judgment call about
     // whether its own import happens to be type-only today.
     expect(readFileSync(join(SRC, "index.ts"), "utf8")).not.toMatch(
-      /from "\.\/(node|redis-client|postgres-client|postgres-tenant-repository|postgres-tenant-admin-repository|postgres-operator-repository|postgres-operator-session-repository)\.js"/,
+      /from "\.\/(node|redis-client|postgres-client|postgres-tenant-repository|postgres-tenant-admin-repository|postgres-operator-repository|postgres-operator-session-repository|postgres-operator-authorization)\.js"/,
     );
   });
 
@@ -85,5 +85,9 @@ describe("the public barrel is safe to bundle for a browser", () => {
     // identical guarantee — the login/logout wiring never risks a browser
     // bundle pulling in `pg`.
     expect(nodeBarrel).toMatch(/createPostgresOperatorSessionRepository/);
+    // PR11 (tenant-administration slice 9): the authorization checkpoint's
+    // own one-query join gets the same guarantee — the DB round trip behind
+    // every guarded admin request stays off the browser-bundled barrel.
+    expect(nodeBarrel).toMatch(/findOperatorAuthorizationContext/);
   });
 });
