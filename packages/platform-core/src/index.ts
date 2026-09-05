@@ -68,6 +68,13 @@ export { createStaticOperatorSessionRepository } from "./operator-session-reposi
 // its only producer (`findOperatorAuthorizationContext`) stays behind
 // `node.ts`, the same port/adapter split every other pair here follows.
 export type { OperatorAuthorizationContext } from "./operator-authorization.js";
+// `OperatorDirectoryEntry` (tenant-administration slice 16a, design §6.1): a
+// PURE type with no Node/Postgres dependency of its own — same class as
+// `OperatorAuthorizationContext` above — so it belongs on THIS public barrel
+// even though its only producer (`listOperatorsWithPermissions`) stays
+// behind `node.ts`, the same port/adapter split every other pair here
+// follows.
+export type { OperatorDirectoryEntry } from "./operator-directory.js";
 // `RevokePermissionResult`/`RevokePermissionGuardedResult` (PR15, tenant-
 // administration slice 12): the return shape of `revokePermission`
 // (`node.ts`, Postgres-bound) — a PURE type with no Node/Postgres dependency

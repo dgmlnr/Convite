@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { OperatorId, OperatorLifecycleGuardedResult, OperatorLifecycleResult, OperatorRepository } from "@hexdev/platform-core";
+import type { OperatorDirectoryEntry, OperatorId, OperatorLifecycleGuardedResult, OperatorLifecycleResult, OperatorRepository } from "@hexdev/platform-core";
 import type { AdminHandler, AuthorizedOperator } from "./authorization.js";
 import { appendAuditEntry, type AuditEntryInput } from "./audit-log.js";
 import { hashPassword } from "./operator-password.js";
@@ -28,6 +28,12 @@ export interface OperatorHandlersDeps {
   readonly operators: OperatorRepository;
   readonly disableOperator: (id: OperatorId, w: (exec: (sql: string, values: readonly unknown[]) => Promise<void>) => Promise<void>) => Promise<OperatorLifecycleGuardedResult>;
   readonly enableOperator: (id: OperatorId, w: (exec: (sql: string, values: readonly unknown[]) => Promise<void>) => Promise<void>) => Promise<OperatorLifecycleResult>;
+  /** Task 16a.1: the operator directory `createOperatorListHandler` below
+   * serves verbatim — `@hexdev/platform-core`'s own `listOperatorsWithPermissions`,
+   * bound to this process's own pool in `index.ts`, the identical "plain
+   * injected function, not a port" DI seam `disableOperator`/`enableOperator`
+   * already establish above. */
+  readonly listOperators: () => Promise<readonly OperatorDirectoryEntry[]>;
   /** Test seam — production never passes this (`crypto.randomUUID` default). */
   readonly generateOperatorId?: () => string;
   readonly clock?: () => number;
@@ -110,5 +116,24 @@ export function createOperatorEnableHandler(deps: OperatorHandlersDeps): AdminHa
 
     if (!result.ok) return { status: 404, body: JSON.stringify({ error: result.reason }) };
     return { status: 200, body: JSON.stringify({ ok: true }) };
+  };
+}
+
+/**
+ * Task 16a.1: `GET /operators` — the SAME response both the operator list
+ * screen (task 16a.1's own UI half) and the permission matrix (task 16a.6)
+ * read from, since the matrix needs exactly the same per-operator
+ * permission set the list's own row already carries (design §6.1's own
+ * seven-permission taxonomy) — one fetch, not two. A READ, so — unlike
+ * every handler above in this file — it builds no `WriteWitness` at all:
+ * the identical "no witness for a read" shape `tenant-handlers.ts`'s own
+ * `tenantListHandler` already establishes (design §2.3's non-optional
+ * witness applies only to `TenantAdminRepository`'s MUTATING methods, and
+ * this handler does not even touch that port).
+ */
+export function createOperatorListHandler(deps: OperatorHandlersDeps): AdminHandler {
+  return async () => {
+    const operators = await deps.listOperators();
+    return { status: 200, body: JSON.stringify({ operators }) };
   };
 }
