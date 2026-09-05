@@ -58,7 +58,7 @@ export async function handleEmbedRequest(url: URL, origin: string | undefined, c
   // client-side selection screen filters from (spec: "Client-side catalog
   // filtering is UX-only") — `MatchRoom.onAuth`'s entitlement check remains
   // the real gate, unchanged by this addition.
-  const tenant = deps.repository.findByEmbedKey(embedKey);
+  const tenant = await deps.repository.findByEmbedKey(embedKey);
   const catalog = tenant !== undefined ? buildCatalog(tenant.entitledGames, deps.registry) : [];
   // `tenant.theme` was ALREADY re-sanitized once, at `createStaticTenantRepository`
   // construction (`tenant-auth.ts`'s own docstring) — no raw, un-sanitized
