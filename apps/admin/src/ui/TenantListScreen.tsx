@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 
+import { AppNav } from "./AppNav.js";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { cn } from "./lib/utils.js";
@@ -8,6 +9,10 @@ import type { TenantListRow } from "./tenant-list.js";
 export interface TenantListScreenProps {
   readonly rows: readonly TenantListRow[];
   readonly onLogout: () => void;
+  /** Slice 16's own shared nav — switches to the operators or audit screen,
+   * the same "shell decides which screen, screen owns its own data" split
+   * `AppShell.tsx`'s own docstring already establishes. */
+  readonly onNavigate: (screen: "tenants" | "operators" | "audit") => void;
   /** Slice 15's own navigation entry point — clicking a row opens that
    * tenant's detail screen (`TenantDetailScreen.tsx`). Client-side only:
    * this app has no real client-side router (`AppShell.tsx`'s own docstring
@@ -58,15 +63,10 @@ const STATUS_BADGE_CLASS: Readonly<Record<TenantListRow["statusKind"], string>> 
  * detail, never the headline (tenant DETAIL, the full snippet and editors,
  * is the next slice's own job).
  */
-export function TenantListScreen({ rows, onLogout, onSelectTenant, onCreateTenant }: TenantListScreenProps): JSX.Element {
+export function TenantListScreen({ rows, onLogout, onSelectTenant, onCreateTenant, onNavigate }: TenantListScreenProps): JSX.Element {
   return (
     <div className="min-h-screen bg-background text-primary-foreground">
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
-        <h1 className="text-base font-semibold">{COPY.appName}</h1>
-        <Button variant="outline" size="sm" onClick={onLogout}>
-          {COPY.logout}
-        </Button>
-      </header>
+      <AppNav current="tenants" onNavigate={onNavigate} onLogout={onLogout} />
       <main className="p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{COPY.tenantListTitle}</h2>

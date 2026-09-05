@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 
 import { getTenants, postLogout } from "./api.js";
+import { AppNav, type AppScreen } from "./AppNav.js";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { LoginScreen } from "./LoginScreen.js";
+import { OperatorsScreen } from "./OperatorsScreen.js";
 import { buildTenantListRows, type TenantListRow } from "./tenant-list.js";
 import { TenantCreateScreen } from "./TenantCreateScreen.js";
 import { TenantDetailScreen } from "./TenantDetailScreen.js";
@@ -52,6 +54,13 @@ export function AppShell(): JSX.Element {
   // create form is on screen, the same "shell decides which screen, screen
   // owns its own data" split `selectedTenantId` above already establishes.
   const [creatingTenant, setCreatingTenant] = useState(false);
+  // Slice 16's own top-level nav state (phases 16a/16b) — WHICH of the three
+  // destinations is on screen. Independent of `selectedTenantId`/
+  // `creatingTenant` above: those two only ever apply while `screen` is
+  // `"tenants"`, and switching away from it never loses that sub-state (a
+  // deliberate choice — an operator navigating to check a permission mid-edit
+  // and back finds the same tenant detail screen still open).
+  const [screen, setScreen] = useState<AppScreen>("tenants");
 
   const loadTenants = useCallback(async (): Promise<void> => {
     setState({ kind: "loading" });
@@ -103,19 +112,27 @@ export function AppShell(): JSX.Element {
     return <LoginScreen onLoginSuccess={() => void loadTenants()} />;
   }
 
+  // Slice 16's own top-level screen switch (phases 16a/16b) — runs BEFORE any
+  // tenant-specific state below, so an operator who cannot see the TENANT
+  // list (e.g. holds only `operators.manage`) is never stuck on that
+  // screen's own missing-permission message with no way out: each
+  // destination owns its own independent fetch and permission check via its
+  // own `AppNav`, the only way back to any other destination once logged in.
+  if (screen === "operators") {
+    return <OperatorsScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
+  }
+
   if (state.kind === "missing-permission" || state.kind === "error") {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background text-primary-foreground">
-        <p className="text-sm text-primary-foreground/70">{state.kind === "missing-permission" ? COPY.tenantListMissingPermission : COPY.tenantListGenericError}</p>
-        <div className="flex gap-2">
+      <div className="min-h-screen bg-background text-primary-foreground">
+        <AppNav current="tenants" onNavigate={setScreen} onLogout={() => void handleLogout()} />
+        <main className="flex flex-col items-center justify-center gap-4 p-6">
+          <p className="text-sm text-primary-foreground/70">{state.kind === "missing-permission" ? COPY.tenantListMissingPermission : COPY.tenantListGenericError}</p>
           <Button variant="outline" onClick={() => void loadTenants()}>
             {COPY.retry}
           </Button>
-          <Button variant="ghost" onClick={() => void handleLogout()}>
-            {COPY.logout}
-          </Button>
-        </div>
-      </main>
+        </main>
+      </div>
     );
   }
 
@@ -127,5 +144,13 @@ export function AppShell(): JSX.Element {
     return <TenantDetailScreen tenantId={selectedTenantId} onBack={handleBackFromDetail} />;
   }
 
-  return <TenantListScreen rows={state.rows} onLogout={() => void handleLogout()} onSelectTenant={setSelectedTenantId} onCreateTenant={() => setCreatingTenant(true)} />;
+  return (
+    <TenantListScreen
+      rows={state.rows}
+      onLogout={() => void handleLogout()}
+      onSelectTenant={setSelectedTenantId}
+      onCreateTenant={() => setCreatingTenant(true)}
+      onNavigate={setScreen}
+    />
+  );
 }
