@@ -88,7 +88,7 @@ multijugador el servidor es autoritativo y sí lo es.
 
 - Node.js 24 o superior
 - pnpm 11 o superior
-- Docker, para levantar Postgres localmente (`pnpm dev:server`, `pnpm run test:postgres`)
+- Docker, para levantar Postgres localmente (`pnpm dev:server`, `pnpm test:e2e`, `pnpm run test:postgres`)
 
 Este proyecto usa pnpm exclusivamente. No usar `npm` ni `npx`.
 
@@ -184,7 +184,7 @@ la topología está probada y no solamente descrita.
 | Comando | Qué hace |
 | --- | --- |
 | `pnpm test` | Compila y corre toda la suite, en Node y en un navegador real |
-| `pnpm test:e2e` | Partidas reales de punta a punta, en navegador y contra el servidor real |
+| `pnpm test:e2e` | Partidas reales de punta a punta, en navegador y contra el servidor real (necesita Docker: levanta su propio Postgres efímero y siembra el tenant de la suite, igual que `pnpm dev:server`) |
 | `pnpm test:visual` | Regresión visual por captura de pantalla, dentro del contenedor de render pinneado (requiere Docker; ver `visual/README.md`) |
 | `pnpm test:visual:host` | La misma suite contra el navegador de tu máquina: chequeo rápido, no canónico |
 | `pnpm test:redis` | Propiedades entre instancias contra un Redis real en Docker |

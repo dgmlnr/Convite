@@ -69,38 +69,41 @@ async function waitForPostgresReady(containerName: string, timeoutMs: number): P
   throw new Error(`postgres container ${containerName} never became ready within ${String(timeoutMs)}ms`);
 }
 
-/**
- * Serves BOTH environments (design §14): `HEXDEV_TEST_POSTGRES_URL` set means
- * CI already provisioned and health-checked a `services:` container before
- * this job's steps ran (`.github/workflows/ci.yml`'s `postgres` job) — connect
- * to it directly, nothing to start or stop here. Unset means local
- * development: start ONE real Postgres container for the whole `pnpm run
- * test:postgres` run (vitest's `globalSetup` contract: runs once, before any
- * test file), the same self-managed `docker run` shape `redis-tests/global-
- * setup.ts` already proves.
- *
- * Either way, applies every migration against it (design §14's "who calls
- * it" table: global-setup runs migrations "against the test database,
- * before any spec file") and hands every `*.postgres.test.ts` file the
- * connection info through the same file-based handoff the Redis setup uses.
- *
- * Runs `pnpm run typecheck` first, same reasoning as `redis-tests/global-
- * setup.ts`: `pnpm run db:migrate` imports the BUILT dist by relative path
- * (`scripts/db-migrate.mjs`'s own docstring), which must exist and be
- * current before it can run.
- */
-export default async function setup(): Promise<() => Promise<void>> {
-  run("pnpm", ["run", "typecheck"], "tsc -b — compiling every workspace package's dist/, including the migration runner");
+export interface ProvisionedPostgres {
+  readonly postgresUrl: string;
+  /** Synchronous on purpose — `spawnSync("docker", ["stop", ...])` already
+   * blocks, so there is nothing here worth wrapping in a Promise, and a
+   * synchronous signature is one a plain `node` script (no top-level await
+   * ceremony needed to call it) can use identically to a vitest teardown. */
+  readonly stop: () => void;
+}
 
+/**
+ * THE REUSABLE CORE (tenant-administration PR4e — extracted so `e2e/global-
+ * setup.ts` can provision the e2e harness's own Postgres the SAME way,
+ * rather than growing a second, independently drifting copy of the CI-
+ * branch/local-Docker logic). This is the identical "pure-ish logic
+ * separated from its one caller's own wiring" split `dev-tenant-seed.mjs`
+ * already uses relative to `dev-stack.mjs` — here the two callers are this
+ * file's own `setup()` below (vitest's `globalSetup` contract) and
+ * `e2e/global-setup.ts`'s own default export (vitest's identical contract
+ * for a DIFFERENT suite).
+ *
+ * Serves BOTH environments (design §14): `HEXDEV_TEST_POSTGRES_URL` set means
+ * a GitHub Actions `services:` container was already provisioned and health-
+ * checked before this job's steps ran — connect to it directly, nothing to
+ * start or stop here. Unset means local development: start ONE real Postgres
+ * container, the same self-managed `docker run` shape `redis-tests/global-
+ * setup.ts` already proves. Either way, applies every migration against it
+ * before returning — design §14's "who calls it" table: "against the test
+ * database, before any spec file".
+ */
+export async function provisionPostgres(): Promise<ProvisionedPostgres> {
   const externalUrl = process.env.HEXDEV_TEST_POSTGRES_URL;
   if (externalUrl !== undefined) {
     run("pnpm", ["run", "db:migrate"], "applying migrations against CI's service-container database", { HEXDEV_POSTGRES_MIGRATE_URL: externalUrl });
-    await mkdir(path.dirname(POSTGRES_HARNESS_INFO_PATH), { recursive: true });
-    await writeFile(POSTGRES_HARNESS_INFO_PATH, JSON.stringify({ postgresUrl: externalUrl }, null, 2), "utf8");
     console.log("[postgres:setup] using CI's Postgres service container, migrations applied");
-    return async function teardown(): Promise<void> {
-      await rm(POSTGRES_HARNESS_INFO_PATH, { force: true });
-    };
+    return { postgresUrl: externalUrl, stop: () => {} };
   }
 
   const [port] = await getFreePorts(1);
@@ -110,14 +113,30 @@ export default async function setup(): Promise<() => Promise<void>> {
 
   const postgresUrl = `postgres://postgres@127.0.0.1:${String(port)}/convite`;
   run("pnpm", ["run", "db:migrate"], "applying migrations against the fresh test database", { HEXDEV_POSTGRES_MIGRATE_URL: postgresUrl });
+  console.log(`[postgres:setup] Postgres ready at ${postgresUrl}, migrations applied`);
 
+  return { postgresUrl, stop: () => spawnSync("docker", ["stop", containerName]) };
+}
+
+/**
+ * Vitest's own `globalSetup` contract (`vitest.postgres.config.ts`): runs
+ * once, in the main CLI process, before any `*.postgres.test.ts` file; its
+ * return value is the teardown called once after the whole run.
+ *
+ * Runs `pnpm run typecheck` first, same reasoning as `redis-tests/global-
+ * setup.ts`: `provisionPostgres`'s own `pnpm run db:migrate` call imports
+ * the BUILT dist by relative path (`scripts/db-migrate.mjs`'s own
+ * docstring), which must exist and be current before it can run.
+ */
+export default async function setup(): Promise<() => Promise<void>> {
+  run("pnpm", ["run", "typecheck"], "tsc -b — compiling every workspace package's dist/, including the migration runner");
+
+  const { postgresUrl, stop } = await provisionPostgres();
   await mkdir(path.dirname(POSTGRES_HARNESS_INFO_PATH), { recursive: true });
   await writeFile(POSTGRES_HARNESS_INFO_PATH, JSON.stringify({ postgresUrl }, null, 2), "utf8");
 
-  console.log(`[postgres:setup] Postgres ready at ${postgresUrl}, migrations applied`);
-
   return async function teardown(): Promise<void> {
-    spawnSync("docker", ["stop", containerName]);
+    stop();
     await rm(POSTGRES_HARNESS_INFO_PATH, { force: true });
   };
 }
