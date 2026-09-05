@@ -49,6 +49,84 @@ describe("loadAdminConfig", () => {
   });
 
   /**
+   * `selfOrigin` (design §11.2's CSRF check, tasks 8b.5/8b.6): the panel's
+   * OWN origin, the value every non-GET request's Origin/Referer is compared
+   * against (`csrf.ts`). Defaults relative to the resolved port — same shape
+   * `loadMintConfig`'s own `allowedWidgetOrigins` default already takes
+   * (`http://localhost:${port}`) — so a fresh `pnpm dev:server` checkout
+   * never needs an extra env var just to make its own CSRF check pass
+   * against itself.
+   */
+  describe("selfOrigin", () => {
+    const pgUrl = { HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" };
+
+    it("defaults to http://localhost:<resolved port>", () => {
+      expect(loadAdminConfig({ ...pgUrl, PORT: "9000" }).selfOrigin).toBe("http://localhost:9000");
+    });
+
+    it("honours HEXDEV_ADMIN_ORIGIN when set", () => {
+      expect(loadAdminConfig({ ...pgUrl, HEXDEV_ADMIN_ORIGIN: "https://admin.example.com" }).selfOrigin).toBe("https://admin.example.com");
+    });
+  });
+
+  /**
+   * `cookieSecure` (design §11.2): `Secure` is droppable ONLY through the
+   * existing `HEXDEV_ALLOW_DEV_DEFAULTS` opt-in — never a bare default, and
+   * never independent of the SAME opt-in `postgresUrl`'s own guard already
+   * reads, so there is exactly one flag in this app that means "I know this
+   * is a local, insecure dev run."
+   */
+  /**
+   * design §11.3: two independent `RateLimitConfig` knobs — by username and
+   * by IP — same shape mint-server's own `embedIpRateLimit`/
+   * `embedKeyRateLimit` already establish. Suggested budgets from design's
+   * own table: 5/15min by username, 20/15min by IP.
+   */
+  describe("login rate limits", () => {
+    const pgUrl = { HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" };
+
+    it("defaults to design §11.3's suggested budgets (5/window by username, 20/window by IP)", () => {
+      const config = loadAdminConfig(pgUrl);
+      expect(config.loginUserRateLimit.limit).toBe(5);
+      expect(config.loginIpRateLimit.limit).toBe(20);
+      expect(config.loginUserRateLimit.windowMs).toBe(config.loginIpRateLimit.windowMs);
+    });
+
+    it("honours explicit env overrides", () => {
+      const config = loadAdminConfig({ ...pgUrl, HEXDEV_ADMIN_LOGIN_USER_RATE_LIMIT: "3", HEXDEV_ADMIN_LOGIN_IP_RATE_LIMIT: "7" });
+      expect(config.loginUserRateLimit.limit).toBe(3);
+      expect(config.loginIpRateLimit.limit).toBe(7);
+    });
+  });
+
+  describe("redisUrl", () => {
+    it("is undefined unless HEXDEV_REDIS_URL is set (in-memory rate limiting by default, single-instance panel)", () => {
+      expect(loadAdminConfig({ HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" }).redisUrl).toBeUndefined();
+    });
+
+    it("reads HEXDEV_REDIS_URL when set", () => {
+      expect(loadAdminConfig({ HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite", HEXDEV_REDIS_URL: "redis://localhost:6379" }).redisUrl).toBe("redis://localhost:6379");
+    });
+  });
+
+  describe("cookieSecure", () => {
+    it("is true by default (and in production)", () => {
+      expect(loadAdminConfig({ HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" }).cookieSecure).toBe(true);
+    });
+
+    it("is false only when HEXDEV_ALLOW_DEV_DEFAULTS is explicitly set", () => {
+      expect(loadAdminConfig({ HEXDEV_ALLOW_DEV_DEFAULTS: "true" }).cookieSecure).toBe(false);
+    });
+
+    it("stays true in production even if HEXDEV_ALLOW_DEV_DEFAULTS were somehow set (defence in depth, mirrors the postgresUrl guard's own precedence)", () => {
+      // NODE_ENV=production always throws before this field would even be
+      // read (see the "still refuses in production" test above) — this
+      // documents the property rather than exercising an unreachable branch.
+      expect(() => loadAdminConfig({ NODE_ENV: "production", HEXDEV_ALLOW_DEV_DEFAULTS: "true" })).toThrow();
+    });
+  });
+
+  /**
    * Task 7.3's own requirement, made mechanical rather than left as a claim
    * nobody checks: `apps/admin` MUST NOT hold the Ed25519 signing seed
    * (design §6, decisions #3684 — "apps/admin must NOT hold the Ed25519
