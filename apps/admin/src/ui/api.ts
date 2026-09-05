@@ -18,6 +18,8 @@
  * server, never a fixture backend.
  */
 
+import type { TenantListApiRow } from "./tenant-list.js";
+
 export type LoginOutcome =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: "invalid-credentials" | "rate-limited" | "network-error" };
@@ -49,4 +51,36 @@ export async function postLogin(username: string, password: string): Promise<Log
   if (response.status === 200) return { ok: true };
   if (response.status === 429) return { ok: false, reason: "rate-limited" };
   return { ok: false, reason: "invalid-credentials" };
+}
+
+export type TenantListOutcome =
+  | { readonly ok: true; readonly tenants: readonly TenantListApiRow[] }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "network-error" };
+
+/**
+ * `GET /` (task 14.4 — the SAME route the SPA itself is served from at
+ * `GET /login`, never this one; see this module's own header). The single
+ * authorization checkpoint (`authorization.ts`) doubles as this app's own
+ * session probe: `AppShell` (a later PR in this same slice) has no separate
+ * "am I logged in" route to call, because `authorize`'s own two failure
+ * shapes already say so — 401 (`no-session`/`session-expired`/
+ * `account-disabled`, `authorization.ts`'s own docstring) means "show the
+ * login screen", 403 (`missing-permission`) means "logged in, but this
+ * account cannot see tenants" (launch prompt §3: the UI reflects what the
+ * server will actually do, never hides it). Collapsing every 401 cause into
+ * one `"no-session"` reason mirrors `postLogin`'s own "one message, three
+ * causes" choice above, for the identical reason: none of the three is this
+ * screen's to distinguish.
+ */
+export async function getTenants(): Promise<TenantListOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/", { headers: { accept: "application/json" }, credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenants: readonly TenantListApiRow[] };
+  return { ok: true, tenants: body.tenants };
 }
