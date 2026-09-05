@@ -112,3 +112,42 @@ export type { RevokePermissionGuardedResult, RevokePermissionResult } from "./op
 // cost already paid by the enforcement itself, not by this export.
 export { isTenantActive } from "./tenant-validity.js";
 
+// `TenantAdminRepository`/`TenantDraft`/`TenantWriteResult`/`WriteWitness`
+// (tenant-administration slice 4, design §2.3): the write port itself is a
+// PURE type — no Node/Postgres dependency of its own, same class as
+// `OperatorRepository` above — so it belongs on THIS public barrel even
+// though its only real producer (`createPostgresTenantAdminRepository`)
+// stays behind `node.ts`. Built in PR5 (slice 4) but unconsumed by anything
+// outside `platform-core` until now, which is why this export was not added
+// until this PR — `apps/admin/src/tenant-handlers.ts` (task 14.4) is the
+// FIRST outside consumer, needing the type to shape its own
+// `TenantHandlersDeps`.
+export type { TenantAdminRepository, TenantDraft, TenantWriteResult, WriteWitness } from "./tenant-admin.js";
+
+/**
+ * `describeTenantStatus`/`TenantStatus` (tenant-administration slice 14,
+ * design §1.9) — the operator-facing read of a tenant's window, derived on
+ * read through `Clock`, never a stored refusal event (decision #3684 item 4,
+ * Domain D's own boundary). `apps/admin`'s tenant-list handler is the FIRST
+ * production caller: it computes this server-side (design's own "the panel
+ * answers 'why is this tenant not working' via a status DERIVED from the
+ * record") and ships the closed `TenantStatus` union to the browser, which
+ * only ever maps it to a Spanish label — never re-derives it from raw
+ * `validFrom`/`validUntil` client-side, so there is exactly ONE place in the
+ * whole system that decides what "active" means.
+ *
+ * BUNDLE-SIZE RISK, checked rather than assumed (same discipline this
+ * barrel's own `isTenantActive` export already documents above): both names
+ * are exported from the SAME already-bundled `tenant-validity.ts` module
+ * `isTenantActive` already pulls into `widget-app.js` — nothing in
+ * `apps/widget-app` imports either new name, so a bundler's tree-shaking
+ * should add zero bytes on top of what that module's own unavoidable
+ * top-level `Intl.DateTimeFormat` side effect already costs. Verified, not
+ * merely argued: rebuilt `widget-app.js` after this export landed —
+ * byte-identical to the pre-slice-14 baseline (518.15 kB), confirmed both by
+ * the byte count and by a direct read of the built file (this export's own
+ * Spanish-label mapping never leaves `apps/admin`, so there was nothing new
+ * to even look for).
+ */
+export { describeTenantStatus, type TenantStatus } from "./tenant-validity.js";
+

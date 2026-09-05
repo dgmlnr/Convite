@@ -31,4 +31,9 @@ export const COPY = {
   loginRateLimited: "Demasiados intentos. Probá de nuevo en unos minutos.",
   loginMissingFields: "Ingresá tu usuario y tu contraseña.",
   loginGenericError: "No se pudo iniciar sesión. Probá de nuevo.",
+  tenantListTitle: "Inquilinos",
+  tenantListEmpty: "Todavía no hay inquilinos cargados.",
+  tenantListLoading: "Cargando…",
+  tenantListMissingPermission: "Tu cuenta no tiene permiso para ver la lista de inquilinos.",
+  tenantListGenericError: "No se pudo cargar la lista de inquilinos. Probá de nuevo.",
 } as const;

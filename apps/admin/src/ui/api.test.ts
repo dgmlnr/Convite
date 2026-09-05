@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { postLogin } from "./api.js";
+import { getTenants, postLogin } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -70,5 +70,56 @@ describe("postLogin", () => {
       }),
     );
     await expect(postLogin("ana", "hunter2")).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `getTenants`'s own contract (task 14.4's browser-side counterpart) —
+ * `GET /` doubles as this app's own session probe (this module's own
+ * docstring on `TenantListOutcome`), so its three failure shapes matter as
+ * much as its success shape.
+ */
+describe("getTenants", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches / same-origin, cookie-bearing, and returns the parsed tenant rows", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ tenants: [{ id: "acme", embedKey: "pk_live_acme", status: { kind: "active" } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await getTenants();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/");
+    expect(init).toMatchObject({ credentials: "include" });
+    expect(outcome).toEqual({ ok: true, tenants: [{ id: "acme", embedKey: "pk_live_acme", status: { kind: "active" } }] });
+  });
+
+  it("maps a 401 (no live session) to no-session — this is how AppShell knows to show the login screen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "no-session" }), { status: 401 })),
+    );
+    await expect(getTenants()).resolves.toEqual({ ok: false, reason: "no-session" });
+  });
+
+  it("maps a 403 (authenticated, but lacking tenant.origins.edit) to missing-permission, distinct from no-session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "missing-permission" }), { status: 403 })),
+    );
+    await expect(getTenants()).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(getTenants()).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });

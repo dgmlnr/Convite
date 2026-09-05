@@ -7,6 +7,7 @@ import {
   connectRedis,
   createPostgresOperatorRepository,
   createPostgresOperatorSessionRepository,
+  createPostgresTenantAdminRepository,
   disableOperator,
   enableOperator,
   findOperatorAuthorizationContext,
@@ -23,6 +24,7 @@ import { createOperatorCreateHandler, createOperatorDisableHandler, createOperat
 import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
+import { createTenantListHandler } from "./tenant-handlers.js";
 
 /**
  * The admin panel's composition root — the FOURTH composition root in this
@@ -73,6 +75,7 @@ const config = loadAdminConfig(process.env);
 const postgresPool = await connectPostgres(config.postgresUrl);
 const operators = createPostgresOperatorRepository(postgresPool);
 const sessions = createPostgresOperatorSessionRepository(postgresPool);
+const tenants = createPostgresTenantAdminRepository(postgresPool);
 
 // The authorization checkpoint's own one-query join (design §7, task 9.2),
 // bound to THIS process's own pool — the same "one knob per composition
@@ -125,6 +128,17 @@ const permissionGrantHandler = createPermissionGrantHandler(permissionHandlersDe
 const permissionRevokeHandler = createPermissionRevokeHandler(permissionHandlersDeps);
 
 /**
+ * Slice 14's own first real handler (`tenant-handlers.ts`, task 14.4) — the
+ * FIRST guarded route to reach an actual repository call and return real
+ * data, rather than a 501 stub. Bound to THIS process's own pool, same
+ * "one knob per composition root" shape every Postgres-backed adapter above
+ * already follows. No `WriteWitness` here at all: `list()` is a read, and
+ * design §2.3's non-optional witness only applies to the six MUTATING
+ * methods on this same port.
+ */
+const tenantListHandler = createTenantListHandler({ tenants });
+
+/**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
  * handler — every kind absent from this map keeps stubbing 501 via
  * `notImplementedHandler` below (tenant CRUD/audit viewer arrive PR16-22).
@@ -139,6 +153,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "own-password": ownPasswordHandler,
   "operator-permissions-grant": permissionGrantHandler,
   "operator-permissions-revoke": permissionRevokeHandler,
+  "tenant-list": tenantListHandler,
 };
 
 /**
