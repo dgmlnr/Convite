@@ -1,3 +1,5 @@
+import { paidThroughToInstant } from "@hexdev/platform-core";
+
 import type { AuditQueryParams } from "./api.js";
 
 /**
@@ -29,13 +31,21 @@ function nonEmpty(value: string): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-/** Rolls a `"YYYY-MM-DD"` date forward exactly one UTC calendar day —
- * `Date`'s own `setUTCDate` handles month/year rollover correctly (no
- * hand-rolled day-count arithmetic needed). */
-function startOfNextUtcDay(dateOnly: string): string {
-  const date = new Date(`${dateOnly}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString();
+/**
+ * Rolls a `"YYYY-MM-DD"` date BACKWARD exactly one CALENDAR day — plain Y/M/D
+ * arithmetic, no timezone involved (the same "no timezone at this step"
+ * property `paidThroughToInstant`'s own `+1`-day arithmetic already has;
+ * only the CONVERSION of the resulting date into an instant is Buenos-Aires-
+ * aware, and that step is entirely `paidThroughToInstant`'s, never
+ * reimplemented here). `from`'s inclusive lower bound — the start of
+ * `isoDate` itself, in Buenos Aires — is exactly what `paidThroughToInstant`
+ * of the PRECEDING date already means: "the exclusive start of the day
+ * AFTER `isoDate` MINUS ONE" is `isoDate`'s own start.
+ */
+function precedingIsoDate(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
 }
 
 /**
@@ -47,14 +57,24 @@ function startOfNextUtcDay(dateOnly: string): string {
  * reused here). Without this conversion, picking "31/08" as the end date
  * would silently exclude every entry FROM the 31st itself — genuinely
  * confusing for an operator who typed the day they meant to include.
+ *
+ * sdd-verify finding 5, closed here: both bounds USED TO be UTC-day
+ * boundaries while `formatAuditTimestamp` below renders in Buenos Aires
+ * time — a 3-hour skew between what the operator READS and what the filter
+ * actually MATCHES (an entry at 22:00 Buenos Aires time on the 3rd rendered
+ * as the 3rd but was matched only by a "4th" filter). `paidThroughToInstant`
+ * (`@hexdev/platform-core`, already exported from slice 5) is the ONE place
+ * this repo converts a Buenos-Aires calendar date into an instant — reused
+ * here directly for `to`, and via `precedingIsoDate` for `from`, rather than
+ * writing a second timezone conversion.
  */
 export function buildAuditQueryParams(inputs: AuditFilterInputs): AuditQueryParams {
   return {
     actor: nonEmpty(inputs.actor),
     tenant: nonEmpty(inputs.tenant),
     action: inputs.action === "" ? undefined : inputs.action,
-    from: inputs.from === "" ? undefined : `${inputs.from}T00:00:00.000Z`,
-    to: inputs.to === "" ? undefined : startOfNextUtcDay(inputs.to),
+    from: inputs.from === "" ? undefined : new Date(paidThroughToInstant(precedingIsoDate(inputs.from))).toISOString(),
+    to: inputs.to === "" ? undefined : new Date(paidThroughToInstant(inputs.to)).toISOString(),
   };
 }
 
