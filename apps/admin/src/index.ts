@@ -17,6 +17,8 @@ import {
   revokePermission,
 } from "@hexdev/platform-core/node";
 
+import { createAuditViewHandler, type AuditHandlersDeps } from "./audit-handlers.js";
+import { listAuditEntries, type AuditQueryExec } from "./audit-query.js";
 import { authorizeAndDispatch, type AdminHandler, type AdminRequest, type AuthorizationQuery } from "./authorization.js";
 import { isSameOriginRequest } from "./csrf.js";
 import { loadAdminConfig } from "./config.js";
@@ -184,6 +186,20 @@ const tenantRotateKeyHandler = createTenantRotateKeyHandler({ tenants });
 const tenantThemeHandler = createTenantThemeHandler({ tenants });
 
 /**
+ * Task 16b.2's own real handler — `GET /audit`, stubbed 501 until now.
+ * `auditQueryExec` binds `audit-query.ts`'s own narrow structural
+ * `AuditQueryExec` type to THIS process's own pool — the identical "no `pg`
+ * import in this file either" discipline every other Postgres-bound
+ * binding above already follows (decision 1.5): `postgresPool.query` is
+ * structurally compatible with `AuditQueryExec` with no cast needed here,
+ * because the shape (`(sql, values) => Promise<{ rows }>`) is exactly what
+ * `pg`'s own `Pool.query` returns.
+ */
+const auditQueryExec: AuditQueryExec = (sql, values) => postgresPool.query(sql, values as unknown[]);
+const auditHandlersDeps: AuditHandlersDeps = { listAuditEntries: (filters) => listAuditEntries(auditQueryExec, filters) };
+const auditViewHandler = createAuditViewHandler(auditHandlersDeps);
+
+/**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
  * handler — every kind absent from this map keeps stubbing 501 via
  * `notImplementedHandler` below (tenant CRUD/audit viewer arrive PR16-22).
@@ -192,6 +208,7 @@ const tenantThemeHandler = createTenantThemeHandler({ tenants });
  * no change to the dispatch condition itself.
  */
 const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
+  "audit-view": auditViewHandler,
   "operator-create": operatorCreateHandler,
   "operator-disable": operatorDisableHandler,
   "operator-enable": operatorEnableHandler,
@@ -290,7 +307,12 @@ const server = createServer((req, res) => {
   if (route.guard.access === "permission" || route.kind === "own-password") {
     const handler = REAL_HANDLERS[route.kind] ?? notImplementedHandler;
     const dispatch = (body: Record<string, unknown>) => {
-      const adminRequest: AdminRequest = { params: route.params, body };
+      // Task 16b.2's own first consumer — `audit-view`'s four query-string
+      // filters (actor/tenant/action/date range). Built unconditionally,
+      // same "no enumeration by kind to keep in sync" shape `body` above
+      // already has: a route with no query string simply gets `{}`.
+      const query = Object.fromEntries(url.searchParams);
+      const adminRequest: AdminRequest = { params: route.params, body, query };
       authorizeAndDispatch(req.headers.cookie, route.guard, { query: authorizationQuery }, adminRequest, handler)
         .then((response) => {
           res.writeHead(response.status, { "content-type": "application/json" });

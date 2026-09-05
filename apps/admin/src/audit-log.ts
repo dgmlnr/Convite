@@ -14,23 +14,36 @@ import type { OperatorId, TenantId } from "@hexdev/platform-core";
  * edits that show up plainly in a diff, never an accident (design §10
  * layer 1, the compile-time layer).
  */
-export type AuditAction =
-  | "tenant.created"
-  | "tenant.origins.updated"
-  | "tenant.games.updated"
-  | "tenant.theme.updated"
-  | "tenant.window.updated"
-  | "tenant.embed-key.rotated"
-  | "operator.bootstrapped"
-  | "operator.created"
-  | "operator.disabled"
-  | "operator.enabled"
-  | "operator.password.changed"
-  | "operator.password.reset-by-cli"
-  | "permission.granted"
-  | "permission.revoked"
-  | "session.login"
-  | "session.logout";
+/**
+ * A `const` array, not a bare union type (task 16b.2's own audit viewer) —
+ * the SAME "three consumers need it as a VALUE" argument `permissions.ts`'s
+ * own `PERMISSIONS` docstring already makes for a different closed
+ * vocabulary. `audit-query.ts`'s own action filter validates an incoming
+ * query-string value against membership, so the filter's vocabulary CANNOT
+ * drift from this real closed set — a union type alone cannot be validated
+ * against at runtime. `audit-log.test.ts` still scans for the literal INSERT
+ * text only; this addition touches no INSERT site.
+ */
+export const AUDIT_ACTIONS = [
+  "tenant.created",
+  "tenant.origins.updated",
+  "tenant.games.updated",
+  "tenant.theme.updated",
+  "tenant.window.updated",
+  "tenant.embed-key.rotated",
+  "operator.bootstrapped",
+  "operator.created",
+  "operator.disabled",
+  "operator.enabled",
+  "operator.password.changed",
+  "operator.password.reset-by-cli",
+  "permission.granted",
+  "permission.revoked",
+  "session.login",
+  "session.logout",
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 /** One changed field's before/after pair (migration 004's `changes jsonb`
  * column). Per spec assumption 4, populated only for state-mutating
