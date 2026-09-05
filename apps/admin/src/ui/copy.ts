@@ -135,6 +135,61 @@ export const COPY = {
    */
   operatorsSoleAccountManagerHint: "Es el único operador habilitado que puede gestionar cuentas. Deshabilitarlo o quitarle este permiso sería rechazado por el servidor.",
   operatorsLastAccountManagerRefused: "El servidor rechazó la acción: dejaría sin ningún operador habilitado para gestionar cuentas.",
+  // Audit viewer (phase 16b) — read-only, append-only by construction: no
+  // edit, no delete affordance exists anywhere on this screen, because the
+  // database itself refuses both at two independent layers (design §9).
+  auditTitle: "Auditoría",
+  auditLoading: "Cargando auditoría…",
+  auditMissingPermission: "Tu cuenta no tiene permiso para ver la auditoría.",
+  auditGenericError: "No se pudo cargar la auditoría. Probá de nuevo.",
+  auditEmpty: "No hay entradas de auditoría que coincidan con estos filtros.",
+  auditFilterActorLabel: "Operador",
+  auditFilterTenantLabel: "Inquilino",
+  auditFilterActionLabel: "Acción",
+  /**
+   * "Todas" is the ONLY vocabulary this dropdown adds beyond the sixteen
+   * real, closed `AUDIT_ACTIONS` (launch prompt §3: the viewer's own
+   * vocabulary must never imply an event class the system does not
+   * collect) — it means "no action filter applied," never a seventeenth
+   * kind of event.
+   */
+  auditFilterActionAll: "Todas",
+  auditFilterFromLabel: "Desde",
+  auditFilterToLabel: "Hasta",
+  auditFilterApply: "Filtrar",
+  auditFilterClear: "Limpiar filtros",
+  auditColumnWhen: "Cuándo",
+  auditColumnWho: "Quién",
+  auditColumnAction: "Acción",
+  auditColumnTarget: "Objetivo",
+  auditColumnChanges: "Cambios",
+  auditNoChanges: "—",
+  /**
+   * A FLAT TRANSLATION of the closed sixteen-member `AUDIT_ACTIONS`
+   * vocabulary (`audit-log.ts`) — every operator action this change can
+   * ever record, and NOTHING a tenant runtime refusal could ever produce
+   * (design §10's own boundary, spec Domain L): there is no key here for
+   * a mint/renew/join refusal, because no such audit entry can exist to
+   * translate.
+   */
+  auditActionLabels: {
+    "tenant.created": "Inquilino creado",
+    "tenant.origins.updated": "Orígenes actualizados",
+    "tenant.games.updated": "Juegos actualizados",
+    "tenant.theme.updated": "Tema actualizado",
+    "tenant.window.updated": "Período de pago actualizado",
+    "tenant.embed-key.rotated": "Clave de inserción rotada",
+    "operator.bootstrapped": "Operador inicial creado",
+    "operator.created": "Operador creado",
+    "operator.disabled": "Operador deshabilitado",
+    "operator.enabled": "Operador habilitado",
+    "operator.password.changed": "Contraseña cambiada",
+    "operator.password.reset-by-cli": "Contraseña restablecida por CLI",
+    "permission.granted": "Permiso otorgado",
+    "permission.revoked": "Permiso revocado",
+    "session.login": "Inicio de sesión",
+    "session.logout": "Cierre de sesión",
+  },
   // The seven real permissions (design §6.1) — NO eighth, NO fake "role"
   // grouping (launch prompt §1): this is a flat translation of the closed
   // vocabulary `apps/admin/src/permissions.ts` already fixes, never a

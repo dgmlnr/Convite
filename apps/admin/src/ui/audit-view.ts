@@ -93,3 +93,21 @@ export function formatAuditTarget(entry: { readonly targetTenantId?: string; rea
   if (entry.targetOperatorId !== undefined) return `Operador: ${entry.targetOperatorId}`;
   return "—";
 }
+
+/**
+ * The "changes" column (task 16b.2, design §9) — each changed field as
+ * `field: before → after`, comma-separated. `JSON.stringify` renders every
+ * value shape `AuditEntryInput.changes` can actually carry (a string, an
+ * array, `null`) legibly and unambiguously — `null` prints as the literal
+ * `null`, an empty array as `[]`, never coerced to an empty string that
+ * would look identical to "field cleared to nothing" and "field never
+ * set." Entries with no `changes` at all (`session.login`/`session.logout`,
+ * spec assumption 4) show a dash, never an empty string a reader could
+ * mistake for a rendering bug.
+ */
+export function formatAuditChanges(changes: Readonly<Record<string, { readonly before: unknown; readonly after: unknown }>> | undefined): string {
+  if (changes === undefined) return "—";
+  return Object.entries(changes)
+    .map(([field, change]) => `${field}: ${JSON.stringify(change.before)} → ${JSON.stringify(change.after)}`)
+    .join(", ");
+}
