@@ -98,6 +98,11 @@ export const COPY = {
   navTenants: "Inquilinos",
   navOperators: "Operadores",
   navAudit: "Auditoría",
+  // sdd-verify's own finding 2: self-service password change, closed here.
+  // Guarded `authenticated` only, never `permission` (design §6.2's own
+  // three-member exemption) — a zero-permission operator must still reach
+  // this destination, so its nav entry is never conditioned on anything.
+  navAccount: "Mi cuenta",
   // Operators + permission matrix screen (phase 16a) — ONE screen, not
   // four, since the operator list, the create form, the disable/enable
   // actions and the permission matrix all operate on the SAME small
@@ -194,6 +199,18 @@ export const COPY = {
   // grouping (launch prompt §1): this is a flat translation of the closed
   // vocabulary `apps/admin/src/permissions.ts` already fixes, never a
   // second taxonomy invented for display.
+  // Self-service password change (`POST /account/password`, sdd-verify's own
+  // finding 2 — the server side shipped complete and tested but no client
+  // ever called it).
+  accountTitle: "Mi cuenta",
+  accountCurrentPasswordLabel: "Contraseña actual",
+  accountNewPasswordLabel: "Contraseña nueva",
+  accountSubmit: "Cambiar contraseña",
+  accountSubmitting: "Cambiando…",
+  accountMissingFields: "Ingresá tu contraseña actual y la nueva.",
+  accountInvalidCurrentPassword: "La contraseña actual es incorrecta, o tu sesión expiró. Si el problema persiste, cerrá sesión y volvé a entrar.",
+  accountGenericError: "No se pudo cambiar la contraseña. Probá de nuevo.",
+  accountSuccess: "Contraseña cambiada correctamente.",
   permissionLabels: {
     "tenant.create": "Crear inquilinos",
     "tenant.origins.edit": "Editar orígenes",

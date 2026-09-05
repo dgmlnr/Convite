@@ -26,6 +26,7 @@ export type AppShellView =
   | { readonly kind: "login" }
   | { readonly kind: "operators" }
   | { readonly kind: "audit" }
+  | { readonly kind: "account" }
   | { readonly kind: "create-tenant" }
   | { readonly kind: "tenant-detail"; readonly tenantId: string }
   | { readonly kind: "tenant-list-missing-permission" }
@@ -50,11 +51,12 @@ export type AppShellView =
  * genuine 403 is still handled gracefully by each of those screens' own
  * `missing-permission` state (already in place, unchanged by this fix).
  *
- * The top-level nav (`operators`/`audit`) still wins over any
+ * The top-level nav (`operators`/`audit`/`account`) still wins over any
  * tenant-specific sub-state, unchanged from `AppShell.tsx`'s own prior
- * ordering: each of those three destinations owns its own independent fetch
- * and permission check, so there is never a reason to prefer a stale
- * tenant-list probe over an operator's own explicit navigation choice.
+ * ordering: each destination owns its own independent fetch (or, for
+ * `account`, no permission check at all — sdd-verify finding 2) so there is
+ * never a reason to prefer a stale tenant-list probe over an operator's own
+ * explicit navigation choice.
  */
 export function resolveAppShellView(input: ResolveAppShellViewInput): AppShellView {
   const { shellState, screen, creatingTenant, selectedTenantId } = input;
@@ -64,6 +66,7 @@ export function resolveAppShellView(input: ResolveAppShellViewInput): AppShellVi
 
   if (screen === "operators") return { kind: "operators" };
   if (screen === "audit") return { kind: "audit" };
+  if (screen === "account") return { kind: "account" };
 
   if (creatingTenant) return { kind: "create-tenant" };
   if (selectedTenantId !== undefined) return { kind: "tenant-detail", tenantId: selectedTenantId };

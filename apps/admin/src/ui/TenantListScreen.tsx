@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 
-import { AppNav } from "./AppNav.js";
+import { AppNav, type AppScreen } from "./AppNav.js";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { cn } from "./lib/utils.js";
@@ -12,7 +12,7 @@ export interface TenantListScreenProps {
   /** Slice 16's own shared nav — switches to the operators or audit screen,
    * the same "shell decides which screen, screen owns its own data" split
    * `AppShell.tsx`'s own docstring already establishes. */
-  readonly onNavigate: (screen: "tenants" | "operators" | "audit") => void;
+  readonly onNavigate: (screen: AppScreen) => void;
   /** Slice 15's own navigation entry point — clicking a row opens that
    * tenant's detail screen (`TenantDetailScreen.tsx`). Client-side only:
    * this app has no real client-side router (`AppShell.tsx`'s own docstring

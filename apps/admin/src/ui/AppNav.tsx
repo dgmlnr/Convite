@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 
-export type AppScreen = "tenants" | "operators" | "audit";
+export type AppScreen = "tenants" | "operators" | "audit" | "account";
 
 export interface AppNavProps {
   readonly current: AppScreen;
@@ -23,6 +23,13 @@ export interface AppNavProps {
  * destination's own screen render its own honest missing-permission message
  * once requested (the same `missing-permission` state
  * `TenantDetailScreen.tsx` already renders for `tenant.origins.edit`).
+ *
+ * `account` (sdd-verify's own finding 2) is different in KIND, not merely in
+ * degree: `POST /account/password` is guarded `authenticated` only, never
+ * `permission` (design §6.2's own three-member exemption) — there is no
+ * permission this destination could ever be missing, so unlike the other
+ * three, its own screen never even HAS a `missing-permission` state to
+ * render.
  */
 export function AppNav({ current, onNavigate, onLogout }: AppNavProps): JSX.Element {
   return (
@@ -38,6 +45,9 @@ export function AppNav({ current, onNavigate, onLogout }: AppNavProps): JSX.Elem
           </Button>
           <Button variant={current === "audit" ? "default" : "ghost"} size="sm" onClick={() => onNavigate("audit")}>
             {COPY.navAudit}
+          </Button>
+          <Button variant={current === "account" ? "default" : "ghost"} size="sm" onClick={() => onNavigate("account")}>
+            {COPY.navAccount}
           </Button>
         </nav>
       </div>

@@ -34,6 +34,15 @@ describe("resolveAppShellView", () => {
     expect(resolveAppShellView({ shellState: { kind: "missing-permission" }, screen: "operators", creatingTenant: false, selectedTenantId: undefined })).toEqual({ kind: "operators" });
   });
 
+  /** sdd-verify's own finding 2: `account` is reachable regardless of the
+   * tenant list's own outcome, exactly like `operators`/`audit` — the ONE
+   * destination guaranteed to work even for a genuinely zero-permission
+   * operator, since `POST /account/password` is guarded `authenticated`
+   * only, never `permission`. */
+  it("the account screen is reachable the same way, even for an operator whose tenant-list read is refused", () => {
+    expect(resolveAppShellView({ shellState: { kind: "missing-permission" }, screen: "account", creatingTenant: false, selectedTenantId: undefined })).toEqual({ kind: "account" });
+  });
+
   it("the top-level nav also wins over an in-progress tenant creation", () => {
     expect(resolveAppShellView({ shellState: { kind: "missing-permission" }, screen: "audit", creatingTenant: true, selectedTenantId: undefined })).toEqual({ kind: "audit" });
   });

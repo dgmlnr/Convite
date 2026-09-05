@@ -546,3 +546,47 @@ export async function postLogout(): Promise<void> {
     // absolute lifetime.
   }
 }
+
+export type OwnPasswordChangeOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "missing-fields" | "invalid-current-password" | "no-session" | "network-error" };
+
+/**
+ * `POST /account/password` (spec Domain J, sdd-verify's own finding 2) — the
+ * server side (`own-password-handler.ts`) shipped complete and tested in an
+ * earlier slice, but no client function ever called it: an operator could
+ * change their own password only through the bootstrap CLI's `--force`
+ * recovery path, which is recovery, not routine.
+ *
+ * Guarded `authenticated` only, never `permission` (design §6.2's own
+ * three-member exemption, alongside `login-submit`/`logout`): a
+ * zero-permission operator must still be able to reach this route, so this
+ * outcome's reason union has NO `missing-permission` member at all, unlike
+ * every other mutating call in this file.
+ *
+ * `401` is genuinely ambiguous server-side (`own-password-handler.ts` itself
+ * returns it for a wrong current password, but `authorizeAndDispatch` ALSO
+ * maps `no-session`/`session-expired`/`account-disabled` to 401 for an
+ * `authenticated`-guarded route, since none of those is `missing-permission`)
+ * — this pre-existing ambiguity is not this fix's to resolve, so it is
+ * mapped to the reason a routine, logged-in caller will hit in practice
+ * (a genuinely wrong current password), never fabricated as a false
+ * certainty about which of the two actually happened.
+ */
+export async function postOwnPasswordChange(currentPassword: string, newPassword: string): Promise<OwnPasswordChangeOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/account/password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 400) return { ok: false, reason: "missing-fields" };
+  if (response.status === 401) return { ok: false, reason: "invalid-current-password" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  return { ok: true };
+}
