@@ -9,6 +9,7 @@ import {
   postOperatorCreate,
   postOperatorDisable,
   postOperatorEnable,
+  postOwnPasswordChange,
   postPermissionGrant,
   postPermissionRevoke,
   postRotateEmbedKey,
@@ -822,5 +823,63 @@ describe("postLogout", () => {
       }),
     );
     await expect(postLogout()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * `postOwnPasswordChange` (sdd-verify's own finding 2: `POST /account/password`
+ * was guarded, wired into `REAL_HANDLERS`, and tested at the handler level,
+ * but no client function ever called it). Guarded `authenticated` only
+ * (design §6.2's three-member exemption, `routing.coverage.test.ts`'s own
+ * exempt set) — never `permission` — so this outcome has NO
+ * `missing-permission` reason at all, unlike every other mutating call in
+ * this file: a zero-permission operator must still be able to reach this
+ * route.
+ *
+ * Genuine RED, confirmed before this function existed:
+ * `postOwnPasswordChange is not exported`.
+ */
+describe("postOwnPasswordChange", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the current and new password to /account/password, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postOwnPasswordChange("OldPass123!", "NewPass456!");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/account/password");
+    expect(init).toMatchObject({ method: "POST", credentials: "include", headers: { "content-type": "application/json" } });
+    expect(JSON.parse(init.body)).toEqual({ currentPassword: "OldPass123!", newPassword: "NewPass456!" });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it("maps a 400 to missing-fields", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "missing-fields" }), { status: 400 })));
+    await expect(postOwnPasswordChange("", "")).resolves.toEqual({ ok: false, reason: "missing-fields" });
+  });
+
+  it("maps a 401 to invalid-current-password", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "invalid-current-password" }), { status: 401 })));
+    await expect(postOwnPasswordChange("wrong", "NewPass456!")).resolves.toEqual({ ok: false, reason: "invalid-current-password" });
+  });
+
+  it("maps any other non-200 to no-session", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "unknown-operator" }), { status: 404 })));
+    await expect(postOwnPasswordChange("OldPass123!", "NewPass456!")).resolves.toEqual({ ok: false, reason: "no-session" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postOwnPasswordChange("OldPass123!", "NewPass456!")).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });

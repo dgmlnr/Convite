@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 
+import { AccountScreen } from "./AccountScreen.js";
 import { getTenants, postLogout } from "./api.js";
 import { AppNav, type AppScreen } from "./AppNav.js";
 import { resolveAppShellView, type ShellProbeState } from "./app-shell-routing.js";
@@ -146,6 +147,13 @@ export function AppShell(): JSX.Element {
 
   if (view.kind === "audit") {
     return <AuditViewerScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
+  }
+
+  // sdd-verify finding 2: reachable regardless of ANY permission the acting
+  // operator holds — `POST /account/password` is guarded `authenticated`
+  // only, never `permission`.
+  if (view.kind === "account") {
+    return <AccountScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
   }
 
   // sdd-verify finding 1, closed here: reached regardless of the tenant
