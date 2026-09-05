@@ -151,3 +151,30 @@ export type { TenantAdminRepository, TenantDraft, TenantWriteResult, WriteWitnes
  */
 export { describeTenantStatus, type TenantStatus } from "./tenant-validity.js";
 
+/**
+ * `instantToPaidThrough`/`paidThroughToInstant` (tenant-administration slice
+ * 15, design §2.4/decisions #3684 item 1) — the same bidirectional Buenos
+ * Aires calendar-date conversion `setValidityWindow` (slice 5) and
+ * `describeTenantStatus`'s own `expired`/`not-yet-active` branches already
+ * use internally, now needed OUTSIDE the package for the first time:
+ * `apps/admin`'s tenant-detail handler renders the CURRENT paid-through date
+ * even for an ALREADY-ACTIVE tenant (`TenantStatus`'s own `active` branch
+ * carries no date at all, design §1.9), and its window-edit handler accepts
+ * the operator-typed calendar date and converts it to the stored instant —
+ * "the date the operator types is the date the operator reads," never a raw
+ * epoch number crossing this boundary in either direction.
+ *
+ * BUNDLE-SIZE RISK, checked rather than assumed — same discipline this
+ * barrel's own `isTenantActive`/`describeTenantStatus` exports above already
+ * document: both names live in the SAME already-bundled `tenant-validity.ts`
+ * module those two pull into `widget-app.js`, and neither is referenced from
+ * `apps/widget-app`'s own dependency graph, so a tree-shaking bundler should
+ * add zero bytes on top of what that module's unavoidable top-level
+ * `Intl.DateTimeFormat` side effect already costs. Verified, not merely
+ * argued: rebuilt `widget-app.js` after this export landed — byte-identical
+ * to the pre-slice-15 baseline (518,152 bytes), confirmed both by the byte
+ * count and by a direct read of the built file for "react"/"radix"/
+ * "tailwind" occurrences (zero, as before).
+ */
+export { instantToPaidThrough, paidThroughToInstant } from "./tenant-validity.js";
+

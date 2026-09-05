@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenants, postLogin, postLogout } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -121,6 +121,59 @@ describe("getTenants", () => {
       }),
     );
     await expect(getTenants()).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `getTenantDetail`'s own contract (slice 15's own necessary prerequisite) —
+ * same fetch-stub discipline as `getTenants` above. Genuine RED, confirmed
+ * before `getTenantDetail` existed: `getTenantDetail is not exported`.
+ */
+describe("getTenantDetail", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches /tenants/:id, same-origin, cookie-bearing, URL-encoding the id", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ tenant: { id: "acme corp", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" } } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await getTenantDetail("acme corp");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/tenants/acme%20corp");
+    expect(init).toMatchObject({ credentials: "include" });
+    expect(outcome).toEqual({ ok: true, tenant: { id: "acme corp", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" } } });
+  });
+
+  it("maps a 404 to unknown-tenant, distinct from a network failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
+    );
+    await expect(getTenantDetail("ghost")).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+
+  it("maps a 403 to missing-permission", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "missing-permission" }), { status: 403 })),
+    );
+    await expect(getTenantDetail("acme")).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(getTenantDetail("acme")).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });
 

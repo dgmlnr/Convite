@@ -26,7 +26,7 @@ import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 import { serveBuiltAsset, serveIndexHtml } from "./static-app.js";
-import { createTenantListHandler } from "./tenant-handlers.js";
+import { createTenantDetailHandler, createTenantListHandler } from "./tenant-handlers.js";
 
 /**
  * The admin panel's composition root — the FOURTH composition root in this
@@ -146,6 +146,12 @@ const permissionRevokeHandler = createPermissionRevokeHandler(permissionHandlers
  * methods on this same port.
  */
 const tenantListHandler = createTenantListHandler({ tenants });
+// Slice 15's own first real handler beyond the list — `GET /tenants/:id`,
+// the read side of tenant detail CRUD. Same "no `WriteWitness` here" reason
+// as `tenantListHandler` above: this is a read, and design §2.3's
+// non-optional witness only applies to `TenantAdminRepository`'s six
+// MUTATING methods.
+const tenantDetailHandler = createTenantDetailHandler({ tenants });
 
 /**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
@@ -163,6 +169,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "operator-permissions-grant": permissionGrantHandler,
   "operator-permissions-revoke": permissionRevokeHandler,
   "tenant-list": tenantListHandler,
+  "tenant-detail": tenantDetailHandler,
 };
 
 /**

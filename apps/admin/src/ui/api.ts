@@ -18,6 +18,7 @@
  * server, never a fixture backend.
  */
 
+import type { TenantDetailApiRow } from "./tenant-detail.js";
 import type { TenantListApiRow } from "./tenant-list.js";
 
 export type LoginOutcome =
@@ -83,6 +84,35 @@ export async function getTenants(): Promise<TenantListOutcome> {
   if (response.status !== 200) return { ok: false, reason: "no-session" };
   const body = (await response.json()) as { readonly tenants: readonly TenantListApiRow[] };
   return { ok: true, tenants: body.tenants };
+}
+
+export type TenantDetailOutcome =
+  | { readonly ok: true; readonly tenant: TenantDetailApiRow }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "unknown-tenant" | "network-error" };
+
+/**
+ * `GET /tenants/:id` (slice 15's own necessary prerequisite —
+ * `tenant-handlers.ts`'s own docstring on why this handler exists at all).
+ * Same three-way session/permission/network mapping `getTenants` already
+ * establishes, PLUS a fourth reason this route alone can produce:
+ * `unknown-tenant` (404) — a tenant id that never existed, or one deleted
+ * out from under an already-open detail screen. Collapsed into its own
+ * named reason rather than folded into `network-error`, because the two
+ * demand different UI: one is "this record is gone", the other is "try
+ * again".
+ */
+export async function getTenantDetail(id: string): Promise<TenantDetailOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/tenants/${encodeURIComponent(id)}`, { headers: { accept: "application/json" }, credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-tenant" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
+  return { ok: true, tenant: body.tenant };
 }
 
 /**
