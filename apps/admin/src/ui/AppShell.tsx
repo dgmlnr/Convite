@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type JSX } from "react";
 
 import { getTenants, postLogout } from "./api.js";
 import { AppNav, type AppScreen } from "./AppNav.js";
+import { AuditViewerScreen } from "./AuditViewerScreen.js";
 import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { LoginScreen } from "./LoginScreen.js";
@@ -120,6 +121,10 @@ export function AppShell(): JSX.Element {
   // own `AppNav`, the only way back to any other destination once logged in.
   if (screen === "operators") {
     return <OperatorsScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
+  }
+
+  if (screen === "audit") {
+    return <AuditViewerScreen onNavigate={setScreen} onLogout={() => void handleLogout()} />;
   }
 
   if (state.kind === "missing-permission" || state.kind === "error") {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAuditQueryParams, formatAuditTarget, formatAuditTimestamp, EMPTY_AUDIT_FILTER_INPUTS, type AuditFilterInputs } from "./audit-view.js";
+import { buildAuditQueryParams, formatAuditChanges, formatAuditTarget, formatAuditTimestamp, EMPTY_AUDIT_FILTER_INPUTS, type AuditFilterInputs } from "./audit-view.js";
 
 /**
  * `audit-view.ts` (task 16b.2) — pure functions, the same shape/purpose
@@ -51,5 +51,21 @@ describe("formatAuditTarget", () => {
 
   it("shows a dash when the entry targets neither (e.g. session.login/logout)", () => {
     expect(formatAuditTarget({})).toBe("—");
+  });
+});
+
+describe("formatAuditChanges", () => {
+  it("returns a dash when changes is absent (session.login/logout)", () => {
+    expect(formatAuditChanges(undefined)).toBe("—");
+  });
+
+  it("formats one changed field as 'field: before → after'", () => {
+    expect(formatAuditChanges({ validUntil: { before: null, after: "2026-08-31" } })).toBe("validUntil: null → \"2026-08-31\"");
+  });
+
+  it("formats multiple changed fields, comma-separated", () => {
+    expect(formatAuditChanges({ allowedOrigins: { before: [], after: ["https://a.example"] }, entitledGames: { before: [], after: ["mahjong-solitaire"] } })).toBe(
+      'allowedOrigins: [] → ["https://a.example"], entitledGames: [] → ["mahjong-solitaire"]',
+    );
   });
 });
