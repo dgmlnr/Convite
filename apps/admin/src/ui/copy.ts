@@ -60,4 +60,6 @@ export const COPY = {
   tenantDetailEditMissingPermission: "Tu cuenta no tiene permiso para editar este campo.",
   tenantDetailEditUnknownTenant: "Este inquilino ya no existe.",
   tenantDetailEditGenericError: "No se pudo guardar. Probá de nuevo.",
+  tenantDetailWindowPlaceholder: "DD/MM/AAAA",
+  tenantDetailWindowInvalidFormat: "Ingresá la fecha como DD/MM/AAAA.",
 } as const;

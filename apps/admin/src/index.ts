@@ -26,7 +26,7 @@ import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 import { serveBuiltAsset, serveIndexHtml } from "./static-app.js";
-import { createTenantDetailHandler, createTenantGamesHandler, createTenantListHandler, createTenantOriginsHandler } from "./tenant-handlers.js";
+import { createTenantDetailHandler, createTenantGamesHandler, createTenantListHandler, createTenantOriginsHandler, createTenantWindowHandler } from "./tenant-handlers.js";
 
 /**
  * The admin panel's composition root — the FOURTH composition root in this
@@ -159,6 +159,7 @@ const tenantDetailHandler = createTenantDetailHandler({ tenants });
 // shape `operator-handlers.ts`/`permission-handlers.ts` already establish.
 const tenantOriginsHandler = createTenantOriginsHandler({ tenants });
 const tenantGamesHandler = createTenantGamesHandler({ tenants });
+const tenantWindowHandler = createTenantWindowHandler({ tenants });
 
 /**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
@@ -179,6 +180,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "tenant-detail": tenantDetailHandler,
   "tenant-origins": tenantOriginsHandler,
   "tenant-games": tenantGamesHandler,
+  "tenant-window": tenantWindowHandler,
 };
 
 /**

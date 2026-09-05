@@ -169,6 +169,30 @@ export async function postTenantGames(id: string, games: readonly string[]): Pro
   return { ok: true, tenant: body.tenant };
 }
 
+/** `POST /tenants/:id/window` (tasks 15a.5/15a.6) — `validUntilIso` MUST
+ * already be a `"YYYY-MM-DD"` string (the caller's own `argentineDateToIso`,
+ * `tenant-detail.ts`); this client never touches the Buenos Aires
+ * conversion itself, only relays the already-converted date. */
+export async function postTenantWindow(id: string, validUntilIso: string): Promise<TenantWriteOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/tenants/${encodeURIComponent(id)}/window`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ validUntil: validUntilIso }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-tenant" };
+  if (response.status === 400) return { ok: false, reason: "invalid-payload" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
+  return { ok: true, tenant: body.tenant };
+}
+
 /**
  * `POST /logout` — idempotent by construction on the server side
  * (`logout-handler.ts`'s own docstring: "every case still returns 200 with

@@ -1,5 +1,5 @@
 import type { TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
-import { describeTenantStatus, instantToPaidThrough, type TenantStatus } from "@hexdev/platform-core";
+import { describeTenantStatus, instantToPaidThrough, paidThroughToInstant, type TenantStatus } from "@hexdev/platform-core";
 import type { ThemeOverride } from "@hexdev/widget-protocol";
 
 import type { AdminHandler, AuthorizedOperator } from "./authorization.js";
@@ -179,6 +179,55 @@ export function createTenantGamesHandler(deps: TenantHandlersDeps): AdminHandler
       changes: { entitledGames: { before: existing?.entitledGames ?? null, after: games } },
     });
     const result = await deps.tenants.updateEntitledGames(id as TenantId, games, witness);
+    if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : 400, body: JSON.stringify({ error: result.reason }) };
+    return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
+  };
+}
+
+/**
+ * `POST /tenants/:id/window` (tasks 15a.5-15a.7, permission
+ * `tenant.window.edit`) — "the date the operator types is the date the
+ * operator reads" (launch prompt §1), NEVER a raw instant crossing the
+ * HTTP boundary in either direction: the request body carries the
+ * operator-typed calendar date as ISO `"YYYY-MM-DD"` (the client's own
+ * `argentineDateToIso` already converted it from `DD/MM/AAAA`), and this
+ * handler is what actually calls the REAL `paidThroughToInstant` — the
+ * SAME single Buenos Aires implementation `tenant-validity.ts` already
+ * owns, never re-derived here.
+ *
+ * SCOPE, DISCLOSED: this editor manages `validUntil` ("paid through") ONLY.
+ * `validFrom` (the optional pre-sell lower bound) has no exposed round-trip
+ * conversion outside `platform-core` today — `paidThroughToInstant`/
+ * `instantToPaidThrough` are both specifically about `validUntil`'s
+ * half-open EXCLUSIVE-day encoding (task 15a.5 names only these two
+ * functions) — so rather than invent one, this handler reads the tenant's
+ * CURRENT `validFrom` and carries it through UNCHANGED on every call:
+ * `setValidityWindow` replaces the WHOLE window on every invocation (its
+ * own docstring: "`undefined` here always means leave unset, never leave
+ * unchanged"), so omitting `validFrom` here would silently clear a
+ * pre-sell lower bound this editor never even shows the operator.
+ */
+export function createTenantWindowHandler(deps: TenantHandlersDeps): AdminHandler {
+  return async (req, actor) => {
+    const id = req.params?.id;
+    if (id === undefined || id === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
+    const validUntilIso = req.body?.validUntil;
+    if (typeof validUntilIso !== "string" || validUntilIso === "") return { status: 400, body: JSON.stringify({ error: "invalid-window" }) };
+
+    let validUntil: number;
+    try {
+      validUntil = paidThroughToInstant(validUntilIso);
+    } catch {
+      return { status: 400, body: JSON.stringify({ error: "invalid-window" }) };
+    }
+
+    const existing = await deps.tenants.findById(id as TenantId);
+    const witness = tenantAuditWitness(deps, actor, {
+      action: "tenant.window.updated",
+      targetTenantId: id as TenantId,
+      changes: { validUntil: { before: existing?.validUntil ?? null, after: validUntil } },
+    });
+    const result = await deps.tenants.setValidityWindow(id as TenantId, { validFrom: existing?.validFrom, validUntil }, witness);
     if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : 400, body: JSON.stringify({ error: result.reason }) };
     return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
   };

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { OperatorId, TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
 
 import type { AuthorizedOperator } from "./authorization.js";
-import { createTenantDetailHandler, createTenantGamesHandler, createTenantListHandler, createTenantOriginsHandler } from "./tenant-handlers.js";
+import { createTenantDetailHandler, createTenantGamesHandler, createTenantListHandler, createTenantOriginsHandler, createTenantWindowHandler } from "./tenant-handlers.js";
 
 /** Same construction `operator-handlers.test.ts` already establishes — the
  * only place a bare-object `AuthorizedOperator` is ever built outside
@@ -85,8 +85,14 @@ function writableTenantRepo(initial: TenantRecord | undefined): { repo: TenantAd
     rotateEmbedKey: async () => {
       throw new Error("not used by these handlers");
     },
-    setValidityWindow: async () => {
-      throw new Error("not used by these handlers");
+    setValidityWindow: async (id, window, w) => {
+      if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
+      if (window.validFrom !== undefined && window.validUntil !== undefined && window.validFrom >= window.validUntil) {
+        return { ok: false, reason: "invalid-window" };
+      }
+      current = { ...current, validFrom: window.validFrom, validUntil: window.validUntil };
+      await w(capturingExec);
+      return { ok: true, tenant: current, themeViolations: [] };
     },
   };
   return { repo, execCalls };
@@ -304,5 +310,58 @@ describe("createTenantGamesHandler", () => {
     const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
     const handler = createTenantGamesHandler({ clock: () => NOW, tenants: repo });
     expect((await handler({ params: { id: "acme" }, body: { games: "not-an-array" } }, ACTOR)).status).toBe(400);
+  });
+});
+
+/**
+ * `createTenantWindowHandler` — `POST /tenants/:id/window` (tasks
+ * 15a.5/15a.6, permission `tenant.window.edit`). Accepts a BA calendar date
+ * as an ISO `"YYYY-MM-DD"` string (the client's own `argentineDateToIso`
+ * already converts the operator's `DD/MM/AAAA` input before this ever
+ * receives it) and converts it to the stored instant via the REAL
+ * `paidThroughToInstant` — never a raw instant crossing this boundary.
+ * Genuine RED, confirmed before this handler existed:
+ * `createTenantWindowHandler is not a function`.
+ */
+describe("createTenantWindowHandler", () => {
+  it("stores the BOUNDARY INSTANT paidThroughToInstant computes for the given date — the exact date typed comes back on the next read", async () => {
+    const { repo, execCalls } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantWindowHandler({ clock: () => NOW, tenants: repo });
+
+    const response = await handler({ params: { id: "acme" }, body: { validUntil: "2026-08-30" } }, ACTOR);
+
+    expect(response.status).toBe(200);
+    const body = JSON.parse(response.body) as { readonly tenant: { readonly validUntilDisplay?: string } };
+    // Echoes the SAME calendar day back — the round-trip the launch prompt
+    // warns about, proven at the handler level (the string-level round trip
+    // is `tenant-detail.test.ts`'s own job; this proves the SERVER never
+    // shifts it either).
+    expect(body.tenant.validUntilDisplay).toBe("2026-08-30");
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]?.values).toContain("tenant.window.updated");
+  });
+
+  it("preserves an existing validFrom unchanged — this editor manages validUntil only, never silently clearing the lower bound", async () => {
+    const existingValidFrom = Date.UTC(2026, 0, 1, 3, 0, 0);
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId, validFrom: existingValidFrom, validUntil: Date.UTC(2026, 5, 1, 3, 0, 0) }));
+    const handler = createTenantWindowHandler({ clock: () => NOW, tenants: repo });
+
+    await handler({ params: { id: "acme" }, body: { validUntil: "2026-12-31" } }, ACTOR);
+
+    expect((await repo.findById("acme" as TenantId))?.validFrom).toBe(existingValidFrom);
+  });
+
+  it("returns 400 for a malformed date, never crashing on a raw paidThroughToInstant throw", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantWindowHandler({ clock: () => NOW, tenants: repo });
+    expect((await handler({ params: { id: "acme" }, body: { validUntil: "30/08/2026" } }, ACTOR)).status).toBe(400);
+    expect((await handler({ params: { id: "acme" }, body: {} }, ACTOR)).status).toBe(400);
+  });
+
+  it("returns 404 for a tenant nobody created", async () => {
+    const { repo } = writableTenantRepo(undefined);
+    const handler = createTenantWindowHandler({ clock: () => NOW, tenants: repo });
+    const response = await handler({ params: { id: "ghost" }, body: { validUntil: "2026-08-30" } }, ACTOR);
+    expect(response.status).toBe(404);
   });
 });

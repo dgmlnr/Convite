@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout, postTenantGames, postTenantOrigins } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout, postTenantGames, postTenantOrigins, postTenantWindow } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -276,6 +276,54 @@ describe("postTenantGames", () => {
       }),
     );
     await expect(postTenantGames("acme", [])).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `postTenantWindow` (tasks 15a.5/15a.6) — posts the ALREADY-CONVERTED ISO
+ * date (the caller's own `argentineDateToIso`, never this module's job).
+ * Genuine RED, confirmed before it existed: `postTenantWindow is not
+ * exported`.
+ */
+describe("postTenantWindow", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the ISO date to /tenants/:id/window", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ tenant: { id: "acme", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [], status: { kind: "active" }, validUntilDisplay: "2026-08-30" } }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postTenantWindow("acme", "2026-08-30");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/tenants/acme/window");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    expect(JSON.parse(init.body)).toEqual({ validUntil: "2026-08-30" });
+    expect(outcome.ok).toBe(true);
+  });
+
+  it("maps a 400 to invalid-payload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "invalid-window" }), { status: 400 })),
+    );
+    await expect(postTenantWindow("acme", "not-iso")).resolves.toEqual({ ok: false, reason: "invalid-payload" });
+  });
+
+  it("maps a 404 to unknown-tenant", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
+    );
+    await expect(postTenantWindow("ghost", "2026-08-30")).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
   });
 });
 

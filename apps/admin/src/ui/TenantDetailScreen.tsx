@@ -1,9 +1,10 @@
 import { useEffect, useState, type JSX } from "react";
 
-import { getTenantDetail, postTenantGames, postTenantOrigins, type TenantWriteOutcome } from "./api.js";
+import { getTenantDetail, postTenantGames, postTenantOrigins, postTenantWindow, type TenantWriteOutcome } from "./api.js";
 import { Button } from "./components/ui/button.js";
+import { Input } from "./components/ui/input.js";
 import { COPY } from "./copy.js";
-import { buildTenantDetailView, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
+import { argentineDateToIso, buildTenantDetailView, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
 
 export interface TenantDetailScreenProps {
   readonly tenantId: string;
@@ -97,6 +98,75 @@ function ListFieldEditor({ label, emptyCopy, initialText, onSave, onSaved }: Lis
   );
 }
 
+interface WindowFieldEditorProps {
+  readonly label: string;
+  readonly emptyCopy: string;
+  /** `DD/MM/AAAA`, or `""` when no window has ever been set
+   * (`buildTenantDetailView`'s own `validUntilInput`). */
+  readonly initialText: string;
+  readonly onSave: (validUntilIso: string) => Promise<TenantWriteOutcome>;
+  readonly onSaved: (tenant: TenantDetailApiRow) => void;
+}
+
+/**
+ * The window editor (tasks 15a.5-15a.7) — "the date the operator types is
+ * the date the operator reads" (launch prompt §1). Client-side conversion
+ * via `argentineDateToIso` happens BEFORE any network call, so a malformed
+ * date never reaches the server at all (UX-only validation, same discipline
+ * `LoginScreen.tsx`'s own empty-field check already establishes — the
+ * server's own `paidThroughToInstant` call is what actually enforces the
+ * shape, `tenant-handlers.ts`'s own docstring on why).
+ */
+function WindowFieldEditor({ label, emptyCopy, initialText, onSave, onSaved }: WindowFieldEditorProps): JSX.Element {
+  const [text, setText] = useState(initialText);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    setText(initialText);
+  }, [initialText]);
+
+  async function handleSave(): Promise<void> {
+    const iso = argentineDateToIso(text);
+    if (iso === undefined) {
+      setError(COPY.tenantDetailWindowInvalidFormat);
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
+    const outcome = await onSave(iso);
+    setSaving(false);
+    if (!outcome.ok) {
+      setError(
+        outcome.reason === "missing-permission"
+          ? COPY.tenantDetailEditMissingPermission
+          : outcome.reason === "unknown-tenant"
+            ? COPY.tenantDetailEditUnknownTenant
+            : outcome.reason === "invalid-payload"
+              ? COPY.tenantDetailWindowInvalidFormat
+              : COPY.tenantDetailEditGenericError,
+      );
+      return;
+    }
+    onSaved(outcome.tenant);
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold">{label}</h2>
+      <Input value={text} onChange={(event) => setText(event.target.value)} placeholder={emptyCopy || COPY.tenantDetailWindowPlaceholder} disabled={saving} className="max-w-40" />
+      {error !== undefined ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+        {saving ? COPY.tenantDetailSaving : COPY.tenantDetailSave}
+      </Button>
+    </section>
+  );
+}
+
 /**
  * The tenant detail screen (task 15a's own necessary prerequisite) — origins
  * and games are now EDITABLE (tasks 15a.1-15a.4): a free-text field per
@@ -172,10 +242,13 @@ export function TenantDetailScreen({ tenantId, onBack }: TenantDetailScreenProps
               onSave={(list) => postTenantGames(tenantId, list)}
               onSaved={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
             />
-            <section className="flex flex-col gap-1">
-              <h2 className="text-sm font-semibold">{COPY.tenantDetailValidUntilLabel}</h2>
-              <p className="text-sm">{state.view.validUntilInput === "" ? COPY.tenantDetailValidUntilEmpty : state.view.validUntilInput}</p>
-            </section>
+            <WindowFieldEditor
+              label={COPY.tenantDetailValidUntilLabel}
+              emptyCopy={COPY.tenantDetailValidUntilEmpty}
+              initialText={state.view.validUntilInput}
+              onSave={(iso) => postTenantWindow(tenantId, iso)}
+              onSaved={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
+            />
           </div>
         ) : null}
       </div>
