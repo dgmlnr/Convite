@@ -121,6 +121,12 @@ export async function authorize(cookieHeader: string | undefined, guard: RouteAc
 export interface AdminRequest {
   readonly params?: Readonly<Record<string, string>>;
   readonly body?: Readonly<Record<string, unknown>>;
+  /** Task 16b.2: the FIRST guarded route with a query string to read —
+   * `GET /audit`'s own four filters (actor, tenant, action, date range).
+   * Parsed once, by `index.ts`, from the request's own `URL.searchParams`,
+   * the same "parse once before the checkpoint runs, never inside a
+   * handler" discipline `body` above already establishes for a POST route. */
+  readonly query?: Readonly<Record<string, string>>;
 }
 
 export interface AdminResponse {
