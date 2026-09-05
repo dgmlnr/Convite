@@ -1,4 +1,5 @@
 import type { TenantStatus } from "@hexdev/platform-core";
+import type { ThemeContrastPair, ThemeContrastViolation, ThemeOverride } from "@hexdev/widget-protocol";
 
 import { formatTenantStatusLabel, toArgentineDate } from "./tenant-status.js";
 
@@ -25,6 +26,7 @@ export interface TenantDetailApiRow {
   readonly entitledGames: readonly string[];
   readonly status: TenantStatus;
   readonly validUntilDisplay?: string;
+  readonly theme?: ThemeOverride;
 }
 
 export interface TenantDetailView {
@@ -42,6 +44,10 @@ export interface TenantDetailView {
    * upper bound has ever been set, so a controlled `<input>` always has a
    * defined value to bind to. */
   readonly validUntilInput: string;
+  /** Carried through UNCHANGED (task 15b.3) — the theme editor's own
+   * pre-fill; never re-sanitized or re-validated here, since the server's
+   * `updateTheme` already ran the real sanitizer at write time. */
+  readonly theme?: ThemeOverride;
 }
 
 /**
@@ -60,6 +66,7 @@ export function buildTenantDetailView(row: TenantDetailApiRow): TenantDetailView
     originsText: row.allowedOrigins.join("\n"),
     gamesText: row.entitledGames.join("\n"),
     validUntilInput: row.validUntilDisplay === undefined ? "" : toArgentineDate(row.validUntilDisplay),
+    theme: row.theme,
   };
 }
 
@@ -110,4 +117,33 @@ export function parseListInput(text: string): readonly string[] {
  */
 export function buildEmbedSnippet(embedKey: string): string {
   return `<script src="https://TU-DOMINIO-DE-CONVITE/loader.js" data-embed-key="${embedKey}"></script>`;
+}
+
+/** Spanish names for the pairs `validateThemeContrast`'s own `CONTRAST_RULES`
+ * (`widget-protocol`) can report — the closed, small vocabulary that module
+ * already fixes; this is only a translation of an existing finite set, not
+ * a new one. */
+const THEME_CONTRAST_PAIR_LABELS: Readonly<Record<ThemeContrastPair, string>> = {
+  "on-surface/surface": "el color de texto sobre el fondo",
+  "on-primary/primary": "el color de texto sobre el color primario",
+  "accent/ink": "el color de acento sobre el texto oscuro fijo",
+  "accent/surface": "el color de acento sobre el fondo",
+};
+
+/**
+ * A REAL bug this slice's own live demo found (not merely read in the
+ * code, launch prompt §5): `describeThemeContrastViolation` (`widget-protocol`)
+ * is the shared LOG sentence — English, by this house's own convention for
+ * logs and code — and rendering it unchanged inside an otherwise entirely
+ * Spanish operator screen is a genuine locale inconsistency. That function
+ * stays untouched (its own docstring ties it to server logs AND the
+ * browser console, both English contexts); THIS function is the first
+ * Spanish, operator-facing rendering of the identical structured
+ * `ThemeContrastViolation` (task 15b.4's own "surface violations to the
+ * operator" requirement, read literally as "in the language the operator
+ * reads").
+ */
+export function formatThemeViolationMessage(violation: ThemeContrastViolation): string {
+  const measurement = violation.ratio === undefined ? "no se pudo medir (no es un color sólido reconocible)" : `mide ${violation.ratio.toFixed(2)}:1, por debajo del mínimo 4.5:1 exigido para texto normal`;
+  return `Contraste insuficiente en ${THEME_CONTRAST_PAIR_LABELS[violation.pair]}: ${measurement}. Se descartó y volvió al valor por defecto del widget.`;
 }

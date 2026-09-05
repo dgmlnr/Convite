@@ -72,4 +72,6 @@ export const COPY = {
   tenantDetailRotateCancel: "Cancelar",
   tenantDetailRotateSuccess: "Clave rotada. Copiá el fragmento nuevo antes de salir de esta pantalla.",
   tenantDetailRotating: "Rotando…",
+  tenantDetailThemeLabel: "Tema visual",
+  tenantDetailThemeHint: "Dejá un campo vacío para usar el color/valor por defecto del widget.",
 } as const;

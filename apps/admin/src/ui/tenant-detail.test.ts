@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { argentineDateToIso, buildEmbedSnippet, buildTenantDetailView, parseListInput, type TenantDetailApiRow } from "./tenant-detail.js";
+import { argentineDateToIso, buildEmbedSnippet, buildTenantDetailView, formatThemeViolationMessage, parseListInput, type TenantDetailApiRow } from "./tenant-detail.js";
 
 function row(overrides: Partial<TenantDetailApiRow>): TenantDetailApiRow {
   return { id: "acme", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" }, ...overrides };
@@ -30,6 +30,11 @@ describe("buildTenantDetailView", () => {
     const view = buildTenantDetailView(row({ status: { kind: "expired", expiredOn: "2026-08-09" } }));
     expect(view.statusLabel).toBe("Venció el 09/08/2026");
     expect(view.statusKind).toBe("expired");
+  });
+
+  it("carries the tenant's own theme through unchanged (task 15b.3's own editor pre-fill), undefined when none is set", () => {
+    expect(buildTenantDetailView(row({ theme: { "--gx-color-primary": "#336699" } })).theme).toEqual({ "--gx-color-primary": "#336699" });
+    expect(buildTenantDetailView(row({ theme: undefined })).theme).toBeUndefined();
   });
 });
 
@@ -91,5 +96,33 @@ describe("buildEmbedSnippet", () => {
     expect(snippet).toContain('data-embed-key="pk_live_acme_real_key"');
     expect(snippet).toContain("<script");
     expect(snippet).toContain("loader.js");
+  });
+});
+
+/**
+ * `formatThemeViolationMessage` — a REAL bug this slice's own live demo
+ * found (not merely read in the code): `describeThemeContrastViolation`
+ * (`widget-protocol`) is the shared LOG sentence — English, dense, by
+ * house convention for logs/code — and this task's own handler forwards
+ * its structured `ThemeContrastViolation` unchanged. Rendering that same
+ * English sentence directly inside an otherwise entirely-Spanish operator
+ * screen is a real locale inconsistency, caught by looking at the actual
+ * screenshot (launch prompt §5's own "a screenshot is a check too").
+ * `describeThemeContrastViolation` itself is UNCHANGED — its own docstring
+ * ties it to server logs AND the browser console, both English contexts;
+ * this function is the FIRST caller needing a Spanish, operator-facing
+ * rendering of the SAME structured violation, so it lives here, not there.
+ */
+describe("formatThemeViolationMessage", () => {
+  it("names the pair in Spanish and states the measured ratio for a below-minimum violation", () => {
+    const message = formatThemeViolationMessage({ pair: "on-surface/surface", reason: "below-minimum", ratio: 1.0673816127725713, dropped: ["--gx-color-surface", "--gx-color-on-surface"] });
+    expect(message).toContain("1.07:1");
+    expect(message).not.toMatch(/measures|WCAG AA minimum for normal text/);
+  });
+
+  it("names an unverifiable violation without inventing a ratio number", () => {
+    const message = formatThemeViolationMessage({ pair: "accent/ink", reason: "unverifiable", dropped: ["--gx-color-accent"] });
+    expect(message).not.toMatch(/undefined|NaN/);
+    expect(message).not.toMatch(/measures|WCAG AA minimum for normal text/);
   });
 });
