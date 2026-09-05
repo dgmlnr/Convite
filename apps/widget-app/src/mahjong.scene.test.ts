@@ -191,7 +191,12 @@ describe("scene: the front door, with the shelf the solitaire put on it", () => 
   ];
 
   it("wide (1024px): a shelf of card games and a shelf of tiles", async () => {
-    await page.viewport(1024 + 120, 1000);
+    // 1150, not 1000: the vidriera pass's own 1024px+ tier grows every
+    // --choice card from 172px to 228px tall (chrome-styles.ts's "THE ART
+    // GROWS HERE"), and two shelves of that height need more room than the
+    // page bought before that tier existed — verified by looking, the same
+    // way the shorter height was.
+    await page.viewport(1024 + 120, 1150);
     const container = mountedContainer(1024);
     renderGameList(container, SHELVES, { onOpenGame: () => {} });
     await expect.element(container).toMatchScreenshot("mahjong-front-door-wide");

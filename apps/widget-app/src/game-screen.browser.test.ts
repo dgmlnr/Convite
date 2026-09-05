@@ -832,53 +832,34 @@ describe("the deck credit reaches the player", () => {
 });
 
 /**
- * GOLD TYPE HAS TO FIT ITS OWN BOX.
+ * THE CLIPPED-GOLD TITLE IS GONE, AND THIS IS WHAT REPLACED IT.
  *
- * `background-clip: text` paints the gradient into the element's BACKGROUND
- * BOX and uses the glyphs as a mask. Anything sticking out of that box gets no
- * paint — so a line box shorter than the font silently amputates every
- * descender and every accent. Not clipped by an overflow, which is what makes
- * it hard to find: unpainted.
+ * The two fences that used to stand here guarded `background-clip: text`
+ * against the defect this file's own history recorded: a line box shorter
+ * than the font silently amputates every descender and accent, invisibly to
+ * every computed-value assertion except the one built specifically to catch
+ * it. PR-VDR (the vidriera pass, chrome-styles.ts) removed the mechanism
+ * those fences existed to guard — the title is a flat gold fill now, a
+ * decision made from the same kind of evidence that found the ORIGINAL
+ * defect: looking at a real render (mahjong-front-door-wide/-narrow,
+ * game-list-two-wide/-narrow), where a beveled, clipped gradient at a 68px
+ * ceiling read as a heading from a different, more ornamented screen than the
+ * flat one under it.
  *
- * IT SHIPPED, and it was reported by somebody LOOKING at the screen after
- * every test in this repo passed — because every computed value was correct.
- * The line-height was what it was set to, the colour was right, the filter was
- * right, and the tail of every g and j was gone.
- *
- * This is the proxy that can be automated: the element's own box has to be at
- * least as tall as the line it renders. It cannot see ink, so it will not
- * catch a font with unusually deep descenders — but it catches the whole class
- * of "somebody tightened the leading on clipped text", which is what happened.
+ * A flat fill cannot amputate a descender — there is no background box for a
+ * glyph to fall outside of — so the defect class those two tests fenced is
+ * now structurally unreachable, not merely unobserved. What is left to fence
+ * is the decision itself: that the title stays un-clipped, so a future change
+ * reaching for `background-clip: text` again does not reintroduce a defect
+ * this repository already paid once to find.
  */
-describe("the clipped-gold title is not amputated by its own line box", () => {
-  it("gives the title a box at least as tall as the text inside it", () => {
-    const el = freshContainer();
-    renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
-
-    const title = el.querySelector<HTMLElement>(".hexdev-chrome-title")!;
-    const style = getComputedStyle(title);
-    expect(style.backgroundClip === "text" || style.webkitBackgroundClip === "text", "fence setup: this title is no longer clipped gold").toBe(true);
-
-    const range = document.createRange();
-    range.selectNodeContents(title);
-
-    expect(
-      title.getBoundingClientRect().height,
-      "the title's box is shorter than its own text, so background-clip is cutting the descenders off",
-    ).toBeGreaterThanOrEqual(range.getBoundingClientRect().height);
-  });
-
-  it("keeps a line-height that can hold a serif's accents and descenders", () => {
-    // The same defect stated as the number somebody would actually change.
-    // 1.15 is the floor: below it a Georgia-class face runs out of box before
-    // it runs out of glyph.
+describe("the front-door title is a flat fill, not clipped gold", () => {
+  it("is not background-clipped — a flat colour has no box for a descender to fall outside of", () => {
     const el = freshContainer();
     renderGameSelection(el, [TRUCO_ENTRY], TRUCO_ENTRY.gameFamily, new Map([[TRUCO_ID, [{ modality: { pointsToWin: 15 }, waitingCount: 2, promoteBotFallback: false }]]]), { onPlayVsPerson: noop, onPlayVsBot: noop });
 
     const style = getComputedStyle(el.querySelector<HTMLElement>(".hexdev-chrome-title")!);
-    const ratio = Number.parseFloat(style.lineHeight) / Number.parseFloat(style.fontSize);
-
-    expect(ratio, `line-height is ${ratio.toFixed(2)}x the font size — too tight for clipped text`).toBeGreaterThanOrEqual(1.15);
+    expect(style.backgroundClip === "text" || style.webkitBackgroundClip === "text", "flat fill: nothing here is clipped to the glyphs any more").toBe(false);
   });
 });
 
