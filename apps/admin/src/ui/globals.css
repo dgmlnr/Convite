@@ -21,6 +21,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
 }
 
 /**
@@ -36,4 +37,8 @@
   --muted-foreground: #737373;
   --border: #e5e5e5;
   --ring: #a3a3a3;
+  /* task 14.1 (LoginScreen's own refusal message): shadcn's stock
+   * "destructive" red, same admin-only rationale as the four tokens above —
+   * a refusal message has nothing to do with a tenant's brand. */
+  --destructive: #dc2626;
 }
