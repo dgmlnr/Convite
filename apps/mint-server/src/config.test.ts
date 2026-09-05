@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { loadMintConfig } from "./config.js";
 
 const KEY = "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI";
+/** Every test not specifically exercising the `postgresUrl` guard itself
+ * needs a value for it too, now that it fails closed by default — the same
+ * reason `DEV_OPT_IN` exists on the match role's own `config.test.ts`. */
+const PG_URL = { HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" };
 
 /**
  * This role is the ONLY one that holds the Ed25519 seed, which is the entire
@@ -12,7 +16,7 @@ const KEY = "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI";
  */
 describe("loadMintConfig", () => {
   it("reads the signing key it is given", () => {
-    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY }).sessionSigningKey).toBe(KEY);
+    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, ...PG_URL }).sessionSigningKey).toBe(KEY);
   });
 
   describe("without a signing key", () => {
@@ -48,45 +52,57 @@ describe("loadMintConfig", () => {
    * synchronous is what lets it be tested without Web Crypto.
    */
   it("passes a malformed key through rather than validating it here", () => {
-    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: "not-a-real-key" }).sessionSigningKey).toBe("not-a-real-key");
+    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: "not-a-real-key", ...PG_URL }).sessionSigningKey).toBe("not-a-real-key");
   });
 
   it("defaults the widget origin to its own port, and honours a configured list", () => {
-    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "4000" }).allowedWidgetOrigins).toEqual(["http://localhost:4000"]);
-    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_WIDGET_ORIGIN: "https://a.example,https://b.example" }).allowedWidgetOrigins).toEqual([
-      "https://a.example",
-      "https://b.example",
-    ]);
-  });
-
-  it("ships a curl-able dev tenant, and lets one be configured", () => {
-    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY }).tenants).toHaveLength(1);
-    const configured = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: "[]" });
-    expect(configured.tenants).toEqual([]);
+    expect(loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "4000", ...PG_URL }).allowedWidgetOrigins).toEqual(["http://localhost:4000"]);
+    expect(
+      loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_WIDGET_ORIGIN: "https://a.example,https://b.example", ...PG_URL }).allowedWidgetOrigins,
+    ).toEqual(["https://a.example", "https://b.example"]);
   });
 
   /**
-   * Slice L.2/L.3 — ONE test for THIS composition root, deliberately not a
-   * fixture shared with `apps/server`'s own `config.test.ts`: see that
-   * file's identical fence for why the two roots are proven independently.
+   * tenant-administration slice 3b: this role's tenant catalog no longer
+   * comes from `HEXDEV_TENANTS_JSON`/`DEV_TENANT` at all — both retire in
+   * this slice. `postgresUrl` joins the `sessionSigningKey` INVERTED-GUARD
+   * family (design §1.8), deliberately NOT the optional `redisUrl` shape:
+   * Postgres is the system of record, so an unset value must fail closed at
+   * boot, the same "throw, crash boot" convention the signing-key guard
+   * above already sets, never the silent in-memory fallback `redisUrl`
+   * legitimately has.
    */
-  it("entitles the dev tenant to BOTH escoba ids (slice L: the minting role's own composition root)", () => {
-    const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY });
-    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15");
-    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15-2v2");
-  });
+  describe("postgresUrl", () => {
+    it("reads it from the environment when present", () => {
+      const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" });
+      expect(config.postgresUrl).toBe("postgres://user:pw@db.example/convite");
+    });
 
-  /**
-   * The solitaire, on THIS root's own dev tenant — its twin over in
-   * `apps/server/src/config.test.ts` carries the same assertion against the
-   * OTHER root's independently configured `DEV_TENANT`, which is the whole
-   * reason both exist: this role decides what `/embed` advertises, that one
-   * decides what `MatchRoom.onAuth` admits, and neither reads the other's
-   * list.
-   */
-  it("entitles the dev tenant to the mahjong solitaire (the minting role's own composition root)", () => {
-    const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY });
-    expect(config.tenants[0]?.entitledGames).toContain("mahjong-solitario");
+    it("refuses to start in production without it", () => {
+      expect(() => loadMintConfig({ NODE_ENV: "production", HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_ALLOW_DEV_DEFAULTS: "true" })).toThrow(/HEXDEV_POSTGRES_URL/);
+    });
+
+    it("refuses to start anywhere else without an explicit opt-in", () => {
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY })).toThrow(/HEXDEV_POSTGRES_URL/);
+    });
+
+    it("falls back to a local dev default only when opted into explicitly", () => {
+      const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_ALLOW_DEV_DEFAULTS: "true" });
+      expect(config.postgresUrl).toMatch(/^postgres:\/\//);
+    });
+
+    /** The exact symptom this slice removes: setting the OLD variable must
+     * no longer produce a tenant catalog, a config field, or a way to boot
+     * without the new one — it is simply not read anymore. */
+    it("ignores HEXDEV_TENANTS_JSON entirely — it is no longer read by this role", () => {
+      const config = loadMintConfig({
+        HEXDEV_SESSION_SIGNING_KEY: KEY,
+        HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite",
+        HEXDEV_TENANTS_JSON: "not even valid JSON, and that must not matter anymore",
+      });
+      expect(config).not.toHaveProperty("tenants");
+      expect(config.postgresUrl).toBe("postgres://user:pw@db.example/convite");
+    });
   });
 
   /**
@@ -99,30 +115,30 @@ describe("loadMintConfig", () => {
    */
   describe("with a numeric variable that is not a number", () => {
     it("refuses a non-numeric PORT rather than listening on NaN", () => {
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "not-a-port" })).toThrow(/PORT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "not-a-port", ...PG_URL })).toThrow(/PORT/);
     });
 
     it("refuses a non-positive or absurd PORT", () => {
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "0" })).toThrow(/PORT/);
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "70000" })).toThrow(/PORT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "0", ...PG_URL })).toThrow(/PORT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "70000", ...PG_URL })).toThrow(/PORT/);
     });
 
     it("refuses a non-numeric rate limit, naming the variable", () => {
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_KEY_RATE_LIMIT: "lots" })).toThrow(/HEXDEV_EMBED_KEY_RATE_LIMIT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_LIMIT: "lots", ...PG_URL })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_KEY_RATE_LIMIT: "lots", ...PG_URL })).toThrow(/HEXDEV_EMBED_KEY_RATE_LIMIT/);
     });
 
     it("refuses a non-numeric rate window, naming the variable", () => {
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_WINDOW_MS: "soon" })).toThrow(/HEXDEV_EMBED_IP_RATE_WINDOW_MS/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_WINDOW_MS: "soon", ...PG_URL })).toThrow(/HEXDEV_EMBED_IP_RATE_WINDOW_MS/);
     });
 
     /** A limit of zero would lock every legitimate visitor out silently. */
     it("refuses a non-positive rate limit", () => {
-      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_LIMIT: "0" })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
+      expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_EMBED_IP_RATE_LIMIT: "0", ...PG_URL })).toThrow(/HEXDEV_EMBED_IP_RATE_LIMIT/);
     });
 
     it("still accepts a well-formed one", () => {
-      const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "4000", HEXDEV_EMBED_IP_RATE_LIMIT: "5" });
+      const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, PORT: "4000", HEXDEV_EMBED_IP_RATE_LIMIT: "5", ...PG_URL });
 
       expect(config.port).toBe(4000);
       expect(config.embedIpRateLimit.limit).toBe(5);
@@ -130,53 +146,18 @@ describe("loadMintConfig", () => {
   });
 
   /**
-   * A malformed tenants document is an operator typo, and the operator is
-   * the one who has to fix it. A bare `SyntaxError: Unexpected token }` does
-   * not say which variable it came from; the signing-key guard in this same
-   * function already sets the standard for what a config failure should read
-   * like.
-   */
-  /** The same gap, in the other role. Both configs read the same document, so
-   * both must refuse the same shapes — a mint that accepts a tenant the match
-   * role rejects is a split-brain waiting to happen. */
-  it("refuses a tenant list whose ELEMENTS are the wrong shape, naming the offending index", () => {
-    // Each shape asserts its OWN message. A shared regex would pass even if
-    // every shape reported the same generic reason, which is the difference
-    // between proving the guard discriminates and proving it merely throws.
-    const badShapes: readonly { readonly tenants: unknown; readonly expected: RegExp }[] = [
-      { tenants: [42], expected: /index 0 that is a number, not an object/ },
-      { tenants: [{ id: "acme" }], expected: /index 0 whose "embedKey" is not a non-empty string/ },
-      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: "https://acme.example", entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
-      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: "truco" }], expected: /"entitledGames" is not an array of non-empty strings/ },
-      { tenants: [{ id: "", embedKey: "k", allowedOrigins: [], entitledGames: [] }], expected: /index 0 whose "id" is not a non-empty string/ },
-      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: [""], entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
-    ];
-
-    for (const { tenants, expected } of badShapes) {
-      const load = (): unknown => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });
-
-      expect(load).toThrow(/HEXDEV_TENANTS_JSON/); // names the variable an operator must fix
-      expect(load).toThrow(expected); // and names WHICH record, and why
-    }
-  });
-
-  it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {
-    expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: "{oops" })).toThrow(/HEXDEV_TENANTS_JSON/);
-  });
-
-  it("refuses a HEXDEV_TENANTS_JSON that parses but is not a list of tenants", () => {
-    expect(() => loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, HEXDEV_TENANTS_JSON: '{"id":"solo"}' })).toThrow(/HEXDEV_TENANTS_JSON/);
-  });
-
-  /**
    * The mint role does NOT carry the match role's knobs. Naming that here
    * keeps a future edit from quietly re-coupling the two configs.
+   *
+   * `tenants` is gone (tenant-administration slice 3b): the catalog now
+   * lives in Postgres, read through `postgresUrl`, never through this
+   * role's own env-parsed document.
    */
   it("carries only the front door's own concerns", () => {
-    const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY });
+    const config = loadMintConfig({ HEXDEV_SESSION_SIGNING_KEY: KEY, ...PG_URL });
 
     expect(Object.keys(config).sort()).toEqual(
-      ["allowedWidgetOrigins", "embedIpRateLimit", "embedKeyRateLimit", "port", "redisUrl", "sessionSigningKey", "sessionTtlSeconds", "tenants"].sort(),
+      ["allowedWidgetOrigins", "embedIpRateLimit", "embedKeyRateLimit", "port", "postgresUrl", "redisUrl", "sessionSigningKey", "sessionTtlSeconds"].sort(),
     );
   });
 });

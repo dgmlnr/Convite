@@ -1,5 +1,6 @@
 import { createGameModuleRegistry } from "@hexdev/platform-core";
 import type { GameModuleRegistry } from "@hexdev/platform-core";
+import type { GameId } from "@hexdev/platform-contract";
 import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2 } from "@hexdev/escoba-module";
 import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
@@ -38,6 +39,21 @@ import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
  * absence, which is the shape the paragraph above already refuses for the
  * bot-driving collaborators.
  */
+/** The exact module list `buildMintGameRegistry` composes with — pulled into
+ * its own constant (tenant-administration slice 3b) so `MINT_GAME_IDS`
+ * below can derive from the SAME array rather than authoring a second,
+ * independently-maintained list of ids that could drift from it. */
+const MINT_GAME_MODULES = [trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule];
+
 export function buildMintGameRegistry(): GameModuleRegistry {
-  return createGameModuleRegistry([trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule]);
+  return createGameModuleRegistry(MINT_GAME_MODULES);
 }
+
+/** Every game id this role's registry actually serves, derived from the
+ * SAME module list `buildMintGameRegistry` registers above — never a
+ * second, independently maintained list. `scripts/dev-stack.mjs` sources
+ * its dev seed tenant's `entitledGames` from here (design §14), so the
+ * demo it boots can never again show fewer games than the server is
+ * actually ready to run — the exact drift the old, hand-copied
+ * `DEV_TENANT.entitledGames` fixture (now retired) once rotted into. */
+export const MINT_GAME_IDS: readonly GameId[] = MINT_GAME_MODULES.map((module) => module.id);

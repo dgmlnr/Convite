@@ -12,6 +12,7 @@ import {
 } from "./tenant-auth.js";
 import type { TenantId, TenantRecord } from "./tenant-auth.js";
 import { describeJtiReplayGuardContract } from "./jti-replay-guard.contract.js";
+import { describeTenantRepositoryContract } from "./tenant-repository.contract.js";
 
 /** Flips one character in the MIDDLE of the signature segment — not the
  * last character, whose base64url encoding can carry unused padding bits
@@ -38,45 +39,64 @@ function corruptPayload(token: string): string {
 
 const tenantId = "tenant-a" as TenantId;
 const playerId = "player-a" as PlayerId;
+/** Ten years out, matching `scripts/dev-tenant-seed.mjs`'s own convention
+ * (tenant-administration slice 5/PR6b) — every test in this file that is
+ * NOT specifically about window enforcement (slice 6) needs a tenant that
+ * is unambiguously "currently paid up", the same way a freshly-seeded dev
+ * tenant needs to be, or design #1.3's "zero window configured = inactive"
+ * rule (correctly) refuses every one of them. Tests that DO exercise the
+ * window boundary override `validFrom`/`validUntil` explicitly on a copy of
+ * this record rather than relying on this default. */
+const FAR_FUTURE_VALID_UNTIL = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
 const record = {
   id: tenantId,
   embedKey: "pk_live_t_a",
   allowedOrigins: ["https://tenant-a.example"],
   entitledGames: ["truco-argentino"],
+  validUntil: FAR_FUTURE_VALID_UNTIL,
 };
 
 describe("createStaticTenantRepository", () => {
-  it("resolves a tenant by its embed key", () => {
+  it("resolves a tenant by its embed key", async () => {
     const repo = createStaticTenantRepository([record]);
-    expect(repo.findByEmbedKey("pk_live_t_a")).toEqual(record);
+    // Domain A: "The read port returns promises" is the acceptance criterion
+    // itself, not an implementation detail — asserted BEFORE awaiting so a
+    // regression back to a synchronous return value fails this line, not
+    // merely the eventual content check below (which `await` on a plain
+    // value would satisfy identically either way).
+    const lookup = repo.findByEmbedKey("pk_live_t_a");
+    expect(lookup).toBeInstanceOf(Promise);
+    expect(await lookup).toEqual(record);
   });
 
-  it("resolves a tenant by its id, and returns undefined for an unknown one", () => {
+  it("resolves a tenant by its id, and returns undefined for an unknown one", async () => {
     const repo = createStaticTenantRepository([record]);
-    expect(repo.findById(tenantId)).toEqual(record);
-    expect(repo.findById("does-not-exist" as TenantId)).toBeUndefined();
+    const lookup = repo.findById(tenantId);
+    expect(lookup).toBeInstanceOf(Promise);
+    expect(await lookup).toEqual(record);
+    expect(await repo.findById("does-not-exist" as TenantId)).toBeUndefined();
   });
 });
 
 describe("createStaticTenantRepository — theme sanitization (design §10 primary path: server-delivered, per-tenant brand theming)", () => {
-  it("keeps a tenant's validly-shaped theme tokens, reachable off the stored record", () => {
+  it("keeps a tenant's validly-shaped theme tokens, reachable off the stored record", async () => {
     const themed = { ...record, theme: { "--gx-color-primary": "#336699", "--gx-radius": "8px" } };
     const repo = createStaticTenantRepository([themed]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-primary": "#336699", "--gx-radius": "8px" });
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({ "--gx-color-primary": "#336699", "--gx-radius": "8px" });
   });
 
-  it("a tenant with no theme configured has no theme on the stored record — theming is optional, this is today's unchanged path", () => {
+  it("a tenant with no theme configured has no theme on the stored record — theming is optional, this is today's unchanged path", async () => {
     const repo = createStaticTenantRepository([record]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toBeUndefined();
   });
 
-  it("drops a hostile theme value (a CSS-injection attempt) rather than storing it — HEXDEV_TENANTS_JSON is deployment input, validated exactly like a host page's own override", () => {
+  it("drops a hostile theme value (a CSS-injection attempt) rather than storing it — HEXDEV_TENANTS_JSON is deployment input, validated exactly like a host page's own override", async () => {
     const hostile = { ...record, theme: { "--gx-color-primary": "javascript:alert(1)" } };
     const repo = createStaticTenantRepository([hostile]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({});
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({});
   });
 
-  it("drops a key outside the closed vocabulary, including a prototype-pollution-shaped one — the loop stays driven by the vocabulary, never by the input's own keys", () => {
+  it("drops a key outside the closed vocabulary, including a prototype-pollution-shaped one — the loop stays driven by the vocabulary, never by the input's own keys", async () => {
     // `as unknown as TenantRecord`: deliberately NOT type-safe, mirroring how
     // a real hostile value actually arrives at runtime —
     // `apps/server/src/config.ts` reads `HEXDEV_TENANTS_JSON` via
@@ -86,16 +106,23 @@ describe("createStaticTenantRepository — theme sanitization (design §10 prima
     // repository construction step exists to guard against.
     const hostile = { ...record, theme: { "--gx-not-a-real-token": "#000000", __proto__: { polluted: true } } } as unknown as TenantRecord;
     const repo = createStaticTenantRepository([hostile]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({});
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({});
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
-  it("treats a malformed (non-object) theme value as no theme, rather than throwing", () => {
+  it("treats a malformed (non-object) theme value as no theme, rather than throwing", async () => {
     const malformed = { ...record, theme: "not-an-object" } as unknown as TenantRecord;
     const repo = createStaticTenantRepository([malformed]);
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toBeUndefined();
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toBeUndefined();
   });
 });
+
+// The shared conformance suite (tenant-repository.contract.ts), run here
+// against THIS adapter — the same suite
+// `postgres-tenant-repository.postgres.test.ts` runs against the Postgres
+// adapter (design §1's Domain B: "a record written to Postgres is readable
+// through the exact same port shape the static adapter already satisfies").
+describeTenantRepositoryContract("static in-memory", async (records) => createStaticTenantRepository(records));
 
 describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, the second question a colour has to answer)", () => {
   // Shape validation asks "can this string escape the declaration it is
@@ -119,7 +146,7 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
     warn.mockRestore();
   });
 
-  it("drops the audit's dark tenant accent while keeping every pair that passes — a partial drop, so a tenant loses only the colour that was actually unreadable", () => {
+  it("drops the audit's dark tenant accent while keeping every pair that passes — a partial drop, so a tenant loses only the colour that was actually unreadable", async () => {
     const hostile = {
       ...record,
       theme: { "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a", "--gx-color-accent": "#123456" },
@@ -127,7 +154,7 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
 
     const repo = createStaticTenantRepository([hostile]);
 
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a" });
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({ "--gx-color-surface": "#ffffff", "--gx-color-on-surface": "#1a1a1a" });
   });
 
   it("says so out loud at construction, naming the tenant, the pair and the measured ratio", () => {
@@ -148,7 +175,7 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
     expect(warnings[0]).toContain("--gx-color-accent");
   });
 
-  it("never throws over a colour — including a shape-valid but MALFORMED one, and one tenant's bad brand must not stop the repository or any OTHER tenant in the same deploy config from being built", () => {
+  it("never throws over a colour — including a shape-valid but MALFORMED one, and one tenant's bad brand must not stop the repository or any OTHER tenant in the same deploy config from being built", async () => {
     // `hsl(.,50%,50%)` passes COLOR_PATTERN (the `.` is inside its numeric
     // class) and parses to a NaN hue. Without a finite guard that crashed the
     // whole repository construction — every tenant in one HEXDEV_TENANTS_JSON
@@ -164,11 +191,16 @@ describe("createStaticTenantRepository — theme CONTRAST validation (WCAG AA, t
 
     const repo = createStaticTenantRepository([hostile, healthy]);
 
-    expect(repo.findByEmbedKey("pk_live_hostile")?.theme).toEqual({});
-    expect(repo.findByEmbedKey("pk_live_t_a")?.theme).toEqual({ "--gx-color-accent": "#e8c877" });
+    expect((await repo.findByEmbedKey("pk_live_hostile"))?.theme).toEqual({});
+    expect((await repo.findByEmbedKey("pk_live_t_a"))?.theme).toEqual({ "--gx-color-accent": "#e8c877" });
   });
 
-  it("stays silent for a tenant whose theme passes — a warning that fires for healthy config is a warning nobody reads", () => {
+  // NOTE (PR1 slice 1 apply): this test does not call findByEmbedKey/findById
+  // at all — it only asserts on the `warnings` spy — so it needs no `await`.
+  // Converted to `async` anyway purely to match the tasks artifact's literal
+  // line enumeration (line 171 was listed alongside 9 blocks that DO call the
+  // now-async port); harmless no-op since the callback never awaits.
+  it("stays silent for a tenant whose theme passes — a warning that fires for healthy config is a warning nobody reads", async () => {
     createStaticTenantRepository([{ ...record, theme: { "--gx-color-surface": "#1c1c1c", "--gx-color-on-surface": "#f2f2f2" } }]);
 
     expect(warnings).toEqual([]);
@@ -379,6 +411,88 @@ describe("mintSessionForEmbed", () => {
   });
 });
 
+describe("mintSessionForEmbed — validity window enforcement (tenant-administration slice 6, task 6.1: design §2.5's third EmbedMintResult reason)", () => {
+  it("refuses an expired tenant (validUntil in the past) — the SAME reason renewSessionForWidget and MatchRoom.onAuth also use, per design §2.4's 'one implementation of the comparison, three call sites'", async () => {
+    const expired = { ...record, validUntil: Date.now() - 1000 };
+    const repository = createStaticTenantRepository([expired]);
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const result = await mintSessionForEmbed({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: "https://tenant-a.example",
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "tenant-not-active" });
+  });
+
+  it("refuses a tenant with no validUntil ever set — design §1.3/decisions #3684 item 1: zero window configured means inactive, not merely unconfigured", async () => {
+    const neverConfigured = { ...record, validUntil: undefined };
+    const repository = createStaticTenantRepository([neverConfigured]);
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const result = await mintSessionForEmbed({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: "https://tenant-a.example",
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "tenant-not-active" });
+  });
+
+  it("checks the window BEFORE the origin allowlist — an expired tenant on a disallowed origin still reports the window reason, matching design §2.4's fixed check order ('branch on isTenantActive immediately after tenant lookup')", async () => {
+    const expired = { ...record, validUntil: Date.now() - 1000 };
+    const repository = createStaticTenantRepository([expired]);
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const result = await mintSessionForEmbed({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: "https://evil.example",
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "tenant-not-active" });
+  });
+
+  it("mints normally for a tenant whose window covers now, via the injected clock — never Date.now() inside the domain (design constraint, decisions #3684 item 1)", async () => {
+    const withinWindow = { ...record, validFrom: 1_000, validUntil: 2_000 };
+    const repository = createStaticTenantRepository([withinWindow]);
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const result = await mintSessionForEmbed({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: "https://tenant-a.example",
+      playerId,
+      ttlSeconds: 120,
+      clock: () => 1_500,
+    });
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("mintSessionForEmbed — tenant-lookup-failed (design §2.5/§15: a request-time Postgres failure fails closed, never a silent 'unknown tenant')", () => {
+  it("catches a rejecting repository and reports tenant-lookup-failed rather than letting the rejection propagate", async () => {
+    const failingRepository = {
+      findByEmbedKey: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+      findById: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+    };
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const result = await mintSessionForEmbed({
+      repository: failingRepository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: "https://tenant-a.example",
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "tenant-lookup-failed" });
+  });
+});
+
 describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE-LOAD time but only used at PLAY time — a player who reads for minutes before clicking play needs a FRESH token, not a longer-lived one)", () => {
   const WIDGET_ORIGIN = "https://play.hexdev.example";
 
@@ -445,5 +559,56 @@ describe("renewSessionForWidget (obs 2968: the bootstrap token is minted at PAGE
     });
     const claims = result.ok ? await issuer.verify(result.token) : undefined;
     expect(claims?.entitlements).toEqual(["truco-argentino", "escoba"]);
+  });
+
+  it("refuses renewal once the window lapses mid-session (task 6.3) — the SAME token had minted successfully moments earlier, at an earlier clock reading", async () => {
+    // A tenant valid at t=1_000 (mint time) but expired by t=3_000 (renewal
+    // time) — the injected clock is what makes "mid-session" a controllable
+    // fact rather than a real wait, matching this file's own
+    // `fakeClock`/replay-guard convention above.
+    const lapsingRecord = { ...record, validFrom: 500, validUntil: 2_000 };
+    const repository = createStaticTenantRepository([lapsingRecord]);
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+
+    const mintResult = await mintSessionForEmbed({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: "https://tenant-a.example",
+      playerId,
+      ttlSeconds: 120,
+      clock: () => 1_000,
+    });
+    expect(mintResult.ok).toBe(true);
+
+    const renewResult = await renewSessionForWidget({
+      repository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: WIDGET_ORIGIN,
+      allowedWidgetOrigins: [WIDGET_ORIGIN],
+      playerId,
+      ttlSeconds: 120,
+      clock: () => 3_000,
+    });
+    expect(renewResult).toEqual({ ok: false, reason: "tenant-not-active" });
+  });
+
+  it("catches a rejecting repository and reports tenant-lookup-failed, same as mintSessionForEmbed", async () => {
+    const failingRepository = {
+      findByEmbedKey: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+      findById: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+    };
+    const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
+    const result = await renewSessionForWidget({
+      repository: failingRepository,
+      issuer,
+      embedKey: "pk_live_t_a",
+      origin: WIDGET_ORIGIN,
+      allowedWidgetOrigins: [WIDGET_ORIGIN],
+      playerId,
+      ttlSeconds: 120,
+    });
+    expect(result).toEqual({ ok: false, reason: "tenant-lookup-failed" });
   });
 });

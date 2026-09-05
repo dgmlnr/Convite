@@ -3,8 +3,10 @@ import {
   AA_NORMAL_TEXT_CONTRAST,
   ACCENT_INK,
   contrastRatio,
+  DEFAULT_THEME_TOKENS,
   sanitizeThemeOverride,
   THEME_TOKEN_NAMES,
+  themeTokensToCss,
   validateThemeContrast,
 } from "./theme-tokens.js";
 
@@ -292,5 +294,59 @@ describe("validateThemeContrast (design §10: a tenant may pick its brand, never
 
     expect(result.theme).toEqual({ "--gx-color-primary": "#336699" });
     expect(result.violations).toEqual([]);
+  });
+});
+
+/**
+ * DEFAULT_THEME_TOKENS (design §13.2, task 13a): `widget-protocol` already
+ * owned the token NAMES and their validation but not their default VALUES,
+ * which lived scattered as inline `var(--gx-*, <literal>)` fallbacks in
+ * `apps/widget-app`'s own stylesheets -- exactly the duplication
+ * `DECK_THEME_DEFAULTS` (spanish-deck-ui) and `TILE_THEME_DEFAULTS`
+ * (mahjong-tile-ui) already close for their own tokens. This export follows
+ * that same sibling shape: a frozen name -> default map, still zero
+ * workspace deps, still L0.
+ */
+describe("DEFAULT_THEME_TOKENS", () => {
+  it("covers every member of THEME_TOKEN_NAMES, no more and no fewer", () => {
+    expect(Object.keys(DEFAULT_THEME_TOKENS).sort()).toEqual([...THEME_TOKEN_NAMES].sort());
+  });
+
+  it("gives every token a value its own sanitizer pattern actually accepts", () => {
+    // A default a tenant's own sanitizer would drop is a default nobody can
+    // ever see rendered -- `sanitizeThemeOverride` is the single arbiter of
+    // shape, so the defaults must pass through it unchanged.
+    const sanitized = sanitizeThemeOverride(DEFAULT_THEME_TOKENS);
+
+    expect(sanitized).toEqual(DEFAULT_THEME_TOKENS);
+  });
+});
+
+describe("themeTokensToCss", () => {
+  it("emits a :root block naming every token at its default value when called with no override", () => {
+    const css = themeTokensToCss();
+
+    expect(css.startsWith(":root{")).toBe(true);
+    for (const name of THEME_TOKEN_NAMES) {
+      expect(css).toContain(`${name}:${DEFAULT_THEME_TOKENS[name]};`);
+    }
+  });
+
+  it("lets a partial override win per-token, leaving every other token at its default", () => {
+    const css = themeTokensToCss({ "--gx-color-primary": "#123456" });
+
+    expect(css).toContain("--gx-color-primary:#123456;");
+    expect(css).toContain(`--gx-color-on-surface:${DEFAULT_THEME_TOKENS["--gx-color-on-surface"]};`);
+  });
+
+  it("propagates a changed default with no separate edit to this function (no duplication)", () => {
+    // The whole point of a SINGLE exported source: change one entry of
+    // DEFAULT_THEME_TOKENS and themeTokensToCss's own emitted value follows,
+    // with nothing in this function naming a token's value a second time.
+    const patchedDefaults: Readonly<Record<string, string>> = { ...DEFAULT_THEME_TOKENS, "--gx-radius": "3px" };
+
+    const css = themeTokensToCss(patchedDefaults);
+
+    expect(css).toContain("--gx-radius:3px;");
   });
 });

@@ -1,7 +1,3 @@
-import { findTenantRecordListProblem } from "@hexdev/platform-core";
-import type { TenantId, TenantRecord } from "@hexdev/platform-core";
-import type { GameId } from "@hexdev/platform-contract";
-
 export interface RateLimitConfig {
   readonly limit: number;
   readonly windowMs: number;
@@ -24,7 +20,16 @@ export interface MintServerConfig {
    * `node -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'))"` */
   readonly sessionSigningKey: string;
   readonly sessionTtlSeconds: number;
-  readonly tenants: readonly TenantRecord[];
+  /**
+   * Postgres connection string this role reads the tenant catalog through
+   * (tenant-administration slice 3b, design §1.8/§2.1) — `HEXDEV_TENANTS_JSON`
+   * and the checked-in `DEV_TENANT` fixture are gone. Joins the
+   * `sessionSigningKey` INVERTED-GUARD family below, deliberately NOT the
+   * optional `redisUrl` shape: Postgres is the system of record, so an
+   * unset value must fail closed at boot, never fall back to an empty
+   * in-memory catalog that silently serves nobody.
+   */
+  readonly postgresUrl: string;
   readonly embedIpRateLimit: RateLimitConfig;
   readonly embedKeyRateLimit: RateLimitConfig;
   /**
@@ -93,31 +98,6 @@ function readRateLimit(env: NodeJS.ProcessEnv, limitVar: string, windowVar: stri
   };
 }
 
-/**
- * Parses the tenants document, or refuses to start with a message an
- * operator can act on. A bare `SyntaxError: Unexpected token }` does not say
- * which variable produced it; the signing-key guard in this same file
- * already sets the standard for what a configuration failure should read
- * like. The shape is checked too — a document that parses to an object
- * rather than a list would otherwise fail much later, as an empty catalog on
- * every `/embed`.
- */
-function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]): readonly TenantRecord[] {
-  const raw = env.HEXDEV_TENANTS_JSON;
-  if (raw === undefined) return fallback;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`HEXDEV_TENANTS_JSON is set but is not valid JSON — refusing to start the minting role with an unreadable tenant list.`, { cause: error });
-  }
-  const problem = findTenantRecordListProblem(parsed);
-  if (problem !== null) {
-    throw new Error(`HEXDEV_TENANTS_JSON ${problem} — refusing to start the minting role with an unusable tenant list.`);
-  }
-  return parsed as readonly TenantRecord[];
-}
-
 /** The same checked-in dev placeholder the match role uses, and for the same
  * reason: `createSessionTokenIssuer` validates the SHAPE of whatever it is
  * given, so even local dev needs a well-formed 32-byte base64url seed. It is
@@ -125,35 +105,21 @@ function readTenants(env: NodeJS.ProcessEnv, fallback: readonly TenantRecord[]):
  * unreachable in production by the guard in `loadMintConfig`. */
 const DEV_SESSION_SIGNING_KEY = "oUW9QPNCc-C-rkyKCakJbggyhW2quFy4Kv98Pyd7MeI"; // sha256("dev-only-insecure-signing-key-DO-NOT-USE-IN-PRODUCTION")
 
-/** One fixture tenant so a fresh clone is curl-able with zero setup. Not a
- * secret: an embed key and an origin allowlist are meant to be public
- * (design §7, "same trust model as a Stripe publishable key").
+/**
+ * Local-dev-only Postgres connection string, in the same "obviously
+ * insecure, checked into source, never reachable in production" spirit as
+ * `DEV_SESSION_SIGNING_KEY` above — reachable only behind the identical
+ * `HEXDEV_ALLOW_DEV_DEFAULTS` opt-in. Shape matches the convention
+ * `postgres-tests/global-setup.ts` and `scripts/dev-stack.mjs` both already
+ * use for a local Postgres: db `convite`, user `postgres`, trust auth.
  *
- * EXPORTED so `scripts/dev-stack.mjs` can widen this exact record's origin
- * allowlist for a LAN address instead of hand-writing a third copy of it.
- * That copy existed and drifted: it still entitled only the two truco ids
- * long after escoba and the solitaire were registered, so `pnpm dev:lan`
- * and `pnpm dev:server` served a catalog with three games missing — and
- * `buildCatalog` drops an entitled id with no module and never throws, so
- * the reverse mistake is silent too (`registry.ts`'s own docstring records
- * the same failure from the other side). A record spread from here cannot
- * fall behind the registry the way a transcription of it did. */
-export const DEV_TENANT: TenantRecord = {
-  id: "dev-tenant" as TenantId,
-  embedKey: "pk_dev_local",
-  allowedOrigins: ["http://localhost:5173", "http://localhost:3000"],
-  entitledGames: [
-    "truco-argentino" as GameId,
-    "truco-argentino-2v2" as GameId,
-    "escoba-de-15" as GameId,
-    "escoba-de-15-2v2" as GameId,
-    // LAST, and the position is the shelf order a player sees:
-    // `groupBySection` gives a section the place of its first entry,
-    // so the catalog order this list produces is what puts "Fichas"
-    // under "Cartas" on screen one rather than above it.
-    "mahjong-solitario" as GameId,
-  ],
-};
+ * `pnpm dev:server` overrides this with its own ephemeral container's real
+ * URL (`scripts/dev-stack.mjs` sets `HEXDEV_POSTGRES_URL` explicitly before
+ * spawning this role); this fallback only matters for running this role
+ * directly against an already-running local Postgres, with no dev-stack
+ * orchestration involved at all.
+ */
+const DEV_POSTGRES_URL = "postgres://postgres@localhost:5432/convite";
 
 /**
  * Reads this role's configuration from the process environment. A pure
@@ -186,12 +152,27 @@ export function loadMintConfig(env: NodeJS.ProcessEnv): MintServerConfig {
       );
     }
   }
+  const postgresUrl = env.HEXDEV_POSTGRES_URL;
+  if (postgresUrl === undefined) {
+    if (nodeEnv === "production") {
+      throw new Error(
+        "HEXDEV_POSTGRES_URL must be set in production — refusing to start the minting role with no reachable Postgres. " +
+          "Postgres is the system of record, not an optional scaling adapter.",
+      );
+    }
+    if (!allowDevDefaults) {
+      throw new Error(
+        "HEXDEV_POSTGRES_URL must be set — refusing to start the minting role with no reachable Postgres. " +
+          "For local development only, set HEXDEV_ALLOW_DEV_DEFAULTS=true to opt in explicitly.",
+      );
+    }
+  }
   const port = readPositiveNumber(env, "PORT", DEFAULT_PORT, MAX_PORT);
   return {
     port,
     sessionSigningKey: sessionSigningKey ?? DEV_SESSION_SIGNING_KEY,
     sessionTtlSeconds: readPositiveNumber(env, "HEXDEV_SESSION_TTL_SECONDS", DEFAULT_TTL_SECONDS),
-    tenants: readTenants(env, [DEV_TENANT]),
+    postgresUrl: postgresUrl ?? DEV_POSTGRES_URL,
     embedIpRateLimit: readRateLimit(env, "HEXDEV_EMBED_IP_RATE_LIMIT", "HEXDEV_EMBED_IP_RATE_WINDOW_MS", DEFAULT_EMBED_IP_LIMIT),
     embedKeyRateLimit: readRateLimit(env, "HEXDEV_EMBED_KEY_RATE_LIMIT", "HEXDEV_EMBED_KEY_RATE_WINDOW_MS", DEFAULT_EMBED_KEY_LIMIT),
     allowedWidgetOrigins: env.HEXDEV_WIDGET_ORIGIN !== undefined ? env.HEXDEV_WIDGET_ORIGIN.split(",") : [`http://localhost:${String(port)}`],

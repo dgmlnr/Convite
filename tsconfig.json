@@ -23,6 +23,7 @@
     { "path": "packages/widget-frontdoor" },
     { "path": "apps/server" },
     { "path": "apps/mint-server" },
+    { "path": "apps/admin" },
     { "path": "apps/widget-app" }
   ]
 }

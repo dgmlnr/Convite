@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 import { createGameModuleRegistry, createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository, deriveTestSessionSigningKey } from "@hexdev/platform-core";
-import type { TenantId } from "@hexdev/platform-core";
+import type { TenantId, TenantRepository } from "@hexdev/platform-core";
 import type { GameId, GameModule, PlayerId } from "@hexdev/platform-contract";
 import { handleEmbedRequest } from "./embed-handler.js";
 
@@ -25,20 +26,38 @@ function fakeTrucoModule(): GameModule<unknown, { readonly playerId: PlayerId },
   };
 }
 
+/** Ten years out, matching `scripts/dev-tenant-seed.mjs`'s own convention
+ * (tenant-administration slice 5/PR6b) and `tenant-auth.test.ts`'s identical
+ * fixture fix (slice 6): every test below that is not itself about window
+ * enforcement needs a tenant that is unambiguously "currently paid up", or
+ * design #1.3's "zero window configured = inactive" rule (correctly)
+ * refuses every one of them. */
+const FAR_FUTURE_VALID_UNTIL = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
+
 /** Generous limits by default so unrelated tests never trip rate limiting
  * — the dedicated describe block below overrides with tight limits. */
 async function deps(
-  overrides: { ipLimit?: number; keyLimit?: number; entitledGames?: readonly GameId[]; theme?: Record<string, string> } = {},
+  overrides: {
+    ipLimit?: number;
+    keyLimit?: number;
+    entitledGames?: readonly GameId[];
+    theme?: Record<string, string>;
+    validUntil?: number;
+    repository?: TenantRepository;
+  } = {},
 ) {
-  const repository = createStaticTenantRepository([
-    {
-      id: TENANT_ID,
-      embedKey: "pk_live_t_a",
-      allowedOrigins: [ALLOWED_ORIGIN],
-      entitledGames: overrides.entitledGames ?? [TRUCO_ID],
-      theme: overrides.theme,
-    },
-  ]);
+  const repository =
+    overrides.repository ??
+    createStaticTenantRepository([
+      {
+        id: TENANT_ID,
+        embedKey: "pk_live_t_a",
+        allowedOrigins: [ALLOWED_ORIGIN],
+        entitledGames: overrides.entitledGames ?? [TRUCO_ID],
+        theme: overrides.theme,
+        validUntil: overrides.validUntil ?? FAR_FUTURE_VALID_UNTIL,
+      },
+    ]);
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
   return {
     repository,
@@ -171,5 +190,70 @@ describe("handleEmbedRequest — rate limiting (hardening: public surface, obs 2
     await handleEmbedRequest(url, ALLOWED_ORIGIN, undefined, shared);
     const second = await handleEmbedRequest(url, ALLOWED_ORIGIN, undefined, shared);
     expect(second.status).toBe(200); // no IP to track, so no IP-based rejection
+  });
+});
+
+describe("handleEmbedRequest — validity window enforcement (tenant-administration slice 6, task 6.1's HTTP-facing half; window logic itself is tenant-auth.test.ts's own coverage)", () => {
+  it("refuses an expired tenant with the SAME 403 every other !ok reason gets — the reason travels in the JSON body, never differentiated at the HTML shell (task 6.10's own manual byte-identical proof lives in apply-progress, since `renderEmbedShell` is a different package's own function)", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps({ validUntil: Date.now() - 1000 }));
+    expect(result.status).toBe(403);
+    expect(result.body).not.toContain("token");
+    const body = JSON.parse(result.body) as { error: string };
+    expect(body.error).toBe("tenant-not-active");
+  });
+});
+
+describe("handleEmbedRequest — tenant-lookup-failed (task 6.7/6.8, design §2.5/§15): a request-time repository failure gets ITS OWN status, distinguishable from every other refusal", () => {
+  function failingRepository(): TenantRepository {
+    return {
+      findByEmbedKey: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+      findById: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+    };
+  }
+
+  it("maps tenant-lookup-failed to 503, distinct from every other reason's 403 — a database outage must not be misdiagnosed as a config error at 3am (design §2.5)", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps({ repository: failingRepository() }));
+    expect(result.status).toBe(503);
+    const body = JSON.parse(result.body) as { error: string };
+    expect(body.error).toBe("tenant-lookup-failed");
+  });
+
+  it("still maps unknown-tenant/origin-not-allowed/tenant-not-active to 403, not 503 — only the lookup-failure reason gets the different status", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_does_not_exist");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps());
+    expect(result.status).toBe(403);
+  });
+});
+
+describe("handleEmbedRequest — structured refusal log (task 6.8, design §10/spec Domain D: 'what happened at 14:32', NEVER a persisted row)", () => {
+  let warnings: string[] = [];
+  let warn: MockInstance<typeof console.warn>;
+
+  beforeEach(() => {
+    warnings = [];
+    warn = vi.spyOn(console, "warn").mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it("logs one structured line naming the reason and the embed key for a refused request — this function's own return value is the ONLY place that reason ever travels; nothing here calls a database write", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps({ validUntil: Date.now() - 1000 }));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("tenant-not-active");
+    expect(warnings[0]).toContain("pk_live_t_a");
+  });
+
+  it("logs nothing at all for a successful mint — the log line is a REFUSAL diagnostic, not a traffic audit trail", async () => {
+    const url = new URL("https://play.hexdev/embed?k=pk_live_t_a");
+    const result = await handleEmbedRequest(url, ALLOWED_ORIGIN, CLIENT_IP, await deps());
+    expect(result.status).toBe(200);
+    expect(warnings).toEqual([]);
   });
 });

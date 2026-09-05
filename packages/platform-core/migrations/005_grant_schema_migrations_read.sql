@@ -1,0 +1,28 @@
+-- sdd-verify finding (obs #3763, WARNING 2): this grant used to live inside
+-- migration 001 — an ALREADY-NUMBERED file. `postgres-migrations.ts`'s own
+-- `runMigrations` keys purely on VERSION MEMBERSHIP in `schema_migrations`
+-- (`if (already.has(version)) continue`), never on file content, so any
+-- database that had already applied 001 before that edit would NEVER have
+-- received it: the runner would forever skip 001 as already-done, and
+-- `convite_admin` would stay without SELECT on `schema_migrations` for the
+-- life of that database. `apps/admin`'s own boot check
+-- (`assertSchemaUpToDate`, design Part A §4/Part B §15) reads this table
+-- AS `convite_admin`, so such a database would fail to boot with a raw
+-- Postgres permission error instead of the intended, actionable version
+-- message — the wrong failure for the wrong reason, and a strictly worse
+-- one than the check this grant exists to support.
+--
+-- THE RULE THIS FILE RESTORES, so the next person does not repeat the
+-- mistake: a numbered migration that has been applied ANYWHERE is
+-- immutable. The runner never re-executes it, so editing its body after
+-- the fact reaches a fresh database (which reruns every file from zero)
+-- but is silently invisible to any database that already ran that version
+-- — exactly the "works in every ephemeral test container, breaks on the
+-- first real deployment" trap. New behaviour, however small, ALWAYS goes
+-- in a new file with the next version number, never a patch to an old one.
+--
+-- Safe to apply anywhere, including a database that already carries this
+-- grant by having run an EARLIER, now-reverted copy of 001: `GRANT` in
+-- Postgres is idempotent — granting an already-held privilege is a no-op,
+-- never an error.
+GRANT SELECT ON schema_migrations TO convite_admin;

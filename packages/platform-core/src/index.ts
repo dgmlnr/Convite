@@ -29,7 +29,6 @@ export type {
   TenantRecord,
   TenantRepository,
 } from "./tenant-auth.js";
-export { findTenantRecordListProblem } from "./tenant-record-shape.js";
 export {
   createJtiReplayGuard,
   createSessionTokenIssuer,
@@ -39,4 +38,150 @@ export {
   mintSessionForEmbed,
   renewSessionForWidget,
 } from "./tenant-auth.js";
+// `OperatorRepository`/`OperatorSessionRepository` (tenant-administration
+// slices 8a/8b): both ports and their static in-memory adapters are pure —
+// no Node-only dependency, same class as `TenantRepository` above — so they
+// belong on THIS public barrel. Their Postgres adapters
+// (`createPostgresOperatorRepository`/`createPostgresOperatorSessionRepository`)
+// stay behind `node.ts`, same split. First real consumer:
+// `apps/admin/src/login-handler.ts`/`logout-handler.ts` (slice 8b, PR10) —
+// built in PR9 but unconsumed until now, which is why these exports were not
+// added until this PR.
+export type { CreateOperatorResult, OperatorDraft, OperatorId, OperatorMutationResult, OperatorRecord, OperatorRepository, OperatorWriteWitness } from "./operator-repository.js";
+export { createStaticOperatorRepository } from "./operator-repository.js";
+// `OperatorLifecycleResult`/`OperatorLifecycleGuardedResult` (PR13, slice
+// 11a): the return shapes of `disableOperator`/`enableOperator`
+// (`node.ts`, Postgres-bound) — PURE types with no Node/Postgres dependency
+// of their own, same class as `CreateOperatorResult` above, so they belong
+// on THIS public barrel even though their only producers stay behind
+// `node.ts`.
+export type { OperatorLifecycleGuardedResult, OperatorLifecycleResult } from "./operator-lifecycle.js";
+// `BootstrapOperatorResult`/`ResetOperatorPasswordResult` (PR14, slice 11b):
+// the bootstrap CLI's own two result shapes — same "pure type, Node-only
+// producer" placement as every result type above.
+export type { BootstrapOperatorResult, ResetOperatorPasswordResult } from "./operator-bootstrap.js";
+export type { OperatorSessionRecord, OperatorSessionRepository } from "./operator-session-repository.js";
+export { createStaticOperatorSessionRepository } from "./operator-session-repository.js";
+// `OperatorAuthorizationContext` (tenant-administration slice 9, design §7):
+// a PURE type with no Node/Postgres dependency of its own — same class as
+// `OperatorRecord` above — so it belongs on THIS public barrel even though
+// its only producer (`findOperatorAuthorizationContext`) stays behind
+// `node.ts`, the same port/adapter split every other pair here follows.
+export type { OperatorAuthorizationContext } from "./operator-authorization.js";
+// `OperatorDirectoryEntry` (tenant-administration slice 16a, design §6.1): a
+// PURE type with no Node/Postgres dependency of its own — same class as
+// `OperatorAuthorizationContext` above — so it belongs on THIS public barrel
+// even though its only producer (`listOperatorsWithPermissions`) stays
+// behind `node.ts`, the same port/adapter split every other pair here
+// follows.
+export type { OperatorDirectoryEntry } from "./operator-directory.js";
+// `RevokePermissionResult`/`RevokePermissionGuardedResult` (PR15, tenant-
+// administration slice 12): the return shape of `revokePermission`
+// (`node.ts`, Postgres-bound) — a PURE type with no Node/Postgres dependency
+// of its own, same class as `OperatorLifecycleGuardedResult` above, so it
+// belongs on THIS public barrel even though its only producer stays behind
+// `node.ts`. `grantPermission` returns the ALREADY-exported
+// `OperatorMutationResult` (above), needing no new type of its own.
+export type { RevokePermissionGuardedResult, RevokePermissionResult } from "./operator-permissions.js";
+// `isTenantActive` (tenant-administration slice 6, design §2.4): a PURE
+// function with no value import at all beyond the global `Intl` — unlike
+// `connectRedis`/`connectPostgres`/the Postgres adapters (which live behind
+// `node.ts` on principle, §0.4/design decision 1.4), this module has no
+// Node-only dependency to keep out of a browser bundle, so it belongs on
+// THIS public barrel, not the Node-only one. It is exported here rather than
+// re-derived at each of the OTHER two choke points
+// (`transport-colyseus/match-room.ts`, a different package) because design
+// §2.4 requires "ONE implementation of the comparison, three call sites" —
+// `tenant-auth.ts`'s own two choke points reach it via a same-package
+// relative import instead, needing no barrel at all.
+//
+// VERIFIED, NOT ASSUMED — and the measurement corrected an initial WRONG
+// attribution written while drafting this comment. `pnpm --filter
+// @hexdev/widget-app run build`, on a clean checkout before this slice's
+// first commit: 169 modules / 517.96 kB. After `tenant-auth.ts` alone
+// gained `import { isTenantActive } from "./tenant-validity.js"` (the
+// choke-point PR earlier in this same stack, THIS export not yet added):
+// 170 modules / 518.15 kB — the exact delta first suspected to come from
+// THIS barrel export. It does not: `tenant-validity.ts` carries an
+// unavoidable top-level side effect (`new Intl.DateTimeFormat(...)`, module
+// scope, no `/*#__PURE__*/` annotation a bundler could use to prove it
+// side-effect-free), and `tenant-auth.ts` is already reachable from
+// `apps/widget-app`'s dependency graph for OTHER exports — so importing
+// `tenant-validity.ts` at all forces that top-level statement into the
+// bundle regardless of whether `isTenantActive` itself is ever referenced.
+// Rebuilding again with THIS export present measured BYTE-IDENTICAL (170
+// modules / 518.15 kB) — this barrel export adds exactly zero further
+// modules or bytes on top of what `tenant-auth.ts`'s own internal wiring
+// already, unavoidably, pays. This is the exact class of regression
+// `browser-safety.test.ts`'s own docstring warns about (`connectRedis`
+// silently took `widget-app.js` from 103/285kB to 170/441kB) — checked here
+// rather than presumed safe, and found to be a real but negligible (+0.037%)
+// cost already paid by the enforcement itself, not by this export.
+export { isTenantActive } from "./tenant-validity.js";
+
+// `TenantAdminRepository`/`TenantDraft`/`TenantWriteResult`/`WriteWitness`
+// (tenant-administration slice 4, design §2.3): the write port itself is a
+// PURE type — no Node/Postgres dependency of its own, same class as
+// `OperatorRepository` above — so it belongs on THIS public barrel even
+// though its only real producer (`createPostgresTenantAdminRepository`)
+// stays behind `node.ts`. Built in PR5 (slice 4) but unconsumed by anything
+// outside `platform-core` until now, which is why this export was not added
+// until this PR — `apps/admin/src/tenant-handlers.ts` (task 14.4) is the
+// FIRST outside consumer, needing the type to shape its own
+// `TenantHandlersDeps`.
+export type { TenantAdminRepository, TenantDraft, TenantWriteResult, WriteWitness } from "./tenant-admin.js";
+
+/**
+ * `describeTenantStatus`/`TenantStatus` (tenant-administration slice 14,
+ * design §1.9) — the operator-facing read of a tenant's window, derived on
+ * read through `Clock`, never a stored refusal event (decision #3684 item 4,
+ * Domain D's own boundary). `apps/admin`'s tenant-list handler is the FIRST
+ * production caller: it computes this server-side (design's own "the panel
+ * answers 'why is this tenant not working' via a status DERIVED from the
+ * record") and ships the closed `TenantStatus` union to the browser, which
+ * only ever maps it to a Spanish label — never re-derives it from raw
+ * `validFrom`/`validUntil` client-side, so there is exactly ONE place in the
+ * whole system that decides what "active" means.
+ *
+ * BUNDLE-SIZE RISK, checked rather than assumed (same discipline this
+ * barrel's own `isTenantActive` export already documents above): both names
+ * are exported from the SAME already-bundled `tenant-validity.ts` module
+ * `isTenantActive` already pulls into `widget-app.js` — nothing in
+ * `apps/widget-app` imports either new name, so a bundler's tree-shaking
+ * should add zero bytes on top of what that module's own unavoidable
+ * top-level `Intl.DateTimeFormat` side effect already costs. Verified, not
+ * merely argued: rebuilt `widget-app.js` after this export landed —
+ * byte-identical to the pre-slice-14 baseline (518.15 kB), confirmed both by
+ * the byte count and by a direct read of the built file (this export's own
+ * Spanish-label mapping never leaves `apps/admin`, so there was nothing new
+ * to even look for).
+ */
+export { describeTenantStatus, type TenantStatus } from "./tenant-validity.js";
+
+/**
+ * `instantToPaidThrough`/`paidThroughToInstant` (tenant-administration slice
+ * 15, design §2.4/decisions #3684 item 1) — the same bidirectional Buenos
+ * Aires calendar-date conversion `setValidityWindow` (slice 5) and
+ * `describeTenantStatus`'s own `expired`/`not-yet-active` branches already
+ * use internally, now needed OUTSIDE the package for the first time:
+ * `apps/admin`'s tenant-detail handler renders the CURRENT paid-through date
+ * even for an ALREADY-ACTIVE tenant (`TenantStatus`'s own `active` branch
+ * carries no date at all, design §1.9), and its window-edit handler accepts
+ * the operator-typed calendar date and converts it to the stored instant —
+ * "the date the operator types is the date the operator reads," never a raw
+ * epoch number crossing this boundary in either direction.
+ *
+ * BUNDLE-SIZE RISK, checked rather than assumed — same discipline this
+ * barrel's own `isTenantActive`/`describeTenantStatus` exports above already
+ * document: both names live in the SAME already-bundled `tenant-validity.ts`
+ * module those two pull into `widget-app.js`, and neither is referenced from
+ * `apps/widget-app`'s own dependency graph, so a tree-shaking bundler should
+ * add zero bytes on top of what that module's unavoidable top-level
+ * `Intl.DateTimeFormat` side effect already costs. Verified, not merely
+ * argued: rebuilt `widget-app.js` after this export landed — byte-identical
+ * to the pre-slice-15 baseline (518,152 bytes), confirmed both by the byte
+ * count and by a direct read of the built file for "react"/"radix"/
+ * "tailwind" occurrences (zero, as before).
+ */
+export { instantToPaidThrough, paidThroughToInstant } from "./tenant-validity.js";
 

@@ -6,6 +6,7 @@ node_modules/
 dist/
 dist-iife/
 dist-app/
+dist-ui/
 build/
 *.tsbuildinfo
 
@@ -106,6 +107,10 @@ e2e/.harness/
 # Redis integration harness runtime handoff (written by
 # redis-tests/global-setup.ts — see vitest.redis.config.ts)
 redis-tests/.harness/
+
+# Postgres integration harness runtime handoff (written by
+# postgres-tests/global-setup.ts — see vitest.postgres.config.ts)
+postgres-tests/.harness/
 
 # Capturas de trabajo en la raiz: artefactos de depuracion, nunca del repo.
 /*.png

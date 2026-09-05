@@ -56,6 +56,30 @@ module.exports = {
       to: { path: "^apps/" },
     },
     {
+      name: "no-pg-outside-platform-core",
+      severity: "error",
+      comment:
+        "Every Postgres adapter takes an already-constructed `pg` Pool behind `import type { Pool } from \"pg\"` (design decision 1.5, mirrors redis-rate-limiter.ts:1's `import type { Redis } from \"ioredis\"`); the ONE value import of `pg` (`new Pool(...)`) is confined to packages/platform-core/src/postgres-client.ts. `from.pathNot` on purpose, never `from.path`: scripts/dependency-cruiser-layer-coverage.test.ts counts only `from.path` rules as tier assignments, and a blanket `from.path` rule here would silently disarm that fence, the same class of gap PR #98 found on transport-colyseus-client. `browser-safety.test.ts`'s `NODE_ONLY_PACKAGES` catches a value import re-exported from the public barrel; this rule catches the same value import reached from ANY package or app, not just the barrel — depcruise's own `doNotFollow: node_modules` cannot see a workspace-package-to-workspace-package edge cross a barrel, but it resolves a plain npm specifier like `pg` directly, which is exactly what this rule needs.",
+      from: { pathNot: "^packages/platform-core/src" },
+      to: { path: "(^pg(/|$)|node_modules/pg(/|$))" },
+    },
+    {
+      name: "no-admin-internals-outside-admin",
+      severity: "error",
+      comment:
+        "Design §10 layer 2's residual case (tasks 10.8/10.9, threat matrix row 'Audit boundary violation'): l1-no-l2-l3/l2-no-l3 already forbid every PACKAGE from importing apps/** (design §1.6's own `to:` globs), but `apps/**` is ALSO globbed OUT of both rules' `from:` — `scripts/dependency-cruiser-layer-coverage.test.ts:34`'s own 'apps are the top composition-root tier' — so an APP importing another app's internals (e.g. apps/mint-server reaching directly into apps/admin/src/audit-log.ts) is a hole neither existing rule's `from` can close. Proven empirically before this rule existed: a temporary probe import of apps/admin/src/audit-log.js from apps/mint-server/src/index.ts produced `no dependency violations found`. `from.pathNot` on purpose, never `from.path`: scripts/dependency-cruiser-layer-coverage.test.ts counts only `from.path` rules as tier assignments, and a blanket `from.path` rule here would silently disarm that fence, the exact class of gap PR #98 found on transport-colyseus-client (Part A tasks §0.4's own recorded rule).",
+      from: { pathNot: "^apps/admin/" },
+      to: { path: "^apps/admin/" },
+    },
+    {
+      name: "no-ui-framework-outside-admin",
+      severity: "error",
+      comment:
+        "Design §13.1/§5.2, task 13b.7: apps/admin is the ONLY app that lifts the zero-new-framework convention (decision #3684 item 5a) — nobody embeds the panel, unlike apps/widget-app, which apps/widget-app's own browser-safety.test.ts already fences from the OTHER side (a value import reachable from its bundle). react/react-dom/@radix-ui/tailwindcss reaching anywhere outside apps/admin would spread that lifted convention silently. `from.pathNot` on purpose, never `from.path`: scripts/dependency-cruiser-layer-coverage.test.ts counts only `from.path` rules as tier assignments, and a blanket `from.path` rule here would silently disarm this fence, the exact class of gap PR #98 found on transport-colyseus-client (Part A tasks §0.4's own recorded rule) — proven empirically before this rule existed: a temporary `import \"react\"` probe in apps/mint-server/src/index.ts produced `no dependency violations found` (288 modules/834 dependencies cruised, nothing flagged). Fenced under React specifically rather than under a framework-neutral name because the design's own rejected-Vue comparison (§13.1) notes this rule is STRONGER under React than it would have been under a Vue SFC setup: dependency-cruiser parses `.tsx` natively but has no `.vue` parser, so a Vue single-file component's own `<script>` imports would have been invisible to it.",
+      from: { pathNot: "^apps/admin/" },
+      to: { path: "(^react(-dom)?(/|$)|^@radix-ui/|^tailwindcss(/|$)|node_modules/(react(-dom)?|@radix-ui/[^/]+|tailwindcss)(/|$))" },
+    },
+    {
       name: "no-colyseus-outside-transport",
       severity: "error",
       comment:

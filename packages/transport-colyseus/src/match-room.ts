@@ -1,5 +1,6 @@
 import { CloseCode, Room, ServerError, type AuthContext, type Client } from "@colyseus/core";
-import type { BotStrategy, BotTier, GameId, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { BotStrategy, BotTier, Clock, GameId, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import { isTenantActive } from "@hexdev/platform-core";
 import type { GameModuleRegistry, JtiReplayGuard, RateLimiter, SessionTokenVerifier, TenantRepository } from "@hexdev/platform-core";
 
 /** Everything `onAuth` needs to verify a join, injected per-room instead of
@@ -43,6 +44,12 @@ export interface MatchRoomAuthOptions {
    * longer lives in the transport-level origin at all.
    */
   readonly allowedWidgetOrigins: readonly string[];
+  /** Tenant-administration slice 6, design §2.4: "time enters through the
+   * injected `Clock` port, never `Date.now()` inside the domain." Optional,
+   * defaulting to `Date.now` — the SAME shape `JtiReplayGuardOptions.clock`
+   * (`tenant-auth.ts`) and `RateLimiterOptions.clock` already use, so this
+   * room joins an established convention rather than inventing its own. */
+  readonly clock?: Clock;
 }
 
 export interface MatchRoomCreateOptions {
@@ -439,9 +446,24 @@ export class MatchRoom extends Room {
     if (origin === null || !auth.allowedWidgetOrigins.includes(origin)) {
       throw new Error("MatchRoom: join rejected, origin not allowed");
     }
-    const tenant = auth.repository.findById(claims.tenantId);
+    const tenant = await auth.repository.findById(claims.tenantId);
     if (tenant === undefined) {
       throw new Error("MatchRoom: join rejected, unknown tenant");
+    }
+    // Tenant-administration slice 6 (design §2.4/§2.5, task 6.5/6.6): the
+    // SAME `isTenantActive` comparison `mintSessionForEmbed`/
+    // `renewSessionForWidget` (tenant-auth.ts) already enforce — "one
+    // implementation of the comparison, three call sites." This room does
+    // NOT use `EmbedMintResult` at all (unlike those two): every rejection
+    // branch here is a thrown `Error`, matching the five ABOVE and the one
+    // BELOW, all identical and fail-closed by design. A request-time
+    // repository failure is not separately caught here either, for the same
+    // reason: an unhandled rejection from `findById` above already denies
+    // the join (Domain I: "a request-time database failure denies an
+    // in-progress join"), so this branch only needs to add the ONE new
+    // fail-closed reason a SUCCESSFUL lookup can still refuse for.
+    if (!isTenantActive(tenant, (auth.clock ?? Date.now)())) {
+      throw new Error("MatchRoom: join rejected, tenant is not active");
     }
     if (!tenant.entitledGames.includes(module.id)) {
       throw new Error("MatchRoom: join rejected, tenant is not entitled to this game");

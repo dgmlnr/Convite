@@ -5,6 +5,14 @@ import { renderHostPage } from "./host-page.js";
 import { readHarnessInfo } from "./harness-info.js";
 import { getFreePorts } from "./free-ports.js";
 import { startFrontProxy } from "./front-proxy.js";
+// `e2e/` is not a pnpm workspace member (only `packages/*`, `packages/games/*`
+// and `apps/*` are — `pnpm-workspace.yaml`), so the bare specifier
+// `@hexdev/platform-core/node` cannot resolve from here. Same relative-dist
+// import `scripts/dev-stack.mjs` and `scripts/db-migrate.mjs` already use for
+// the identical reason (their own docstrings say so); `pnpm exec tsc -b` —
+// which `global-setup.ts` runs before this file's `connectPostgres` call can
+// ever be reached — must already have produced this `dist/`.
+import { connectPostgres } from "../../packages/platform-core/dist/postgres-client.js";
 
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -91,23 +99,77 @@ export async function startSystem(options: StartSystemOptions = {}): Promise<Sys
   const serverPort = Number(new URL(info.serverOrigin).port);
   const hostPort = Number(new URL(info.hostOrigin).port);
 
-  const tenants = [
-    {
-      id: "e2e-tenant",
-      embedKey: info.embedKey,
-      allowedOrigins: [info.hostOrigin],
-      entitledGames: ["truco-argentino", ...(options.extraEntitledGames ?? [])],
-      theme: options.tenantTheme,
-    },
-  ];
+  const tenant = {
+    id: "e2e-tenant",
+    embedKey: info.embedKey,
+    allowedOrigins: [info.hostOrigin],
+    entitledGames: ["truco-argentino", ...(options.extraEntitledGames ?? [])],
+    theme: options.tenantTheme,
+    // Ten years out, matching `scripts/dev-tenant-seed.mjs`/`dev-stack.mjs`'s
+    // own convention (tenant-administration slice 5, task 5.10a): this
+    // harness's own seed had no window at all until slice 6's own runtime
+    // enforcement (`mintSessionForEmbed`) made that a real, reachable
+    // refusal instead of a dormant field — confirmed the hard way, a
+    // genuine `page.waitForSelector("iframe")` TimeoutError, every one of
+    // the 8 e2e spec files, before this field was added (apply-progress has
+    // the full transcript). PR6b's own apply-progress flagged this exact gap
+    // in advance ("e2e's own tenant seeding sets no window and nothing yet
+    // checks one") — this is that gap closing.
+    validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000,
+  };
 
   const serverEnv: NodeJS.ProcessEnv = { ...process.env };
   delete serverEnv.NODE_ENV; // never accidentally "production" in a throwaway e2e harness
   serverEnv.HEXDEV_ALLOW_DEV_DEFAULTS = "true"; // the literal string the server requires
   serverEnv.HEXDEV_WIDGET_ORIGIN = info.serverOrigin;
   serverEnv.PORT = String(serverPort);
-  serverEnv.HEXDEV_TENANTS_JSON = JSON.stringify(tenants);
+  serverEnv.HEXDEV_POSTGRES_URL = info.postgresUrl;
   serverEnv.HEXDEV_SESSION_TTL_SECONDS = String(info.sessionTtlSeconds);
+
+  // SEED THE FIXTURE TENANT AS A REAL ROW (tenant-administration PR4e),
+  // mirroring `scripts/dev-tenant-seed.mjs` + `dev-stack.mjs`'s own
+  // `ON CONFLICT` upsert. `HEXDEV_TENANTS_JSON` retired with both
+  // composition roots in PR4a/PR4b — they read the tenant catalog from
+  // Postgres now, so an env var is no longer a channel this harness can use
+  // at all.
+  //
+  // `info.embedKey` ("pk_e2e_local") never changes across calls — it is
+  // fixed ONCE by `global-setup.ts`, shared by the whole `pnpm test:e2e` run
+  // — so every spec file's own `startSystem()` upserts the SAME row rather
+  // than inserting a fresh one each time. That matters because `fileParallelism:
+  // false` (`vitest.e2e.config.ts`) makes every spec file run one at a time,
+  // and each file's own `tenantTheme`/`extraEntitledGames` options (the
+  // theming and 2v2 specs) must fully REPLACE, not merge with, whatever the
+  // PREVIOUS file left behind — the explicit `SET` list below overwrites all
+  // three varying columns unconditionally, the same "no leakage between
+  // files" guarantee the old per-file `HEXDEV_TENANTS_JSON` env var gave for
+  // free by construction. Done BEFORE either role spawns, not merely before
+  // the browser's first request: a role that boots before its own tenant row
+  // exists would still work (the read happens per-request, not at boot), but
+  // ordering it first removes that race as a question entirely.
+  const seedPool = await connectPostgres(info.postgresUrl);
+  try {
+    await seedPool.query(
+      `INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games, theme, valid_until)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (embed_key) DO UPDATE SET
+         allowed_origins = EXCLUDED.allowed_origins,
+         entitled_games  = EXCLUDED.entitled_games,
+         theme           = EXCLUDED.theme,
+         valid_until     = EXCLUDED.valid_until,
+         updated_at      = now()`,
+      [
+        tenant.id,
+        tenant.embedKey,
+        tenant.allowedOrigins,
+        tenant.entitledGames,
+        tenant.theme === undefined ? null : JSON.stringify(tenant.theme),
+        new Date(tenant.validUntil),
+      ],
+    );
+  } finally {
+    await seedPool.end();
+  }
 
   // TWO ROLES, ONE ORIGIN — the deployment shape the mint/verify split
   // requires, not a harness convenience. The widget was built against

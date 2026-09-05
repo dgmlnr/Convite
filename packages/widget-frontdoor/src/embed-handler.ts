@@ -2,6 +2,7 @@ import { mintSessionForEmbed } from "@hexdev/platform-core";
 import type { GameModuleRegistry, RateLimiter, SessionTokenIssuer, TenantRepository } from "@hexdev/platform-core";
 import type { PlayerId } from "@hexdev/platform-contract";
 import { buildCatalog } from "./catalog.js";
+import { logTenantRefusal } from "./refusal-log.js";
 
 export interface EmbedRequestDeps {
   readonly repository: TenantRepository;
@@ -49,7 +50,19 @@ export async function handleEmbedRequest(url: URL, origin: string | undefined, c
   const playerId = (url.searchParams.get("p") ?? crypto.randomUUID()) as PlayerId;
   const result = await mintSessionForEmbed({ ...deps, embedKey, origin, playerId });
   if (!result.ok) {
-    return { status: 403, body: JSON.stringify({ error: result.reason }) };
+    // Tenant-administration slice 6 (task 6.7/6.8, design §2.5): a request-
+    // time Postgres outage is not the same fact as an unknown/expired/
+    // disallowed tenant, and reporting it identically is the single most
+    // expensive misdiagnosis at 3am — a config error that isn't one.
+    // `renderEmbedShell` never receives `result.reason` at all (task 6.10):
+    // `apps/mint-server/src/index.ts` renders the shell from
+    // `status === 200 ? parsed : undefined`, so ANY non-200 status already
+    // produces the SAME generic message, verified byte-identical for an
+    // unknown tenant and an expired one (apply-progress has the manual
+    // transcript).
+    const status = result.reason === "tenant-lookup-failed" ? 503 : 403;
+    logTenantRefusal("embed", result.reason, embedKey, origin);
+    return { status, body: JSON.stringify({ error: result.reason }) };
   }
   // Re-lookup rather than plumbing the tenant record out of `mintSessionForEmbed`
   // (which intentionally returns only a token, see design §7): the mint above
@@ -58,7 +71,7 @@ export async function handleEmbedRequest(url: URL, origin: string | undefined, c
   // client-side selection screen filters from (spec: "Client-side catalog
   // filtering is UX-only") — `MatchRoom.onAuth`'s entitlement check remains
   // the real gate, unchanged by this addition.
-  const tenant = deps.repository.findByEmbedKey(embedKey);
+  const tenant = await deps.repository.findByEmbedKey(embedKey);
   const catalog = tenant !== undefined ? buildCatalog(tenant.entitledGames, deps.registry) : [];
   // `tenant.theme` was ALREADY re-sanitized once, at `createStaticTenantRepository`
   // construction (`tenant-auth.ts`'s own docstring) — no raw, un-sanitized

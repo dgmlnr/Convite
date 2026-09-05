@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
 import { createRateLimiter, createSessionTokenIssuer, createStaticTenantRepository, deriveTestSessionSigningKey } from "@hexdev/platform-core";
-import type { TenantId } from "@hexdev/platform-core";
+import type { TenantId, TenantRepository } from "@hexdev/platform-core";
 import type { GameId, PlayerId } from "@hexdev/platform-contract";
 import { handleSessionRenewRequest } from "./session-renew-handler.js";
 
@@ -10,13 +11,21 @@ const WIDGET_ORIGIN = "https://play.hexdev.example";
 const CLIENT_IP = "203.0.113.1";
 const TRUCO_ID = "truco-argentino" as GameId;
 const PLAYER_ID = "player-a" as PlayerId;
+/** Ten years out, matching `scripts/dev-tenant-seed.mjs`'s own convention
+ * (tenant-administration slice 5/PR6b) and every sibling fixture fix this
+ * same slice already applied in `tenant-auth.test.ts`/`embed-handler.test.ts`:
+ * every test below that is not itself about window enforcement needs a
+ * tenant that is unambiguously "currently paid up". */
+const FAR_FUTURE_VALID_UNTIL = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
 
 /** Generous limits by default, same convention as embed-handler.test.ts's
  * own `deps()` — the dedicated rate-limiting describe block below overrides. */
-async function deps(overrides: { ipLimit?: number; keyLimit?: number } = {}) {
-  const repository = createStaticTenantRepository([
-    { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [TENANT_HOST_ORIGIN], entitledGames: [TRUCO_ID] },
-  ]);
+async function deps(overrides: { ipLimit?: number; keyLimit?: number; validUntil?: number; repository?: TenantRepository } = {}) {
+  const repository =
+    overrides.repository ??
+    createStaticTenantRepository([
+      { id: TENANT_ID, embedKey: "pk_live_t_a", allowedOrigins: [TENANT_HOST_ORIGIN], entitledGames: [TRUCO_ID], validUntil: overrides.validUntil ?? FAR_FUTURE_VALID_UNTIL },
+    ]);
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("test-secret"));
   return {
     repository,
@@ -78,5 +87,63 @@ describe("handleSessionRenewRequest — rate limiting (reuses the SAME per-IP/pe
     await handleSessionRenewRequest(url, WIDGET_ORIGIN, "203.0.113.1", shared);
     const second = await handleSessionRenewRequest(url, WIDGET_ORIGIN, "203.0.113.2", shared);
     expect(second.status).toBe(429);
+  });
+});
+
+describe("handleSessionRenewRequest — validity window enforcement (tenant-administration slice 6, task 6.3's HTTP-facing half; window logic itself is tenant-auth.test.ts's own coverage)", () => {
+  it("refuses renewal for a tenant whose window has lapsed, with the same 403 every other !ok reason gets", async () => {
+    const url = new URL(`https://play.hexdev.example/session/renew?k=pk_live_t_a&p=${PLAYER_ID}`);
+    const result = await handleSessionRenewRequest(url, WIDGET_ORIGIN, CLIENT_IP, await deps({ validUntil: Date.now() - 1000 }));
+    expect(result.status).toBe(403);
+    const body = JSON.parse(result.body) as { error: string };
+    expect(body.error).toBe("tenant-not-active");
+  });
+});
+
+describe("handleSessionRenewRequest — tenant-lookup-failed (task 6.9, design §2.5/§15): the SAME 'mint / renew' 503 mapping design §15's failure-behavior table specifies for both choke points", () => {
+  function failingRepository(): TenantRepository {
+    return {
+      findByEmbedKey: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+      findById: () => Promise.reject(new Error("ECONNREFUSED: simulated Postgres outage")),
+    };
+  }
+
+  it("maps tenant-lookup-failed to 503, distinct from every other reason's 403", async () => {
+    const url = new URL(`https://play.hexdev.example/session/renew?k=pk_live_t_a&p=${PLAYER_ID}`);
+    const result = await handleSessionRenewRequest(url, WIDGET_ORIGIN, CLIENT_IP, await deps({ repository: failingRepository() }));
+    expect(result.status).toBe(503);
+    const body = JSON.parse(result.body) as { error: string };
+    expect(body.error).toBe("tenant-lookup-failed");
+  });
+});
+
+describe("handleSessionRenewRequest — structured refusal log (task 6.9, same shared shape embed-handler.ts uses; design §10/spec Domain D: never a persisted row)", () => {
+  let warnings: string[] = [];
+  let warn: MockInstance<typeof console.warn>;
+
+  beforeEach(() => {
+    warnings = [];
+    warn = vi.spyOn(console, "warn").mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it("logs one structured line naming the reason and the embed key for a refused renewal", async () => {
+    const url = new URL(`https://play.hexdev.example/session/renew?k=pk_live_t_a&p=${PLAYER_ID}`);
+    await handleSessionRenewRequest(url, WIDGET_ORIGIN, CLIENT_IP, await deps({ validUntil: Date.now() - 1000 }));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("tenant-not-active");
+    expect(warnings[0]).toContain("pk_live_t_a");
+  });
+
+  it("logs nothing at all for a successful renewal", async () => {
+    const url = new URL(`https://play.hexdev.example/session/renew?k=pk_live_t_a&p=${PLAYER_ID}`);
+    const result = await handleSessionRenewRequest(url, WIDGET_ORIGIN, CLIENT_IP, await deps());
+    expect(result.status).toBe(200);
+    expect(warnings).toEqual([]);
   });
 });

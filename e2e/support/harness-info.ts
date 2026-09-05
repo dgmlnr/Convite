@@ -6,16 +6,21 @@ import { fileURLToPath } from "node:url";
  * The runtime facts every e2e spec needs to reach the real system this run
  * booted: two genuinely different localhost origins (the widget/server, and
  * the host fixture pretending to be a third-party tenant page), the embed
- * key that origin is allowlisted under, and the session TTL the server is
+ * key that origin is allowlisted under, the session TTL the server is
  * actually running with (see global-setup.ts's own doc comment for why a
  * short TTL is safe to share across every spec, not just the one that tests
- * it directly).
+ * it directly), and the Postgres connection string every spec's own
+ * `startSystem()` seeds its fixture tenant into and hands to both roles
+ * (tenant-administration PR4e — both composition roots read their tenant
+ * catalog from Postgres now, so `HEXDEV_TENANTS_JSON` is no longer a channel
+ * this harness can use at all; see `system.ts`'s own doc comment).
  */
 export interface HarnessInfo {
   readonly serverOrigin: string;
   readonly hostOrigin: string;
   readonly embedKey: string;
   readonly sessionTtlSeconds: number;
+  readonly postgresUrl: string;
 }
 
 const E2E_DIR = fileURLToPath(new URL("..", import.meta.url));

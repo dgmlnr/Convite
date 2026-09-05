@@ -92,7 +92,10 @@ describe("transport-colyseus-client — real production code over a real WebSock
     httpServer = createServer();
     issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey("adapter-live-secret"));
     const repository = createStaticTenantRepository([
-      { id: TENANT_ID, embedKey: "pk_adapter", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GAME_ID] },
+      // `validUntil` far in the future (tenant-administration slice 6): a
+      // real join now enforces the validity window (`MatchRoom.onAuth`),
+      // and this fixture's whole point is a tenant that CAN join.
+      { id: TENANT_ID, embedKey: "pk_adapter", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: [GAME_ID], validUntil: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000 },
     ]);
     const auth = {
       verifier: await createSessionTokenVerifier(issuer.publicKey),

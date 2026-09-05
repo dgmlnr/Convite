@@ -1,5 +1,7 @@
 import type { Clock, GameId, PlayerId } from "@hexdev/platform-contract";
-import { describeThemeContrastViolation, sanitizeThemeOverride, validateThemeContrast, type ThemeOverride } from "@hexdev/widget-protocol";
+import { describeThemeContrastViolation, type ThemeOverride } from "@hexdev/widget-protocol";
+import { sanitizeTenantTheme } from "./tenant-theme.js";
+import { isTenantActive } from "./tenant-validity.js";
 
 /** A platform-wide tenant identifier. */
 export type TenantId = string & { readonly __brand: "TenantId" };
@@ -23,76 +25,88 @@ export interface TenantRecord {
   readonly allowedOrigins: readonly string[];
   readonly entitledGames: readonly GameId[];
   readonly theme?: ThemeOverride;
+  /**
+   * Paid validity window `[validFrom, validUntil)` (tenant-administration
+   * slice 5, design §2.2/§2.4). Both epoch-ms, matching this repo's own
+   * `Clock` shape (`() => number`, `rate-limiter.ts`) rather than `Date` —
+   * one time representation throughout, never two. The bounds are
+   * DELIBERATELY ASYMMETRIC: an unset `validUntil` fails CLOSED (inactive,
+   * see `tenant-validity.ts`'s "zero window = inactive"), an unset
+   * `validFrom` fails OPEN (no lower bound — pre-selling is a real
+   * operator workflow). See `tenant-validity.ts` for the actual enforcement
+   * logic; this interface only carries the two instants.
+   */
+  readonly validFrom?: number;
+  /** EXCLUSIVE upper bound — the start of the next Buenos Aires day for an
+   * operator-typed "paid through" date, never `23:59:59` of that date (see
+   * `tenant-validity.ts`'s `paidThroughToInstant` for why). */
+  readonly validUntil?: number;
 }
 
-/** Port: how a tenant is looked up. The v1 adapter below is a static
- * in-memory map — loading its records from a config file on disk (design
- * §7) is `apps/server`'s composition-root job, out of scope for this port. */
+/** Port: how a tenant is looked up. ASYNC (tenant-administration slice 1,
+ * design §2.1): the v1 static in-memory adapter below is the only
+ * implementation today, but the coming Postgres-backed adapter needs a real
+ * network round trip, and a port cannot widen from sync to async later
+ * without breaking every caller's signature — better to pay that cost once,
+ * before the second adapter exists, than to force a second breaking change.
+ * `createStaticTenantRepository` itself stays a SYNCHRONOUS factory (below);
+ * only the two closures it returns become async, so every one of the ~30
+ * construct-and-forward call sites across the repo is unaffected. */
 export interface TenantRepository {
-  findByEmbedKey(embedKey: string): TenantRecord | undefined;
-  findById(tenantId: TenantId): TenantRecord | undefined;
-}
-
-/** Validates an incoming `theme` value, in BOTH senses, at the ONE choke
- * point every `TenantRecord` passes through on its way into a repository,
- * regardless of where the record came from (`apps/server`'s
- * `HEXDEV_TENANTS_JSON`-parsed deploy config, or a hardcoded dev/test
- * fixture). `JSON.parse(...) as TenantRecord[]`
- * (`apps/server/src/config.ts`) is a TYPE ASSERTION, not a runtime guarantee
- * — a malformed deploy value would otherwise reach this far with no check at
- * all.
- *
- * TWO QUESTIONS, one pass. `sanitizeThemeOverride` asks whether a value could
- * escape the declaration it is assigned into; `validateThemeContrast` (Tanda
- * 3, WCAG 2.x SC 1.4.3) asks whether a human could read the result. Both are
- * properties of the same untrusted value, so both are answered here, and both
- * are REUSED from `@hexdev/widget-protocol` rather than reimplemented (apply
- * prompt's own instruction): a closed token vocabulary and a contrast rule
- * must not exist twice with two chances to drift apart.
- *
- * DROPS, PER PAIR, NEVER THROWS. A non-object `theme` (or none at all)
- * becomes `undefined`; a shape-invalid token is dropped; a colour pairing
- * under 4.5:1 takes that pair back to the widget's own defaults while every
- * pair that passes survives untouched. Nothing here is a thrown error, and
- * that is a deliberate departure from the fail-loud, crash-boot convention
- * `createSessionTokenIssuer` and `redis-client.ts` follow — for a reason that
- * does not apply to them. A malformed signing key means this process cannot
- * do its job safely at all; malformed deploy config, or an unreadable brand
- * colour, means ONE tenant's token falls back to ours while everything else,
- * including every OTHER tenant in the same JSON, keeps working. Refusing to
- * boot over a hex value would be the wrong trade.
- *
- * BUT NOT SILENTLY, which is the one thing the sanitizer's own drop-silently
- * posture gets wrong for a contrast failure: an operator is left staring at a
- * brand that did not apply with nothing to go on. Each dropped pair is warned
- * about with the tenant, the pair, and the measured ratio — everything needed
- * to fix the config in one line. `console.warn`, not `console.error`: this is
- * boot-loud, not boot-fatal, and the process is fine. */
-function sanitizeTenantTheme(theme: unknown, tenantId: TenantId): ThemeOverride | undefined {
-  if (theme === null || typeof theme !== "object") return undefined;
-  const validated = validateThemeContrast(sanitizeThemeOverride(theme as Readonly<Record<string, unknown>>));
-  for (const violation of validated.violations) {
-    console.warn(`createStaticTenantRepository: tenant "${tenantId}" — ${describeThemeContrastViolation(violation)}`);
-  }
-  return validated.theme;
+  findByEmbedKey(embedKey: string): Promise<TenantRecord | undefined>;
+  findById(tenantId: TenantId): Promise<TenantRecord | undefined>;
 }
 
 /**
  * Builds the v1 static in-memory `TenantRepository`, running every record's
- * `theme` through `sanitizeTenantTheme` (see its own docstring for what that
- * validates and why it drops rather than throws) before any of it is readable
- * off the repository. The tenant's own id is threaded in so a dropped token
- * can be reported against the record it came from — with many tenants in one
- * `HEXDEV_TENANTS_JSON`, a warning that cannot name which one is not
- * actionable.
+ * `theme` through the SHARED `sanitizeTenantTheme` (tenant-administration
+ * slice 4, `tenant-theme.ts` — see its own docstring for what that validates
+ * and why it drops rather than throws, and why the logging decision moved
+ * out of the pure computation) before any of it is readable off the
+ * repository. This is the ONE choke point every `TenantRecord` passes
+ * through on its way into a repository, regardless of where the record came
+ * from (`apps/server`'s `HEXDEV_TENANTS_JSON`-parsed deploy config, or a
+ * hardcoded dev/test fixture) — `JSON.parse(...) as TenantRecord[]`
+ * (`apps/server/src/config.ts`) is a TYPE ASSERTION, not a runtime guarantee,
+ * so a malformed deploy value would otherwise reach this far unchecked.
+ *
+ * DROPS, PER PAIR, NEVER THROWS — a deliberate departure from the fail-loud,
+ * crash-boot convention `createSessionTokenIssuer` and `redis-client.ts`
+ * follow, for a reason that does not apply to them: malformed deploy config,
+ * or an unreadable brand colour, means ONE tenant's token falls back to ours
+ * while every OTHER tenant in the same JSON keeps working. Refusing to boot
+ * over a hex value would be the wrong trade.
+ *
+ * BUT NOT SILENTLY: each dropped pair is warned about here, at construction,
+ * with the tenant, the pair and the measured ratio — everything needed to
+ * fix the config in one line. `console.warn`, not `console.error`: this is
+ * boot-loud, not boot-fatal, and the process is fine. The write port
+ * (`tenant-admin.ts`) uses the SAME shared sanitizer but hands its
+ * `violations` back to the CALLER on `TenantWriteResult.ok:true` instead of
+ * logging them — an operator editing a tenant through a future panel reads a
+ * response, not a server log.
+ *
+ * The FACTORY itself stays synchronous — construction is a pure in-memory
+ * `Map` build with no I/O, and keeping it sync means every existing
+ * construct-and-forward call site (composition roots, tests) needs zero
+ * changes. Only the two returned closures are `async`, matching the async
+ * `TenantRepository` port above; wrapping an already-resolved lookup in a
+ * promise here is free, and is exactly the shape a real Postgres adapter's
+ * `pool.query` will replace it with later.
  */
 export function createStaticTenantRepository(records: readonly TenantRecord[]): TenantRepository {
-  const sanitized = records.map((record) => ({ ...record, theme: sanitizeTenantTheme(record.theme, record.id) }));
+  const sanitized = records.map((record) => {
+    const { theme, violations } = sanitizeTenantTheme(record.theme);
+    for (const violation of violations) {
+      console.warn(`createStaticTenantRepository: tenant "${record.id}" — ${describeThemeContrastViolation(violation)}`);
+    }
+    return { ...record, theme };
+  });
   const byEmbedKey = new Map(sanitized.map((record) => [record.embedKey, record]));
   const byId = new Map(sanitized.map((record) => [record.id, record]));
   return {
-    findByEmbedKey: (embedKey) => byEmbedKey.get(embedKey),
-    findById: (tenantId) => byId.get(tenantId),
+    findByEmbedKey: async (embedKey) => byEmbedKey.get(embedKey),
+    findById: async (tenantId) => byId.get(tenantId),
   };
 }
 
@@ -370,7 +384,9 @@ export function createJtiReplayGuard(options: JtiReplayGuardOptions): JtiReplayG
   };
 }
 
-export type EmbedMintResult = { readonly ok: true; readonly token: string } | { readonly ok: false; readonly reason: "unknown-tenant" | "origin-not-allowed" };
+export type EmbedMintResult =
+  | { readonly ok: true; readonly token: string }
+  | { readonly ok: false; readonly reason: "unknown-tenant" | "origin-not-allowed" | "tenant-not-active" | "tenant-lookup-failed" };
 
 async function mintForTenant(
   tenant: TenantRecord,
@@ -378,6 +394,48 @@ async function mintForTenant(
 ): Promise<EmbedMintResult> {
   const token = await args.issuer.mint({ tenantId: tenant.id, playerId: args.playerId, entitlements: tenant.entitledGames }, args.ttlSeconds);
   return { ok: true, token };
+}
+
+/**
+ * Resolves a tenant by embed key and enforces the two checks every choke
+ * point owes it BEFORE any caller-specific concern (origin allowlist,
+ * entitlement) is even reached: tenant-administration slice 6, design §2.4/
+ * §2.5/§15. Shared by `mintSessionForEmbed` and `renewSessionForWidget` so
+ * there is exactly ONE implementation of "resolve, then check the window",
+ * never two copies that could quietly diverge about the same tenant.
+ *
+ * TWO fail-closed branches, in the fixed order design §2.4 requires
+ * ("branch on isTenantActive immediately after tenant lookup", i.e. BEFORE
+ * any origin/entitlement check a caller adds afterward):
+ *
+ * 1. A rejecting repository (a request-time Postgres outage, design §15) is
+ *    caught here and reported as `tenant-lookup-failed`, never left to
+ *    propagate as an unhandled rejection — `undefined` already means "no
+ *    such tenant" (decision #3684 item... design §1.10), a different fact
+ *    a caught failure must not be confused with.
+ * 2. `isTenantActive` — the tenant exists but its paid validity window
+ *    (design §2.4, `tenant-validity.ts`) does not currently cover `now`.
+ *    `clock` defaults to `Date.now`, the same optional-with-default shape
+ *    `JtiReplayGuardOptions.clock` already uses in this same file — "the
+ *    injected Clock port, never `Date.now()` inside the domain" is
+ *    satisfied by making the default the ONLY place `Date.now` appears,
+ *    with every call site free to inject a fake one (this file's own
+ *    `renewSessionForWidget` mid-session-lapse test does exactly that).
+ */
+async function resolveActiveTenant(
+  repository: TenantRepository,
+  embedKey: string,
+  clock: Clock,
+): Promise<{ readonly ok: true; readonly tenant: TenantRecord } | { readonly ok: false; readonly reason: "unknown-tenant" | "tenant-not-active" | "tenant-lookup-failed" }> {
+  let tenant: TenantRecord | undefined;
+  try {
+    tenant = await repository.findByEmbedKey(embedKey);
+  } catch {
+    return { ok: false, reason: "tenant-lookup-failed" };
+  }
+  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
+  if (!isTenantActive(tenant, clock())) return { ok: false, reason: "tenant-not-active" };
+  return { ok: true, tenant };
 }
 
 /**
@@ -394,11 +452,13 @@ export async function mintSessionForEmbed(args: {
   readonly origin: string;
   readonly playerId: PlayerId;
   readonly ttlSeconds: number;
+  /** Tenant-administration slice 6, design §2.4: defaults to `Date.now`. */
+  readonly clock?: Clock;
 }): Promise<EmbedMintResult> {
-  const tenant = args.repository.findByEmbedKey(args.embedKey);
-  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
-  if (!tenant.allowedOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
-  return mintForTenant(tenant, args);
+  const resolved = await resolveActiveTenant(args.repository, args.embedKey, args.clock ?? Date.now);
+  if (!resolved.ok) return resolved;
+  if (!resolved.tenant.allowedOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
+  return mintForTenant(resolved.tenant, args);
 }
 
 /**
@@ -437,9 +497,15 @@ export async function renewSessionForWidget(args: {
   readonly allowedWidgetOrigins: readonly string[];
   readonly playerId: PlayerId;
   readonly ttlSeconds: number;
+  /** Tenant-administration slice 6, design §2.4: defaults to `Date.now`. The
+   * whole reason this exists as an injectable argument rather than a bare
+   * `Date.now()` call: a tenant valid at mint time can lapse before the
+   * player ever renews, and that "mid-session" scenario is only reliably
+   * testable by advancing a fake clock, never a real wait. */
+  readonly clock?: Clock;
 }): Promise<EmbedMintResult> {
-  const tenant = args.repository.findByEmbedKey(args.embedKey);
-  if (tenant === undefined) return { ok: false, reason: "unknown-tenant" };
+  const resolved = await resolveActiveTenant(args.repository, args.embedKey, args.clock ?? Date.now);
+  if (!resolved.ok) return resolved;
   if (!args.allowedWidgetOrigins.includes(args.origin)) return { ok: false, reason: "origin-not-allowed" };
-  return mintForTenant(tenant, args);
+  return mintForTenant(resolved.tenant, args);
 }

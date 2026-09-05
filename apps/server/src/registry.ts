@@ -1,5 +1,6 @@
 import { createGameModuleRegistry } from "@hexdev/platform-core";
-import type { AbandonedSeatActionProvider, ConsultAdviceProvider, ConsultAskProvider, GameModuleRegistry, SystemActionRequester } from "@hexdev/platform-core";
+import type { AbandonedSeatActionProvider, ConsultAdviceProvider, ConsultAskProvider, GameModuleRegistration, GameModuleRegistry, SystemActionRequester } from "@hexdev/platform-core";
+import type { GameId } from "@hexdev/platform-contract";
 import { getConsultAdvice, getConsultAsk, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2, requestEscobaSystemAction } from "@hexdev/escoba-module";
 import { getAbandonedSeatAction as getMahjongAbandonedSeatAction, mahjongSolitaireModule, requestMahjongSolitaireSystemAction } from "@hexdev/mahjong-solitaire-module";
@@ -69,8 +70,13 @@ const isTrucoPaidQuestion = (action: unknown): boolean => typeof action === "obj
  * defaulted — `createGameModuleRegistry`'s own fail-closed defaults already
  * do the right thing for an entry that supplies none of them.
  */
-export function buildGameRegistry(): GameModuleRegistry {
-  return createGameModuleRegistry([
+/**
+ * The exact registration list `buildGameRegistry` composes with — pulled
+ * into its own constant (tenant-administration slice 3b) so `MATCH_GAME_IDS`
+ * below can derive from the SAME array rather than authoring a second,
+ * independently-maintained list of ids that could drift from it.
+ */
+const MATCH_GAME_REGISTRATIONS: readonly GameModuleRegistration[] = [
     {
       module: trucoModule,
       requestSystemAction: requestSystemAction as SystemActionRequester,
@@ -127,5 +133,17 @@ export function buildGameRegistry(): GameModuleRegistry {
       requestSystemAction: requestMahjongSolitaireSystemAction as SystemActionRequester,
       getAbandonedSeatAction: getMahjongAbandonedSeatAction as AbandonedSeatActionProvider,
     },
-  ]);
+];
+
+export function buildGameRegistry(): GameModuleRegistry {
+  return createGameModuleRegistry(MATCH_GAME_REGISTRATIONS);
 }
+
+/** Every game id this role's registry actually serves, derived from the
+ * SAME registration list `buildGameRegistry` composes with above — never a
+ * second, independently maintained list. `apps/mint-server`'s own
+ * `MINT_GAME_IDS` (registry.ts there) is this constant's sibling on the
+ * other composition root; `scripts/dev-stack.mjs` sources its dev seed
+ * tenant's `entitledGames` from the MINT root's copy (design §14), never
+ * from a hand-written fixture. */
+export const MATCH_GAME_IDS: readonly GameId[] = MATCH_GAME_REGISTRATIONS.map((registration) => ("module" in registration ? registration.module.id : registration.id));

@@ -85,6 +85,30 @@ jobs:
     # Half the budget the suite needs, so a hang fails instead of burning an
     # hour: the whole run is 4-4m40s locally over three measurements.
     timeout-minutes: 20
+    # A GitHub Actions SERVICE CONTAINER, the identical shape the `postgres`
+    # job below already uses (tenant-administration PR4e). Both composition
+    # roots read their tenant catalog from Postgres now (PR4a/PR4b), so this
+    # suite needs a reachable database exactly like `postgres integration`
+    # does — `e2e/global-setup.ts`'s own `provisionPostgres()` call connects
+    # to THIS container via `HEXDEV_TEST_POSTGRES_URL` below instead of
+    # starting a redundant throwaway one of its own.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: convite
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      HEXDEV_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/convite
+      HEXDEV_POSTGRES_MIGRATE_URL: postgres://postgres:postgres@localhost:5432/convite
     steps:
       - uses: actions/checkout@v4
 
@@ -110,8 +134,70 @@ jobs:
       - name: Build
         run: pnpm exec tsc -b
 
+      # A distinct named step for the same legibility reason the `postgres`
+      # job has one: `global-setup.ts` would apply the identical migrations
+      # itself either way, but a migration failure surfacing HERE is a
+      # two-line log to read instead of a whole suite's worth.
+      - name: Migrate
+        run: pnpm run db:migrate
+
       - name: End to end
         run: pnpm run test:e2e
+
+  postgres:
+    name: postgres integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A GitHub Actions SERVICE CONTAINER, deliberately different from
+    # `redis-tests/global-setup.ts`'s own `docker run` (Redis stays excluded
+    # from CI entirely — see this file's own `ciCommand: null` reasoning in
+    # `scripts/ci-suite-coverage.test.ts`). Postgres is the system of record
+    # now, not an optional adapter beside one, so it runs in CI; the health
+    # check below is what lets every later step assume it is already ready.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: convite
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      # `postgres-tests/global-setup.ts` reads this: set, it connects to
+      # THIS service container instead of starting its own via `docker run` —
+      # the local-development path stays unchanged, only CI takes this branch.
+      HEXDEV_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/convite
+      HEXDEV_POSTGRES_MIGRATE_URL: postgres://postgres:postgres@localhost:5432/convite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # THE WORKSPACE HAS TO BE BUILT FIRST, the same trap the `e2e` and
+      # `visual` jobs each record for their own builds: `pnpm run db:migrate`
+      # (below) imports `packages/platform-core/dist/*.js` by relative path
+      # (`scripts/db-migrate.mjs`'s own docstring).
+      - name: Build
+        run: pnpm exec tsc -b
+
+      - name: Migrate
+        run: pnpm run db:migrate
+
+      - name: Postgres integration
+        run: pnpm run test:postgres
 
   visual:
     name: visual baselines

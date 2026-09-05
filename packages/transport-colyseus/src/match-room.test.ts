@@ -10,7 +10,7 @@ import {
   createStaticTenantRepository,
   deriveTestSessionSigningKey,
 } from "@hexdev/platform-core";
-import type { RateLimiter, SessionTokenIssuer, TenantId } from "@hexdev/platform-core";
+import type { RateLimiter, SessionTokenIssuer, TenantId, TenantRepository } from "@hexdev/platform-core";
 import { MatchRoom } from "./match-room.js";
 import type { MatchRoomAuthOptions } from "./match-room.js";
 
@@ -112,6 +112,14 @@ const ALLOWED_ORIGIN = "https://tenant.example";
 const SECRET = "fixture-secret-key";
 const P0 = "seat-0-player" as PlayerId;
 const P1 = "seat-1-player" as PlayerId;
+/** Ten years out, matching `scripts/dev-tenant-seed.mjs`'s own convention
+ * (tenant-administration slice 5/PR6b) and `tenant-auth.test.ts`'s identical
+ * fixture fix (slice 6): every OTHER test below joins through `createAuth`'s
+ * shared fixture tenants and is not itself about window enforcement, so
+ * design #1.3's "zero window configured = inactive" rule must not refuse
+ * them. The dedicated window-enforcement describe block below builds its
+ * own EXPIRED tenant explicitly rather than relying on this default. */
+const FAR_FUTURE_VALID_UNTIL = Date.now() + 10 * 365 * 24 * 60 * 60 * 1000;
 
 // NOT annotated `: Promise<MatchRoomAuthOptions>` — the extra `issuer` field
 // below (a full mint+verify handle, kept ONLY so this file's tests can mint
@@ -119,22 +127,25 @@ const P1 = "seat-1-player" as PlayerId;
 // that narrower port type. `room.onCreate({ ..., auth })` still typechecks:
 // a wider object satisfies `MatchRoomAuthOptions` structurally through a
 // variable, never excess-property-checked outside a literal.
-async function createAuth(overrides: { joinRateLimiter?: RateLimiter } = {}) {
+async function createAuth(overrides: { joinRateLimiter?: RateLimiter; repository?: TenantRepository } = {}) {
   const issuer = await createSessionTokenIssuer(await deriveTestSessionSigningKey(SECRET));
   // The verify-only construction this whole change exists to prove: MINTING
   // in these tests still goes through `auth.issuer` below, but the ROOM
   // ITSELF (`room.onCreate({ auth, ... })`) only ever receives `verifier` —
   // matching exactly what `apps/server/src/index.ts` wires in production.
   const verifier = await createSessionTokenVerifier(issuer.publicKey);
-  const repository = createStaticTenantRepository([
-    {
-      id: TENANT_ID,
-      embedKey: "pk_fixture",
-      allowedOrigins: [ALLOWED_ORIGIN],
-      entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal", "fixture-solo", "fixture-solo-with-bot"],
-    },
-    { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"] },
-  ]);
+  const repository =
+    overrides.repository ??
+    createStaticTenantRepository([
+      {
+        id: TENANT_ID,
+        embedKey: "pk_fixture",
+        allowedOrigins: [ALLOWED_ORIGIN],
+        entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal", "fixture-solo", "fixture-solo-with-bot"],
+        validUntil: FAR_FUTURE_VALID_UNTIL,
+      },
+      { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"], validUntil: FAR_FUTURE_VALID_UNTIL },
+    ]);
   // Generous default so unrelated tests never accidentally trip the limit —
   // the dedicated rate-limiting describe block overrides this.
   return {
@@ -414,6 +425,51 @@ describe("MatchRoom.onAuth — join-time authentication (task 4.1/4.2)", () => {
     await expect(
       room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" }),
     ).rejects.toThrow(/not entitled/);
+  });
+});
+
+describe("MatchRoom.onAuth — validity window enforcement (tenant-administration slice 6, task 6.5/6.6)", () => {
+  /**
+   * `MatchRoom.onAuth` does NOT use `EmbedMintResult` at all — every
+   * rejection branch here is a thrown `Error`, six of them before this one,
+   * all identical and fail-closed by design (design §2.5, this file's own
+   * docstring). The window check is one MORE throw, in the SAME shape,
+   * immediately after tenant lookup — not routed through the discriminated
+   * result type that belongs only to `mintSessionForEmbed`/
+   * `renewSessionForWidget` (tenant-auth.test.ts's own coverage of those).
+   */
+  async function freshRoom(overrides: { repository?: TenantRepository } = {}) {
+    const auth = await createAuth(overrides);
+    const registry = createGameModuleRegistry([fixtureModule]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-secret", config: undefined, registry, auth, rng: DEFAULT_RNG });
+    return { room, auth };
+  }
+
+  it("throws immediately after tenant lookup for an expired tenant, before the entitlement check ever runs", async () => {
+    const expiredRepository = createStaticTenantRepository([
+      {
+        id: TENANT_ID,
+        embedKey: "pk_fixture",
+        allowedOrigins: [ALLOWED_ORIGIN],
+        entitledGames: ["fixture-secret"],
+        validUntil: Date.now() - 1000, // already expired
+      },
+    ]);
+    const { room, auth } = await freshRoom({ repository: expiredRepository });
+    const seat0 = fakeClient("s0");
+    const token = await mintToken(auth.issuer, P0);
+    await expect(
+      room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" }),
+    ).rejects.toThrow(/not active/);
+  });
+
+  it("still joins a tenant whose window covers now — the far-future fixture every OTHER test in this file relies on stays unaffected", async () => {
+    const { room, auth } = await freshRoom();
+    const seat0 = fakeClient("s0");
+    const token = await mintToken(auth.issuer, P0);
+    const resolvedAuth = await room.onAuth(seat0.client, { token }, { headers: new Headers({ origin: ALLOWED_ORIGIN }), ip: "1.1.1.1" });
+    expect(resolvedAuth).toEqual({ playerId: P0 });
   });
 });
 

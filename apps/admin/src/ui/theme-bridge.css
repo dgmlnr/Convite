@@ -1,0 +1,31 @@
+/**
+ * The bridge (design §13.3, task 13b.3): maps shadcn/ui's own CSS custom
+ * properties onto `widget-protocol`'s `--gx-*` tenant tokens, which
+ * `main.tsx` emits once at boot from `DEFAULT_THEME_TOKENS`. Only the five
+ * properties that have a real `--gx-*` counterpart are declared here —
+ * shadcn's remaining tokens (`--muted`, `--muted-foreground`, `--border`,
+ * `--ring`, …) keep their own literal defaults in `globals.css`, declared
+ * nowhere near this file, so there is never a second `:root` block for this
+ * one to lose a cascade order fight against.
+ *
+ * THE GOTCHA THIS FILE EXISTS TO AVOID (Part A tasks §0.3, design §13.3):
+ * Tailwind v3-era shadcn recipes store space-separated HSL CHANNEL TRIPLES
+ * (`--primary: 222.2 47.4% 11.2%`), consumed as `hsl(var(--primary))`.
+ * Tailwind v4 — pinned explicitly in `globals.css`'s own `@theme inline`
+ * block — stores FULL COLOR VALUES instead, and so does every `--gx-*`
+ * token. A plain `var(--primary)` reference is therefore the CORRECT
+ * consumption here; wrapping it in `hsl(...)` would feed a full color
+ * (`#2f6f4f`) into a slot meant for three bare numbers, silently producing
+ * `hsl(#2f6f4f)` — invalid, and the browser drops the WHOLE declaration
+ * with no console warning and no build error. `theme-bridge.test.ts` (a
+ * `.browser.test.ts`, real Chromium) asserts the COMPUTED style a real
+ * browser resolves, not this file's declaration text, for exactly that
+ * reason: a declaration-text assertion would pass on the broken encoding.
+ */
+:root {
+  --background: var(--gx-color-surface);
+  --foreground: var(--gx-color-on-surface);
+  --primary: var(--gx-color-primary);
+  --primary-foreground: var(--gx-color-on-primary);
+  --accent: var(--gx-color-accent);
+}
