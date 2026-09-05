@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage } from "node:http";
+import { fileURLToPath } from "node:url";
 
 import { createRateLimiter, createRedisRateLimiter } from "@hexdev/platform-core";
 import type { RateLimiter } from "@hexdev/platform-core";
@@ -24,6 +25,7 @@ import { createOperatorCreateHandler, createOperatorDisableHandler, createOperat
 import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
+import { serveBuiltAsset, serveIndexHtml } from "./static-app.js";
 import { createTenantListHandler } from "./tenant-handlers.js";
 
 /**
@@ -68,6 +70,13 @@ import { createTenantListHandler } from "./tenant-handlers.js";
  * a handler touching `node:http` itself.
  */
 const config = loadAdminConfig(process.env);
+
+// The built SPA's own output directory (task 14's own static-serving PR) —
+// a sibling of THIS compiled file's own directory (`dist/index.js` ->
+// `../dist-ui`), the identical relative-path convention
+// `apps/mint-server/src/index.ts`'s own `widgetAppDistDir` already
+// establishes for `apps/widget-app/dist-app`.
+const adminUiDistDir = fileURLToPath(new URL("../dist-ui", import.meta.url));
 
 // Same "throw, crash boot" convention `apps/server`/`apps/mint-server` both
 // already establish for their own Postgres pools — an unreachable database
@@ -300,6 +309,34 @@ const server = createServer((req, res) => {
       });
       return;
 
+    // The SPA's own entry point (task 14's static-serving PR) — served
+    // regardless of session state, PUBLIC on purpose: the CLIENT-SIDE
+    // `AppShell` is what decides whether to render the login screen or the
+    // tenant list, via its own `GET /` fetch (`ui/api.ts`'s own docstring on
+    // why this app must serve its own UI, same-origin, rather than a
+    // separate dev-server proxying across).
+    case "login-form":
+      serveIndexHtml(adminUiDistDir).then((result) => {
+        res.writeHead(result.status, { "content-type": result.contentType });
+        res.end(result.body);
+      });
+      return;
+
+    // The built JS/CSS bundle `index.html` references (Vite's own default
+    // `/assets/*` output path — no extra `base` config needed). `file` is
+    // always present here: `resolveAdminRoute` never resolves an `asset`
+    // kind without it (`routing.ts`'s own `assetFileName`, already
+    // traversal-sanitized before this handler ever sees the value) — the
+    // `?? ""` fallback is defense-in-depth only (a 404, never a crash, if
+    // that invariant were ever broken), same optional-chaining discipline
+    // `operator-handlers.ts`'s own `req.params?.id` already establishes.
+    case "asset":
+      serveBuiltAsset(adminUiDistDir, route.params?.file ?? "").then((result) => {
+        res.writeHead(result.status, { "content-type": result.contentType });
+        res.end(result.body);
+      });
+      return;
+
     // Every `access: "permission"` kind below is already intercepted by the
     // checkpoint `if` above and NEVER reaches this switch at runtime — they
     // stay listed here only because Layer 1's exhaustive `switch` (design
@@ -310,11 +347,11 @@ const server = createServer((req, res) => {
     // "own-password"` and always `return`s, so by the time this switch runs,
     // `route.kind`'s narrowed type no longer even contains that member; a
     // stray `case "own-password":` here is a COMPILE ERROR (`TS2678`), not
-    // merely dead code — confirmed by trying it. `login-form`/`asset`
-    // (`access: "public"`) are the only two of this original group genuinely
-    // dispatched from here.
-    case "login-form":
-    case "asset":
+    // merely dead code — confirmed by trying it. `tenant-list` stays listed
+    // here too even though `REAL_HANDLERS` already resolves it — same
+    // "listed but never reached at runtime" shape `operator-create`/
+    // `operator-enable`/etc. below already have, since `tenant-list`'s guard
+    // is `access: "permission"`, caught by the checkpoint `if` above.
     case "tenant-list":
     case "tenant-detail":
     case "tenant-create":

@@ -5,14 +5,17 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     // `**/dist/**` alone misses Vite's own output dirs for this project's
-    // two non-tsc builds: `dist-app` (apps/widget-app, app-mode) and
-    // `dist-iife` (packages/widget-sdk, lib-mode IIFE) — see obs 2940 for
-    // why `tsc -b`'s own `dist/` is deliberately a different name. A real,
-    // previously-undiscovered gap: `pnpm exec eslint .` run AFTER building
-    // both (this unit's own from-clean verification, not assumed) flagged
-    // 607 errors in minified/bundled output that was never meant to be
+    // three non-tsc builds: `dist-app` (apps/widget-app, app-mode),
+    // `dist-iife` (packages/widget-sdk, lib-mode IIFE), and `dist-ui`
+    // (apps/admin, the React SPA, task 14's own static-serving PR) — see
+    // obs 2940 for why `tsc -b`'s own `dist/` is deliberately a different
+    // name. A real, previously-undiscovered gap for EACH: `pnpm exec eslint .`
+    // run AFTER building them (this unit's own from-clean verification, not
+    // assumed) flagged 607 errors in minified/bundled output the first time
+    // (`dist-app`/`dist-iife`), and 917 more the first time `dist-ui` was
+    // ever built locally and linted afterward — neither was ever meant to be
     // linted as source.
-    ignores: ["**/dist/**", "**/dist-app/**", "**/dist-iife/**", "**/node_modules/**"],
+    ignores: ["**/dist/**", "**/dist-app/**", "**/dist-iife/**", "**/dist-ui/**", "**/node_modules/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
