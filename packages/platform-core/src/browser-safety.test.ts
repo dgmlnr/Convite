@@ -98,5 +98,9 @@ describe("the public barrel is safe to bundle for a browser", () => {
     // Postgres-bound operations — identical guarantee.
     expect(nodeBarrel).toMatch(/bootstrapOperator/);
     expect(nodeBarrel).toMatch(/resetOperatorPassword/);
+    // tenant-administration sdd-verify closure, finding 3 (design Part A
+    // §4/Part B §15): apps/admin's own boot-time schema-version READ — same
+    // guarantee, same reason: it takes a real `Pool`-shaped query function.
+    expect(nodeBarrel).toMatch(/assertSchemaUpToDate/);
   });
 });

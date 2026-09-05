@@ -19,3 +19,12 @@ CREATE ROLE convite_admin LOGIN;
 
 GRANT SELECT ON tenants TO convite_readonly;
 GRANT SELECT, INSERT, UPDATE, DELETE ON tenants TO convite_admin;
+
+-- sdd-verify finding 3: apps/admin's own boot-time schema-version check
+-- (design Part A §4/Part B §15) reads THIS table, never writes it — a
+-- read, not a migration run, since only `pnpm db:migrate` (the owner) may
+-- ever apply one. `schema_migrations` itself is created unconditionally by
+-- `runMigrations` before ANY numbered file runs, on the SAME session this
+-- migration's own statements execute in, so it already exists by the time
+-- this GRANT is reached.
+GRANT SELECT ON schema_migrations TO convite_admin;
