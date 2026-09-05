@@ -84,3 +84,23 @@ export async function getTenants(): Promise<TenantListOutcome> {
   const body = (await response.json()) as { readonly tenants: readonly TenantListApiRow[] };
   return { ok: true, tenants: body.tenants };
 }
+
+/**
+ * `POST /logout` — idempotent by construction on the server side
+ * (`logout-handler.ts`'s own docstring: "every case still returns 200 with
+ * a clearing cookie"), so this client never inspects the response at all:
+ * `AppShell` always transitions back to the login screen after calling
+ * this, whether or not a session existed to revoke.
+ */
+export async function postLogout(): Promise<void> {
+  try {
+    await fetch("/logout", { method: "POST", credentials: "include" });
+  } catch {
+    // Best-effort: the SERVER-SIDE row (`operator_sessions`) is what
+    // actually revokes a session (`logout-handler.ts`'s own docstring); a
+    // network failure here just means that row was not deleted, but
+    // `AppShell` still shows the login screen either way, and the current
+    // session (if it somehow survived) simply expires on its own 8-hour
+    // absolute lifetime.
+  }
+}

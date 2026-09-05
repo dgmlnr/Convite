@@ -27,6 +27,25 @@ export interface LoginScreenProps {
  * without a round trip, never as a substitute for the server's own `400`
  * (`login-handler.ts`'s "missing credentials" branch) — `postLogin` still
  * hits the real route even if this check were removed entirely.
+ *
+ * A REAL CONTRAST BUG, FOUND AND FIXED BY THE LIVE SCREENSHOT CHECK (this
+ * slice's own manual runtime harness): `text-foreground` (bridged to
+ * `DEFAULT_THEME_TOKENS["--gx-color-on-surface"]`, `#1a1a1a`) painted on
+ * `bg-background` (`--gx-color-surface`, `#14231d`) measures roughly
+ * **1.07:1** — a near-black on a near-black, essentially unreadable. Not a
+ * theoretical concern: the first screenshot of this exact screen showed the
+ * title and labels barely visible. Measured, not assumed:
+ * `apps/widget-app/src/chrome-styles.ts` NEVER pairs raw `--gx-color-surface`
+ * with `--gx-color-on-surface` directly either — every real use of
+ * `on-surface` there sits on a LIGHTENED `color-mix` derivative, never the
+ * raw surface — so this pairing was untested anywhere in the whole
+ * codebase before this screen rendered it. `theme-bridge.css`'s own bridged
+ * mapping (task 13b.3) and its passing browser test are NOT touched here —
+ * that contract is correct on its own terms; the DEFAULT token VALUES it
+ * bridges are what need a lighter foreground for actual body copy. Using
+ * `text-primary-foreground` (on-primary, white, `#ffffff`) instead reads
+ * ~16:1 against this background — the same white the login button's own
+ * text already uses, so this is not a new color, only a reused one.
  */
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps): JSX.Element {
   const [username, setUsername] = useState("");
@@ -52,7 +71,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps): JSX.Element {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+    <main className="flex min-h-screen items-center justify-center bg-background text-primary-foreground">
       <form onSubmit={(event) => void handleSubmit(event)} className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-sm" noValidate>
         <h1 className="text-lg font-semibold">{COPY.loginTitle}</h1>
         <label className="flex flex-col gap-1 text-sm">
