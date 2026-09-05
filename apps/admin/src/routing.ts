@@ -145,6 +145,25 @@ function assetFileName(pathname: string): string | undefined {
   return file;
 }
 
+/**
+ * sdd-verify finding 4, closed here: `index.ts`'s dispatcher used to run
+ * `route.guard.access === "permission" || route.kind === "own-password"` —
+ * data-driven for `permission`, but the ENTIRE `authenticated` half of
+ * `RouteAccess` was gated by hand-listing kinds one at a time. A future
+ * route declared `access: "authenticated"` (this repo's own fence already
+ * permits one, alongside `login-submit`/`logout`/`own-password`) would
+ * satisfy every existing check yet never reach `authorize` at all.
+ *
+ * Data-driven except for exactly ONE named exception, `logout` (PR10d's own
+ * idempotent-regardless-of-cookie design: it needs no `AuthorizedOperator`,
+ * so gating it here would change that settled, tested property) — every
+ * OTHER `authenticated` route, present (`own-password`) or future, is
+ * checkpointed automatically, with no kind-by-kind list to keep in sync.
+ */
+export function requiresAuthorizationCheckpoint(route: Pick<AdminRoute, "kind" | "guard">): boolean {
+  return route.guard.access === "permission" || (route.guard.access === "authenticated" && route.kind !== "logout");
+}
+
 export function resolveAdminRoute(method: string, pathname: string): AdminRoute {
   if (method === "GET" && pathname.startsWith(ASSET_PREFIX)) {
     const file = assetFileName(pathname);

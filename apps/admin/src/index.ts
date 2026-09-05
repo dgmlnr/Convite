@@ -28,7 +28,7 @@ import { handleLogoutRequest } from "./logout-handler.js";
 import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, createOperatorListHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
 import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
-import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
+import { requiresAuthorizationCheckpoint, resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 import { serveBuiltAsset, serveIndexHtml } from "./static-app.js";
 import {
   createTenantCreateHandler,
@@ -66,17 +66,19 @@ import {
  * wired OUTSIDE this checkpoint entirely, to their own real handlers against
  * a REAL Postgres-backed `OperatorRepository`/`OperatorSessionRepository`.
  *
- * `own-password` NOW joins the checkpoint, closing the scope boundary a
- * PRIOR revision of this file disclosed rather than silently decided:
- * design §6.2's own table guards it `authenticated` only (task 7.7's
- * three-member exemption — a permission gate here is unsatisfiable for a
- * zero-permission operator), so it reaches `authorizeAndDispatch` through an
- * explicit `route.kind === "own-password"` check alongside the
- * data-driven `access: "permission"` test, rather than broadening that test
- * itself — `logout` deliberately does NOT join it: its own
- * idempotent-regardless-of-cookie behaviour (PR10d) needs no
- * `AuthorizedOperator` at all, and broadening the condition to cover every
- * `authenticated` route would silently change that settled, tested property.
+ * `own-password` joined the checkpoint in an earlier PR: design §6.2's own
+ * table guards it `authenticated` only (task 7.7's three-member exemption —
+ * a permission gate here is unsatisfiable for a zero-permission operator).
+ * THAT EARLIER PR reached it through an explicit `route.kind ===
+ * "own-password"` check alongside the data-driven `access: "permission"`
+ * test — sdd-verify's own finding 4 flagged the hole this left: a FUTURE
+ * route declared `access: "authenticated"` would satisfy every fence yet
+ * bypass the checkpoint entirely, since it was never added to that hand-kept
+ * list. `requiresAuthorizationCheckpoint` (`routing.ts`) closes it: fully
+ * data-driven for BOTH `permission` and `authenticated`, with exactly ONE
+ * named exception, `logout` — its own idempotent-regardless-of-cookie
+ * behaviour (PR10d) needs no `AuthorizedOperator` at all, and checkpointing
+ * it would silently change that settled, tested property.
  *
  * `AdminRequest.body` (this PR): the FIRST guarded route needing one —
  * parsed once by `readJsonBody` before `authorizeAndDispatch` runs, never by
@@ -299,24 +301,30 @@ const server = createServer((req, res) => {
 
   // THE SINGLE AUTHORIZATION CHECKPOINT (design §6.3 Layers 2-3/§7, spec
   // Domain K, tasks 9.1-9.4): every `access: "permission"` route resolves
-  // through `authorizeAndDispatch` BEFORE the switch below is ever reached —
-  // `route.guard.access === "permission"` is a purely data-driven test, so a
-  // future route added to `routing.ts`'s table is checkpointed automatically,
-  // with no enumeration by kind here to keep in sync. `route.kind ===
-  // "own-password"` joins it explicitly (PR13, slice 11a): design §6.2's own
-  // table guards it `authenticated` only (task 7.7's disclosed three-member
-  // exemption — a permission gate here is unsatisfiable for a zero-permission
-  // operator), but `authorize` still validates session+`enabled` for it, the
-  // same deferred scope `index.ts`'s own prior docstring already named in
-  // advance. `logout` stays OUTSIDE this checkpoint, unchanged: its own
-  // idempotent-regardless-of-cookie behaviour (PR10d) needs no
-  // `AuthorizedOperator` at all. On refusal, `resolveHandler` below is never
-  // reached; on success, the resolved handler runs (a REAL one for
-  // `operator-create`/`operator-disable`/`operator-enable`/`own-password`,
+  // through `authorizeAndDispatch` BEFORE the switch below is ever reached.
+  // `requiresAuthorizationCheckpoint` (`routing.ts`, sdd-verify finding 4) is
+  // data-driven for BOTH halves of `RouteAccess` that need it: `permission`
+  // always, and `authenticated` for every kind except the one named
+  // exception, `logout` — so a future route added to `routing.ts`'s table,
+  // of EITHER guard shape, is checkpointed automatically, with no
+  // enumeration by kind here to keep in sync. This closes a real hole: the
+  // prior condition only special-cased `own-password` by kind, so a future
+  // `authenticated` route would have satisfied every existing fence yet
+  // never reached `authorize` at all. `own-password` still reaches it
+  // exactly as before (design §6.2's own table guards it `authenticated`
+  // only, task 7.7's disclosed three-member exemption — a permission gate
+  // here is unsatisfiable for a zero-permission operator), but `authorize`
+  // still validates session+`enabled` for it, the same deferred scope
+  // `index.ts`'s own prior docstring already named in advance. `logout`
+  // stays OUTSIDE this checkpoint, unchanged: its own idempotent-regardless-
+  // of-cookie behaviour (PR10d) needs no `AuthorizedOperator` at all. On
+  // refusal, `resolveHandler` below is never reached; on success, the
+  // resolved handler runs (a REAL one for `operator-create`/
+  // `operator-disable`/`operator-enable`/`own-password`,
   // `notImplementedHandler` for every other kind still awaiting its own
   // slice), only AFTER `authorize` has already minted a real
   // `AuthorizedOperator`.
-  if (route.guard.access === "permission" || route.kind === "own-password") {
+  if (requiresAuthorizationCheckpoint(route)) {
     const handler = REAL_HANDLERS[route.kind] ?? notImplementedHandler;
     const dispatch = (body: Record<string, unknown>) => {
       // Task 16b.2's own first consumer — `audit-view`'s four query-string
@@ -415,21 +423,25 @@ const server = createServer((req, res) => {
       });
       return;
 
-    // Every `access: "permission"` kind below is already intercepted by the
-    // checkpoint `if` above and NEVER reaches this switch at runtime — they
-    // stay listed here only because Layer 1's exhaustive `switch` (design
-    // §6.3) demands a case for every real `AdminRouteKind` member, reachable
-    // or not. `own-password` is ABSENT from this list on purpose (not an
-    // omission): TypeScript's own control-flow narrowing already proves it
-    // unreachable here — the earlier `if` includes `route.kind ===
-    // "own-password"` and always `return`s, so by the time this switch runs,
-    // `route.kind`'s narrowed type no longer even contains that member; a
-    // stray `case "own-password":` here is a COMPILE ERROR (`TS2678`), not
-    // merely dead code — confirmed by trying it. `tenant-list` stays listed
-    // here too even though `REAL_HANDLERS` already resolves it — same
-    // "listed but never reached at runtime" shape `operator-create`/
-    // `operator-enable`/etc. below already have, since `tenant-list`'s guard
-    // is `access: "permission"`, caught by the checkpoint `if` above.
+    // Every kind below is already intercepted by the checkpoint `if` above
+    // and NEVER reaches this switch at runtime — they stay listed here only
+    // because Layer 1's exhaustive `switch` (design §6.3) demands a case for
+    // every real `AdminRouteKind` member, reachable or not. `own-password`
+    // NOW joins this list explicitly (sdd-verify finding 4): the checkpoint
+    // condition is `requiresAuthorizationCheckpoint(route)`, a function of
+    // `route.guard.access`, not a literal `route.kind === "own-password"`
+    // comparison — TypeScript's control-flow narrowing cannot exclude a
+    // `kind` from the type based on a check of a DIFFERENT field, so
+    // `route.kind` still includes `"own-password"` by the time this switch
+    // runs, and Layer 1's exhaustiveness genuinely demands a case for it
+    // (confirmed: omitting it is a real `tsc` error, `Type '"own-password"'
+    // is not assignable to type 'never'`, not merely a stale comment).
+    // `tenant-list` stays listed here too even though `REAL_HANDLERS`
+    // already resolves it — same "listed but never reached at runtime"
+    // shape `operator-create`/`operator-enable`/etc. below already have,
+    // since `tenant-list`'s guard is `access: "permission"`, caught by the
+    // checkpoint `if` above.
+    case "own-password":
     case "tenant-list":
     case "tenant-detail":
     case "tenant-create":
