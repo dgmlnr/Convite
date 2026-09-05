@@ -47,25 +47,31 @@ export type TenantWriteResult =
  * widen to cover a caller-supplied audit implementation living in a
  * different app entirely.
  *
- * NOT WIRED TO A REAL TRANSACTION YET. Both adapters below call `w` with a
- * NO-OP `exec` (`NOOP_EXEC`) — see each adapter's own comment. The tasks
- * artifact's own §0.5 states this explicitly: task 4.2 lands this type as
- * NON-OPTIONAL on every mutating method so nothing can be written without a
- * witness in hand, and task 4.11 wires the CALL against a no-op stand-in;
- * the REAL transactional coupling — the audit INSERT running inside the
- * mutation's own transaction, so a throwing witness rolls the mutation back
- * — lands in PR12 (task 10.6), six PRs later, once `apps/admin` exists to
- * define what `exec` actually runs. Finishing that wiring here would pull
- * the `audit_entries` schema and its Postgres privilege grants into the
- * tenant-WRITE PR, which is the wrong PR to review either in.
+ * WIRED TO A REAL TRANSACTION AS OF TASK 10.6 (PR12), on the POSTGRES
+ * adapter only. Tasks §0.5's own back-edge is now closed:
+ * `postgres-tenant-admin-repository.ts`'s `withTransactionalWitness` runs
+ * `w`'s own `exec` on the SAME checked-out client, inside the SAME
+ * transaction, as the mutation it accompanies — a throwing witness rolls
+ * the mutation back, and `COMMIT` never runs unless the witness has already
+ * succeeded. `apps/admin/src/audit-log.ts`'s `appendAuditEntry` is the
+ * production `exec` caller this was always waiting for.
+ *
+ * The STATIC in-memory adapter (`createStaticTenantAdminRepository`,
+ * below) deliberately stays on `NOOP_EXEC` — it is a fast, Docker-free
+ * contract-test double, not a production path, and a `Map` mutation has no
+ * transaction to roll back INTO. The atomicity property this type exists to
+ * carry is a property of the POSTGRES adapter specifically; the in-memory
+ * one only needs to prove call COUNT (`tenant-admin.contract.ts`'s own
+ * "exactly once per success, zero per refusal" assertion), which it already
+ * does with no transaction involved.
  */
 export type WriteWitness = (exec: (sql: string, values: readonly unknown[]) => Promise<void>) => Promise<void>;
 
-/** The no-op `exec` both adapters (this file's static one, and
- * `postgres-tenant-admin-repository.ts`'s Postgres one) pass to `w` in this
- * slice — see `WriteWitness`'s own docstring for why a real one waits for
- * PR12. Exported so both adapters share the identical stand-in rather than
- * each re-declaring their own `async () => {}`. */
+/** The no-op `exec` this file's OWN static in-memory adapter passes to `w` —
+ * see `WriteWitness`'s own docstring for why the static adapter never grows
+ * a real one. `postgres-tenant-admin-repository.ts` no longer imports this;
+ * it builds a REAL `exec` bound to its own transactionally-scoped client
+ * instead (task 10.6). */
 export const NOOP_EXEC: (sql: string, values: readonly unknown[]) => Promise<void> = async () => {};
 
 /**
