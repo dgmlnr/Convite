@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenants, postLogin } from "./api.js";
+import { getTenants, postLogin, postLogout } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -121,5 +121,33 @@ describe("getTenants", () => {
       }),
     );
     await expect(getTenants()).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+describe("postLogout", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts to /logout, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await postLogout();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/logout");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+  });
+
+  it("never throws, even when the network request itself fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postLogout()).resolves.toBeUndefined();
   });
 });

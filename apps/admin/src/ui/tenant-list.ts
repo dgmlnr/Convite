@@ -15,6 +15,13 @@ export interface TenantListRow {
   readonly id: string;
   readonly embedKey: string;
   readonly statusLabel: string;
+  /** Carried alongside `statusLabel` (never derived FROM the label text) so
+   * `TenantListScreen.tsx` can color-code a status badge — "who is paid up
+   * and who is not, at a glance" (launch prompt §5) needs a visual signal
+   * beyond text alone, and re-parsing a Spanish sentence to recover which of
+   * the 4 states it names would be exactly the kind of fragile coupling this
+   * separate field avoids. */
+  readonly statusKind: TenantStatus["kind"];
 }
 
 /**
@@ -25,5 +32,5 @@ export interface TenantListRow {
  * genuinely lives, testable directly without a browser.
  */
 export function buildTenantListRows(apiRows: readonly TenantListApiRow[]): readonly TenantListRow[] {
-  return apiRows.map((row) => ({ id: row.id, embedKey: row.embedKey, statusLabel: formatTenantStatusLabel(row.status) }));
+  return apiRows.map((row) => ({ id: row.id, embedKey: row.embedKey, statusLabel: formatTenantStatusLabel(row.status), statusKind: row.status.kind }));
 }

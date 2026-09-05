@@ -36,4 +36,7 @@ export const COPY = {
   tenantListLoading: "Cargando…",
   tenantListMissingPermission: "Tu cuenta no tiene permiso para ver la lista de inquilinos.",
   tenantListGenericError: "No se pudo cargar la lista de inquilinos. Probá de nuevo.",
+  logout: "Cerrar sesión",
+  retry: "Reintentar",
+  tenantEmbedKeyLabel: "Clave de inserción",
 } as const;
