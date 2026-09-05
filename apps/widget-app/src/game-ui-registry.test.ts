@@ -128,28 +128,38 @@ describe("familyUiFor(\"mahjong-solitario\") — the shelf's only game", () => {
   });
 
   /**
-   * NO `hero` AND NO `cardArt`, AND THE ABSENCE IS THE DECISION.
-   *
-   * The 42 faces are TRANSPARENT artwork — each file is the symbol alone,
-   * with no tile body behind it (`mahjong-tile-ui/about.ts` says so in the
-   * license record: nothing was repaired, the transparency is deliberate).
-   * The bone the symbol sits on is drawn separately, by `tileBodySvg()`, and
-   * a lobby card takes image URLs rather than markup. So a face on a card
-   * would be a black glyph floating on the felt with no tile under it, which
-   * is a rendering bug wearing an art direction.
-   *
-   * `game-list.ts` already handles this honestly — "a game with no art yet is
-   * a game, not a hole in the list": a title-only card, still full size and
-   * still a full activation target. Declared here so that the empty fields
-   * read as a choice rather than as an oversight somebody should go and fix
-   * by pointing them at the tile images.
+   * STILL NO `hero` — screen two's own header fan is a format-picker's row
+   * (`game-screen.ts`), and a one-modality solitaire has no format to fan.
+   * That absence is untouched by `cardArt` gaining real art below.
    */
-  it("declares no lobby art, because the tile faces are transparent symbols with no body behind them", () => {
+  it("declares no hero fan — a one-modality game has no format to fan on its own screen", () => {
     const family = familyUiFor("mahjong-solitario");
 
-    expect(family, "fence setup: the family must exist for its empty fields to mean anything").toBeDefined();
+    expect(family, "fence setup: the family must exist for its fields to mean anything").toBeDefined();
     expect(family?.hero).toBeUndefined();
-    expect(family?.cardArt).toBeUndefined();
+  });
+
+  /**
+   * `cardArt` IS DECLARED NOW, and used to not be — see `MAHJONG_FAMILY`'s own
+   * docblock in `game-ui-registry.ts` for why the earlier "declare nothing"
+   * answer measured false on a real render. The 42 faces really are
+   * TRANSPARENT artwork (`mahjong-tile-ui/about.ts`'s license record: nothing
+   * was repaired, the transparency is deliberate) — what changed is not that
+   * fact but the CONTRACT: `cardArt` now accepts a markup factory alongside a
+   * URL, so a game whose faces need composition rather than a plain `<img>`
+   * can still declare real art instead of none.
+   *
+   * Not a string, on purpose: the whole point of the widened contract is that
+   * this field is NOT a URL a plain `<img>` could point at.
+   */
+  it("declares real cardArt now — markup factories, not URLs, one per tile", () => {
+    const family = familyUiFor("mahjong-solitario");
+
+    expect(family?.cardArt?.length, "the same three-face count truco's and escoba's own fans use").toBe(3);
+    for (const item of family?.cardArt ?? []) {
+      expect(typeof item, "a factory to call, never a string to point an <img> at").not.toBe("string");
+      expect(typeof (item as { render?: unknown }).render).toBe("function");
+    }
   });
 });
 

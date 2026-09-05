@@ -695,13 +695,23 @@ min-height: 172px;
    unfinished beside one that has. That premise held for as long as every
    game in the catalog was a deck of cards.
 
-   The mahjong solitaire declares no lobby art and never will: its 42 faces
-   are TRANSPARENT symbols with no tile body behind them (mahjong-tile-ui's
-   own license record says the transparency is deliberate), the bone under a
-   symbol is generated markup, and cardArt takes image URLs. Rendered on its
-   own shelf at 172px it came out as a large empty rectangle with a name at
-   the foot — read on a real render, and it does not say "this game has no
-   art", it says "the art failed to load".
+   THIS USED TO BE ARGUED FROM THE MAHJONG SOLITAIRE, AND THAT ARGUMENT WAS
+   WRONG. A previous version of this comment claimed the solitaire "declares
+   no lobby art and never will", because its 42 faces are TRANSPARENT symbols
+   with no tile body behind them and a lobby card takes image URLs. The
+   premise is still true (mahjong-tile-ui's own license record says the
+   transparency is deliberate) — but rendered on its own shelf at 172px with
+   NOTHING declared, the card came out as a large empty rectangle with a name
+   at the foot, which read on a real screenshot as "the art failed to load",
+   not as "this game has no art". game-ui-registry.ts's MAHJONG_FAMILY now
+   declares real cardArt — three tiles composed from the same tileBodySvg()
+   call the board draws with (mahjong-solitaire-ui's card-art.ts) — so that
+   card no longer takes this branch at all.
+
+   The branch itself stays, because the premise it protects is still real for
+   a DIFFERENT case: a family that lands in the catalog before any of its faces
+   are chosen (game-list.scene.test.ts's own "one game with no art at all"
+   fixture is exactly this — see that file's docblock).
 
    The equal-height intent is untouched, because it was always about a ROW:
    the :has() rule further up stretches a band's items, so an art-less card

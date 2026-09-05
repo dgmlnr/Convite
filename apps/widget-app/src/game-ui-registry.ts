@@ -22,8 +22,9 @@ import {
   renderEscobaStatus,
   renderMatchOverOverlay,
 } from "@hexdev/escoba-ui";
-import type { BoardTiles, MahjongOutcomeInfo, MahjongPair } from "@hexdev/mahjong-solitaire-ui";
+import type { BoardTiles, MahjongCardArtTile, MahjongOutcomeInfo, MahjongPair } from "@hexdev/mahjong-solitaire-ui";
 import {
+  MAHJONG_CARD_ART,
   createChronometer,
   createMahjongBoardRenderer,
   ensureElapsedReadoutStyles,
@@ -343,6 +344,32 @@ export function sectionUiFor(sectionId: CatalogSectionId): SectionUi | undefined
  * unrepresentable: there is no longer a second place to put a game's art, so
  * two ways of playing it cannot drift apart.
  */
+/**
+ * A face for the list card's fan — either half of a widened contract that
+ * used to be `readonly string[]` alone.
+ *
+ * URLS STILL WORK UNCHANGED: a `string` is still a `CardArtItem`, so truco's
+ * `CARD_ART` and the locally-computed `ESCOBA_FACES` below need not change a
+ * character. What is NEW is the other half, `CardArtMarkup` — a game that
+ * supplies its own rendering rather than a URL a plain `<img>` can point at.
+ *
+ * WHY A SECOND SHAPE RATHER THAN WIDENING THE ONE GAMES ALREADY USE. The
+ * deck's own `hero-cards.ts` states the ORIGINAL reason `cardArt` took URLs
+ * and nothing else: "the shell decides how to lay them out, and it must be
+ * able to without importing a card renderer" — true for a raster that IS the
+ * whole card. It stops being true the moment a face is only HALF a picture:
+ * the mahjong artwork's 42 faces are shipped TRANSPARENT, the symbol alone
+ * with no tile body behind it (`mahjong-tile-ui`'s own license record calls
+ * this deliberate), so drawing one requires the same composition
+ * `tileBodySvg()` + a face image gives the board — which a URL cannot carry
+ * and the shell must not reimplement. `MahjongCardArtTile.render` is that
+ * composition, handed over ready-made from the one package that already owns
+ * it (`mahjong-solitaire-ui`'s `card-art.ts`), so the shell still never learns
+ * how a tile is drawn — it only learns that THIS face is a function to call
+ * rather than a string to point an `<img>` at.
+ */
+export type CardArtItem = string | MahjongCardArtTile;
+
 export interface GameFamilyUi {
   readonly id: GameFamilyId;
   /** What this game calls itself on the front door. */
@@ -352,7 +379,7 @@ export interface GameFamilyUi {
    * knows how to show it. */
   readonly hero?: readonly string[];
   /**
-   * The two or three cards that name this game on its CARD in the list — a
+   * The two or three faces that name this game on its CARD in the list — a
    * different job from `hero`, and deliberately its own field.
    *
    * NOT a slice of `hero`. `hero-cards.ts` says ORDER IS THE LAYOUT, with the
@@ -361,11 +388,14 @@ export interface GameFamilyUi {
    * And the shell must not be the one deciding which of a game's cards
    * represent it.
    *
+   * `CardArtItem`, not `readonly string[]` — see that type's own docblock for
+   * why a second, non-URL shape exists and which game needs it.
+   *
    * No `cardArt ?? hero` fallback either: a five-card fan shrunk into a list
    * card is a texture, not a hand. A game with nothing declared renders a
    * title-only card, still full size and still a full activation target.
    */
-  readonly cardArt?: readonly string[];
+  readonly cardArt?: readonly CardArtItem[];
   /** What rendering this game owes. Optional: a game that draws nothing
    * licensed owes nothing, and an empty list must not become a ceremony. */
   readonly credits?: readonly AssetCredit[];
@@ -431,31 +461,42 @@ const ESCOBA_FAMILY: GameFamilyUi = {
 /**
  * THE THIRD FAMILY, AND THE FIRST THAT IS NOT A DECK OF CARDS.
  *
- * `heroTitle` and `credits`, and deliberately nothing else — the two fields
- * this game genuinely has something to put in.
+ * STILL NO `hero` — screen two's own header fan is a format-picker's row of
+ * cards (`game-screen.ts`'s own docblock: "cards under a hero are formats of
+ * the game it names"), and a one-modality solitaire has no format to fan.
+ * That absence is untouched by this record.
  *
- * NO `hero`, NO `cardArt`, AND THAT IS A DECISION ABOUT THE ARTWORK ITSELF.
- * The 42 shipped faces are TRANSPARENT: each file is the symbol alone, with
- * no tile body behind it, and `mahjong-tile-ui`'s own license record says so
- * in as many words ("This artwork's transparency is deliberate — each file is
- * the face symbol with no tile body behind it"). The bone under the symbol is
- * drawn separately by `tileBodySvg()`, as markup, while `hero`/`cardArt` take
- * image URLs. A face pointed at from here would therefore render as a glyph
- * floating on the felt with nothing under it — a rendering bug that looks
- * deliberate, which is the worst way for one to look. `game-list.ts` already
- * answers the empty case honestly: a title-only card, still full size and
- * still a full activation target.
+ * `cardArt` IS DECLARED NOW, and it used to not be — the paragraph that stood
+ * here argued the opposite, on a premise that measured false. The 42 shipped
+ * faces really are TRANSPARENT (`mahjong-tile-ui`'s own license record: "each
+ * file is the face symbol with no tile body behind it"), and that premise
+ * still holds; what did not hold was the conclusion drawn from it. `cardArt`
+ * used to take only image URLs, so the honest-sounding answer was "declare
+ * nothing, and `game-list.ts`'s empty-art path renders a title-only card,
+ * still full size". Rendered and looked at, that path is NOT what it reads
+ * as: `chrome-styles.ts`'s own `min-height` reservation is scoped to
+ * `:has(.hexdev-game-card-art)`, so a card with no art fan gets none of it —
+ * on its own shelf, at roughly half the height of truco's and escoba's cards,
+ * it reads as a broken image, not as "this game has no art yet".
  *
- * THE CREDIT IS NOT OPTIONAL EVEN THOUGH THE ART IS ABSENT FROM THE LOBBY.
- * CC BY-SA 4.0 is owed because the widget DRAWS the artwork — on the board,
- * 144 tiles at a time — not because a lobby card shows it. `GAME_UI_CREDITS`
- * below unions this list for exactly that reason, in its own words: "an
- * obligation is owed whether or not that game's art won a place on the front
- * page".
+ * SO THE CONTRACT WIDENED INSTEAD (`CardArtItem`, above) rather than the art
+ * being invented: `MAHJONG_CARD_ART` (`mahjong-solitaire-ui`'s `card-art.ts`)
+ * composes three tiles from the EXACT SAME TWO CALLS `board.ts`'s `drawTile`
+ * draws one with — `tileBodySvg()` for the bone, `getTileArt()` for the face
+ * — so the lobby card and the felt can never draw two different tiles. No new
+ * artwork, no new license, and the CC BY-SA 4.0 credit below is unchanged by
+ * any of it.
+ *
+ * THE CREDIT WAS NEVER CONDITIONAL ON THE LOBBY SHOWING ANYTHING. CC BY-SA
+ * 4.0 is owed because the widget DRAWS the artwork — on the board, 144 tiles
+ * at a time — and `GAME_UI_CREDITS` below unions this list on exactly that
+ * ground: "an obligation is owed whether or not that game's art won a place
+ * on the front page".
  */
 const MAHJONG_FAMILY: GameFamilyUi = {
   id: "mahjong-solitario",
   heroTitle: "Mahjong Solitario",
+  cardArt: MAHJONG_CARD_ART,
   credits: [{ ...TILE_ATTRIBUTION, subject: STRINGS.creditSubjectTiles }],
 };
 

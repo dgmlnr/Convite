@@ -36,6 +36,13 @@ const ESCOBA: GameFamily = { id: "escoba", entries: [entry("escoba-de-15", "esco
 const noArtEntry = (id: string): CatalogEntry => ({ id: id as GameId, gameFamily: "no-art-fixture", section: "cartas", displayNameKey: "games.truco.name", seatCount: 2, configOptions: [] });
 const NO_ART_FAMILY: GameFamily = { id: "no-art-fixture", entries: [noArtEntry("no-art-fixture-game")] };
 
+/* The REAL id, for the same reason `ESCOBA` above is: `game-list.ts` looks
+ * art up through `familyUiFor(family.id)`, so this fixture's own entries are
+ * mostly decoration — what actually resolves `MAHJONG_FAMILY`'s real
+ * `cardArt` (markup factories, not URLs) is the id matching the registry's. */
+const mahjongEntry = (id: string): CatalogEntry => ({ id: id as GameId, gameFamily: "mahjong-solitario", section: "fichas", displayNameKey: "games.mahjongSolitario.name", seatCount: 1, configOptions: [] });
+const MAHJONG: GameFamily = { id: "mahjong-solitario", entries: [mahjongEntry("mahjong-solitario")] };
+
 /* Unit M's finished escoba entries — REAL ids, REAL empty `configOptions`,
  * exactly as `apps/server`'s registration (Slice L) and `escoba-module`
  * (Slice J) declare them. */
@@ -289,6 +296,43 @@ describe("each game shows its own cards, and the place names itself quietly", ()
     const faces = [...el.querySelectorAll<HTMLImageElement>(".hexdev-game-card-face")];
     expect(faces.length).toBe(3);
     expect(faces[1]?.src, "the middle slot is the one nothing overlaps").toContain("7-oro");
+  });
+
+  /* Widened `cardArt` contract (game-ui-registry.ts's `CardArtItem`): the
+   * mahjong solitaire's faces are markup FACTORIES, not URLs — this is the
+   * rendered proof that `game-list.ts`'s new branch calls them rather than
+   * trying to point an `<img>` at one, which would throw or draw nothing. */
+  it("mahjong's card fan draws composed tiles — the board's own tileBodySvg() markup, not an <img> pointed at a transparent face", () => {
+    const el = fresh();
+    renderGameList(el, oneSection([MAHJONG]), { onOpenGame: noop });
+
+    const fan = el.querySelector<HTMLElement>(".hexdev-game-card-art")!;
+    const faces = [...fan.querySelectorAll<HTMLElement>(".hexdev-game-card-face")];
+    expect(faces.length, "the same three-face count truco's and escoba's own fans use").toBe(3);
+    for (const face of faces) {
+      expect(face.tagName, "composed markup, never a bare <img>").not.toBe("IMG");
+      expect(face.querySelector("svg"), "the tile's own bone, drawn by tileBodySvg()").not.toBeNull();
+      expect(face.querySelector("img"), "the face symbol on top of it").not.toBeNull();
+    }
+  });
+
+  /* MEASURED, not assumed — this is the regression the whole widened
+   * contract exists to fix. `chrome-styles.ts`'s min-height reservation is
+   * scoped to `:has(.hexdev-game-card-art)`, so with NO cardArt at all
+   * (NO_ART_FAMILY) it never engages and the card collapses to its content's
+   * own height. A real fan is what re-engages it, and only a real render can
+   * prove that — the DOM shape alone (a fan element present) does not say
+   * whether the CSS it depends on actually fired. */
+  it("mahjong's card reserves the same height truco's card does, never the collapsed height a fan-less card gets", () => {
+    const el = fresh();
+    renderGameList(el, oneSection([MAHJONG, TRUCO, NO_ART_FAMILY]), { onOpenGame: noop });
+
+    const mahjongHeight = el.querySelector('[data-family="mahjong-solitario"]')!.getBoundingClientRect().height;
+    const trucoHeight = el.querySelector('[data-family="truco"]')!.getBoundingClientRect().height;
+    const noArtHeight = el.querySelector('[data-family="no-art-fixture"]')!.getBoundingClientRect().height;
+
+    expect(mahjongHeight, "the same reservation a full-art card gets, not a coincidentally similar number").toBeCloseTo(trucoHeight, 0);
+    expect(mahjongHeight, "strictly taller than a card the reservation never engages for").toBeGreaterThan(noArtHeight);
   });
 
   it("the mark sits at the foot beside the credits, never over the games", () => {
