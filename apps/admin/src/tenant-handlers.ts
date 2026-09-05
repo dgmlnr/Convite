@@ -158,3 +158,29 @@ export function createTenantOriginsHandler(deps: TenantHandlersDeps): AdminHandl
   };
 }
 
+/**
+ * `POST /tenants/:id/games` (tasks 15a.3/15a.4, permission
+ * `tenant.games.edit`) — structurally identical to the origins handler
+ * above, same "empty is legitimate" rule (an entitlement lapsing to zero is
+ * a real state this panel must be able to reach and show, not a validation
+ * error).
+ */
+export function createTenantGamesHandler(deps: TenantHandlersDeps): AdminHandler {
+  return async (req, actor) => {
+    const id = req.params?.id;
+    if (id === undefined || id === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
+    const games = req.body?.games;
+    if (!isStringArray(games)) return { status: 400, body: JSON.stringify({ error: "invalid-games" }) };
+
+    const existing = await deps.tenants.findById(id as TenantId);
+    const witness = tenantAuditWitness(deps, actor, {
+      action: "tenant.games.updated",
+      targetTenantId: id as TenantId,
+      changes: { entitledGames: { before: existing?.entitledGames ?? null, after: games } },
+    });
+    const result = await deps.tenants.updateEntitledGames(id as TenantId, games, witness);
+    if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : 400, body: JSON.stringify({ error: result.reason }) };
+    return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
+  };
+}
+
