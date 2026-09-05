@@ -68,6 +68,14 @@ export { createStaticOperatorSessionRepository } from "./operator-session-reposi
 // its only producer (`findOperatorAuthorizationContext`) stays behind
 // `node.ts`, the same port/adapter split every other pair here follows.
 export type { OperatorAuthorizationContext } from "./operator-authorization.js";
+// `RevokePermissionResult`/`RevokePermissionGuardedResult` (PR15, tenant-
+// administration slice 12): the return shape of `revokePermission`
+// (`node.ts`, Postgres-bound) — a PURE type with no Node/Postgres dependency
+// of its own, same class as `OperatorLifecycleGuardedResult` above, so it
+// belongs on THIS public barrel even though its only producer stays behind
+// `node.ts`. `grantPermission` returns the ALREADY-exported
+// `OperatorMutationResult` (above), needing no new type of its own.
+export type { RevokePermissionGuardedResult, RevokePermissionResult } from "./operator-permissions.js";
 // `isTenantActive` (tenant-administration slice 6, design §2.4): a PURE
 // function with no value import at all beyond the global `Intl` — unlike
 // `connectRedis`/`connectPostgres`/the Postgres adapters (which live behind

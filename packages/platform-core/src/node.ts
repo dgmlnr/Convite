@@ -71,3 +71,10 @@ export { disableOperator, enableOperator } from "./operator-lifecycle.js";
 // operations — same "no port, no static double" placement as
 // `operator-lifecycle.ts`'s own pair.
 export { bootstrapOperator, resetOperatorPassword } from "./operator-bootstrap.js";
+// `grantPermission`/`revokePermission` (PR15, tenant-administration slice
+// 12, design §8's own advance note): standalone Postgres-bound functions,
+// the identical placement principle as `disableOperator`/`enableOperator`
+// above — `revokePermission` reuses THIS package's own
+// `withLastAccountManagerGuard`, so it needs a real `Pool` and belongs
+// behind this barrel exactly like its sibling pair.
+export { grantPermission, revokePermission } from "./operator-permissions.js";
