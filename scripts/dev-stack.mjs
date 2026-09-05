@@ -36,13 +36,25 @@
  * Development affordance only, exactly like `dev-host.mjs`: it opts into the
  * dev key material via HEXDEV_ALLOW_DEV_DEFAULTS and is never part of a
  * deployment.
+ *
+ * ALSO PROVISIONS POSTGRES (tenant-administration slice 3b). Both roles'
+ * `HEXDEV_TENANTS_JSON` fixture retired — their tenant catalogs now live in
+ * Postgres, read through `HEXDEV_POSTGRES_URL`. This script starts its own
+ * throwaway Postgres container (mirroring `postgres-tests/global-setup.ts`'s
+ * `docker run` + `pg_isready` shape), applies migrations, and seeds one
+ * working dev tenant before spawning either role — the honest new
+ * prerequisite `pnpm dev:server` did not have before (README documents it).
+ * `HEXDEV_POSTGRES_URL` set in the calling shell skips the container
+ * entirely, the escape hatch design §14 names for a native Postgres install.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createServer, request } from "node:http";
-import { connect } from "node:net";
+import { connect, createServer as createTcpProbe } from "node:net";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { buildDevTenantSeed } from "./dev-tenant-seed.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -95,6 +107,19 @@ const lanAddress = args.find((arg) => !arg.startsWith("--")) ?? detectLanAddress
 const publicOrigin = `http://${lanAddress}:${String(PUBLIC_PORT)}`;
 const hostOrigin = `http://${lanAddress}:${String(HOST_PORT)}`;
 
+/** Shared `spawnSync` wrapper — loud on failure, one shape for every
+ * subprocess step this script runs (build, migrations, docker). */
+function run(command, commandArgs, description, envOverride) {
+  process.stdout.write(`[dev-stack] ${description}\n`);
+  const result = spawnSync(command, commandArgs, {
+    cwd: REPO_ROOT,
+    env: envOverride === undefined ? process.env : { ...process.env, ...envOverride },
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`[dev-stack] FAILED (exit ${String(result.status)}): ${description}`);
+}
+
 /**
  * `tsc -b` first, then the bundles — the same order and the same reason
  * `e2e/global-setup.ts` documents: both Vite builds resolve their workspace
@@ -102,20 +127,79 @@ const hostOrigin = `http://${lanAddress}:${String(HOST_PORT)}`;
  * compiling silently bundles the previous run's code.
  */
 function build() {
-  const steps = [
-    ["typecheck", ["run", "typecheck"], "compiling every workspace package's dist/"],
-    ["bundles", ["-r", "build"], `baking ${publicOrigin} into loader.js`],
-  ];
-  for (const [label, pnpmArgs, description] of steps) {
-    process.stdout.write(`[build:${label}] ${description}\n`);
-    const result = spawnSync("pnpm", pnpmArgs, {
-      cwd: REPO_ROOT,
-      env: { ...process.env, HEXDEV_WIDGET_ORIGIN: publicOrigin },
-      stdio: "inherit",
-    });
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`[build:${label}] FAILED (exit ${String(result.status)})`);
+  run("pnpm", ["run", "typecheck"], "compiling every workspace package's dist/", { HEXDEV_WIDGET_ORIGIN: publicOrigin });
+  run("pnpm", ["-r", "build"], `baking ${publicOrigin} into loader.js`, { HEXDEV_WIDGET_ORIGIN: publicOrigin });
+}
+
+/** Program-generated, never from user input (threat: Subprocess) — same
+ * discipline `postgres-tests/global-setup.ts`'s own `containerNameFor` and
+ * `dockerRunArgs` document; duplicated in plain JS here rather than
+ * imported because that file runs only through vite-node (vitest), and this
+ * script runs through plain `node`. */
+function devPostgresContainerName() {
+  return `hexdev-dev-postgres-${String(process.pid)}`;
+}
+
+function dockerRunArgs(containerName, port) {
+  return ["run", "-d", "--rm", "--name", containerName, "-p", `${String(port)}:5432`, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=convite", "postgres:17-alpine"];
+}
+
+function ensureDockerAvailable() {
+  const probe = spawnSync("docker", ["info"], { stdio: "ignore" });
+  if (probe.error || probe.status !== 0) {
+    throw new Error(
+      "pnpm dev:server needs Postgres and could not reach Docker to start one. Either install/start Docker " +
+        "(Docker Desktop or the daemon), or point at an already-running Postgres yourself: " +
+        "set HEXDEV_POSTGRES_URL=postgres://user:pass@host:port/db before running this command.",
+    );
   }
+}
+
+async function waitForPostgresReady(containerName, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = spawnSync("docker", ["exec", containerName, "pg_isready", "-U", "postgres"], { encoding: "utf8" });
+    if (result.status === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`postgres container ${containerName} never became ready within ${String(timeoutMs)}ms`);
+}
+
+/** An OS-assigned free TCP port, so this script's own throwaway container
+ * never collides with a developer's own local Postgres on 5432 — the
+ * `getFreePorts` role `postgres-tests/global-setup.ts` fills, reimplemented
+ * here because that file is not importable from plain `node` (see the
+ * header docstring). */
+function getFreeTcpPort() {
+  return new Promise((resolve, reject) => {
+    const probe = createTcpProbe();
+    probe.on("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * `HEXDEV_POSTGRES_URL` set → use it, skip the container entirely (design
+ * §14's escape hatch for a native install). Unset → start one throwaway,
+ * ephemeral (`--rm`, no volume) container: a persistent one would let a
+ * developer's stale local edits diverge from the seed, the exact class of
+ * problem this whole slice removes.
+ */
+async function startDevPostgres() {
+  const externalUrl = process.env.HEXDEV_POSTGRES_URL;
+  if (externalUrl !== undefined) {
+    process.stdout.write("[dev-stack] using HEXDEV_POSTGRES_URL as given, skipping the throwaway container\n");
+    return { url: externalUrl, stop: () => {} };
+  }
+  ensureDockerAvailable();
+  const port = await getFreeTcpPort();
+  const containerName = devPostgresContainerName();
+  run("docker", dockerRunArgs(containerName, port), `starting a throwaway Postgres container on :${String(port)}`);
+  await waitForPostgresReady(containerName, 20_000);
+  return { url: `postgres://postgres@127.0.0.1:${String(port)}/convite`, stop: () => spawnSync("docker", ["stop", containerName]) };
 }
 
 if (skipBuild) {
@@ -125,40 +209,55 @@ if (skipBuild) {
 }
 
 /**
- * The dev fixture tenant, widened to the network origin.
- *
- * The built-in `DEV_TENANT` allows only `http://localhost:5173` and
- * `http://localhost:3000`. A page served from a LAN address is a DIFFERENT
- * origin, and the server refusing it is correct behaviour, not a bug — so
- * the allowlist has to name it. Loopback stays listed so this script does
- * not break opening the same demo locally.
- *
- * WIDENED FROM THE REAL RECORD, never transcribed. This block used to
- * hand-write the whole tenant, and the one field it had no reason to
- * restate — `entitledGames` — is exactly the one that rotted: it still
- * listed only the two truco ids after escoba and the solitaire were
- * registered, so the demo this script exists to serve showed three fewer
- * games than the server it booted was ready to run, on both `dev:server`
- * and `dev:lan`. Nothing threw, because an entitled id with no module is
- * dropped from the catalog silently and a module with no entitlement is
- * simply never offered. Importing the record means the only thing this
- * script can get wrong is the one thing it actually knows: the address.
+ * Postgres now, before either role spawns (design §14: "after reaching
+ * Postgres, before seeding and before spawning either role"). Both roles'
+ * `HEXDEV_TENANTS_JSON` fixture retired this slice — the seed goes straight
+ * into the same database both roles read.
  */
-const { DEV_TENANT } = await import(pathToFileURL(path.join(REPO_ROOT, "apps/mint-server/dist/config.js")).href);
-const tenants = [
-  {
-    ...DEV_TENANT,
-    // De-duplicated: at `localhost` the served origin IS one of the built-in
-    // ones, and a repeated entry in this document is noise an operator
-    // reading it would have to stop and explain to themselves.
-    allowedOrigins: [...new Set([hostOrigin, ...DEV_TENANT.allowedOrigins])],
-  },
-];
+const { url: postgresUrl, stop: stopPostgres } = await startDevPostgres();
+run("pnpm", ["run", "db:migrate"], "applying migrations to the dev database", { HEXDEV_POSTGRES_MIGRATE_URL: postgresUrl });
 
-/** Read off the same record rather than restated, for the reason above: the
- * key the stand-in page embeds with and the key the tenant is minted under
- * have to be one value, and two literals is how they stop being one. */
-const EMBED_KEY = DEV_TENANT.embedKey;
+/**
+ * The dev fixture tenant's identity. Not read off a `DEV_TENANT` fixture
+ * anymore — that record retired with `HEXDEV_TENANTS_JSON` — so this script
+ * now owns it directly. Matches `dev-host.mjs`'s own `pk_dev_local` default
+ * so the stand-in page still works even if `HEXDEV_EMBED_KEY` is never set.
+ */
+const EMBED_KEY = "pk_dev_local";
+
+/**
+ * `entitledGames` sourced from the LIVE registry, never a fixture (design
+ * §14): `MINT_GAME_IDS` is derived from the exact module list
+ * `buildMintGameRegistry()` itself registers (`apps/mint-server/src/registry.ts`),
+ * so this seed can never again show fewer games than the server is actually
+ * ready to run — the drift the old, hand-copied `DEV_TENANT.entitledGames`
+ * fixture once rotted into (see that retired file's own docstring, kept
+ * here as the reason this import replaces it rather than a hand-written
+ * list).
+ */
+const { MINT_GAME_IDS } = await import(pathToFileURL(path.join(REPO_ROOT, "apps/mint-server/dist/registry.js")).href);
+
+const seed = buildDevTenantSeed({ id: "dev-tenant", embedKey: EMBED_KEY, hostOrigin, entitledGames: MINT_GAME_IDS });
+
+const { connectPostgres } = await import(pathToFileURL(path.join(REPO_ROOT, "packages/platform-core/dist/postgres-client.js")).href);
+const seedPool = await connectPostgres(postgresUrl);
+try {
+  // ON CONFLICT rather than a bare INSERT: the container is ephemeral and
+  // starts empty on every run, but the `HEXDEV_POSTGRES_URL` escape hatch
+  // above can point at a persistent database that already carries this
+  // exact seed from a previous run.
+  await seedPool.query(
+    `INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (embed_key) DO UPDATE SET
+       allowed_origins = EXCLUDED.allowed_origins,
+       entitled_games  = EXCLUDED.entitled_games,
+       updated_at      = now()`,
+    [seed.id, seed.embedKey, seed.allowedOrigins, seed.entitledGames],
+  );
+} finally {
+  await seedPool.end();
+}
 
 const roleEnv = {
   ...process.env,
@@ -167,7 +266,7 @@ const roleEnv = {
   // re-validates the WebSocket join against. It is the PUBLIC origin, never
   // an internal port: the browser never sees those.
   HEXDEV_WIDGET_ORIGIN: publicOrigin,
-  HEXDEV_TENANTS_JSON: JSON.stringify(tenants),
+  HEXDEV_POSTGRES_URL: postgresUrl,
 };
 
 /** Same split as `e2e/support/front-proxy.ts`, pinned by its own test there. */
@@ -227,6 +326,7 @@ function shutdown(code) {
   shuttingDown = true;
   for (const child of children) child.kill("SIGTERM");
   proxyServer?.close();
+  stopPostgres();
   setTimeout(() => process.exit(code), 300);
 }
 
@@ -311,6 +411,7 @@ process.stdout.write(
     `    Open it at:          ${hostOrigin}`,
     `    Widget origin:       ${publicOrigin}  (mint :${String(MINT_PORT)} + match :${String(MATCH_PORT)} behind one port)`,
     `    Embed key:           ${EMBED_KEY}`,
+    `    Postgres:            ${postgresUrl}`,
     "",
     "  Ctrl+C stops every process.",
     "",
