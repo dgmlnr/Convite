@@ -94,5 +94,9 @@ describe("the public barrel is safe to bundle for a browser", () => {
     // — same guarantee, same reason.
     expect(nodeBarrel).toMatch(/disableOperator/);
     expect(nodeBarrel).toMatch(/enableOperator/);
+    // PR14 (tenant-administration slice 11b): the bootstrap CLI's own two
+    // Postgres-bound operations — identical guarantee.
+    expect(nodeBarrel).toMatch(/bootstrapOperator/);
+    expect(nodeBarrel).toMatch(/resetOperatorPassword/);
   });
 });
