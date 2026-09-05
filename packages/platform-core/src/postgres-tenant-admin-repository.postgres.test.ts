@@ -4,8 +4,10 @@ import type { TenantId, TenantRecord } from "./tenant-auth.js";
 import type { WriteWitness } from "./tenant-admin.js";
 import { connectPostgres } from "./postgres-client.js";
 import { createPostgresTenantAdminRepository } from "./postgres-tenant-admin-repository.js";
+import { createPostgresTenantRepository } from "./postgres-tenant-repository.js";
 import { describeTenantAdminRepositoryContract } from "./tenant-admin.contract.js";
 import { readPostgresTestUrl } from "./postgres-test-harness.js";
+import { isTenantActive } from "./tenant-validity.js";
 
 /** An operator row every audit-witness test in this file's own "task 10.6"
  * describe block references — `audit_entries.actor_operator_id` is `NOT
@@ -164,5 +166,62 @@ describe("createPostgresTenantAdminRepository — task 10.6: the REAL WriteWitne
     expect(result).toEqual({ ok: false, reason: "embed-key-taken" });
     const { rows } = await pool.query("SELECT 1 FROM audit_entries WHERE target_tenant_id = $1", ["tenant-audit-refuse-dup"]);
     expect(rows).toHaveLength(0);
+  });
+});
+
+/**
+ * Task 15a.7 — "extending a lapsed tenant's window re-enables mint/renew/join
+ * with no other change." Exercised end-to-end against REAL Postgres, across
+ * BOTH sides of the read/write split (design §2.4, decision #3684 item 4):
+ * the ADMIN write path (`TenantAdminRepository.setValidityWindow`, the exact
+ * function `tenant-handlers.ts`'s `createTenantWindowHandler` calls) and the
+ * MINT/MATCH read path (`TenantRepository.findByEmbedKey` +
+ * `isTenantActive`, the exact two calls `resolveActiveTenant` in
+ * `tenant-auth.ts` makes at every real choke point). Deliberately does NOT
+ * boot `apps/mint-server` itself — that would duplicate what
+ * `tenant-auth.test.ts`'s own choke-point suite already proves about
+ * `isTenantActive`'s CALL SITE; this test's own job is proving the DATA
+ * actually flows from one adapter to the other through the SAME row, which
+ * neither adapter's own isolated contract test can show by itself.
+ */
+describe("task 15a.7 — extending a lapsed tenant's window through the admin write path re-enables it on the read path", () => {
+  it("a tenant whose window already lapsed is inactive on read, then active again after the SAME admin extend the panel's own handler performs — origins/games untouched throughout", async () => {
+    await seedTenants([]);
+    const now = Date.now();
+    const pastValidUntil = new Date(now - 24 * 60 * 60 * 1000); // 1 day ago — already lapsed
+    await pool.query("INSERT INTO tenants (id, embed_key, allowed_origins, entitled_games, valid_until) VALUES ($1, $2, $3, $4, $5)", [
+      "tenant-window-e2e",
+      "pk_live_window_e2e",
+      ["https://acme.example"],
+      ["truco-argentino"],
+      pastValidUntil,
+    ]);
+
+    const readRepo = createPostgresTenantRepository(pool);
+    const adminRepo = createPostgresTenantAdminRepository(pool);
+
+    // BEFORE: the exact read a real mint/renew/join choke point performs —
+    // lapsed, so `resolveActiveTenant` would refuse it.
+    const before = await readRepo.findByEmbedKey("pk_live_window_e2e");
+    expect(before).not.toBeUndefined();
+    expect(isTenantActive(before!, now)).toBe(false);
+
+    // THE ADMIN EDIT — the SAME `setValidityWindow` call
+    // `createTenantWindowHandler` makes, extending validUntil 90 days out,
+    // `validFrom` carried through unchanged (undefined here, matching this
+    // tenant's own — the handler's own "preserve, never silently clear"
+    // rule, proven at the unit level in `tenant-handlers.test.ts`).
+    const futureValidUntil = now + 90 * 24 * 60 * 60 * 1000;
+    const witness = async (exec: (sql: string, values: readonly unknown[]) => Promise<void>) => exec("SELECT 1", []);
+    const writeResult = await adminRepo.setValidityWindow("tenant-window-e2e" as TenantId, { validFrom: before!.validFrom, validUntil: futureValidUntil }, witness);
+    expect(writeResult.ok).toBe(true);
+
+    // AFTER: re-read through the SAME read port a real choke point uses —
+    // now active, with NO OTHER FIELD disturbed by the window edit.
+    const after = await readRepo.findByEmbedKey("pk_live_window_e2e");
+    expect(after).not.toBeUndefined();
+    expect(isTenantActive(after!, now)).toBe(true);
+    expect(after!.allowedOrigins).toEqual(["https://acme.example"]);
+    expect(after!.entitledGames).toEqual(["truco-argentino"]);
   });
 });
