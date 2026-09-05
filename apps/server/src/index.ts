@@ -9,9 +9,8 @@ import {
   createRedisMatchmakingPool,
   createRedisRateLimiter,
   createSessionTokenVerifier,
-  createStaticTenantRepository,
 } from "@hexdev/platform-core";
-import { connectRedis } from "@hexdev/platform-core/node";
+import { connectPostgres, connectRedis, createPostgresTenantRepository } from "@hexdev/platform-core/node";
 import type { JtiReplayGuard, MatchmakingPool, RateLimiter } from "@hexdev/platform-core";
 import { PresenceRoom, createMatchServer } from "@hexdev/transport-colyseus";
 import type { PresenceRoomCreateOptions } from "@hexdev/transport-colyseus";
@@ -23,7 +22,13 @@ import { buildGameRegistry } from "./registry.js";
 // the generic MatchRoom, the deal factory) together. No game rules live
 // here — see `truco-module`/`truco-engine` for those.
 const config = loadServerConfig(process.env);
-const repository = createStaticTenantRepository(config.tenants);
+// Same "throw, crash boot" convention as `connectRedis`/`createSessionTokenVerifier`
+// below (design §1.10/§15, tenant-administration slice 3b): Postgres is the
+// system of record, so an unreachable database at boot must crash this
+// process, never fall back to an empty in-memory catalog that silently
+// admits nobody.
+const postgresPool = await connectPostgres(config.postgresUrl);
+const repository = createPostgresTenantRepository(postgresPool);
 // THIS PROCESS HOLDS NO SEED. That is the mint/verify split (handoff
 // §P4.3) actually landed: before it, every replica could mint, so
 // compromising any one instance meant minting for the whole fleet. The seed

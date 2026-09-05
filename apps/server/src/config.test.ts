@@ -4,12 +4,14 @@ import { loadServerConfig } from "./config.js";
 
 /** Every non-secret-focused test below needs the explicit dev opt-in — the
  * secret guard now fails loudly by default (hardening: public surface,
- * obs 2945), not only in `NODE_ENV=production`. */
+ * obs 2945), not only in `NODE_ENV=production`. Now ALSO required for
+ * `postgresUrl` (tenant-administration slice 3b), which joins the same
+ * inverted-guard family, so this one opt-in covers both. */
 const DEV_OPT_IN = { HEXDEV_ALLOW_DEV_DEFAULTS: "true" };
 
 describe("loadServerConfig", () => {
   it("uses HEXDEV_SESSION_PUBLIC_KEY from the environment when present, even in production", () => {
-    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "a-real-public-key" });
+    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "a-real-public-key", HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" });
     expect(config.sessionPublicKey).toBe("a-real-public-key");
   });
 
@@ -21,47 +23,39 @@ describe("loadServerConfig", () => {
     expect(loadServerConfig({ ...DEV_OPT_IN, PORT: "4001" }).port).toBe(4001);
   });
 
-  it("falls back to a single dev tenant when HEXDEV_TENANTS_JSON is unset", () => {
-    const config = loadServerConfig(DEV_OPT_IN);
-    expect(config.tenants.length).toBeGreaterThan(0);
-    expect(config.tenants[0]?.entitledGames).toContain("truco-argentino");
-  });
-
   /**
-   * Slice L.2/L.3 — ONE test for THIS composition root, deliberately not a
-   * fixture shared with `apps/mint-server`'s own `config.test.ts`: the two
-   * roots are independently configured `DEV_TENANT`s, and mutation row 20
-   * (below, `registry.entitled-games.mutation.test.ts` — see also this
-   * file's own coverage) proves they can drift apart from each other without
-   * either fence noticing the other's breakage.
+   * tenant-administration slice 3b: this role's tenant catalog no longer
+   * comes from `HEXDEV_TENANTS_JSON`/`DEV_TENANT` at all — both retire in
+   * this slice, same as `apps/mint-server`'s own `config.test.ts`.
+   * `postgresUrl` joins the `sessionPublicKey` INVERTED-GUARD family, never
+   * the optional `redisUrl` shape — see `loadMintConfig`'s identical
+   * fence for the full argument (design §1.8).
    */
-  it("entitles the dev tenant to BOTH escoba ids (slice L: the match role's own composition root)", () => {
-    const config = loadServerConfig(DEV_OPT_IN);
-    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15");
-    expect(config.tenants[0]?.entitledGames).toContain("escoba-de-15-2v2");
-  });
+  describe("postgresUrl", () => {
+    it("reads it from the environment when present", () => {
+      const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" });
+      expect(config.postgresUrl).toBe("postgres://user:pw@db.example/convite");
+    });
 
-  /**
-   * The solitaire, on THIS root's own dev tenant — and the pair of
-   * assertions is what makes `registry.test.ts`'s coherence fence able to
-   * fail at all. An entitled id with no registered module is exactly the
-   * defect that fence was built for (see its own docstring, and the escoba
-   * gap it closed on the mint root); an id nobody entitles could never
-   * reach it.
-   *
-   * The FIRST game on this platform whose `seatCount` is 1, so it is also
-   * the first entitlement that exercises the bound slice 0 widened
-   * (`createGameModuleRegistry` threw for `seatCount < 2` until then).
-   */
-  it("entitles the dev tenant to the mahjong solitaire (the match role's own composition root)", () => {
-    const config = loadServerConfig(DEV_OPT_IN);
-    expect(config.tenants[0]?.entitledGames).toContain("mahjong-solitario");
-  });
+    it("refuses to start in production without it", () => {
+      expect(() => loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "a-real-public-key" })).toThrow(/HEXDEV_POSTGRES_URL/);
+    });
 
-  it("parses tenant records from HEXDEV_TENANTS_JSON when set", () => {
-    const tenants = [{ id: "t1", embedKey: "pk_x", allowedOrigins: ["https://a.example"], entitledGames: ["truco-argentino"] }];
-    const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });
-    expect(config.tenants).toEqual(tenants);
+    it("refuses to start anywhere else without an explicit opt-in", () => {
+      expect(() => loadServerConfig({ HEXDEV_SESSION_PUBLIC_KEY: "a-real-public-key" })).toThrow(/HEXDEV_POSTGRES_URL/);
+    });
+
+    it("falls back to a local dev default only when opted into explicitly", () => {
+      expect(loadServerConfig(DEV_OPT_IN).postgresUrl).toMatch(/^postgres:\/\//);
+    });
+
+    /** The exact symptom this slice removes: setting the OLD variable must
+     * no longer produce a tenant catalog, a config field, or a way to boot
+     * without the new one — it is simply not read anymore. */
+    it("ignores HEXDEV_TENANTS_JSON entirely — it is no longer read by this role", () => {
+      const config = loadServerConfig({ ...DEV_OPT_IN, HEXDEV_TENANTS_JSON: "not even valid JSON, and that must not matter anymore" });
+      expect(config).not.toHaveProperty("tenants");
+    });
   });
 
   it("defaults the rate-limit setting for room join — the only surface this role still exposes", () => {
@@ -140,12 +134,12 @@ describe("loadServerConfig + createSessionTokenIssuer — the FULL boot path ref
     // Deliberately NOT a valid 32-byte Ed25519 seed once base64url-decoded —
     // `loadServerConfig` itself does not reject this (see its own docstring:
     // shape validation is `createSessionTokenIssuer`'s job).
-    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key" });
+    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key", HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" });
     expect(config.sessionPublicKey).toBe("not-a-real-key");
   });
 
   it("createSessionTokenVerifier refuses the malformed key loadServerConfig passed through — the composition root's top-level `await` (index.ts) turns this into a boot crash, same convention as redis-client.ts's fail-loud connect", async () => {
-    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key" });
+    const config = loadServerConfig({ NODE_ENV: "production", HEXDEV_SESSION_PUBLIC_KEY: "not-a-real-key", HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" });
     await expect(createSessionTokenVerifier(config.sessionPublicKey)).rejects.toThrow(/malformed/i);
   });
 });
@@ -159,7 +153,7 @@ describe("loadServerConfig + createSessionTokenIssuer — the FULL boot path ref
  * same gap from this file.
  */
 describe("loadServerConfig numeric guards", () => {
-  const base = { HEXDEV_SESSION_PUBLIC_KEY: "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw" };
+  const base = { HEXDEV_SESSION_PUBLIC_KEY: "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw", HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" };
 
   it("refuses a non-numeric PORT rather than listening on NaN", () => {
     expect(() => loadServerConfig({ ...base, PORT: "not-a-port" })).toThrow(/PORT/);
@@ -183,53 +177,6 @@ describe("loadServerConfig numeric guards", () => {
     expect(config.joinIpRateLimit.limit).toBe(5);
   });
 
-  /**
-   * The gap this closes. `readTenants` used to check `Array.isArray` and then
-   * cast — so a list whose ELEMENTS are wrong started the process and surfaced
-   * much later as tenants that silently never match. Its own docstring claimed
-   * the shape was checked; it was not.
-   *
-   * A bare string where a list of origins belongs is the dangerous case, not an
-   * obviously wrong one: it is iterable, so an origin check would compare
-   * against single CHARACTERS and reject every real origin without ever looking
-   * broken.
-   */
-  it("refuses a tenant list whose ELEMENTS are the wrong shape, naming the offending index", () => {
-    // Each shape asserts its OWN message. A shared regex would pass even if
-    // every shape reported the same generic reason, which is the difference
-    // between proving the guard discriminates and proving it merely throws.
-    const badShapes: readonly { readonly tenants: unknown; readonly expected: RegExp }[] = [
-      { tenants: [42], expected: /index 0 that is a number, not an object/ },
-      { tenants: [{ id: "acme" }], expected: /index 0 whose "embedKey" is not a non-empty string/ },
-      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: "https://acme.example", entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
-      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: "truco" }], expected: /"entitledGames" is not an array of non-empty strings/ },
-      { tenants: [{ id: "", embedKey: "k", allowedOrigins: [], entitledGames: [] }], expected: /index 0 whose "id" is not a non-empty string/ },
-      { tenants: [{ id: "acme", embedKey: "k", allowedOrigins: [""], entitledGames: ["truco"] }], expected: /"allowedOrigins" is not an array of non-empty strings/ },
-    ];
-
-    for (const { tenants, expected } of badShapes) {
-      const load = (): unknown => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: JSON.stringify(tenants) });
-
-      expect(load).toThrow(/HEXDEV_TENANTS_JSON/); // names the variable an operator must fix
-      expect(load).toThrow(expected); // and names WHICH record, and why
-    }
-  });
-
-  it("still accepts a well-formed tenant list, theme optional", () => {
-    const withTheme = [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: ["truco"], theme: { feltColor: "#0b3d2e" } }];
-    const withoutTheme = [{ id: "acme", embedKey: "k", allowedOrigins: ["https://acme.example"], entitledGames: ["truco"] }];
-
-    expect(loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: JSON.stringify(withTheme) }).tenants).toHaveLength(1);
-    expect(loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: JSON.stringify(withoutTheme) }).tenants).toHaveLength(1);
-  });
-
-  it("refuses a malformed HEXDEV_TENANTS_JSON with a message that names it", () => {
-    expect(() => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: "{oops" })).toThrow(/HEXDEV_TENANTS_JSON/);
-  });
-
-  it("refuses a HEXDEV_TENANTS_JSON that parses but is not a list", () => {
-    expect(() => loadServerConfig({ ...base, HEXDEV_TENANTS_JSON: '{"id":"solo"}' })).toThrow(/HEXDEV_TENANTS_JSON/);
-  });
 });
 
 /**
@@ -239,7 +186,7 @@ describe("loadServerConfig numeric guards", () => {
  * edit from quietly handing it minting power back.
  */
 describe("the match role cannot mint", () => {
-  const base = { HEXDEV_SESSION_PUBLIC_KEY: "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw" };
+  const base = { HEXDEV_SESSION_PUBLIC_KEY: "KUWvW8s_-ytjibpR0k8JzH2priEPfeNvAWoomP5wfrw", HEXDEV_POSTGRES_URL: "postgres://user:pw@db.example/convite" };
 
   it("exposes no signing key at all", () => {
     expect(loadServerConfig(base)).not.toHaveProperty("sessionSigningKey");
@@ -267,7 +214,7 @@ describe("the match role cannot mint", () => {
     const config = loadServerConfig(base);
 
     expect(config.joinIpRateLimit.limit).toBeGreaterThan(0);
-    expect(config.tenants).toHaveLength(1);
+    expect(config.postgresUrl).toBe(base.HEXDEV_POSTGRES_URL);
     expect(config.allowedWidgetOrigins).toHaveLength(1);
     expect(config.queueBotFillSeconds).toBeGreaterThan(0);
   });
