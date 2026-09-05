@@ -13,6 +13,9 @@
   ],
   "references": [
     {
+      "path": "../../packages/platform-core"
+    },
+    {
       "path": "../../packages/widget-frontdoor"
     }
   ]

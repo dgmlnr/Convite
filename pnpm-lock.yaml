@@ -44,6 +44,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../../packages/platform-core
       '@hexdev/widget-frontdoor':
         specifier: workspace:*
         version: link:../../packages/widget-frontdoor
