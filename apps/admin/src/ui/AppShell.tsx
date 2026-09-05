@@ -5,6 +5,7 @@ import { Button } from "./components/ui/button.js";
 import { COPY } from "./copy.js";
 import { LoginScreen } from "./LoginScreen.js";
 import { buildTenantListRows, type TenantListRow } from "./tenant-list.js";
+import { TenantDetailScreen } from "./TenantDetailScreen.js";
 import { TenantListScreen } from "./TenantListScreen.js";
 
 type ShellState =
@@ -40,6 +41,12 @@ type ShellState =
  */
 export function AppShell(): JSX.Element {
   const [state, setState] = useState<ShellState>({ kind: "loading" });
+  // Slice 15's own navigation state — WHICH tenant's detail screen is open,
+  // if any. `TenantDetailScreen` owns its own fetch/loading/error state
+  // entirely (its own docstring); this shell only ever decides WHETHER it
+  // is on screen, the same "shell decides which screen, screen owns its own
+  // data" split already established for `LoginScreen`/`TenantListScreen`.
+  const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
 
   const loadTenants = useCallback(async (): Promise<void> => {
     setState({ kind: "loading" });
@@ -89,5 +96,9 @@ export function AppShell(): JSX.Element {
     );
   }
 
-  return <TenantListScreen rows={state.rows} onLogout={() => void handleLogout()} />;
+  if (selectedTenantId !== undefined) {
+    return <TenantDetailScreen tenantId={selectedTenantId} onBack={() => setSelectedTenantId(undefined)} />;
+  }
+
+  return <TenantListScreen rows={state.rows} onLogout={() => void handleLogout()} onSelectTenant={setSelectedTenantId} />;
 }

@@ -17,7 +17,14 @@ import type { TenantStatus } from "@hexdev/platform-core";
  * raw instant. This function's only remaining job is turning the ISO
  * `"YYYY-MM-DD"` string into the `DD/MM/YYYY` shape Argentine dates read in.
  */
-function toArgentineDate(isoDate: string): string {
+/**
+ * Exported (slice 15, task 15a.5) — the tenant DETAIL window editor needs
+ * the identical `"YYYY-MM-DD"` -> `"DD/MM/YYYY"` conversion this function
+ * already performs for the LIST's own `expired`/`not-yet-active` labels, so
+ * `tenant-detail.ts` reuses this one implementation rather than growing a
+ * second copy of the exact same three-way string split.
+ */
+export function toArgentineDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-");
   return `${day}/${month}/${year}`;
 }

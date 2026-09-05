@@ -8,6 +8,13 @@ import type { TenantListRow } from "./tenant-list.js";
 export interface TenantListScreenProps {
   readonly rows: readonly TenantListRow[];
   readonly onLogout: () => void;
+  /** Slice 15's own navigation entry point — clicking a row opens that
+   * tenant's detail screen (`TenantDetailScreen.tsx`). Client-side only:
+   * this app has no real client-side router (`AppShell.tsx`'s own docstring
+   * on why `GET /` doubles as the whole shell's session probe), so the
+   * transition is a plain callback into `AppShell`'s own local state, not a
+   * URL change. */
+  readonly onSelectTenant: (id: string) => void;
 }
 
 /**
@@ -44,7 +51,7 @@ const STATUS_BADGE_CLASS: Readonly<Record<TenantListRow["statusKind"], string>> 
  * detail, never the headline (tenant DETAIL, the full snippet and editors,
  * is the next slice's own job).
  */
-export function TenantListScreen({ rows, onLogout }: TenantListScreenProps): JSX.Element {
+export function TenantListScreen({ rows, onLogout, onSelectTenant }: TenantListScreenProps): JSX.Element {
   return (
     <div className="min-h-screen bg-background text-primary-foreground">
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -60,14 +67,20 @@ export function TenantListScreen({ rows, onLogout }: TenantListScreenProps): JSX
         ) : (
           <ul className="flex flex-col gap-2">
             {rows.map((row) => (
-              <li key={row.id} className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                <div className="flex flex-col">
-                  <span className="font-medium">{row.id}</span>
-                  <span className="text-xs text-primary-foreground/70">
-                    {COPY.tenantEmbedKeyLabel}: {row.embedKey}
-                  </span>
-                </div>
-                <span className={cn("rounded-full px-3 py-1 text-xs font-medium", STATUS_BADGE_CLASS[row.statusKind])}>{row.statusLabel}</span>
+              <li key={row.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectTenant(row.id)}
+                  className="flex w-full items-center justify-between rounded-md border border-border px-4 py-3 text-left hover:bg-accent"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium">{row.id}</span>
+                    <span className="text-xs text-primary-foreground/70">
+                      {COPY.tenantEmbedKeyLabel}: {row.embedKey}
+                    </span>
+                  </div>
+                  <span className={cn("rounded-full px-3 py-1 text-xs font-medium", STATUS_BADGE_CLASS[row.statusKind])}>{row.statusLabel}</span>
+                </button>
               </li>
             ))}
           </ul>

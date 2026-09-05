@@ -39,4 +39,20 @@ export const COPY = {
   logout: "Cerrar sesión",
   retry: "Reintentar",
   tenantEmbedKeyLabel: "Clave de inserción",
+  // Tenant detail screen (slice 15, task 15a) — origins/games/window
+  // editors, embed-key rotation, and theme editing all render inside this
+  // one screen, grown incrementally across this slice's own chained PRs,
+  // the identical "extend the same table" convention `copy.ts`'s own header
+  // already establishes.
+  tenantDetailBack: "← Volver a la lista",
+  tenantDetailLoading: "Cargando inquilino…",
+  tenantDetailNotFound: "Este inquilino ya no existe.",
+  tenantDetailMissingPermission: "Tu cuenta no tiene permiso para ver este inquilino.",
+  tenantDetailGenericError: "No se pudo cargar el inquilino. Probá de nuevo.",
+  tenantDetailOriginsLabel: "Orígenes permitidos",
+  tenantDetailOriginsEmpty: "Sin orígenes configurados todavía.",
+  tenantDetailGamesLabel: "Juegos habilitados",
+  tenantDetailGamesEmpty: "Sin juegos habilitados todavía.",
+  tenantDetailValidUntilLabel: "Pagado hasta",
+  tenantDetailValidUntilEmpty: "Sin período configurado.",
 } as const;
