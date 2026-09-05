@@ -1,5 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout, postRotateEmbedKey, postTenantCreate, postTenantGames, postTenantOrigins, postTenantTheme, postTenantWindow } from "./api.js";
+import {
+  getOperators,
+  getTenantDetail,
+  getTenants,
+  postLogin,
+  postLogout,
+  postOperatorCreate,
+  postOperatorDisable,
+  postOperatorEnable,
+  postPermissionGrant,
+  postPermissionRevoke,
+  postRotateEmbedKey,
+  postTenantCreate,
+  postTenantGames,
+  postTenantOrigins,
+  postTenantTheme,
+  postTenantWindow,
+} from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -488,6 +505,221 @@ describe("postTenantTheme", () => {
       vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
     );
     await expect(postTenantTheme("ghost", {})).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+});
+
+/**
+ * `getOperators` (task 16a.1) — the operator directory both the operator
+ * list AND the permission matrix screens read from. Same three-way session/
+ * permission/network mapping `getTenants` already establishes; no
+ * `unknown-tenant`-shaped fourth reason, since this route names no single
+ * resource by id.
+ */
+describe("getOperators", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches /operators same-origin, cookie-bearing, and returns the parsed operator rows", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ operators: [{ id: "op-a", username: "ana", enabled: true, permissions: ["operators.manage"] }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await getOperators();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/operators");
+    expect(init).toMatchObject({ credentials: "include" });
+    expect(outcome).toEqual({ ok: true, operators: [{ id: "op-a", username: "ana", enabled: true, permissions: ["operators.manage"] }] });
+  });
+
+  it("maps a 403 to missing-permission", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 403 })));
+    await expect(getOperators()).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps any other non-200 to no-session", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
+    await expect(getOperators()).resolves.toEqual({ ok: false, reason: "no-session" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(getOperators()).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `postOperatorCreate` (task 16a.2/16a.3) — surfaces the server's own
+ * `username-taken` refusal (`operator-handlers.ts`'s own
+ * `createOperatorCreateHandler`, 409) as its OWN distinct reason, the
+ * identical "never collapse a real, expected refusal into a generic error"
+ * discipline `postTenantCreate` already establishes for `tenant-id-taken`.
+ */
+describe("postOperatorCreate", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts username and password to /operators, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "op-new", username: "beto" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postOperatorCreate("beto", "correct horse battery staple");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/operators");
+    expect(init).toMatchObject({ method: "POST", credentials: "include", headers: { "content-type": "application/json" } });
+    expect(JSON.parse(init.body)).toEqual({ username: "beto", password: "correct horse battery staple" });
+    expect(outcome).toEqual({ ok: true, id: "op-new", username: "beto" });
+  });
+
+  it("maps a 409 to username-taken, the server's own exact refusal reason (task 16a.2)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "username-taken" }), { status: 409 })));
+    await expect(postOperatorCreate("ana", "whatever")).resolves.toEqual({ ok: false, reason: "username-taken" });
+  });
+
+  it("maps a 400 to invalid-payload", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "missing-fields" }), { status: 400 })));
+    await expect(postOperatorCreate("", "")).resolves.toEqual({ ok: false, reason: "invalid-payload" });
+  });
+
+  it("maps a 403 to missing-permission", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 403 })));
+    await expect(postOperatorCreate("ana", "whatever")).resolves.toEqual({ ok: false, reason: "missing-permission" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postOperatorCreate("ana", "whatever")).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `postOperatorDisable`/`postOperatorEnable` (task 16a.4) — both map the
+ * SAME `last-account-manager` 409 the server's own guard can return
+ * (`operator-handlers.ts`'s `createOperatorDisableHandler`), distinct from
+ * any other refusal, so the screen can render the real constraint rather
+ * than a generic error.
+ */
+describe("postOperatorDisable", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts to /operators/:id/disable, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postOperatorDisable("op-target");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/operators/op-target/disable");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it("maps a 409 to last-account-manager, distinct from any other refusal", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "last-account-manager" }), { status: 409 })));
+    await expect(postOperatorDisable("op-sole-holder")).resolves.toEqual({ ok: false, reason: "last-account-manager" });
+  });
+
+  it("maps a 404 to unknown-operator", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "unknown-operator" }), { status: 404 })));
+    await expect(postOperatorDisable("does-not-exist")).resolves.toEqual({ ok: false, reason: "unknown-operator" });
+  });
+});
+
+describe("postOperatorEnable", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts to /operators/:id/enable, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postOperatorEnable("op-target");
+
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/operators/op-target/enable");
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it("maps a 404 to unknown-operator", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "unknown-operator" }), { status: 404 })));
+    await expect(postOperatorEnable("does-not-exist")).resolves.toEqual({ ok: false, reason: "unknown-operator" });
+  });
+});
+
+/**
+ * `postPermissionGrant`/`postPermissionRevoke` (task 16a.5) — the permission
+ * matrix's own two mutating calls. `revoke` alone can surface
+ * `last-account-manager` (`permission-handlers.ts`'s own
+ * `createPermissionRevokeHandler`); `grant` cannot, since adding a holder
+ * never shrinks the guarded set (the same argument that module's own
+ * docstring already makes).
+ */
+describe("postPermissionGrant", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the permission to /operators/:id/permissions/grant, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postPermissionGrant("op-target", "tenant.create");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/operators/op-target/permissions/grant");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    expect(JSON.parse(init.body)).toEqual({ permission: "tenant.create" });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it("maps a 404 to unknown-operator", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "unknown-operator" }), { status: 404 })));
+    await expect(postPermissionGrant("does-not-exist", "tenant.create")).resolves.toEqual({ ok: false, reason: "unknown-operator" });
+  });
+});
+
+describe("postPermissionRevoke", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the permission to /operators/:id/permissions/revoke, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postPermissionRevoke("op-target", "operators.manage");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/operators/op-target/permissions/revoke");
+    expect(JSON.parse(init.body)).toEqual({ permission: "operators.manage" });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it("maps a 409 to last-account-manager, distinct from not-granted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "last-account-manager" }), { status: 409 })));
+    await expect(postPermissionRevoke("op-sole-holder", "operators.manage")).resolves.toEqual({ ok: false, reason: "last-account-manager" });
+  });
+
+  it("maps a 404 to not-granted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "not-granted" }), { status: 404 })));
+    await expect(postPermissionRevoke("op-target", "tenant.create")).resolves.toEqual({ ok: false, reason: "not-granted" });
   });
 });
 

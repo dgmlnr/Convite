@@ -20,8 +20,27 @@
 
 import type { ThemeContrastViolation, ThemeOverride } from "@hexdev/widget-protocol";
 
+import type { Permission } from "../permissions.js";
 import type { TenantDetailApiRow } from "./tenant-detail.js";
 import type { TenantListApiRow } from "./tenant-list.js";
+
+/**
+ * `GET /operators`'s own wire row (task 16a.1) — the exact shape
+ * `apps/admin/src/operator-handlers.ts`'s own `createOperatorListHandler`
+ * serializes to JSON. Owned HERE rather than in a view-model file (unlike
+ * `TenantListApiRow`/`TenantDetailApiRow` above, both owned by their own
+ * view-model module): this client function ships before the operator/
+ * permission-matrix screen's own view-model does, in this chain's own
+ * natural PR split, and a wire-format type belongs with the transport layer
+ * when no view-model file exists yet to own it. A LATER view-model
+ * (`operator-directory.ts`) imports this type FROM here instead.
+ */
+export interface OperatorListApiRow {
+  readonly id: string;
+  readonly username: string;
+  readonly enabled: boolean;
+  readonly permissions: readonly string[];
+}
 
 export type LoginOutcome =
   | { readonly ok: true }
@@ -285,6 +304,161 @@ export async function postTenantTheme(id: string, theme: ThemeOverride): Promise
   if (response.status !== 200) return { ok: false, reason: "no-session" };
   const body = (await response.json()) as { readonly tenant: TenantDetailApiRow; readonly themeViolations: readonly ThemeContrastViolation[] };
   return { ok: true, tenant: body.tenant, themeViolations: body.themeViolations };
+}
+
+export type OperatorListOutcome =
+  | { readonly ok: true; readonly operators: readonly OperatorListApiRow[] }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "network-error" };
+
+/**
+ * `GET /operators` (task 16a.1) — the operator directory both the operator
+ * list AND the permission matrix (task 16a.6) read from. Same three-way
+ * session/permission/network mapping `getTenants` already establishes; no
+ * `unknown-tenant`-shaped fourth reason exists here, since this route names
+ * no single resource by id.
+ */
+export async function getOperators(): Promise<OperatorListOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/operators", { headers: { accept: "application/json" }, credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly operators: readonly OperatorListApiRow[] };
+  return { ok: true, operators: body.operators };
+}
+
+export type OperatorCreateOutcome =
+  | { readonly ok: true; readonly id: string; readonly username: string }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "username-taken" | "invalid-payload" | "network-error" };
+
+/**
+ * `POST /operators` (tasks 16a.2/16a.3) — surfaces the server's own
+ * `username-taken` refusal (`operator-handlers.ts`'s own
+ * `createOperatorCreateHandler`, 409) as its OWN distinct reason, never
+ * collapsed into a generic error, the identical discipline
+ * `postTenantCreate` already establishes for `tenant-id-taken`.
+ */
+export async function postOperatorCreate(username: string, password: string): Promise<OperatorCreateOutcome> {
+  let response: Response;
+  try {
+    response = await fetch("/operators", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ username, password }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 400) return { ok: false, reason: "invalid-payload" };
+  if (response.status === 409) return { ok: false, reason: "username-taken" };
+  if (response.status !== 201) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly id: string; readonly username: string };
+  return { ok: true, id: body.id, username: body.username };
+}
+
+export type OperatorLifecycleOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "unknown-operator" | "last-account-manager" | "network-error" };
+
+/**
+ * `POST /operators/:id/disable` (task 16a.4) — surfaces
+ * `last-account-manager` (design §8's own guard, wired via
+ * `operator-handlers.ts`'s `createOperatorDisableHandler`) as its OWN
+ * distinct reason, so `OperatorsScreen.tsx` can render the real constraint
+ * rather than a generic error, exactly the "surface the refusal reason
+ * honestly" discipline `postTenantCreate`'s own docstring already states.
+ */
+export async function postOperatorDisable(id: string): Promise<OperatorLifecycleOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/operators/${encodeURIComponent(id)}/disable`, { method: "POST", credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-operator" };
+  if (response.status === 409) return { ok: false, reason: "last-account-manager" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  return { ok: true };
+}
+
+/** `POST /operators/:id/enable` (task 16a.4) — never routed through the
+ * last-account-manager guard server-side (`enableOperator`'s own docstring:
+ * enabling can only add a holder back), so this outcome never names that
+ * reason, even though the shared `OperatorLifecycleOutcome` type allows it
+ * for the disable case above. */
+export async function postOperatorEnable(id: string): Promise<OperatorLifecycleOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/operators/${encodeURIComponent(id)}/enable`, { method: "POST", credentials: "include" });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-operator" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  return { ok: true };
+}
+
+export type PermissionGrantOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "unknown-operator" | "network-error" };
+
+/** `POST /operators/:id/permissions/grant` (task 16a.5) — never surfaces
+ * `last-account-manager`: granting can only WIDEN the guarded holder set,
+ * the same argument `permission-handlers.ts`'s own docstring already makes
+ * for why the server-side guard needs no wiring on this path at all. */
+export async function postPermissionGrant(operatorId: string, permission: Permission): Promise<PermissionGrantOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/operators/${encodeURIComponent(operatorId)}/permissions/grant`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ permission }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-operator" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  return { ok: true };
+}
+
+export type PermissionRevokeOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "not-granted" | "last-account-manager" | "network-error" };
+
+/** `POST /operators/:id/permissions/revoke` (task 16a.5) — the ONE client
+ * call the permission matrix's own `wouldTripLastAccountManagerGuard` hint
+ * (`permission-matrix.ts`) exists beside: this function still ALWAYS
+ * attempts the real call and maps a genuine `last-account-manager` 409
+ * distinctly from `not-granted`, because the hint is client-side only and a
+ * race between two operators can still reach this exact response even when
+ * the hint said it was safe. */
+export async function postPermissionRevoke(operatorId: string, permission: Permission): Promise<PermissionRevokeOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/operators/${encodeURIComponent(operatorId)}/permissions/revoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ permission }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 409) return { ok: false, reason: "last-account-manager" };
+  if (response.status === 404) return { ok: false, reason: "not-granted" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  return { ok: true };
 }
 
 /**
