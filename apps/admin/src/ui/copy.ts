@@ -36,6 +36,7 @@ export const COPY = {
   tenantListLoading: "Cargando…",
   tenantListMissingPermission: "Tu cuenta no tiene permiso para ver la lista de inquilinos.",
   tenantListGenericError: "No se pudo cargar la lista de inquilinos. Probá de nuevo.",
+  tenantListCreateButton: "Crear inquilino",
   logout: "Cerrar sesión",
   retry: "Reintentar",
   tenantEmbedKeyLabel: "Clave de inserción",
@@ -74,4 +75,19 @@ export const COPY = {
   tenantDetailRotating: "Rotando…",
   tenantDetailThemeLabel: "Tema visual",
   tenantDetailThemeHint: "Dejá un campo vacío para usar el color/valor por defecto del widget.",
+  // Tenant creation screen (the gap slice 15 flagged but never built) — a
+  // minimal form, on purpose: only the tenant id, since the embed key is
+  // system-generated and origins/games/window are configured afterward, on
+  // the tenant's own detail screen this form hands off to.
+  tenantCreateTitle: "Crear inquilino",
+  tenantCreateHint: "La clave de inserción se genera sola. Los orígenes, los juegos y el período de pago se configuran después, en el detalle del inquilino.",
+  tenantCreateIdLabel: "Identificador del inquilino",
+  tenantCreateIdPlaceholder: "por-ejemplo-acme",
+  tenantCreateSubmit: "Crear",
+  tenantCreateSubmitting: "Creando…",
+  tenantCreateMissingId: "Ingresá un identificador para el inquilino.",
+  tenantCreateIdTaken: "Ese identificador ya está en uso. Probá con otro.",
+  tenantCreateEmbedKeyTaken: "Se generó una clave que ya está en uso. Probá crear el inquilino de nuevo.",
+  tenantCreateMissingPermission: "Tu cuenta no tiene permiso para crear inquilinos.",
+  tenantCreateGenericError: "No se pudo crear el inquilino. Probá de nuevo.",
 } as const;

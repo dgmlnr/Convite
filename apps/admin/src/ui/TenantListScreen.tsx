@@ -15,6 +15,13 @@ export interface TenantListScreenProps {
    * transition is a plain callback into `AppShell`'s own local state, not a
    * URL change. */
   readonly onSelectTenant: (id: string) => void;
+  /** The gap slice 15 flagged but never built (`POST /tenants`, permission
+   * `tenant.create`) — client-side gating is UX only (launch prompt §4): an
+   * operator without the permission still sees this button, and the SAME
+   * single authorization checkpoint that already guards every other tenant
+   * route refuses the request server-side, exactly as `onSelectTenant`'s own
+   * detail-screen fetch already does for `tenant.origins.edit`. */
+  readonly onCreateTenant: () => void;
 }
 
 /**
@@ -51,7 +58,7 @@ const STATUS_BADGE_CLASS: Readonly<Record<TenantListRow["statusKind"], string>> 
  * detail, never the headline (tenant DETAIL, the full snippet and editors,
  * is the next slice's own job).
  */
-export function TenantListScreen({ rows, onLogout, onSelectTenant }: TenantListScreenProps): JSX.Element {
+export function TenantListScreen({ rows, onLogout, onSelectTenant, onCreateTenant }: TenantListScreenProps): JSX.Element {
   return (
     <div className="min-h-screen bg-background text-primary-foreground">
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -61,7 +68,12 @@ export function TenantListScreen({ rows, onLogout, onSelectTenant }: TenantListS
         </Button>
       </header>
       <main className="p-6">
-        <h2 className="mb-4 text-lg font-semibold">{COPY.tenantListTitle}</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">{COPY.tenantListTitle}</h2>
+          <Button size="sm" onClick={onCreateTenant}>
+            {COPY.tenantListCreateButton}
+          </Button>
+        </div>
         {rows.length === 0 ? (
           <p className="text-sm text-primary-foreground/70">{COPY.tenantListEmpty}</p>
         ) : (
