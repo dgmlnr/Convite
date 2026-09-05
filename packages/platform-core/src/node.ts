@@ -78,3 +78,9 @@ export { bootstrapOperator, resetOperatorPassword } from "./operator-bootstrap.j
 // `withLastAccountManagerGuard`, so it needs a real `Pool` and belongs
 // behind this barrel exactly like its sibling pair.
 export { grantPermission, revokePermission } from "./operator-permissions.js";
+// `listOperatorsWithPermissions` (PR-16a, tenant-administration slice 16a,
+// design §6.1): the operator directory both the operator list AND the
+// permission matrix screens read from — same placement principle, same
+// barrel: a plain `Pool` read, no port, no static double (see this
+// function's own docstring for why).
+export { listOperatorsWithPermissions } from "./operator-directory.js";

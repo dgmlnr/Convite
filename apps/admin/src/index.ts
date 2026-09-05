@@ -13,6 +13,7 @@ import {
   enableOperator,
   findOperatorAuthorizationContext,
   grantPermission,
+  listOperatorsWithPermissions,
   revokePermission,
 } from "@hexdev/platform-core/node";
 
@@ -21,7 +22,7 @@ import { isSameOriginRequest } from "./csrf.js";
 import { loadAdminConfig } from "./config.js";
 import { handleLoginRequest } from "./login-handler.js";
 import { handleLogoutRequest } from "./logout-handler.js";
-import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
+import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, createOperatorListHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
 import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
@@ -124,10 +125,15 @@ const operatorHandlersDeps: OperatorHandlersDeps = {
   operators,
   disableOperator: (id, w) => disableOperator(postgresPool, id, w),
   enableOperator: (id, w) => enableOperator(postgresPool, id, w),
+  // Slice 16a's own read: `listOperatorsWithPermissions` bound to THIS
+  // process's own pool, same "one knob per composition root" shape every
+  // other Postgres-backed adapter above already follows.
+  listOperators: () => listOperatorsWithPermissions(postgresPool),
 };
 const operatorCreateHandler = createOperatorCreateHandler(operatorHandlersDeps);
 const operatorDisableHandler = createOperatorDisableHandler(operatorHandlersDeps);
 const operatorEnableHandler = createOperatorEnableHandler(operatorHandlersDeps);
+const operatorListHandler = createOperatorListHandler(operatorHandlersDeps);
 const ownPasswordHandler = createOwnPasswordHandler({ operators });
 
 /**
@@ -189,6 +195,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "operator-create": operatorCreateHandler,
   "operator-disable": operatorDisableHandler,
   "operator-enable": operatorEnableHandler,
+  "operator-list": operatorListHandler,
   "own-password": ownPasswordHandler,
   "operator-permissions-grant": permissionGrantHandler,
   "operator-permissions-revoke": permissionRevokeHandler,

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { createStaticOperatorRepository, type OperatorId, type OperatorLifecycleGuardedResult, type OperatorLifecycleResult, type OperatorRecord, type OperatorRepository } from "@hexdev/platform-core";
+import {
+  createStaticOperatorRepository,
+  type OperatorDirectoryEntry,
+  type OperatorId,
+  type OperatorLifecycleGuardedResult,
+  type OperatorLifecycleResult,
+  type OperatorRecord,
+  type OperatorRepository,
+} from "@hexdev/platform-core";
 import type { AuthorizedOperator } from "./authorization.js";
-import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
+import { createOperatorCreateHandler, createOperatorDisableHandler, createOperatorEnableHandler, createOperatorListHandler, type OperatorHandlersDeps } from "./operator-handlers.js";
 
 /**
  * `operator-handlers.ts` (tasks 11a.1-11a.5/11a.8-11a.9) — proven with FAKES,
@@ -40,6 +48,7 @@ function baseDeps(overrides: Partial<OperatorHandlersDeps> = {}): OperatorHandle
     operators,
     disableOperator: async () => ({ ok: true }),
     enableOperator: async () => ({ ok: true }),
+    listOperators: async () => [],
     ...overrides,
   };
 }
@@ -154,5 +163,28 @@ describe("createOperatorEnableHandler — task 11a.5", () => {
     const response = await handler({ params: { id: "does-not-exist" } }, ACTOR);
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("createOperatorListHandler — task 16a.1", () => {
+  it("returns every operator the injected listOperators reports, verbatim, under an operators key", async () => {
+    const directory: readonly OperatorDirectoryEntry[] = [
+      { id: "op-a" as OperatorId, username: "ana", enabled: true, permissions: ["operators.manage"] },
+      { id: "op-b" as OperatorId, username: "beto", enabled: false, permissions: [] },
+    ];
+    const handler = createOperatorListHandler({ ...baseDeps(), listOperators: async () => directory });
+
+    const response = await handler({}, ACTOR);
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({ operators: directory });
+  });
+
+  it("returns an empty list, never a stubbed default, when no operator exists yet", async () => {
+    const handler = createOperatorListHandler(baseDeps());
+
+    const response = await handler({}, ACTOR);
+
+    expect(JSON.parse(response.body)).toEqual({ operators: [] });
   });
 });
