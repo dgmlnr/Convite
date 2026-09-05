@@ -1,8 +1,9 @@
-import type { TenantAdminRepository } from "@hexdev/platform-core";
+import type { TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
 import { describeTenantStatus, instantToPaidThrough, type TenantStatus } from "@hexdev/platform-core";
 import type { ThemeOverride } from "@hexdev/widget-protocol";
 
-import type { AdminHandler } from "./authorization.js";
+import type { AdminHandler, AuthorizedOperator } from "./authorization.js";
+import { appendAuditEntry, type AuditEntryInput } from "./audit-log.js";
 
 /**
  * `GET /` (task 14.4, design §6.2's own `tenant-list` route — permission
@@ -75,24 +76,85 @@ export interface TenantDetailRow {
   readonly theme?: ThemeOverride;
 }
 
+/** Shared by every handler in this file that returns a tenant to the browser
+ * (detail, and every write handler below on success) — ONE place computing
+ * `status`/`validUntilDisplay` from a real `TenantRecord`, so a future write
+ * handler cannot accidentally ship a differently-shaped row than the read
+ * handler already established. */
+function buildTenantDetailRow(tenant: TenantRecord, now: number): TenantDetailRow {
+  return {
+    id: tenant.id,
+    embedKey: tenant.embedKey,
+    allowedOrigins: tenant.allowedOrigins,
+    entitledGames: tenant.entitledGames,
+    status: describeTenantStatus(tenant, now),
+    validUntilDisplay: tenant.validUntil === undefined ? undefined : instantToPaidThrough(tenant.validUntil),
+    theme: tenant.theme,
+  };
+}
+
 export function createTenantDetailHandler(deps: TenantHandlersDeps): AdminHandler {
   return async (req) => {
     const id = req.params?.id;
     if (id === undefined || id === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
 
-    const tenant = await deps.tenants.findById(id as Parameters<TenantAdminRepository["findById"]>[0]);
+    const tenant = await deps.tenants.findById(id as TenantId);
     if (tenant === undefined) return { status: 404, body: JSON.stringify({ error: "unknown-tenant" }) };
 
-    const now = (deps.clock ?? Date.now)();
-    const row: TenantDetailRow = {
-      id: tenant.id,
-      embedKey: tenant.embedKey,
-      allowedOrigins: tenant.allowedOrigins,
-      entitledGames: tenant.entitledGames,
-      status: describeTenantStatus(tenant, now),
-      validUntilDisplay: tenant.validUntil === undefined ? undefined : instantToPaidThrough(tenant.validUntil),
-      theme: tenant.theme,
-    };
-    return { status: 200, body: JSON.stringify({ tenant: row }) };
+    return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(tenant, (deps.clock ?? Date.now)()) }) };
   };
 }
+
+type ExecFn = (sql: string, values: readonly unknown[]) => Promise<void>;
+
+/** Same shape `operator-handlers.ts`'s own `auditWitness`/`permission-handlers.ts`'s
+ * own `permissionAuditWitness` already establish — a `WriteWitness` closure
+ * that inserts exactly one audit entry, carrying the REAL authorized actor
+ * (never a hardcoded id/username) and this call's own `AuditAction`. */
+function tenantAuditWitness(deps: TenantHandlersDeps, actor: AuthorizedOperator, entry: Omit<AuditEntryInput, "occurredAt" | "actorOperatorId" | "actorUsername">) {
+  return async (exec: ExecFn) =>
+    appendAuditEntry(exec, {
+      occurredAt: (deps.clock ?? Date.now)(),
+      actorOperatorId: actor.id,
+      actorUsername: actor.username,
+      ...entry,
+    });
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+/**
+ * `POST /tenants/:id/origins` (tasks 15a.1/15a.2, permission
+ * `tenant.origins.edit`) — the FIRST real write this app has ever performed
+ * against `TenantAdminRepository` from a route (design §2.3's write port,
+ * built in slice 4, unconsumed by any handler until now). An empty
+ * `origins` array is accepted, never refused (design §1.3/decisions #3684:
+ * "created, no origin configured yet" is legitimate, carried forward from
+ * `tenant-record-shape.ts`'s own retired docstring).
+ *
+ * Reads the tenant BEFORE writing (one extra lookup, negligible at this
+ * panel's single-digit-operator scale) so the audit entry's `changes` field
+ * carries the REAL prior value, not a placeholder — design §9's own
+ * before/after requirement, taken literally rather than nominally satisfied.
+ */
+export function createTenantOriginsHandler(deps: TenantHandlersDeps): AdminHandler {
+  return async (req, actor) => {
+    const id = req.params?.id;
+    if (id === undefined || id === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
+    const origins = req.body?.origins;
+    if (!isStringArray(origins)) return { status: 400, body: JSON.stringify({ error: "invalid-origins" }) };
+
+    const existing = await deps.tenants.findById(id as TenantId);
+    const witness = tenantAuditWitness(deps, actor, {
+      action: "tenant.origins.updated",
+      targetTenantId: id as TenantId,
+      changes: { allowedOrigins: { before: existing?.allowedOrigins ?? null, after: origins } },
+    });
+    const result = await deps.tenants.updateAllowedOrigins(id as TenantId, origins, witness);
+    if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : 400, body: JSON.stringify({ error: result.reason }) };
+    return { status: 200, body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()) }) };
+  };
+}
+

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
+import type { OperatorId, TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
 
-import { createTenantDetailHandler, createTenantListHandler } from "./tenant-handlers.js";
+import type { AuthorizedOperator } from "./authorization.js";
+import { createTenantDetailHandler, createTenantListHandler, createTenantOriginsHandler } from "./tenant-handlers.js";
+
+/** Same construction `operator-handlers.test.ts` already establishes — the
+ * only place a bare-object `AuthorizedOperator` is ever built outside
+ * `authorization.ts`'s own real minting path. */
+const ACTOR = { id: "op-actor" as OperatorId, username: "ana", permissions: new Set() } as unknown as AuthorizedOperator;
 
 /** A fixed "now" so every test travels in time via `deps.clock`, never a real
  * timer — same discipline `tenant-validity.test.ts`'s own suite already
@@ -35,6 +41,55 @@ function tenantsWith(records: readonly TenantRecord[]): TenantAdminRepository {
 
 function tenant(overrides: Partial<TenantRecord> & Pick<TenantRecord, "id">): TenantRecord {
   return { embedKey: `pk_live_${overrides.id}`, allowedOrigins: [], entitledGames: [], ...overrides };
+}
+
+/**
+ * A minimal, PURPOSE-BUILT fake — genuinely mutates its one record (so a
+ * write handler's "persisted, then re-read" property is real, not merely
+ * asserted against a mock's call arguments) AND captures every `exec` call
+ * the write's own `WriteWitness` makes, so a test can assert the EXACT
+ * `AuditAction` an audit-producing handler fires without needing real
+ * Postgres (the real transactional coupling between a mutation and its
+ * audit INSERT is `postgres-tenant-admin-repository.ts`'s own proof,
+ * exercised for real in `*.postgres.test.ts` — this fake only proves the
+ * HTTP-level wiring, the identical division of labor
+ * `operator-handlers.test.ts`'s own fakes already establish).
+ */
+function writableTenantRepo(initial: TenantRecord | undefined): { repo: TenantAdminRepository; execCalls: { readonly sql: string; readonly values: readonly unknown[] }[] } {
+  let current = initial;
+  const execCalls: { readonly sql: string; readonly values: readonly unknown[] }[] = [];
+  const capturingExec = async (sql: string, values: readonly unknown[]): Promise<void> => {
+    execCalls.push({ sql, values });
+  };
+  const repo: TenantAdminRepository = {
+    list: async () => (current === undefined ? [] : [current]),
+    findById: async (id) => (current?.id === id ? current : undefined),
+    create: async () => {
+      throw new Error("not used by these handlers");
+    },
+    updateAllowedOrigins: async (id, allowedOrigins, w) => {
+      if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
+      current = { ...current, allowedOrigins };
+      await w(capturingExec);
+      return { ok: true, tenant: current, themeViolations: [] };
+    },
+    updateEntitledGames: async (id, entitledGames, w) => {
+      if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
+      current = { ...current, entitledGames };
+      await w(capturingExec);
+      return { ok: true, tenant: current, themeViolations: [] };
+    },
+    updateTheme: async () => {
+      throw new Error("not used by these handlers");
+    },
+    rotateEmbedKey: async () => {
+      throw new Error("not used by these handlers");
+    },
+    setValidityWindow: async () => {
+      throw new Error("not used by these handlers");
+    },
+  };
+  return { repo, execCalls };
 }
 
 /**
@@ -155,5 +210,56 @@ describe("createTenantDetailHandler", () => {
     const handler = createTenantDetailHandler({ clock: () => NOW, tenants: tenantsWith([]) });
     const response = await handler({}, {} as never);
     expect(response.status).toBe(400);
+  });
+});
+
+/**
+ * `createTenantOriginsHandler` — `POST /tenants/:id/origins` (task 15a.1/
+ * 15a.2). Genuine RED, confirmed before this handler existed:
+ * `createTenantOriginsHandler is not a function`.
+ */
+describe("createTenantOriginsHandler", () => {
+  it("persists the new origins, audits tenant.origins.updated with the real actor, and returns the fresh detail row", async () => {
+    const { repo, execCalls } = writableTenantRepo(tenant({ id: "acme" as TenantId, allowedOrigins: ["https://old.example"] }));
+    const handler = createTenantOriginsHandler({ clock: () => NOW, tenants: repo });
+
+    const response = await handler({ params: { id: "acme" }, body: { origins: ["https://new.example", "https://second.example"] } }, ACTOR);
+
+    expect(response.status).toBe(200);
+    const body = JSON.parse(response.body) as { readonly tenant: { readonly allowedOrigins: readonly string[] } };
+    expect(body.tenant.allowedOrigins).toEqual(["https://new.example", "https://second.example"]);
+    // Genuinely persisted, not merely echoed in the response:
+    expect((await repo.findById("acme" as TenantId))?.allowedOrigins).toEqual(["https://new.example", "https://second.example"]);
+    // The witness fired exactly once, carrying the real actor and the real
+    // AuditAction — never a hardcoded string, never a second insert.
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]?.values).toEqual(
+      expect.arrayContaining([expect.any(Date), ACTOR.id, ACTOR.username, "tenant.origins.updated", "acme", null, JSON.stringify({ allowedOrigins: { before: ["https://old.example"], after: ["https://new.example", "https://second.example"] } })]),
+    );
+  });
+
+  it("accepts an empty list — 'created, no origin configured yet' is legitimate, never forced non-empty", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId, allowedOrigins: ["https://old.example"] }));
+    const handler = createTenantOriginsHandler({ clock: () => NOW, tenants: repo });
+
+    const response = await handler({ params: { id: "acme" }, body: { origins: [] } }, ACTOR);
+
+    expect(response.status).toBe(200);
+    expect((await repo.findById("acme" as TenantId))?.allowedOrigins).toEqual([]);
+  });
+
+  it("returns 404 for a tenant nobody created, without throwing", async () => {
+    const { repo } = writableTenantRepo(undefined);
+    const handler = createTenantOriginsHandler({ clock: () => NOW, tenants: repo });
+    const response = await handler({ params: { id: "ghost" }, body: { origins: [] } }, ACTOR);
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses a malformed payload (not an array of strings) with 400, never a crash", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantOriginsHandler({ clock: () => NOW, tenants: repo });
+    expect((await handler({ params: { id: "acme" }, body: { origins: "not-an-array" } }, ACTOR)).status).toBe(400);
+    expect((await handler({ params: { id: "acme" }, body: { origins: [1, 2] } }, ACTOR)).status).toBe(400);
+    expect((await handler({ params: { id: "acme" }, body: {} }, ACTOR)).status).toBe(400);
   });
 });

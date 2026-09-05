@@ -26,7 +26,7 @@ import { createOwnPasswordHandler } from "./own-password-handler.js";
 import { createPermissionGrantHandler, createPermissionRevokeHandler, type PermissionHandlersDeps } from "./permission-handlers.js";
 import { resolveAdminRoute, type AdminRouteKind } from "./routing.js";
 import { serveBuiltAsset, serveIndexHtml } from "./static-app.js";
-import { createTenantDetailHandler, createTenantListHandler } from "./tenant-handlers.js";
+import { createTenantDetailHandler, createTenantListHandler, createTenantOriginsHandler } from "./tenant-handlers.js";
 
 /**
  * The admin panel's composition root — the FOURTH composition root in this
@@ -152,6 +152,12 @@ const tenantListHandler = createTenantListHandler({ tenants });
 // non-optional witness only applies to `TenantAdminRepository`'s six
 // MUTATING methods.
 const tenantDetailHandler = createTenantDetailHandler({ tenants });
+// Task 15a.1/15a.2 — the FIRST real write this app performs against
+// `TenantAdminRepository` from an actual route (design §2.3's write port,
+// built in slice 4, unconsumed by any handler until now). Builds its own
+// `WriteWitness` as `(exec) => appendAuditEntry(exec, {...})`, the exact
+// shape `operator-handlers.ts`/`permission-handlers.ts` already establish.
+const tenantOriginsHandler = createTenantOriginsHandler({ tenants });
 
 /**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
@@ -170,6 +176,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "operator-permissions-revoke": permissionRevokeHandler,
   "tenant-list": tenantListHandler,
   "tenant-detail": tenantDetailHandler,
+  "tenant-origins": tenantOriginsHandler,
 };
 
 /**
