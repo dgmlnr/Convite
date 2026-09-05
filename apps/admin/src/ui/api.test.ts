@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout, postTenantOrigins } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout, postTenantGames, postTenantOrigins } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -232,6 +232,50 @@ describe("postTenantOrigins", () => {
       }),
     );
     await expect(postTenantOrigins("acme", [])).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/** `postTenantGames` (tasks 15a.3/15a.4) — structurally identical to
+ * `postTenantOrigins`'s own suite above. Genuine RED, confirmed before it
+ * existed: `postTenantGames is not exported`. */
+describe("postTenantGames", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the games array to /tenants/:id/games, same-origin, cookie-bearing", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ tenant: { id: "acme", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: ["escoba"], status: { kind: "no-window" } } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postTenantGames("acme", ["escoba"]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/tenants/acme/games");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    expect(JSON.parse(init.body)).toEqual({ games: ["escoba"] });
+    expect(outcome).toEqual({ ok: true, tenant: { id: "acme", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: ["escoba"], status: { kind: "no-window" } } });
+  });
+
+  it("maps a 404 to unknown-tenant", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
+    );
+    await expect(postTenantGames("ghost", [])).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
+  });
+
+  it("maps a thrown network failure to network-error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(postTenantGames("acme", [])).resolves.toEqual({ ok: false, reason: "network-error" });
   });
 });
 

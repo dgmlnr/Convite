@@ -147,6 +147,28 @@ export async function postTenantOrigins(id: string, origins: readonly string[]):
   return { ok: true, tenant: body.tenant };
 }
 
+/** `POST /tenants/:id/games` (tasks 15a.3/15a.4) — structurally identical to
+ * `postTenantOrigins` above, same outcome shape. */
+export async function postTenantGames(id: string, games: readonly string[]): Promise<TenantWriteOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/tenants/${encodeURIComponent(id)}/games`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ games }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-tenant" };
+  if (response.status === 400) return { ok: false, reason: "invalid-payload" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
+  return { ok: true, tenant: body.tenant };
+}
+
 /**
  * `POST /logout` — idempotent by construction on the server side
  * (`logout-handler.ts`'s own docstring: "every case still returns 200 with

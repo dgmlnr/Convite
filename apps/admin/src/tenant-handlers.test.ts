@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { OperatorId, TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
 
 import type { AuthorizedOperator } from "./authorization.js";
-import { createTenantDetailHandler, createTenantListHandler, createTenantOriginsHandler } from "./tenant-handlers.js";
+import { createTenantDetailHandler, createTenantGamesHandler, createTenantListHandler, createTenantOriginsHandler } from "./tenant-handlers.js";
 
 /** Same construction `operator-handlers.test.ts` already establishes — the
  * only place a bare-object `AuthorizedOperator` is ever built outside
@@ -261,5 +261,48 @@ describe("createTenantOriginsHandler", () => {
     expect((await handler({ params: { id: "acme" }, body: { origins: "not-an-array" } }, ACTOR)).status).toBe(400);
     expect((await handler({ params: { id: "acme" }, body: { origins: [1, 2] } }, ACTOR)).status).toBe(400);
     expect((await handler({ params: { id: "acme" }, body: {} }, ACTOR)).status).toBe(400);
+  });
+});
+
+/**
+ * `createTenantGamesHandler` — `POST /tenants/:id/games` (task 15a.3/15a.4).
+ * Structurally identical to the origins handler above — same shape,
+ * different field and `AuditAction`. Genuine RED, confirmed before this
+ * handler existed: `createTenantGamesHandler is not a function`.
+ */
+describe("createTenantGamesHandler", () => {
+  it("persists the new games, audits tenant.games.updated, and returns the fresh detail row", async () => {
+    const { repo, execCalls } = writableTenantRepo(tenant({ id: "acme" as TenantId, entitledGames: ["truco-argentino"] }));
+    const handler = createTenantGamesHandler({ clock: () => NOW, tenants: repo });
+
+    const response = await handler({ params: { id: "acme" }, body: { games: ["escoba"] } }, ACTOR);
+
+    expect(response.status).toBe(200);
+    const body = JSON.parse(response.body) as { readonly tenant: { readonly entitledGames: readonly string[] } };
+    expect(body.tenant.entitledGames).toEqual(["escoba"]);
+    expect((await repo.findById("acme" as TenantId))?.entitledGames).toEqual(["escoba"]);
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]?.values).toContain("tenant.games.updated");
+  });
+
+  it("accepts an empty list — entitlements lapsing to zero is a legitimate state, never forced non-empty", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId, entitledGames: ["truco-argentino"] }));
+    const handler = createTenantGamesHandler({ clock: () => NOW, tenants: repo });
+    const response = await handler({ params: { id: "acme" }, body: { games: [] } }, ACTOR);
+    expect(response.status).toBe(200);
+    expect((await repo.findById("acme" as TenantId))?.entitledGames).toEqual([]);
+  });
+
+  it("returns 404 for a tenant nobody created", async () => {
+    const { repo } = writableTenantRepo(undefined);
+    const handler = createTenantGamesHandler({ clock: () => NOW, tenants: repo });
+    const response = await handler({ params: { id: "ghost" }, body: { games: [] } }, ACTOR);
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses a malformed payload with 400", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantGamesHandler({ clock: () => NOW, tenants: repo });
+    expect((await handler({ params: { id: "acme" }, body: { games: "not-an-array" } }, ACTOR)).status).toBe(400);
   });
 });
