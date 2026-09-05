@@ -18,6 +18,8 @@
  * server, never a fixture backend.
  */
 
+import type { ThemeContrastViolation, ThemeOverride } from "@hexdev/widget-protocol";
+
 import type { TenantDetailApiRow } from "./tenant-detail.js";
 import type { TenantListApiRow } from "./tenant-list.js";
 
@@ -209,6 +211,39 @@ export async function postRotateEmbedKey(id: string): Promise<TenantWriteOutcome
   if (response.status !== 200) return { ok: false, reason: "invalid-payload" };
   const body = (await response.json()) as { readonly tenant: TenantDetailApiRow };
   return { ok: true, tenant: body.tenant };
+}
+
+export type TenantThemeWriteOutcome =
+  | { readonly ok: true; readonly tenant: TenantDetailApiRow; readonly themeViolations: readonly ThemeContrastViolation[] }
+  | { readonly ok: false; readonly reason: "no-session" | "missing-permission" | "unknown-tenant" | "invalid-payload" | "network-error" };
+
+/**
+ * `POST /tenants/:id/theme` (tasks 15b.3/15b.4) — the ONLY write client that
+ * carries `themeViolations` back alongside the fresh tenant row (design
+ * §2.3's own point: violations must reach the operator's screen, never only
+ * a server log). `theme` is sent AS GIVEN — the FORM'S own inputs already
+ * constrain it to the 7 `THEME_TOKEN_NAMES` keys; `sanitizeTenantTheme`
+ * (server-side, inside `updateTheme`) is what actually enforces the closed
+ * vocabulary and the contrast minimum, never this client.
+ */
+export async function postTenantTheme(id: string, theme: ThemeOverride): Promise<TenantThemeWriteOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`/tenants/${encodeURIComponent(id)}/theme`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ theme }),
+    });
+  } catch {
+    return { ok: false, reason: "network-error" };
+  }
+  if (response.status === 403) return { ok: false, reason: "missing-permission" };
+  if (response.status === 404) return { ok: false, reason: "unknown-tenant" };
+  if (response.status === 400) return { ok: false, reason: "invalid-payload" };
+  if (response.status !== 200) return { ok: false, reason: "no-session" };
+  const body = (await response.json()) as { readonly tenant: TenantDetailApiRow; readonly themeViolations: readonly ThemeContrastViolation[] };
+  return { ok: true, tenant: body.tenant, themeViolations: body.themeViolations };
 }
 
 /**

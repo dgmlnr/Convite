@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OperatorId, TenantAdminRepository, TenantId, TenantRecord } from "@hexdev/platform-core";
+import { sanitizeThemeOverride, validateThemeContrast } from "@hexdev/widget-protocol";
 
 import type { AuthorizedOperator } from "./authorization.js";
 import {
@@ -8,6 +9,7 @@ import {
   createTenantListHandler,
   createTenantOriginsHandler,
   createTenantRotateKeyHandler,
+  createTenantThemeHandler,
   createTenantWindowHandler,
 } from "./tenant-handlers.js";
 
@@ -86,11 +88,19 @@ function writableTenantRepo(initial: TenantRecord | undefined): { repo: TenantAd
       await w(capturingExec);
       return { ok: true, tenant: current, themeViolations: [] };
     },
+    // Real sanitization + contrast validation, the SAME two
+    // `@hexdev/widget-protocol` primitives `sanitizeTenantTheme`
+    // (`platform-core`, unexported) composes for the real adapters — this
+    // fake reaches for them directly rather than reimplementing or
+    // stubbing that behavior, so the handler's OWN "surface themeViolations"
+    // property is proven against a genuine sanitizer, never a hand-typed
+    // guess of what it would return.
     updateTheme: async (id, theme, w) => {
       if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
-      current = { ...current, theme };
+      const validated = validateThemeContrast(sanitizeThemeOverride((theme ?? {}) as Readonly<Record<string, unknown>>));
+      current = { ...current, theme: validated.theme };
       await w(capturingExec);
-      return { ok: true, tenant: current, themeViolations: [] };
+      return { ok: true, tenant: current, themeViolations: validated.violations };
     },
     rotateEmbedKey: async (id, embedKey, w) => {
       if (current === undefined || current.id !== id) return { ok: false, reason: "unknown-tenant" };
@@ -429,5 +439,62 @@ describe("generateEmbedKey (default, production path)", () => {
     // base64url(32 bytes) is 43 chars, no padding — same encoding
     // `generateSessionToken` (session-cookie.ts) already establishes.
     expect(a.length).toBe("pk_live_".length + 43);
+  });
+});
+
+/**
+ * `createTenantThemeHandler` — `POST /tenants/:id/theme` (task 15b.3/15b.4,
+ * permission `tenant.origins.edit` per the route table's own read-route
+ * bend, design §19). Forwards the raw payload STRAIGHT to
+ * `TenantAdminRepository.updateTheme`, which already runs the REAL
+ * `sanitizeTenantTheme` (design §2.3 point 3) — this handler never
+ * re-sanitizes or re-validates; its own job is surfacing whatever
+ * `themeViolations` the write already computed, moved from a
+ * `console.warn` nobody in the panel ever reads (design §2.3) to the
+ * response body an operator's own screen renders. Genuine RED, confirmed
+ * before this handler existed: `createTenantThemeHandler is not a
+ * function`.
+ */
+describe("createTenantThemeHandler", () => {
+  it("persists a genuinely-sanitized theme, audits tenant.theme.updated, and surfaces zero violations for an already-legible theme", async () => {
+    const { repo, execCalls } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantThemeHandler({ clock: () => NOW, tenants: repo });
+
+    const response = await handler({ params: { id: "acme" }, body: { theme: { "--gx-color-primary": "#2f6f4f" } } }, ACTOR);
+
+    expect(response.status).toBe(200);
+    const body = JSON.parse(response.body) as { readonly tenant: { readonly id: string }; readonly themeViolations: readonly unknown[] };
+    expect(body.themeViolations).toEqual([]);
+    expect((await repo.findById("acme" as TenantId))?.theme).toEqual({ "--gx-color-primary": "#2f6f4f" });
+    expect(execCalls).toHaveLength(1);
+    expect(execCalls[0]?.values).toContain("tenant.theme.updated");
+  });
+
+  it("surfaces a REAL violation (never invents one) for a theme that fails contrast, and drops the offending tokens back to defaults", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantThemeHandler({ clock: () => NOW, tenants: repo });
+
+    // The exact known-bad pairing this slice's own contrast fence
+    // (`theme-contrast-fence.test.ts`) already pins as failing AA.
+    const response = await handler({ params: { id: "acme" }, body: { theme: { "--gx-color-on-surface": "#1a1a1a", "--gx-color-surface": "#14231d" } } }, ACTOR);
+
+    const body = JSON.parse(response.body) as { readonly themeViolations: readonly { readonly pair: string; readonly reason: string }[] };
+    expect(body.themeViolations).toHaveLength(1);
+    expect(body.themeViolations[0]).toMatchObject({ pair: "on-surface/surface", reason: "below-minimum" });
+    // Dropped back to defaults — never left storing the failing pair.
+    expect((await repo.findById("acme" as TenantId))?.theme).toEqual({});
+  });
+
+  it("returns 404 for a tenant nobody created", async () => {
+    const { repo } = writableTenantRepo(undefined);
+    const handler = createTenantThemeHandler({ clock: () => NOW, tenants: repo });
+    const response = await handler({ params: { id: "ghost" }, body: { theme: {} } }, ACTOR);
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 400 for a non-object theme payload, never crashing", async () => {
+    const { repo } = writableTenantRepo(tenant({ id: "acme" as TenantId }));
+    const handler = createTenantThemeHandler({ clock: () => NOW, tenants: repo });
+    expect((await handler({ params: { id: "acme" }, body: { theme: "not-an-object" } }, ACTOR)).status).toBe(400);
   });
 });

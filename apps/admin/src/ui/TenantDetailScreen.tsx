@@ -1,10 +1,27 @@
 import { useEffect, useState, type JSX } from "react";
+import { THEME_TOKEN_NAMES, type ThemeContrastViolation, type ThemeOverride, type ThemeTokenName } from "@hexdev/widget-protocol";
 
-import { getTenantDetail, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantWindow, type TenantWriteOutcome } from "./api.js";
+import { getTenantDetail, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantTheme, postTenantWindow, type TenantThemeWriteOutcome, type TenantWriteOutcome } from "./api.js";
 import { Button } from "./components/ui/button.js";
 import { Input } from "./components/ui/input.js";
 import { COPY } from "./copy.js";
-import { argentineDateToIso, buildEmbedSnippet, buildTenantDetailView, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
+import { argentineDateToIso, buildEmbedSnippet, buildTenantDetailView, formatThemeViolationMessage, parseListInput, type TenantDetailApiRow, type TenantDetailView } from "./tenant-detail.js";
+
+/** Spanish labels for the closed, security-relevant token vocabulary
+ * (`THEME_TOKEN_NAMES`, `@hexdev/widget-protocol`) — this form is the ONLY
+ * writer of tenant theme data, so it must offer exactly these 7 fields,
+ * never more (design §13.4: widening the vocabulary for admin-only styling
+ * needs would expand the tenant-controlled attack surface for a reason that
+ * has nothing to do with tenants). */
+const THEME_TOKEN_LABELS: Readonly<Record<ThemeTokenName, string>> = {
+  "--gx-color-surface": "Color de fondo",
+  "--gx-color-on-surface": "Color de texto sobre el fondo",
+  "--gx-color-primary": "Color primario",
+  "--gx-color-on-primary": "Color de texto sobre el primario",
+  "--gx-color-accent": "Color de acento",
+  "--gx-radius": "Radio de bordes",
+  "--gx-font-family": "Tipografía",
+};
 
 export interface TenantDetailScreenProps {
   readonly tenantId: string;
@@ -251,6 +268,109 @@ function EmbedKeySection({ embedKey, onRotate, onRotated }: EmbedKeySectionProps
   );
 }
 
+interface ThemeSectionProps {
+  readonly theme: ThemeOverride | undefined;
+  readonly onSave: (theme: ThemeOverride) => Promise<TenantThemeWriteOutcome>;
+  readonly onSaved: (tenant: TenantDetailApiRow) => void;
+}
+
+function themeFieldsFrom(theme: ThemeOverride | undefined): Record<ThemeTokenName, string> {
+  return Object.fromEntries(THEME_TOKEN_NAMES.map((name) => [name, theme?.[name] ?? ""])) as Record<ThemeTokenName, string>;
+}
+
+/**
+ * The theme editor (task 15b.3/15b.4) — SURFACES `themeViolations` TO THE
+ * OPERATOR (design §2.3's own closing argument), moved off a `console.warn`
+ * nobody in this panel ever reads. Sends ONLY the non-empty fields — an
+ * empty field means "use the widget's own default", never an attempt to
+ * write an empty string (which `sanitizeThemeOverride`'s own regexes would
+ * reject anyway, server-side). This form is deliberately NOT the place
+ * enforcing the closed vocabulary or the contrast minimum: both already run
+ * inside `updateTheme` (`sanitizeTenantTheme`, design §2.3 point 3) — this
+ * component only renders whatever violations that write already computed.
+ */
+function ThemeSection({ theme, onSave, onSaved }: ThemeSectionProps): JSX.Element {
+  const [values, setValues] = useState<Record<ThemeTokenName, string>>(() => themeFieldsFrom(theme));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [violations, setViolations] = useState<readonly ThemeContrastViolation[]>([]);
+
+  // GENUINE BUG FOUND AND FIXED BY THE LIVE DEMO (not merely by reading the
+  // code): this effect must NOT reset `violations` here. `onSaved` below
+  // calls the PARENT's `setState`, which re-renders this component with a
+  // FRESH `theme` object reference (`buildTenantDetailView` builds a new
+  // object every call) — under React 18's automatic batching, that parent
+  // update and this component's own `setViolations(outcome.themeViolations)`
+  // land in the SAME commit, so an effect resetting `violations` on every
+  // `theme` reference change wiped the very violations `handleSave` had
+  // just set, one render later. Caught live: the server's own response
+  // carried the real violation, `psql`/the response body proved it, but the
+  // screen rendered nothing — confirmed by inspecting the actual network
+  // response before assuming the bug was server-side. Violations now clear
+  // only at the START of a new save attempt (below), never from this sync
+  // effect.
+  useEffect(() => {
+    setValues(themeFieldsFrom(theme));
+  }, [theme]);
+
+  async function handleSave(): Promise<void> {
+    setSaving(true);
+    setError(undefined);
+    setViolations([]);
+    const nextTheme: ThemeOverride = {};
+    for (const name of THEME_TOKEN_NAMES) {
+      const trimmed = values[name].trim();
+      if (trimmed !== "") nextTheme[name] = trimmed;
+    }
+    const outcome = await onSave(nextTheme);
+    setSaving(false);
+    if (!outcome.ok) {
+      setError(
+        outcome.reason === "missing-permission"
+          ? COPY.tenantDetailEditMissingPermission
+          : outcome.reason === "unknown-tenant"
+            ? COPY.tenantDetailEditUnknownTenant
+            : COPY.tenantDetailEditGenericError,
+      );
+      return;
+    }
+    setViolations(outcome.themeViolations);
+    onSaved(outcome.tenant);
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-semibold">{COPY.tenantDetailThemeLabel}</h2>
+      <p className="text-xs text-primary-foreground/70">{COPY.tenantDetailThemeHint}</p>
+      <div className="grid grid-cols-2 gap-3">
+        {THEME_TOKEN_NAMES.map((name) => (
+          <label key={name} className="flex flex-col gap-1 text-xs">
+            {THEME_TOKEN_LABELS[name]}
+            <Input value={values[name]} onChange={(event) => setValues((prev) => ({ ...prev, [name]: event.target.value }))} disabled={saving} />
+          </label>
+        ))}
+      </div>
+      {error !== undefined ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {violations.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {violations.map((violation) => (
+            <li key={violation.pair} className="text-sm text-destructive" role="alert">
+              {formatThemeViolationMessage(violation)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+        {saving ? COPY.tenantDetailSaving : COPY.tenantDetailSave}
+      </Button>
+    </section>
+  );
+}
+
 /**
  * The tenant detail screen (task 15a's own necessary prerequisite) — origins
  * and games are now EDITABLE (tasks 15a.1-15a.4): a free-text field per
@@ -336,6 +456,11 @@ export function TenantDetailScreen({ tenantId, onBack }: TenantDetailScreenProps
               emptyCopy={COPY.tenantDetailValidUntilEmpty}
               initialText={state.view.validUntilInput}
               onSave={(iso) => postTenantWindow(tenantId, iso)}
+              onSaved={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
+            />
+            <ThemeSection
+              theme={state.view.theme}
+              onSave={(theme) => postTenantTheme(tenantId, theme)}
               onSaved={(tenant) => setState({ kind: "loaded", view: buildTenantDetailView(tenant) })}
             />
           </div>

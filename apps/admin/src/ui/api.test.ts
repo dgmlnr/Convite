@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTenantDetail, getTenants, postLogin, postLogout, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantWindow } from "./api.js";
+import { getTenantDetail, getTenants, postLogin, postLogout, postRotateEmbedKey, postTenantGames, postTenantOrigins, postTenantTheme, postTenantWindow } from "./api.js";
 
 /**
  * `postLogin`'s own contract, proven with a stubbed `global.fetch` — this
@@ -372,6 +372,51 @@ describe("postRotateEmbedKey", () => {
       }),
     );
     await expect(postRotateEmbedKey("acme")).resolves.toEqual({ ok: false, reason: "network-error" });
+  });
+});
+
+/**
+ * `postTenantTheme` (task 15b.3/15b.4) — the only write client that carries
+ * BACK `themeViolations` alongside the fresh tenant row, so the operator's
+ * own screen can render them (design §2.3, moved off `console.warn`).
+ * Genuine RED, confirmed before it existed: `postTenantTheme is not
+ * exported`.
+ */
+describe("postTenantTheme", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the theme object to /tenants/:id/theme and returns the tenant plus any themeViolations", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            tenant: { id: "acme", embedKey: "pk_live_acme", allowedOrigins: [], entitledGames: [], status: { kind: "no-window" } },
+            themeViolations: [{ pair: "on-surface/surface", reason: "below-minimum", ratio: 1.07, dropped: ["--gx-color-surface", "--gx-color-on-surface"] }],
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const outcome = await postTenantTheme("acme", { "--gx-color-on-surface": "#1a1a1a", "--gx-color-surface": "#14231d" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit & { readonly body: string }];
+    expect(url).toBe("/tenants/acme/theme");
+    expect(init).toMatchObject({ method: "POST", credentials: "include" });
+    expect(JSON.parse(init.body)).toEqual({ theme: { "--gx-color-on-surface": "#1a1a1a", "--gx-color-surface": "#14231d" } });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.themeViolations).toHaveLength(1);
+  });
+
+  it("maps a 404 to unknown-tenant", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "unknown-tenant" }), { status: 404 })),
+    );
+    await expect(postTenantTheme("ghost", {})).resolves.toEqual({ ok: false, reason: "unknown-tenant" });
   });
 });
 

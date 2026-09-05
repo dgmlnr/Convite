@@ -282,3 +282,37 @@ export function createTenantRotateKeyHandler(deps: TenantHandlersDeps): AdminHan
   };
 }
 
+/**
+ * `POST /tenants/:id/theme` (task 15b.3/15b.4, permission
+ * `tenant.origins.edit` — the taxonomy's own reused read-route bend, design
+ * §19, same as `tenant-detail`/`tenant-list`). Forwards the raw payload
+ * STRAIGHT to `TenantAdminRepository.updateTheme`, which already runs the
+ * REAL `sanitizeTenantTheme` (design §2.3 point 3) — this handler never
+ * re-sanitizes, re-validates, or re-derives a contrast ratio of its own.
+ * Its only real job: surface whatever `themeViolations` that write already
+ * computed back to the operator's own screen — MOVED FROM A `console.warn`
+ * NOBODY IN THE PANEL EVER READS (design §2.3's own closing argument) to
+ * the response body this app's UI actually renders.
+ */
+export function createTenantThemeHandler(deps: TenantHandlersDeps): AdminHandler {
+  return async (req, actor) => {
+    const id = req.params?.id;
+    if (id === undefined || id === "") return { status: 400, body: JSON.stringify({ error: "missing-tenant-id" }) };
+    const rawTheme = req.body?.theme;
+    if (rawTheme !== undefined && (typeof rawTheme !== "object" || rawTheme === null)) return { status: 400, body: JSON.stringify({ error: "invalid-theme" }) };
+
+    const existing = await deps.tenants.findById(id as TenantId);
+    const witness = tenantAuditWitness(deps, actor, {
+      action: "tenant.theme.updated",
+      targetTenantId: id as TenantId,
+      changes: { theme: { before: existing?.theme ?? null, after: rawTheme ?? null } },
+    });
+    const result = await deps.tenants.updateTheme(id as TenantId, rawTheme as ThemeOverride | undefined, witness);
+    if (!result.ok) return { status: result.reason === "unknown-tenant" ? 404 : 400, body: JSON.stringify({ error: result.reason }) };
+    return {
+      status: 200,
+      body: JSON.stringify({ tenant: buildTenantDetailRow(result.tenant, (deps.clock ?? Date.now)()), themeViolations: result.themeViolations }),
+    };
+  };
+}
+

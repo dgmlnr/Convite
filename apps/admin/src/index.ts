@@ -32,6 +32,7 @@ import {
   createTenantListHandler,
   createTenantOriginsHandler,
   createTenantRotateKeyHandler,
+  createTenantThemeHandler,
   createTenantWindowHandler,
 } from "./tenant-handlers.js";
 
@@ -168,6 +169,7 @@ const tenantOriginsHandler = createTenantOriginsHandler({ tenants });
 const tenantGamesHandler = createTenantGamesHandler({ tenants });
 const tenantWindowHandler = createTenantWindowHandler({ tenants });
 const tenantRotateKeyHandler = createTenantRotateKeyHandler({ tenants });
+const tenantThemeHandler = createTenantThemeHandler({ tenants });
 
 /**
  * Maps the still-small set of `AdminRouteKind`s with a REAL handler to that
@@ -190,6 +192,7 @@ const REAL_HANDLERS: Partial<Record<AdminRouteKind, AdminHandler>> = {
   "tenant-games": tenantGamesHandler,
   "tenant-window": tenantWindowHandler,
   "tenant-rotate-key": tenantRotateKeyHandler,
+  "tenant-theme": tenantThemeHandler,
 };
 
 /**
