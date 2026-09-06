@@ -160,11 +160,60 @@ export const FACE_ROTATION: Readonly<Record<DieFace, { readonly rotateX: number;
  * resting rule and the toss keyframe's `from` state, which is what makes the
  * two impossible to disagree — they are not two numbers kept in step by
  * convention, they are one write read twice.
+ *
+ * UNTOUCHED BY THE SECOND VISUAL PASS'S CUBE-VOLUME FIX, DELIBERATELY. The
+ * first attempt at `DIE_REST_TILT` (below) added its two degrees directly
+ * into THIS function's own numbers — i.e. into the same `rotateX(a)
+ * rotateY(b)` pair `FACE_ROTATION` already committed to per face. Rendered
+ * and looked at (`pnpm visual:review`, `dice-all-faces`): faces 3 and 4 broke
+ * open into a two-face "V", one no more dominant than the other. The reason
+ * is that CSS composes a single element's `rotateX(a) rotateY(b)` as ONE
+ * rotation, and adding a constant into `a` for a face whose OWN `a` is
+ * already ±90° does not read as "a small extra tilt" — it reads as "turn the
+ * die most of another quarter turn", because `Rx(90-16)` is not `Rx(90)` plus
+ * a small camera-relative nudge, it is a different absolute orientation
+ * entirely. See `DIE_REST_TILT`'s own comment for where the tilt actually
+ * lives instead.
  */
 export function restingPoseDeclaration(face: DieFace): string {
   const { rotateX, rotateY } = FACE_ROTATION[face];
   return `--dice-rest-x: ${String(rotateX)}deg; --dice-rest-y: ${String(rotateY)}deg;`;
 }
+
+/**
+ * THE ONE COSMETIC ROTATION THIS WHOLE PASS ADDS, and why it is a STATIC CSS
+ * rule on an outer WRAPPER element (`.hexdev-dice-tilt` in `dice-styles.ts`,
+ * placed by `die.ts` between `.hexdev-dice-scene` and `.hexdev-dice-cube`)
+ * rather than a number folded into `restingPoseDeclaration` above.
+ *
+ * THE OWNER'S OBJECTION: a die at dead-on rest reads as "square, not a
+ * cube" — with the camera looking straight at `front`'s own unrotated
+ * facelet, every OTHER facelet sits edge-on and contributes nothing to what
+ * is on screen, so the six-sided cube this package already builds
+ * (`DIE_SIDE_ORDER`) renders indistinguishably from a flat square.
+ *
+ * WHY A WRAPPER, NOT AN ADDITION TO THE POSE NUMBERS. Nesting two elements
+ * that each carry `transform-style: preserve-3d` composes EXACTLY like a
+ * single element's concatenated transform list, in ONE crucial respect that
+ * matters here: the OUTER element's rotation is applied to the whole
+ * already-oriented inner cube as a further rotation in the CAMERA's own
+ * frame, never re-mixed into whatever big 90°/180° turn `FACE_ROTATION`
+ * already used to decide which facelet faces forward. That is what makes
+ * this tilt genuinely uniform across all six faces regardless of how large
+ * each one's own `FACE_ROTATION` entry is — the wrapper never knows or
+ * cares which face is showing, and `FACE_ROTATION` never knows this
+ * constant exists, which is also why `die-rotation-consistency.test.ts`
+ * needed no change: the table stays the sole authority on which face is
+ * decided, exactly as `sdd/generala-props/explore`'s own contract requires.
+ *
+ * SIZED TO STAY COSMETIC. The decided face must stay the unambiguous,
+ * dominant read — a tilt large enough to make an adjacent facelet compete
+ * with it for attention would fail the one legibility requirement this
+ * package cannot trade away. `pnpm visual:review`, looked at across all six
+ * faces (`dice-all-faces`) and both cup scenes, is what confirms this stays
+ * true at this size; there is no assertion that could stand in for that.
+ */
+export const DIE_REST_TILT = { rotateX: -14, rotateY: 16 } as const;
 
 /**
  * THE CUP'S OWN BOX: narrower at the rim than at the base, in profile —

@@ -1,4 +1,4 @@
-import { CUP_TAP_MIN } from "./geometry.js";
+import { CUP_TAP_MIN, DIE_REST_TILT } from "./geometry.js";
 import { DICE_THEME_DEFAULTS } from "./theme-tokens.js";
 
 export const DICE_STYLE_ID = "hexdev-dice-styles";
@@ -45,6 +45,30 @@ export function buildDiceStylesheet(): string {
   ${Object.entries(DICE_THEME_DEFAULTS)
     .map(([token, value]) => `${token}: ${value};`)
     .join("\n  ")}
+
+  /* ONE COMPOSED SCENE, NOT TWO UNRELATED ELEMENTS. Before this pass, the
+     cup and the tray were two plain block-level siblings with no layout
+     rule between them at all — on any real viewport that stacks the cup
+     above an unrelated row of dice, anchored to opposite corners with
+     nothing composing them ("un cubilete de calidad" review, objection 3 —
+     see \`cup-body.ts\`'s own header for the rest of that review). \`row\`
+     puts the tray beside the cup it was just pressed to empty, the way a
+     thrown cup and its dice actually sit on a table together.
+
+     \`inline-flex\`, NOT \`flex\` — a plain block \`flex\` here stretches to
+     its containing block's own width (a whole 1280px desktop viewport in
+     \`dice.scene.test.ts\`'s own widest scene), left-aligning the composed
+     group and leaving the REST of that width as a second, differently-
+     coloured empty desert next to it. This piece does not own the page it
+     is mounted into (no board exists yet to give it one, \`index.ts\`'s own
+     scope note) and should not silently claim more of it than its own
+     content needs; \`inline-flex\` shrink-wraps to the cup-plus-tray group,
+     same as the cup button inside it already does. */
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 12px;
 }
 
 .hexdev-dice-tray {
@@ -55,10 +79,66 @@ export function buildDiceStylesheet(): string {
   align-items: center;
 }
 
+/* THE ROLL ANNOUNCER: visually hidden, still announced — the identical
+   clip-rect recipe \`truco-ui/table-styles.ts\` names \`.hexdev-truco-
+   announcer\` for its own live regions, never \`display: none\` or
+   \`visibility: hidden\`, both of which would remove the node from the
+   accessibility tree and silence the one thing it exists to do. Its own
+   plain-text sentence ("Tirada: 3, 5, 5, 2, 6") was, before this rule
+   existed, the ONLY thing in this package painted with no \`--dice-…\`
+   token behind it at all — unstyled black-on-whatever-the-page-provides,
+   which is also why it read as a stray line of body copy sitting under the
+   composed scene rather than as the assistive text it actually is. \`
+   position: absolute\` additionally takes it out of the new flex row above,
+   so it can never become a visible third box between the cup and the
+   tray. */
+.hexdev-dice-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  min-height: 0;
+}
+
 .hexdev-dice-scene {
   width: 64px;
   height: 64px;
   perspective: 480px;
+  /* \`translateZ(50px)\` (\`DIE_SIDE_LOCAL_TRANSFORM\`, half of \`DIE_SIZE\`'s 100
+     SVG-viewBox units reused as CSS px) pushes the front facelet — and, once
+     \`.hexdev-dice-tilt\` reveals it, a sliver of whichever facelet sits
+     adjacent — proportionally far forward against a box this small. Past
+     this pass's own tilt, that sliver projects outside the nominal 64×64
+     box entirely; left \`visible\` (this rule's only prior overflow
+     behaviour), it renders as a shape floating disconnected above the die
+     rather than read as that die's own top edge. Clipping it here is the
+     one-line fix: the cube's edge now ends exactly at the box it is drawn
+     in, the same as looking at a real cube through a window frame, instead
+     of past it. */
+  overflow: hidden;
+}
+
+/* THE COSMETIC CAMERA TILT, applied ONCE here rather than folded into every
+   face's own \`--dice-rest-x\`/\`-y\` — \`DIE_REST_TILT\`'s own comment in
+   \`geometry.ts\` has the full argument for why nesting is the load-bearing
+   choice, not a style preference: composing this element's static rotation
+   with the cube's own (arbitrarily large, per-face) rotation is what keeps
+   the tilt visually uniform across all six faces, where adding the same two
+   degrees into the cube's own numbers instead broke faces 3 and 4 open into
+   a two-face "V" (rendered and looked at, not merely reasoned about).
+   \`transform-style: preserve-3d\` has to repeat here — it does not
+   inherit — or the cube's six facelets would flatten onto this element's
+   own plane instead of staying a real cube inside it. */
+.hexdev-dice-tilt {
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform: rotateX(${String(DIE_REST_TILT.rotateX)}deg) rotateY(${String(DIE_REST_TILT.rotateY)}deg);
 }
 
 .hexdev-dice-cube {
@@ -126,16 +206,32 @@ export function buildDiceStylesheet(): string {
   min-width: ${String(CUP_TAP_MIN)}px;
   min-height: ${String(CUP_TAP_MIN)}px;
   transition: transform 120ms ease;
+  /* TIPPED, NOT UPRIGHT — the review's fourth-wall objection was a cup and
+     its dice reading as two unrelated shapes; a cup standing perfectly
+     vertical beside a horizontal row of dice still reads that way even once
+     the tray sits right next to it. A held-still tilt toward the tray is
+     what makes it read as the vessel THOSE dice just came out of. This is a
+     transform on the real, focusable \`<button>\` — not a rotated inner
+     wrapper — so the box WCAG 2.5.5's 44×44 floor is measured against never
+     shrinks (a CSS transform changes what is painted, not the element's own
+     layout-box dimensions) and \`:focus-visible\`'s outline still traces the
+     button it actually protects, tilt and all. */
+  transform: rotate(9deg);
+  transform-origin: 50% 65%;
 }
 
 .hexdev-dice-cup svg {
   width: 100%;
   height: 100%;
   display: block;
+  overflow: visible;
 }
 
 .hexdev-dice-cup:active {
-  transform: scale(0.95);
+  /* Combined, never a bare \`scale(...)\` that would silently discard the
+     rest rule's own \`rotate(9deg)\` for the one moment a player is actually
+     pressing it. */
+  transform: rotate(9deg) scale(0.95);
 }
 
 .hexdev-dice-cup:focus-visible {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DIE_FACES,
+  DIE_REST_TILT,
   FACE_PIP_SLOTS,
   FACE_ROTATION,
   PIP_SLOTS,
@@ -79,6 +80,18 @@ describe("geometry: restingPoseDeclaration is a pure string, no rendering needed
       expect(declaration).toMatch(new RegExp(`--dice-rest-x:\\s*${String(rotateX)}deg`));
       expect(declaration).toMatch(new RegExp(`--dice-rest-y:\\s*${String(rotateY)}deg`));
     }
+  });
+});
+
+describe("geometry: DIE_REST_TILT is one constant pair, meant for a static CSS rule, never folded into a per-face pose", () => {
+  it("is the same two numbers regardless of which face — no per-face table exists for it", () => {
+    expect(typeof DIE_REST_TILT.rotateX).toBe("number");
+    expect(typeof DIE_REST_TILT.rotateY).toBe("number");
+  });
+
+  it("stays small enough to be cosmetic — well short of the 90 degrees that would compete with a facelet for dominance", () => {
+    expect(Math.abs(DIE_REST_TILT.rotateX)).toBeLessThan(45);
+    expect(Math.abs(DIE_REST_TILT.rotateY)).toBeLessThan(45);
   });
 });
 

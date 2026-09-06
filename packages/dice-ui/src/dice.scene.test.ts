@@ -36,6 +36,14 @@ describe("scene: a decided roll, cup and all", () => {
   it("a phone-width table — the width most players actually see this on", async () => {
     await page.viewport(390, 700);
     const handle = createDiceCup(document, { onPress: () => {} });
+    // THE FELT, the identical stand-in colour `dice-all-faces` below already
+    // uses for it — a real board (none exists yet, `index.ts`'s own scope
+    // note) owns the actual `var(--gx-color-primary, …)` bridge, exactly the
+    // boundary `mahjong-tile-ui`'s own scene tests draw for themselves; this
+    // package only ever demos on SOMETHING that is not the bare white page a
+    // "quality cubilete" review found the piece sitting on before this pass
+    // (`cup-body.ts`'s own header).
+    handle.element.style.background = "#14231d";
     document.body.appendChild(handle.element);
     mounted.push(handle.element);
     handle.roll([3, 5, 5, 2, 6]);
@@ -45,6 +53,7 @@ describe("scene: a decided roll, cup and all", () => {
   it("a wide desktop table — the cup's own artwork at its most visible size", async () => {
     await page.viewport(1280, 800);
     const handle = createDiceCup(document, { onPress: () => {} });
+    handle.element.style.background = "#14231d";
     document.body.appendChild(handle.element);
     mounted.push(handle.element);
     handle.roll([1, 4, 6, 2, 3]);
