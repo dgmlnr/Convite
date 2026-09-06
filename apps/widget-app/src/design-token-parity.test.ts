@@ -219,8 +219,8 @@ describe("design-token-parity (VDS-1: the --hx-* token layer is identical in bot
  * sits inside a `color-mix()` call, where it means "contribute nothing to
  * this blend if the token is absent" -- a graceful-degradation value, not a
  * guess at a brand default. Once those are set aside, `--gx-color-primary`,
- * `--gx-color-on-primary`, `--gx-color-on-surface` and `--gx-color-surface`
- * each carry exactly one literal at every remaining occurrence.
+ * `--gx-color-on-primary` and `--gx-color-surface` each carry exactly one
+ * literal at every remaining occurrence.
  *
  * `--gx-color-accent` never carries a literal fallback at all -- every
  * occurrence reads `var(--gx-color-accent, var(--hx-gold))`, so its parity
@@ -235,6 +235,21 @@ describe("design-token-parity (VDS-1: the --hx-* token layer is identical in bot
  * a generic sans stack or the display serif depending on which type role is
  * being painted. Pinning either against one literal would assert a false
  * uniformity.
+ *
+ * `--gx-color-on-surface` is ALSO now deliberately excluded, and for a third
+ * reason none of the above are: not "no canonical literal", but "no legitimate
+ * literal at all" (chrome-contrast.browser.test.ts's own docstring has the
+ * full investigation). Every occurrence used to read
+ * `var(--gx-color-on-surface, #1a1a1a)`, agreeing with DEFAULT_THEME_TOKENS
+ * exactly as this fence demanded -- and every one of them was wrong, because
+ * nothing in this file ever paints the raw `--gx-color-surface` as a
+ * background for text to sit on; every real surface is the FELT, a tint of
+ * it. The parity this fence proved was real; the pairing it was proving
+ * parity FOR was never legible. All four readers now take `--hx-felt-ink`
+ * instead (chrome-styles.ts, chrome-contrast.browser.test.ts). The negative
+ * test just below is what stands in this fence's place: pinning that the
+ * bug cannot return, rather than that a now-nonexistent literal agrees with
+ * itself.
  */
 function literalFallbacksOf(css: string, tokenName: string): readonly string[] {
   const pattern = new RegExp(`var\\(\\s*${tokenName}\\s*,\\s*([^()]+?)\\s*\\)`, "g");
@@ -244,7 +259,7 @@ function literalFallbacksOf(css: string, tokenName: string): readonly string[] {
 describe("VDS-2 (tenant token defaults): DEFAULT_THEME_TOKENS matches chrome-styles.ts's own literal fallbacks", () => {
   const chromeCss = buildChromeStylesheet();
 
-  it.each(["--gx-color-primary", "--gx-color-on-primary", "--gx-color-on-surface", "--gx-color-surface"] as const)(
+  it.each(["--gx-color-primary", "--gx-color-on-primary", "--gx-color-surface"] as const)(
     "every non-blend literal fallback %s carries in chrome-styles.ts agrees with DEFAULT_THEME_TOKENS",
     (tokenName) => {
       const fallbacks = literalFallbacksOf(chromeCss, tokenName);
@@ -257,6 +272,21 @@ describe("VDS-2 (tenant token defaults): DEFAULT_THEME_TOKENS matches chrome-sty
       }
     },
   );
+
+  it("never reads --gx-color-on-surface directly again -- the felt is never the raw surface it would pair with", () => {
+    // Not a parity check: a REGRESSION GUARD. This file has no rendered
+    // surface that is ever the raw --gx-color-surface value (every one is
+    // the felt, tinted by at most --hx-felt-tint of it) -- so no rule here
+    // can EVER legitimately read --gx-color-on-surface, tenant theme or not.
+    // A future match means the exact invisible-text bug this suite's sibling
+    // (chrome-contrast.browser.test.ts) fenced has been reintroduced.
+    //
+    // Matched as `var(--gx-color-on-surface`, not the bare token name: this
+    // very file's own comments (this one included) name the token in prose
+    // as part of documenting why it is gone, and a bare substring search
+    // would fail on its own docstring forever.
+    expect(/var\(\s*--gx-color-on-surface\b/.test(chromeCss), "chrome-styles.ts reads --gx-color-on-surface again").toBe(false);
+  });
 
   it("--gx-color-accent's own private alias (--hx-gold) agrees with DEFAULT_THEME_TOKENS", () => {
     // Every occurrence of --gx-color-accent in this file falls back to
