@@ -40,6 +40,14 @@ module.exports = {
       to: { path: "^(packages|apps)/", pathNot: "^packages/mahjong-tile-ui/src" },
     },
     {
+      name: "l0-dice-ui-no-workspace-deps",
+      severity: "error",
+      comment:
+        "dice-ui is pure L0 and must not depend on any other workspace package. It is the Generala dice and cup AS PIECES — geometry, generated SVG faces, the cube's resting-pose table, the credit-free status a functional pip needs no licence for — and it must not know that a Generala engine exists, exactly like mahjong-tile-ui must not know a solitaire exists. Its own rule rather than a `*-ui` glob, for the identical reason mahjong-tile-ui's own rule states: the existing glob is `packages/games/*-ui`, which is L1 game presentation and MAY import its engine; this package sits at packages/ root beside spanish-deck-ui and mahjong-tile-ui and is one tier lower. No Generala engine/module exists yet (sdd/generala-props/explore, verified against source), so this rule is what stops one being smuggled in through the props before it does.",
+      from: { path: "^packages/dice-ui/src" },
+      to: { path: "^(packages|apps)/", pathNot: "^packages/dice-ui/src" },
+    },
+    {
       name: "l1-no-l2-l3",
       severity: "error",
       comment:
