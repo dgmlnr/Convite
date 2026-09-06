@@ -79,8 +79,19 @@ describe("dice: the cup's real, laid-out tap target meets the 44px floor at ever
 });
 
 describe("dice: the tray wraps five dice on a narrow phone rather than overflowing or shrinking them illegibly", () => {
+  /**
+   * WAS 960px, before `.hexdev-dice-scene` grew from 110px to `DIE_SCENE_SIZE`
+   * (`dice-styles.ts`'s own header explains why a rotating cube needs a
+   * bigger box than a resting one). Five scenes at the new size plus the
+   * tray's own gaps no longer fit inside 960px at all — this test would fail
+   * saying dice wrapped where it expected one row, not because five dice
+   * stopped fitting on wide screens, but because "wide enough" moved out
+   * past 960px along with the box that grew. 1550 is not a new number
+   * invented for this fix; it is the widest entry `BREAKPOINTS` above
+   * already standardizes on, reused rather than a fresh literal.
+   */
   it("puts every die on one row once the container is wide enough", async () => {
-    await page.viewport(960, 700);
+    await page.viewport(1550, 700);
     const handle = mountCup();
     handle.roll(ROLL);
     const tops = [...handle.trayElement.querySelectorAll(".hexdev-dice-scene")].map((el) => el.getBoundingClientRect().top);
