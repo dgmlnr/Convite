@@ -2,10 +2,11 @@
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DieFace } from "./geometry.js";
-import { DIE_FACES } from "./geometry.js";
+import { CUP_HEIGHT, CUP_WIDTH, DIE_FACES } from "./geometry.js";
 import { createDiceCup } from "./dice.js";
 import { ensureDiceStyles } from "./dice-styles.js";
 import { createDieSceneElement } from "./die.js";
+import { cupBodySvg } from "./cup-body.js";
 
 /**
  * THE SCREENS SOMEBODY HAS TO LOOK AT — `pnpm visual:review`, never
@@ -48,6 +49,40 @@ describe("scene: a decided roll, cup and all", () => {
     mounted.push(handle.element);
     handle.roll([1, 4, 6, 2, 3]);
     await expect.element(handle.element).toMatchScreenshot("dice-cup-roll-desktop");
+  });
+});
+
+describe("scene: the cup alone, at a size where the wall and the interior are not a guess", () => {
+  /**
+   * ITS OWN CLOSE-UP, the same reason `dice-all-faces` below exists for the
+   * six dice: "un cubilete de calidad" was an objection about THIS piece
+   * specifically (`cup-body.ts`'s own header), and at the 84×99 CSS px it
+   * renders inside `createDiceCup`'s button, the rim wall and the interior
+   * halves this pass added are a handful of pixels each — real, but not a
+   * size anyone could judge "quality" from. This is the one screen sized so
+   * a reviewer can actually see them.
+   */
+  it("a single cup, large — the exact surface a 'quality cubilete' review has to judge", async () => {
+    await page.viewport(320, 360);
+    ensureDiceStyles(document);
+    const wrap = document.createElement("div");
+    wrap.className = "hexdev-dice-root";
+    wrap.style.display = "flex";
+    wrap.style.justifyContent = "center";
+    wrap.style.alignItems = "center";
+    wrap.style.padding = "24px";
+    wrap.style.background = "#14231d";
+
+    const cupSize = document.createElement("div");
+    cupSize.style.width = "220px";
+    cupSize.style.height = `${String((220 * CUP_HEIGHT) / CUP_WIDTH)}px`;
+    cupSize.innerHTML = cupBodySvg();
+    cupSize.querySelector("svg")!.setAttribute("style", "width: 100%; height: 100%; display: block;");
+    wrap.appendChild(cupSize);
+
+    document.body.appendChild(wrap);
+    mounted.push(wrap);
+    await expect.element(wrap).toMatchScreenshot("dice-cup-closeup");
   });
 });
 

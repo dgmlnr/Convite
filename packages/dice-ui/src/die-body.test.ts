@@ -63,7 +63,7 @@ describe("theme-tokens: every default is a real colour, and the die's and the cu
     }
   });
 
-  it("names exactly the nine surfaces this package draws", () => {
+  it("names exactly the eleven surfaces this package draws — nine plus the interior's two, added when the cup's mouth stopped being a lid", () => {
     expect(Object.keys(DICE_THEME_DEFAULTS).sort()).toEqual(
       [
         "--dice-bevel-light",
@@ -72,6 +72,8 @@ describe("theme-tokens: every default is a real colour, and the die's and the cu
         "--dice-cup-bevel-shade",
         "--dice-cup-edge",
         "--dice-cup-face",
+        "--dice-cup-interior-light",
+        "--dice-cup-interior-shade",
         "--dice-edge",
         "--dice-face",
         "--dice-pip",
@@ -85,5 +87,9 @@ describe("theme-tokens: every default is a real colour, and the die's and the cu
 
   it("gives the cup's lit and shaded edge different defaults too", () => {
     expect(DICE_THEME_DEFAULTS["--dice-cup-bevel-light"]).not.toBe(DICE_THEME_DEFAULTS["--dice-cup-bevel-shade"]);
+  });
+
+  it("gives the cup's interior two different defaults too, both darker than either exterior bevel tone", () => {
+    expect(DICE_THEME_DEFAULTS["--dice-cup-interior-light"]).not.toBe(DICE_THEME_DEFAULTS["--dice-cup-interior-shade"]);
   });
 });

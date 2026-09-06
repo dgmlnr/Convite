@@ -180,6 +180,26 @@ export const CUP_FRAME = 6;
 export const CUP_BEVEL = 6;
 
 /**
+ * THE RIM'S OWN WALL THICKNESS — the width of the band `cup-body.ts` now
+ * draws between the outer rim ellipse and the inner one, i.e. the material
+ * a real cup's mouth actually has. The single ellipse this package shipped
+ * before this pass drew only a lid; there was no second, smaller ellipse for
+ * that ring to exist between, so nothing about the wall's own thickness was
+ * ever visible — the exact defect the owner's "un cubilete de calidad"
+ * review named (`cup-body.ts`'s own header comment).
+ */
+export const CUP_RIM_WALL = 8;
+
+/**
+ * HOW FAR BELOW THE RIM'S TOP EDGE the interior ellipse sits — small and
+ * purely cosmetic, the one number that turns "a second, smaller ellipse"
+ * into "looking down past the wall into the hollow inside" rather than "two
+ * concentric lids". Kept short of `CUP_BEVEL` on purpose: a real mouth's
+ * visible depth at this size is a sliver, not a shaft.
+ */
+export const CUP_RIM_DEPTH = 4;
+
+/**
  * WCAG 2.5.5 / the 2026 dice-app survey this change's own exploration cites:
  * 44×44 CSS px is the accepted floor for a tappable target. The cup's SVG
  * viewBox above is unitless and gets scaled by CSS — this is the real,

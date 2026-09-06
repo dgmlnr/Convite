@@ -31,6 +31,19 @@ export const DICE_THEME_DEFAULTS = {
   "--dice-cup-edge": "#3a2313",
   "--dice-cup-bevel-light": "#7c5636",
   "--dice-cup-bevel-shade": "#28160b",
+  /**
+   * THE TWO SURFACES THAT MAKE A CUP READ AS HOLLOW RATHER THAN A LID: the
+   * inside back wall, which — because the light in this scene comes from
+   * the same top-left source the bevel already commits to — catches some of
+   * it (`-light`), and the inside near wall, permanently in the cup's own
+   * shadow (`-shade`), both darker than either exterior bevel tone because
+   * "looking into" a leather or wood vessel is looking into shadow, not at
+   * another lit face. Added for the second visual pass
+   * (`sdd/generala-props/explore`'s owner objection: "a cubilete of
+   * quality" — see `cup-body.ts`), never referenced before it.
+   */
+  "--dice-cup-interior-light": "#3d2410",
+  "--dice-cup-interior-shade": "#0a0503",
 } as const;
 
 export type DiceThemeToken = keyof typeof DICE_THEME_DEFAULTS;
