@@ -5,6 +5,7 @@
     { "path": "packages/widget-protocol" },
     { "path": "packages/spanish-deck-ui" },
     { "path": "packages/mahjong-tile-ui" },
+    { "path": "packages/dice-ui" },
     { "path": "packages/platform-core" },
     { "path": "packages/games/truco-engine" },
     { "path": "packages/games/escoba-engine" },

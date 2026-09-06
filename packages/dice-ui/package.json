@@ -1,0 +1,16 @@
+{
+  "name": "@hexdev/dice-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@vitest/browser": "^4.1.10"
+  }
+}
