@@ -2,7 +2,7 @@
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DieFace } from "./geometry.js";
-import { DICE_TOSS_DURATION_MS, DICE_TOSS_EASING, DICE_TOSS_STAGGER_MS, ensureDiceStyles } from "./dice-styles.js";
+import { DICE_TOSS_DURATION_MS, DICE_TOSS_EASING, DICE_TOSS_STAGGER_MS, DIE_SCENE_SIZE, ensureDiceStyles } from "./dice-styles.js";
 import { createDieSceneElement } from "./die.js";
 
 /**
@@ -25,9 +25,9 @@ import { createDieSceneElement } from "./die.js";
  * without a new dependency. The answer is the same one film editors reached
  * for a century before video existed: a strip of individual frames, laid out
  * left to right, each one a still of the same motion at a different instant.
- * A person can read an arc, a spin and a landing off six stills in a row
- * exactly the way they read them off six frames of a filmstrip — no player,
- * no timeline scrubber, just an image.
+ * A person can read an arc, a spin and a landing off a handful of stills in a
+ * row exactly the way they read them off a strip of physical film frames —
+ * no player, no timeline scrubber, just an image.
  *
  * HOW A SINGLE FRAME IS FROZEN — AND THE TWO DEAD ENDS BEFORE IT. The first
  * attempt here reached for a pure-CSS idiom this repo already trusts:
@@ -52,8 +52,8 @@ import { createDieSceneElement } from "./die.js";
  * keyframe. This one HALF worked, in a way that took a dedicated probe to
  * catch — `getComputedStyle(cube).transform` after seeking read back exactly
  * right at every checkpoint (independently reconstructed and matrix-checked
- * against `rotateX(730deg) rotateY(460deg)` for the `0ms` seek, and against
- * the plain rest `rotateX(90deg)` at `640ms`), yet every CAPTURED SCREENSHOT
+ * against `rotateX(810deg) rotateY(360deg)` for die index 0's `0ms` seek, and
+ * against the plain rest `rotateX(90deg)` at `640ms`), yet every CAPTURED SCREENSHOT
  * showed the same undistorted, resting-looking face regardless of which
  * checkpoint was requested. The CSSOM value was correct; the COMPOSITED
  * PAINT inside this harness's nested test iframe was not repainting to match
@@ -71,11 +71,11 @@ import { createDieSceneElement } from "./die.js";
  * same ordinary code path every resting die in `dice.scene.test.ts` already
  * paints correctly. Re-ran the same unclipped probe with this extra step and
  * the oblique, airborne pose appeared exactly as the matrix described.
- * Nothing about the toss's own `640ms` duration, `cubic-bezier(0.22, 0.8,
- * 0.32, 1)` easing or `backwards` fill mode is reimplemented to make this
- * work — every frame below is the browser's OWN interpolation of the exact
- * animation `dice-styles.ts` ships, only handed to the page a different way
- * than a running animation would.
+ * Nothing about the toss's own `640ms` duration, `DICE_TOSS_EASING` or
+ * `backwards` fill mode is reimplemented to make this work — every frame
+ * below is the browser's OWN interpolation of the exact animation
+ * `dice-styles.ts` ships, only handed to the page a different way than a
+ * running animation would.
  *
  * WHY THIS OVERRIDE DOES NOT WEAKEN `visual/setup.ts` ANYWHERE ELSE: the
  * global reset is `*, *::before, *::after { animation: none !important; }` —
@@ -104,23 +104,30 @@ import { createDieSceneElement } from "./die.js";
  * whatever viewport WAS requested paints as blank white past that edge, even
  * though the element's own measured bounding box correctly reports its full,
  * unclipped size. Together they mean a captured frame must fit ENTIRELY
- * inside a sub-1280×720 viewport to render at its true resolution. Six
- * columns of `.hexdev-dice-scene`'s own 110px (never shrunk smaller — see
- * that class's comment in `dice-styles.ts` for the cropping regression a
- * smaller box reopens) fits easily; six columns of FIVE 110px dice each
- * (over 3000px) does not, by a wide margin, and no CSS fix changes that
- * arithmetic. Widening this project's own default viewport in `vitest.
- * scenes.config.ts` would have been the alternative — rejected here as a
- * second shared-infrastructure change beyond the one this task actually
- * asked for (`visual/setup.ts`'s override), for a single new scene that does
- * not need the other four committed baselines, or every other scene in this
- * repo, to gain a wider default window along with it. One representative die
- * (index 0, so `--i` contributes no stagger of its own) still answers the
- * product owner's real question — does the ARC read as a throw, does the
- * SPIN look credible, does the LAST frame land on the decided face with no
- * correction — just without also depicting the five-die stagger's own
- * "does this look choreographed" question inside the same still image. That
- * gap is named plainly in this change's own report, not hidden here.
+ * inside a sub-1280×720 viewport to render at its true resolution.
+ *
+ * FIVE COLUMNS, NOT SIX — a second, later retreat, for the identical reason.
+ * `.hexdev-dice-scene` used to be 110px; it is `DIE_SCENE_SIZE` (210px) now,
+ * because a cube that actually rotates (this file's whole reason for
+ * existing) projects a screen-space footprint bigger than its own resting
+ * one, and `dice-styles.ts`'s own comment on that class has the measured
+ * arithmetic for why 210px is the smallest box that holds every sampled
+ * instant of every die's own flight without clipping it. Six columns at
+ * 210px plus five 16px gaps plus 32px of padding is comfortably past the
+ * same 1280px ceiling the paragraph above describes; five columns is not
+ * (`5 × 210 + 4 × 16 + 32 = 1146`, well inside it). `FRAME_FRACTIONS` below
+ * is five checkpoints rather than six for exactly this reason, not because
+ * five was judged to be enough on its own merits — it happens to still be
+ * plenty: a spin sweeping 720°+ per axis shows several different faces
+ * whether sampled at five points or six. One representative die (index 0 —
+ * the smallest of the five different per-die turn counts `hexdev-dice-toss`'s
+ * own comment describes, and the one `--i` contributes no ANIMATION-DELAY
+ * stagger for either) still answers the product owner's real question —
+ * does the ARC read as a throw, does the SPIN look credible, does the LAST
+ * frame land on the decided face with no correction — just without also
+ * depicting the five-die stagger's own "does this look choreographed"
+ * question inside the same still image. That gap is named plainly in this
+ * change's own report, not hidden here.
  *
  * NOT A REGRESSION FENCE. Like every other `*.scene.test.ts` in this repo
  * (`vitest.scenes.config.ts`'s own header), this renders through `pnpm
@@ -169,7 +176,26 @@ function nextFrame(): Promise<void> {
  * recognises the same decided die landing here, mid-flight. */
 const FACE: DieFace = 3;
 
-const FRAME_FRACTIONS: readonly number[] = [0, 0.2, 0.4, 0.6, 0.8, 1];
+/**
+ * FIVE CHECKPOINTS, NOT SIX — see the module docstring's "FIVE COLUMNS, NOT
+ * SIX" section for why the harness's own fixed 1280px-wide window is what
+ * capped this, not a judgment that five is somehow the right number of
+ * frames to look at a spin with.
+ */
+const FRAME_FRACTIONS: readonly number[] = [0, 0.25, 0.5, 0.75, 1];
+
+const STRIP_GAP_PX = 16;
+const STRIP_PADDING_PX = 16;
+/**
+ * Computed, not hand-copied — the same "one number read twice" reasoning
+ * `DICE_TOSS_DURATION_MS`'s own comment in `dice-styles.ts` argues for. A
+ * future bump to `DIE_SCENE_SIZE` or to `FRAME_FRACTIONS`' own length would
+ * otherwise silently blow past the harness's fixed ~1280px-wide window (the
+ * module docstring's "FIVE COLUMNS" section) with nothing here to say so —
+ * the strip would just start painting blank past its edge, exactly the
+ * failure mode that section describes measuring directly.
+ */
+const STRIP_CONTENT_WIDTH_PX = DIE_SCENE_SIZE * FRAME_FRACTIONS.length + STRIP_GAP_PX * (FRAME_FRACTIONS.length - 1) + STRIP_PADDING_PX * 2;
 
 const mounted: HTMLElement[] = [];
 afterEach(async () => {
@@ -179,13 +205,16 @@ afterEach(async () => {
 
 describe("scene: the toss, frame by frame — the animation the visual suite always turns off", () => {
   it("a filmstrip across the 640ms toss, landing on the decided face with no last-moment correction", async () => {
-    // Comfortably larger than the strip this test actually builds (six
-    // 110px columns plus gaps and padding, ~772×165 — see the module
-    // docstring's "ONE DIE" section for why that ceiling matters here: this
-    // viewport must be BOTH large enough that nothing paints as blank past
-    // its edge AND small enough that Vitest never rescales the whole test
-    // iframe to fit it inside this harness's fixed browser-context window.
-    await page.viewport(900, 260);
+    // The harness's own real, fixed browser-context ceiling — see the module
+    // docstring's "ONE DIE" section. A content width past this paints blank,
+    // not merely fuzzy, so this is a loud failure rather than a silently
+    // wrong screenshot.
+    expect(STRIP_CONTENT_WIDTH_PX, "the filmstrip no longer fits this harness's fixed ~1280px-wide window — see the module docstring's 'FIVE COLUMNS' section").toBeLessThan(1280);
+    // Comfortably larger than `STRIP_CONTENT_WIDTH_PX` (five `DIE_SCENE_SIZE`
+    // columns plus gaps and padding) so nothing paints as blank past this
+    // viewport's own edge, and still small enough that Vitest never rescales
+    // the whole test iframe to fit it inside the harness's real window.
+    await page.viewport(STRIP_CONTENT_WIDTH_PX + 40, DIE_SCENE_SIZE + 90);
     ensureDiceStyles(document);
     ensureFilmstripOverride(document);
 
@@ -207,13 +236,13 @@ describe("scene: the toss, frame by frame — the animation the visual suite alw
     // `.hexdev-dice-root` (the class just applied, above) ALSO carries its
     // own `flex-wrap: wrap` — correct for the cup-plus-tray it was written
     // for on a narrow phone viewport, wrong here: this strip must stay
-    // exactly one row, or the six columns stack into six rows instead of
+    // exactly one row, or the five columns stack into five rows instead of
     // reading left to right as a filmstrip.
     strip.style.flexWrap = "nowrap";
     strip.style.alignItems = "flex-start";
-    strip.style.gap = "16px";
+    strip.style.gap = `${String(STRIP_GAP_PX)}px`;
     strip.style.background = "#14231d";
-    strip.style.padding = "16px";
+    strip.style.padding = `${String(STRIP_PADDING_PX)}px`;
     document.body.appendChild(strip);
     mounted.push(strip);
 
@@ -238,7 +267,7 @@ describe("scene: the toss, frame by frame — the animation the visual suite alw
       const scene = createDieSceneElement(document, FACE, 0);
       // `.hexdev-dice-scene` is deliberately never RESIZED smaller here —
       // `dice-styles.ts`'s own comment on that class names the exact
-      // cropping regression a shrink below its chosen 110px reopens.
+      // clipping regression a box smaller than `DIE_SCENE_SIZE` reopens.
       frame.appendChild(scene);
 
       const cube = scene.querySelector<HTMLElement>(".hexdev-dice-cube");
