@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DIE_SIDE_ORDER, FACE_ROTATION } from "./geometry.js";
+import { getDieFaceArtUrl } from "./art.js";
+import { DIE_SIDE_FACE, DIE_SIDE_ORDER, FACE_ROTATION } from "./geometry.js";
 import { createDieSceneElement } from "./die.js";
 
 const mounted: HTMLElement[] = [];
@@ -61,7 +62,13 @@ describe("die: the resting pose is on the element before this function ever retu
     for (const side of DIE_SIDE_ORDER) {
       const facelet = scene.querySelector<HTMLElement>(`[data-side="${side}"]`);
       expect(facelet, `expected a facelet for side ${side}`).not.toBeNull();
-      expect(facelet!.innerHTML).toContain("<svg");
+      // A rendered WebP, not inline markup — `art.ts`'s own header explains
+      // why the flat SVG this facelet used to mount is gone entirely. The
+      // src must name THIS side's own permanently-assigned face, not
+      // whichever face the cube happens to be resting on (face 1 here).
+      const img = facelet!.querySelector("img");
+      expect(img, `expected an <img> for side ${side}`).not.toBeNull();
+      expect(img!.getAttribute("src")).toBe(getDieFaceArtUrl(DIE_SIDE_FACE[side]).href);
       // A permanent property of that SIDE, not of which face was rolled —
       // rolling face 6 must not change which physical side carries face 3.
       expect(facelet!.dataset.side).toBe(side);

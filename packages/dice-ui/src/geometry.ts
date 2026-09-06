@@ -15,32 +15,26 @@ export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
 export const DIE_FACES: readonly DieFace[] = [1, 2, 3, 4, 5, 6];
 
 /**
- * THE DIE'S OWN BOX. A single square viewBox for every face — front, back,
- * and the four sides drawn as it rotates in space — because a real die's
- * faces are literally the same square, six times.
+ * THE DIE'S OWN BOX. A single square coordinate space for every face —
+ * front, back, and the four sides drawn as it rotates in space — because a
+ * real die's faces are literally the same square, six times.
  */
 export const DIE_SIZE = 100;
-export const DIE_VIEWBOX = `0 0 ${String(DIE_SIZE)} ${String(DIE_SIZE)}`;
-
-/** Corner rounding of the flat body, same idiom as `TILE_RADIUS`. */
-export const DIE_RADIUS = 14;
-/** How far in from the edge the flat face sits before the bevel ring starts.
- * Unlike `TILE_FRAME`, this answers to no raster artwork underneath — a die
- * has none, the SVG is the whole face — so it is a plain aesthetic choice of
- * how wide the flat margin around the pips reads, kept small so the bevel is
- * close enough to the edge to actually be seen at a 30-40px on-screen size. */
-export const DIE_FRAME = 4;
-/** The lit/shaded ring's stroke width, same recipe as `TILE_BEVEL`: two arcs,
- * one lit one shaded, and no `<defs>` because flat fills need none. */
-export const DIE_BEVEL = 5;
 
 /**
  * THE NINE CANONICAL PIP SLOTS a standard die face is drawn from, indexed
  * top-to-bottom, left-to-right (0 = top-left … 8 = bottom-right, 4 = centre).
- * Every face is a SUBSET of this one grid — no face invents its own layout —
- * which is what makes `die-pips.test.ts` able to assert a face's pip COUNT
- * and a face's exact positions from one shared table instead of six
- * independently hand-placed drawings that could quietly drift apart.
+ * Every face is a SUBSET of this one grid — no face invents its own layout.
+ *
+ * NO LONGER READ BY ANY TS PRODUCTION CODE — the flat SVG pips this grid
+ * once drove (`die-pips.ts`) are gone, replaced by the carved-crater faces
+ * `../tools/render-props.py` renders. That script's own `PIP_SLOTS_2D`/
+ * `FACE_PIP_SLOTS` are a verbatim, hand-kept port of these two tables
+ * (its own header says so), because a Python build script cannot import a
+ * `.ts` module — so this grid stays the CANONICAL layout declaration, and
+ * `geometry.test.ts` still fences its own shape, even though the render
+ * that actually consumes an equivalent copy lives outside this package's
+ * type system entirely.
  */
 const PIP_MARGIN = 26;
 const PIP_MID = DIE_SIZE / 2;
@@ -218,41 +212,18 @@ export const DIE_REST_TILT = { rotateX: -14, rotateY: 16 } as const;
 /**
  * THE CUP'S OWN BOX: narrower at the rim than at the base, in profile —
  * a plain rectangle reads as a box holding dice, not as the cup ("cubilete")
- * itself that a player presses to throw them.
+ * itself that a player presses to throw them. `art.ts`'s own comment derives
+ * `CUP_ART_HEIGHT` from this exact ratio, so the rendered artwork keeps the
+ * same proportions this package always committed to, even though the flat
+ * SVG silhouette that used to enforce them (`cup-body.ts`) is gone.
  */
 export const CUP_WIDTH = 100;
 export const CUP_HEIGHT = 118;
-export const CUP_VIEWBOX = `0 0 ${String(CUP_WIDTH)} ${String(CUP_HEIGHT)}`;
-/** How much narrower the rim is than the base, per side. */
-export const CUP_RIM_INSET = 16;
-export const CUP_FRAME = 6;
-export const CUP_BEVEL = 6;
-
-/**
- * THE RIM'S OWN WALL THICKNESS — the width of the band `cup-body.ts` now
- * draws between the outer rim ellipse and the inner one, i.e. the material
- * a real cup's mouth actually has. The single ellipse this package shipped
- * before this pass drew only a lid; there was no second, smaller ellipse for
- * that ring to exist between, so nothing about the wall's own thickness was
- * ever visible — the exact defect the owner's "un cubilete de calidad"
- * review named (`cup-body.ts`'s own header comment).
- */
-export const CUP_RIM_WALL = 8;
-
-/**
- * HOW FAR BELOW THE RIM'S TOP EDGE the interior ellipse sits — small and
- * purely cosmetic, the one number that turns "a second, smaller ellipse"
- * into "looking down past the wall into the hollow inside" rather than "two
- * concentric lids". Kept short of `CUP_BEVEL` on purpose: a real mouth's
- * visible depth at this size is a sliver, not a shaft.
- */
-export const CUP_RIM_DEPTH = 4;
 
 /**
  * WCAG 2.5.5 / the 2026 dice-app survey this change's own exploration cites:
- * 44×44 CSS px is the accepted floor for a tappable target. The cup's SVG
- * viewBox above is unitless and gets scaled by CSS — this is the real,
- * on-screen minimum `dice-styles.ts` enforces on the BUTTON, independent of
- * however large or small the artwork inside it is drawn.
+ * 44×44 CSS px is the accepted floor for a tappable target. This is the
+ * real, on-screen minimum `dice-styles.ts` enforces on the BUTTON,
+ * independent of however large or small the artwork inside it is drawn.
  */
 export const CUP_TAP_MIN = 44;

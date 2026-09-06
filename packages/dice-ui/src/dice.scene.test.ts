@@ -1,12 +1,12 @@
 /// <reference types="@vitest/browser/matchers" />
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
+import { CUP_ART_HEIGHT, CUP_ART_WIDTH, getCupArtUrl } from "./art.js";
 import type { DieFace } from "./geometry.js";
-import { CUP_HEIGHT, CUP_WIDTH, DIE_FACES } from "./geometry.js";
+import { DIE_FACES } from "./geometry.js";
 import { createDiceCup } from "./dice.js";
 import { ensureDiceStyles } from "./dice-styles.js";
 import { createDieSceneElement } from "./die.js";
-import { cupBodySvg } from "./cup-body.js";
 
 /**
  * THE SCREENS SOMEBODY HAS TO LOOK AT — `pnpm visual:review`, never
@@ -41,8 +41,8 @@ describe("scene: a decided roll, cup and all", () => {
     // note) owns the actual `var(--gx-color-primary, …)` bridge, exactly the
     // boundary `mahjong-tile-ui`'s own scene tests draw for themselves; this
     // package only ever demos on SOMETHING that is not the bare white page a
-    // "quality cubilete" review found the piece sitting on before this pass
-    // (`cup-body.ts`'s own header).
+    // "quality cubilete" review found the piece sitting on before the SVG
+    // cup was replaced by the Blender render (`art.ts`'s own header).
     handle.element.style.background = "#14231d";
     document.body.appendChild(handle.element);
     mounted.push(handle.element);
@@ -61,15 +61,16 @@ describe("scene: a decided roll, cup and all", () => {
   });
 });
 
-describe("scene: the cup alone, at a size where the wall and the interior are not a guess", () => {
+describe("scene: the cup alone, at a size where the leather and the felt are not a guess", () => {
   /**
    * ITS OWN CLOSE-UP, the same reason `dice-all-faces` below exists for the
-   * six dice: "un cubilete de calidad" was an objection about THIS piece
-   * specifically (`cup-body.ts`'s own header), and at the 84×99 CSS px it
-   * renders inside `createDiceCup`'s button, the rim wall and the interior
-   * halves this pass added are a handful of pixels each — real, but not a
-   * size anyone could judge "quality" from. This is the one screen sized so
-   * a reviewer can actually see them.
+   * six dice: "quiero algo de calidad" was an objection about THIS piece
+   * specifically, and at the 84×99 CSS px it renders inside
+   * `createDiceCup`'s button, the rim wall and the felt interior are a
+   * handful of pixels each — real, but not a size anyone could judge
+   * "quality" from. This is the one screen sized so a reviewer can actually
+   * see them, at close to the rendered artwork's own intrinsic resolution
+   * (`CUP_ART_WIDTH`/`-HEIGHT`) rather than a heavy upscale of it.
    */
   it("a single cup, large — the exact surface a 'quality cubilete' review has to judge", async () => {
     await page.viewport(320, 360);
@@ -82,12 +83,13 @@ describe("scene: the cup alone, at a size where the wall and the interior are no
     wrap.style.padding = "24px";
     wrap.style.background = "#14231d";
 
-    const cupSize = document.createElement("div");
-    cupSize.style.width = "220px";
-    cupSize.style.height = `${String((220 * CUP_HEIGHT) / CUP_WIDTH)}px`;
-    cupSize.innerHTML = cupBodySvg();
-    cupSize.querySelector("svg")!.setAttribute("style", "width: 100%; height: 100%; display: block;");
-    wrap.appendChild(cupSize);
+    const cupArt = document.createElement("img");
+    cupArt.src = getCupArtUrl().href;
+    cupArt.alt = "";
+    cupArt.style.width = "220px";
+    cupArt.style.height = `${String((220 * CUP_ART_HEIGHT) / CUP_ART_WIDTH)}px`;
+    cupArt.style.display = "block";
+    wrap.appendChild(cupArt);
 
     document.body.appendChild(wrap);
     mounted.push(wrap);

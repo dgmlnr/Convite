@@ -51,7 +51,8 @@ export function buildDiceStylesheet(): string {
      rule between them at all — on any real viewport that stacks the cup
      above an unrelated row of dice, anchored to opposite corners with
      nothing composing them ("un cubilete de calidad" review, objection 3 —
-     see \`cup-body.ts\`'s own header for the rest of that review). \`row\`
+     see \`art.ts\`'s own header for how that review's later "quiero algo de
+     calidad" round replaced the cup's art entirely). \`row\`
      puts the tray beside the cup it was just pressed to empty, the way a
      thrown cup and its dice actually sit on a table together.
 
@@ -172,12 +173,17 @@ export function buildDiceStylesheet(): string {
   backface-visibility: hidden;
 }
 
-.hexdev-dice-face svg {
-  /* One merged svg per facelet (\`die-face.ts\`), so this is a plain sizing
-     rule, not a stacking one. */
+.hexdev-dice-face img {
+  /* One rendered WebP per facelet (\`art.ts\`), not a merged svg any more —
+     still a plain sizing rule, not a stacking one. \`object-fit: cover\`
+     matters here where it did not for the old inline svg: an <img> has no
+     viewBox to scale itself by, and this facelet's box (\`DIE_SIZE\` in CSS
+     px) and the artwork's own square ratio already match, but cover is the
+     one rule that stays correct if that ever stops being exactly true. */
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
 
 @keyframes hexdev-dice-toss {
@@ -225,11 +231,15 @@ export function buildDiceStylesheet(): string {
   transform-origin: 50% 65%;
 }
 
-.hexdev-dice-cup svg {
+.hexdev-dice-cup img {
   width: 100%;
   height: 100%;
   display: block;
-  overflow: visible;
+  /* \`contain\`, not \`cover\`: the rendered cup (\`art.ts\`'s CUP_ART_WIDTH/
+     -HEIGHT) and this button's own box (84x99) are close but not
+     mathematically forced to match forever, and a cropped cup reads far
+     worse than a couple of transparent px of letterboxing would. */
+  object-fit: contain;
 }
 
 .hexdev-dice-cup:active {
