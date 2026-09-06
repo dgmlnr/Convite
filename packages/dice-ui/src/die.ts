@@ -22,10 +22,23 @@ import { dieFaceSvg } from "./die-face.js";
  * numbers do not change identity when it lands differently, only its
  * ORIENTATION does, and that is exactly what `--dice-rest-x`/`-y` alone
  * carry.
+ *
+ * THE TILT WRAPPER CARRIES NO FACE, NO STYLE, NO WRITE OF ITS OWN. Between
+ * `scene` and `cube` this now inserts one plain `<div class="hexdev-dice-
+ * tilt">` — a STATIC class, not a data attribute, because the small camera
+ * tilt it applies (`DIE_REST_TILT`, `geometry.ts`) is the same for a 1 as
+ * for a 6 and needs no per-roll computation at all. It exists purely so
+ * that tilt composes AROUND the cube's own, arbitrarily large,
+ * already-decided rotation rather than being added into the same two
+ * numbers — see `DIE_REST_TILT`'s own comment for the two-face "V" that
+ * happened the one time this was tried the other way.
  */
 export function createDieSceneElement(doc: Document, face: DieFace, index: number): HTMLElement {
   const scene = doc.createElement("div");
   scene.className = "hexdev-dice-scene";
+
+  const tilt = doc.createElement("div");
+  tilt.className = "hexdev-dice-tilt";
 
   const cube = doc.createElement("div");
   cube.className = "hexdev-dice-cube";
@@ -43,6 +56,7 @@ export function createDieSceneElement(doc: Document, face: DieFace, index: numbe
     cube.appendChild(facelet);
   }
 
-  scene.appendChild(cube);
+  tilt.appendChild(cube);
+  scene.appendChild(tilt);
   return scene;
 }
