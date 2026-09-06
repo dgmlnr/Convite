@@ -32,25 +32,18 @@ describe("die: the resting pose is on the element before this function ever retu
   });
 
   /**
-   * THE COSMETIC TILT LIVES ONE ELEMENT OUT, never on the cube itself — see
-   * `DIE_REST_TILT`'s own comment in `geometry.ts` for why folding it into
-   * `--dice-rest-x`/`-y` broke faces 3 and 4 open into a two-face "V". This
-   * proves the wrapper `die.ts` now places between the scene and the cube
-   * exists, sits BETWEEN them (not, say, duplicating the cube's own class),
-   * and — the point of moving it out here at all — carries no per-face
-   * data of its own: unlike `cube.style`, which changes with every roll,
-   * `.hexdev-dice-tilt` has no inline style and no `dataset.face`, because
-   * the same static CSS rule (`dice-styles.test.ts`) applies regardless of
-   * which face the cube inside it is showing.
+   * NO COSMETIC WRAPPER BETWEEN THE SCENE AND THE CUBE — there used to be
+   * one (`.hexdev-dice-tilt`), removed because composing its static rotation
+   * on top of the cube's own resting pose deformed the decided face into a
+   * rhombus; see `restingPoseDeclaration`'s own comment in `geometry.ts`.
+   * The cube is now a direct child of the scene.
    */
-  it("wraps the cube in a static tilt element that carries no face-specific state of its own", () => {
+  it("mounts the cube as a direct child of the scene, with no wrapper element between them", () => {
     const scene = createDieSceneElement(document, 5, 0);
-    const tilt = scene.querySelector<HTMLElement>(".hexdev-dice-tilt");
-    expect(tilt, "expected a .hexdev-dice-tilt wrapper between the scene and the cube").not.toBeNull();
-    const cube = tilt!.querySelector<HTMLElement>(".hexdev-dice-cube");
-    expect(cube, "expected the cube to be a descendant of the tilt wrapper, not a sibling").not.toBeNull();
-    expect(tilt!.style.cssText).toBe("");
-    expect(tilt!.dataset.face).toBeUndefined();
+    expect(scene.querySelector(".hexdev-dice-tilt"), "expected no .hexdev-dice-tilt wrapper to remain").toBeNull();
+    const cube = scene.querySelector<HTMLElement>(".hexdev-dice-cube");
+    expect(cube, "expected a cube inside the scene").not.toBeNull();
+    expect(cube!.parentElement).toBe(scene);
   });
 
   it("builds all six facelets, each carrying the face its own side permanently owns", () => {

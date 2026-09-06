@@ -205,9 +205,6 @@ def build_ivory_material():
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     bsdf = nodes["Principled BSDF"]
-    bsdf.inputs["Roughness"].default_value = 0.55
-    if "Specular IOR Level" in bsdf.inputs:
-        bsdf.inputs["Specular IOR Level"].default_value = 0.25
     if "Subsurface Weight" in bsdf.inputs:
         bsdf.inputs["Subsurface Weight"].default_value = 0.03
 
@@ -220,18 +217,67 @@ def build_ivory_material():
     # point of this render existing — under whatever apparent orientation
     # the CSS cube later shows it at, since the darkening travels with the
     # geometry, not with a baked light direction.
+    #
+    # THE CREVICE COLOUR ITSELF WAS THE BUG, NOT THE AO WIRING. A first pass
+    # here mixed in a muted brown-grey (0.42, 0.33, 0.22) and relied on AO
+    # alone to read as a pip's depth — rendered and looked at, that reads as
+    # a faint tan smudge on ivory, not a pip, because a real die's pips are
+    # not merely a shadowed dent: they are a hollow PAINTED near-black, so
+    # even the crater's floor (where AO is strongest) needs a colour close
+    # to ink, not a slightly-darker ivory. AO still supplies the crater's
+    # OWN shape (the gradient from this near-black floor out to the flat
+    # ivory wall) — only the floor colour it mixes toward changes here — so
+    # the pip stays legible at a glance instead of needing to be searched
+    # for.
     ao = nodes.new("ShaderNodeAmbientOcclusion")
     ao.inputs["Distance"].default_value = 0.22
     ao.samples = 16
     ramp = nodes.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = 0.35
+    ramp.color_ramp.elements[0].position = 0.55
     ramp.color_ramp.elements[1].position = 0.85
     mix = nodes.new("ShaderNodeMixRGB")
-    mix.inputs["Color1"].default_value = (0.42, 0.33, 0.22, 1.0)  # crevice
+    mix.inputs["Color1"].default_value = (0.02, 0.018, 0.016, 1.0)  # crevice — near-black ink, not shadowed ivory
     mix.inputs["Color2"].default_value = (0.87, 0.80, 0.62, 1.0)  # flat ivory
     links.new(ao.outputs["Color"], ramp.inputs["Fac"])
     links.new(ramp.outputs["Color"], mix.inputs["Fac"])
     links.new(mix.outputs["Color"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.55
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.25
+
+    # A BASE-COLOUR MIX ALONE STILL WASN'T ENOUGH — measured, not assumed: a
+    # debug pass wiring the AO factor straight into Base Color, exactly as
+    # above, put the crater floor's own rendered pixel at srgb(120, 114, 99)
+    # — a washed-out grey, not ink, even though the mixed Base Color feeding
+    # it was already near-black. Base Color only sets how a surface point
+    # tints the light reaching it; it does not shrink HOW MUCH full-path-
+    # traced light Cycles decides reaches that point in the first place —
+    # and this crater is a wide, shallow dimple under a large co-located
+    # light (`setup_flat_lighting_and_camera`), so real light transport
+    # still floods it. No combination of Base Color, Roughness or Specular
+    # (all tried, all measured, none closed the gap) can make a POINT'S OWN
+    # shading model report less total light than it actually receives.
+    #
+    # So the crevice is darkened at the SHADER-OUTPUT level instead: a plain
+    # black Diffuse BSDF (zero albedo, so its own contribution is exactly
+    # zero regardless of illumination) is mixed with the ivory Principled
+    # BSDF using this SAME ramp as the factor — pure black where the ramp
+    # says "crevice", the real, fully-lit ivory shading where it says "flat"
+    # — which forces the floor toward true black no matter what Cycles'
+    # light transport does with it, while leaving the ivory surface (and the
+    # gradient between the two across the crater's sloped wall) exactly as
+    # physically shaded as before. Widened from 0.35 to 0.55 for the SAME
+    # reason as the shader-mix itself: measured, the crater floor's own raw
+    # AO factor sits at linear ~0.38, and this element's position has to
+    # clear that with margin so the floor lands solidly in the pure-black
+    # zone rather than the interpolated one.
+    black = nodes.new("ShaderNodeBsdfDiffuse")
+    black.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    mix_shader = nodes.new("ShaderNodeMixShader")
+    links.new(ramp.outputs["Color"], mix_shader.inputs["Fac"])
+    links.new(black.outputs["BSDF"], mix_shader.inputs[1])
+    links.new(bsdf.outputs["BSDF"], mix_shader.inputs[2])
+    links.new(mix_shader.outputs["Shader"], nodes["Material Output"].inputs["Surface"])
 
     noise = nodes.new("ShaderNodeTexNoise")
     noise.inputs["Scale"].default_value = 60.0

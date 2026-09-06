@@ -1,4 +1,4 @@
-import { CUP_TAP_MIN, DIE_REST_TILT } from "./geometry.js";
+import { CUP_TAP_MIN } from "./geometry.js";
 import { DICE_THEME_DEFAULTS } from "./theme-tokens.js";
 
 export const DICE_STYLE_ID = "hexdev-dice-styles";
@@ -107,44 +107,31 @@ export function buildDiceStylesheet(): string {
 }
 
 .hexdev-dice-scene {
-  /* 110px, NOT 64px — the SAME box \`dice-all-faces\` (\`dice.scene.test.ts\`)
-     already renders every face inside via its own inline \`110px\` override,
-     looked at and confirmed clean at that size. \`translateZ(50px)\`
-     (\`DIE_SIDE_LOCAL_TRANSFORM\`, half of \`DIE_SIZE\`'s 100 SVG-viewBox units
-     reused as CSS px) pushes the front facelet — and, once \`.hexdev-dice-
-     tilt\` reveals it, a sliver of whichever facelet sits adjacent —
-     proportionally far forward against the box. At the OLD 64px size, that
-     projection landed partly outside the box; \`overflow: hidden\` (this
-     rule's prior fix for the tray) clipped the shortfall, but that shortfall
-     included the decided, front-facing facelet's OWN corners, not just the
-     adjacent sliver — the regression this box size now fixes by giving the
-     projection a box actually large enough to land inside, rather than
-     cutting whatever missed. \`overflow: hidden\` stays only as a defensive
-     backstop for the mid-toss animation frames (arbitrary intermediate
-     rotations, never captured by any at-rest screenshot); at rest, nothing
-     here should ever reach that edge. */
+  /* 110px, kept at the SAME size chosen while a \`.hexdev-dice-tilt\` wrapper
+     still composed a static \`rotateX\`/\`rotateY\` onto the resting cube — that
+     wrapper is gone (it drew the decided face as a rhombus, not a square;
+     see \`restingPoseDeclaration\`'s own comment in \`geometry.ts\`), but this
+     box's size answers a SEPARATE question the tilt's removal does not
+     touch: \`translateZ(50px)\` (\`DIE_SIDE_LOCAL_TRANSFORM\`, half of
+     \`DIE_SIZE\`'s 100 units reused as CSS px) still pushes the front facelet
+     toward the camera under this same \`perspective: 480px\`, which still
+     projects it larger than the box's own 110px. At rest that enlargement
+     is now perfectly centred (no outer tilt skews it toward one corner), so
+     \`overflow: hidden\` crops the same few px off all four sides evenly —
+     confirmed by rendering \`dice-all-faces\` (\`dice.scene.test.ts\`) and
+     looking, not by arithmetic alone. Shrinking this box back toward the
+     old 64px would reopen the exact regression the box was raised to fix
+     the first time (this rule's own prior history): a facelet enlarged by
+     the SAME translateZ push, cropped now on an even smaller box, losing
+     its own corners rather than a harmless uniform margin. \`overflow:
+     hidden\` additionally stays as the defensive backstop for the mid-toss
+     animation's own arbitrary intermediate rotations (never captured by an
+     at-rest screenshot); nothing about removing the tilt shrinks how far
+     THOSE frames can swing. */
   width: 110px;
   height: 110px;
   perspective: 480px;
   overflow: hidden;
-}
-
-/* THE COSMETIC CAMERA TILT, applied ONCE here rather than folded into every
-   face's own \`--dice-rest-x\`/\`-y\` — \`DIE_REST_TILT\`'s own comment in
-   \`geometry.ts\` has the full argument for why nesting is the load-bearing
-   choice, not a style preference: composing this element's static rotation
-   with the cube's own (arbitrarily large, per-face) rotation is what keeps
-   the tilt visually uniform across all six faces, where adding the same two
-   degrees into the cube's own numbers instead broke faces 3 and 4 open into
-   a two-face "V" (rendered and looked at, not merely reasoned about).
-   \`transform-style: preserve-3d\` has to repeat here — it does not
-   inherit — or the cube's six facelets would flatten onto this element's
-   own plane instead of staying a real cube inside it. */
-.hexdev-dice-tilt {
-  width: 100%;
-  height: 100%;
-  transform-style: preserve-3d;
-  transform: rotateX(${String(DIE_REST_TILT.rotateX)}deg) rotateY(${String(DIE_REST_TILT.rotateY)}deg);
 }
 
 .hexdev-dice-cube {
