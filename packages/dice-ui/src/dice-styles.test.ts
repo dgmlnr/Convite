@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CUP_TAP_MIN, DIE_REST_TILT } from "./geometry.js";
+import { CUP_TAP_MIN } from "./geometry.js";
 import { buildDiceStylesheet } from "./dice-styles.js";
 
 /**
@@ -26,21 +26,15 @@ describe("dice-styles: the toss keyframe can never disagree with the resting pos
   });
 });
 
-describe("dice-styles: the cosmetic cube tilt is one static rule, never mixed into the per-face pose", () => {
-  it("declares .hexdev-dice-tilt's rotation from DIE_REST_TILT, literally, not from a var() a per-face write could override", () => {
+describe("dice-styles: the die rests square and front-on, with no cosmetic tilt rule composed on top", () => {
+  it("declares no .hexdev-dice-tilt rule — a resting cube reads FACE_ROTATION's pose directly, undeformed by an outer rotation", () => {
     const css = buildDiceStylesheet();
-    const rule = css.match(/\.hexdev-dice-tilt\s*\{([^}]*)\}/)?.[1] ?? "";
-    expect(rule).toContain(`rotateX(${String(DIE_REST_TILT.rotateX)}deg)`);
-    expect(rule).toContain(`rotateY(${String(DIE_REST_TILT.rotateY)}deg)`);
-    // No var(--dice-rest-…) read here — that pair belongs to
-    // .hexdev-dice-cube alone; a tilt rule that read it too would double the
-    // per-face rotation into the outer element as well.
-    expect(rule).not.toContain("var(--dice-rest");
+    expect(css).not.toMatch(/\.hexdev-dice-tilt\s*\{/);
   });
 
-  it("re-declares transform-style: preserve-3d — it does not inherit, and without it the cube's facelets would flatten", () => {
+  it("still declares transform-style: preserve-3d on the cube itself, so the toss animation keeps showing a real cube in motion", () => {
     const css = buildDiceStylesheet();
-    const rule = css.match(/\.hexdev-dice-tilt\s*\{([^}]*)\}/)?.[1] ?? "";
+    const rule = css.match(/\.hexdev-dice-cube\s*\{[^}]*\}/)?.[0] ?? "";
     expect(rule).toMatch(/transform-style:\s*preserve-3d/);
   });
 });

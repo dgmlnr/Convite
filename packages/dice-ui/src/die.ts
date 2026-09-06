@@ -23,22 +23,16 @@ import { DIE_SIDE_FACE, DIE_SIDE_LOCAL_TRANSFORM, DIE_SIDE_ORDER, restingPoseDec
  * ORIENTATION does, and that is exactly what `--dice-rest-x`/`-y` alone
  * carry.
  *
- * THE TILT WRAPPER CARRIES NO FACE, NO STYLE, NO WRITE OF ITS OWN. Between
- * `scene` and `cube` this now inserts one plain `<div class="hexdev-dice-
- * tilt">` — a STATIC class, not a data attribute, because the small camera
- * tilt it applies (`DIE_REST_TILT`, `geometry.ts`) is the same for a 1 as
- * for a 6 and needs no per-roll computation at all. It exists purely so
- * that tilt composes AROUND the cube's own, arbitrarily large,
- * already-decided rotation rather than being added into the same two
- * numbers — see `DIE_REST_TILT`'s own comment for the two-face "V" that
- * happened the one time this was tried the other way.
+ * NO COSMETIC WRAPPER BETWEEN `scene` AND `cube` — there used to be one
+ * (`.hexdev-dice-tilt`, a static rest tilt), removed because it deformed the
+ * decided face into a rhombus at rest; see `restingPoseDeclaration`'s own
+ * comment in `geometry.ts`. `cube` mounts directly under `scene`, so the
+ * decided face renders exactly as `FACE_ROTATION` poses it: square, front-on,
+ * no extra rotation composed on top.
  */
 export function createDieSceneElement(doc: Document, face: DieFace, index: number): HTMLElement {
   const scene = doc.createElement("div");
   scene.className = "hexdev-dice-scene";
-
-  const tilt = doc.createElement("div");
-  tilt.className = "hexdev-dice-tilt";
 
   const cube = doc.createElement("div");
   cube.className = "hexdev-dice-cube";
@@ -73,7 +67,6 @@ export function createDieSceneElement(doc: Document, face: DieFace, index: numbe
     cube.appendChild(facelet);
   }
 
-  tilt.appendChild(cube);
-  scene.appendChild(tilt);
+  scene.appendChild(cube);
   return scene;
 }
