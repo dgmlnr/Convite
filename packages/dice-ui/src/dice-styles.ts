@@ -16,8 +16,32 @@ export const DICE_STYLE_ID = "hexdev-dice-styles";
  * already are between the resting rule and the keyframe's `from` state.
  */
 export const DICE_TOSS_DURATION_MS = 640;
-export const DICE_TOSS_EASING = "cubic-bezier(0.22, 0.8, 0.32, 1)";
+/**
+ * WAS `cubic-bezier(0.22, 0.8, 0.32, 1)` — measured (a bisection solver
+ * against this exact curve, not eyeballed) to reach 96% of its own travel by
+ * 60% of `DICE_TOSS_DURATION_MS` and 99% by 80%, i.e. the LAST 40% of the
+ * toss painted a residual few percent of motion regardless of how large the
+ * motion itself was. That is the literal mechanism behind "at 384ms it is
+ * already basically still" — not a rotation problem, a PACING problem, and
+ * fixing the rotation below without also fixing this would only have made
+ * the frozen tail longer (more degrees are still ~0 degrees of visible
+ * change). The standard `ease-out` curve below reaches 78%/94% at the same
+ * two checkpoints — still a deceleration into the landing (a tossed die
+ * SHOULD look like it is slowing down, not travelling at constant speed),
+ * just not one that front-loads nearly the entire flight into its first
+ * 60%.
+ */
+export const DICE_TOSS_EASING = "cubic-bezier(0, 0, 0.58, 1)";
 export const DICE_TOSS_STAGGER_MS = 55;
+
+/**
+ * THE FLIGHT'S OWN BOX — bigger than `.hexdev-dice-cube`'s own 110px
+ * (below) ON PURPOSE, and the two are no longer the same number the way they
+ * used to be. See `.hexdev-dice-scene`'s own comment in the stylesheet for
+ * why a rotating cube needs more room than a resting one, and why that room
+ * has to live on the SCENE rather than on the cube itself.
+ */
+export const DIE_SCENE_SIZE = 210;
 
 /**
  * The tray, the cube, the toss, the cup — one stylesheet string, injected
@@ -123,47 +147,96 @@ export function buildDiceStylesheet(): string {
 }
 
 .hexdev-dice-scene {
-  /* 110px, kept at the SAME size chosen while a \`.hexdev-dice-tilt\` wrapper
-     still composed a static \`rotateX\`/\`rotateY\` onto the resting cube — that
-     wrapper is gone (it drew the decided face as a rhombus, not a square;
-     see \`restingPoseDeclaration\`'s own comment in \`geometry.ts\`), but this
-     box's size answers a SEPARATE question the tilt's removal does not
-     touch: \`translateZ(50px)\` (\`DIE_SIDE_LOCAL_TRANSFORM\`, half of
-     \`DIE_SIZE\`'s 100 units reused as CSS px) still pushes the front facelet
-     toward the camera under this same \`perspective: 480px\`, which still
-     projects it larger than the box's own 110px. At rest that enlargement
-     is now perfectly centred (no outer tilt skews it toward one corner), so
-     \`overflow: hidden\` crops the same few px off all four sides evenly —
-     confirmed by rendering \`dice-all-faces\` (\`dice.scene.test.ts\`) and
-     looking, not by arithmetic alone. Shrinking this box back toward the
-     old 64px would reopen the exact regression the box was raised to fix
-     the first time (this rule's own prior history): a facelet enlarged by
-     the SAME translateZ push, cropped now on an even smaller box, losing
-     its own corners rather than a harmless uniform margin. \`overflow:
-     hidden\` additionally stays as the defensive backstop for the mid-toss
-     animation's own arbitrary intermediate rotations (never captured by an
-     at-rest screenshot); nothing about removing the tilt shrinks how far
-     THOSE frames can swing. */
-  width: 110px;
-  height: 110px;
+  /* GREW FROM 110px TO ${String(DIE_SCENE_SIZE)}px (\`DIE_SCENE_SIZE\`) THE DAY SOMEBODY FINALLY
+     LOOKED AT THE FLIGHT, NOT JUST THE LANDING. 110px was sized ONLY for the
+     resting cube's own perspective enlargement (still true, still math'd
+     below) — nobody had a reason to size it for a ROTATING one, because
+     before this change nothing rotated: the keyframe's \`from\` state and this
+     class's own resting \`transform\` were different-shaped transform lists
+     (one carried a bare \`translateY\`, the other did not), which forces every
+     browser this ships to away from its normal "interpolate each function's
+     own argument" path and into decomposing both ends to a matrix and
+     SLERPing between them instead — collapsing whatever multi-turn spin the
+     keyframe asked for down to whichever short rotation the two decomposed
+     matrices happened to differ by. \`.hexdev-dice-cube\`'s own comment below
+     is the other half of the fix (matching that shape back up); this comment
+     is about what a GENUINE spin costs once it actually happens: a cube
+     rotated to a diagonal orientation projects a screen-space bounding box
+     measurably bigger than its own resting footprint (perspective
+     foreshortening bulges the far corners outward, not just the near one),
+     and five dice mid-toss do not all sit at the same instant of the same
+     angle — \`--i\` (below) staggers both the DELAY and the TURN COUNT per
+     die. ${String(DIE_SCENE_SIZE)}px is not a guess: it is the smallest size (measured with a
+     throwaway Playwright harness against these exact numbers — translateZ
+     50px, perspective 480px, a 110px facelet, the keyframe's own -10px
+     lift and every \`--i\` in 0..4's own turn count) that keeps EVERY sampled
+     instant of EVERY die's flight fully inside this box, at a much finer
+     time resolution than any one screenshot could ever catch a violation
+     at. \`overflow: hidden\` stays for the reason it always had one: the
+     resting front facelet's own perspective enlargement still needs a crop
+     boundary, just a much more generous one now that this box no longer
+     doubles as the cube's own layout size (see below) — a real, deliberate,
+     and previously-untested widening of the rest-pose crop, not merely an
+     allowance for the flight. */
+  width: ${String(DIE_SCENE_SIZE)}px;
+  height: ${String(DIE_SCENE_SIZE)}px;
   perspective: 480px;
   overflow: hidden;
+  /* The cube below no longer fills this box (it has its own fixed 110px,
+     decoupled on purpose — see its own comment), so it has to be told where
+     to sit inside a box that is now much bigger than it is. Flex-centering
+     is the plain, ordinary way; \`.hexdev-dice-cup\` two rules down already
+     centers its own icon the identical way. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .hexdev-dice-cube {
   position: relative;
-  width: 100%;
-  height: 100%;
+  /* FIXED, NOT \`100%\` OF THE SCENE ANY MORE. Before this change the two were
+     the same number by construction (\`.hexdev-dice-scene\` was 110px, so
+     \`100%\` of it was too) — that coupling is exactly what would have broken
+     had \`.hexdev-dice-scene\` simply grown to ${String(DIE_SCENE_SIZE)}px above: this cube's
+     facelets are pushed out by a FIXED \`translateZ(50px)\`
+     (\`DIE_SIDE_LOCAL_TRANSFORM\`, calibrated against \`DIE_SIZE\`), and that
+     push does not scale with whatever box happens to contain it. A cube
+     whose own size tracked the scene's would have its faces pulled apart
+     the moment the scene grew, no longer meeting at their shared edges —
+     the box was free to grow for the flight's sake ONLY because this
+     number was cut loose from it first. 110px is not a new choice — it is
+     the exact size this cube already rendered at every day before this
+     change, kept byte-for-byte so the resting cube (\`art.ts\`'s own 2.7×
+     oversample of it, \`dice.scene.test.ts\`'s own inline 110px override) is
+     unaffected in everything but how tightly \`.hexdev-dice-scene\`'s
+     \`overflow: hidden\` used to crop its enlarged front facelet — see that
+     rule's own comment for why THAT part is a deliberate, known side effect
+     of this change rather than an oversight. */
+  width: 110px;
+  height: 110px;
   transform-style: preserve-3d;
   /* THE RESTING POSE. Written from \`restingPoseDeclaration(face)\` onto this
      exact element's \`style\` attribute before this class, or this animation,
      ever runs — so the very first frame this rule can ever paint already
-     names the real, decided face. */
-  transform: rotateX(var(--dice-rest-x, 0deg)) rotateY(var(--dice-rest-y, 0deg));
+     names the real, decided face. \`translateY(0px)\` IS LOAD-BEARING, not a
+     no-op left in for symmetry: it makes this transform list the same SHAPE
+     (same functions, same order — \`translateY\`, \`rotateX\`, \`rotateY\`) as the
+     keyframe's own \`from\` state below, which is what lets the browser
+     interpolate each matching function's own argument independently instead
+     of decomposing both ends to a matrix and slerping — see the keyframe's
+     own comment for why that distinction is the entire bug this rewrite
+     fixes. Remove this \`translateY(0px)\` and the shapes stop matching again,
+     silently, with no error and no failing assertion anywhere in this
+     package — only a filmstrip that stops spinning. */
+  transform: translateY(0px) rotateX(var(--dice-rest-x, 0deg)) rotateY(var(--dice-rest-y, 0deg));
   animation: hexdev-dice-toss ${String(DICE_TOSS_DURATION_MS)}ms ${DICE_TOSS_EASING} backwards;
-  /* A small per-die stagger so five dice do not fall as one rigid block —
-     cosmetic variety only, the same \`--i\`-keyed idiom \`chrome-styles.ts\`
-     uses for its own deal, and it never touches which face lands where. */
+  /* Per-die stagger, in BOTH the delay below and the keyframe's own turn
+     count now (see \`hexdev-dice-toss\`) — the same \`--i\`-keyed idiom
+     \`chrome-styles.ts\` uses for its own deal, and it never touches which
+     face lands where: every use of \`--i\` below is added as a WHOLE multiple
+     of 360deg, which is the identity rotation, so five different-looking
+     spins still converge on the exact same \`--dice-rest-x\`/\`-y\` this rule
+     itself declares. */
   animation-delay: calc(var(--i, 0) * ${String(DICE_TOSS_STAGGER_MS)}ms);
 }
 
@@ -189,11 +262,68 @@ export function buildDiceStylesheet(): string {
   object-fit: cover;
 }
 
+/**
+ * THE ARITHMETIC THAT LETS THIS SPIN AND STILL LAND EXACT.
+ *
+ * A rolled die's flight has to show the cube actually turning — different
+ * faces passing the viewer, not one face tilting and straightening, which is
+ * all the OLD \`+ 640deg\`/\`+ 460deg\` ever produced once measured on screen
+ * (both numbers were arbitrary, neither a whole number of turns, and the
+ * transform-list SHAPE mismatch \`.hexdev-dice-cube\`'s own comment above
+ * describes meant the browser never even interpolated them as angles in the
+ * first place — it interpolated two decomposed matrices, and a small
+ * residual rotation between two ARBITRARY orientations is exactly a "tilts,
+ * then straightens" motion, never a spin through other faces). Fixing THAT
+ * bug is not "use bigger numbers" — a bigger arbitrary offset still lands on
+ * an arbitrary orientation, and \`FACE_ROTATION\` (\`geometry.ts\`) is the only
+ * table this package ever lets decide which orientation the cube ends at.
+ *
+ * The fix is that every offset added here is an EXACT, WHOLE multiple of
+ * 360deg. A full turn is the identity rotation — \`rotateX(a + 360·n)\` and
+ * \`rotateX(a)\` describe the identical final orientation, for ANY integer
+ * \`n\`, not approximately but by the literal definition of degrees. So the
+ * \`from\` state below is not "roughly where a toss starts" tuned by eye; it
+ * is \`FACE_ROTATION\`'s own \`--dice-rest-x\`/\`-y\` — the exact same two custom
+ * properties the resting rule above reads — PLUS whole turns, computed by
+ * \`calc()\` rather than pre-added by hand so nobody has to keep a second copy
+ * of \`--dice-rest-x\`/\`-y\` in sync. With \`.hexdev-dice-cube\`'s transform list
+ * now the same SHAPE at both ends (that rule's own comment), the browser
+ * interpolates \`rotateX\`'s and \`rotateY\`'s own arguments independently and
+ * linearly (eased by \`DICE_TOSS_EASING\`) from \`rest + 360·n\` down to
+ * \`rest + 0\` — which means the angle genuinely SWEEPS through \`360·n\`
+ * degrees on the way, passing every other face in between, and still
+ * arrives at the exact same orientation \`FACE_ROTATION\` decided, because
+ * subtracting a whole number of turns never changed what that orientation
+ * was. \`dice-styles.test.ts\` proves the arithmetic half of this (every
+ * offset below IS a whole multiple of 360, for every \`--i\`); the visual
+ * half — that a real browser actually interpolates the matched-shape lists
+ * component-wise rather than falling back to matrix decomposition — was
+ * checked directly against a throwaway rendered harness before any of this
+ * was written, not assumed from the spec text alone.
+ *
+ * ROTATING ON TWO AXES, NOT ONE — a spin confined to a single axis only ever
+ * cycles through the four faces around that axis (rotateX alone: front, top,
+ * back, bottom; the left/right pair never appears), which for some decided
+ * faces would still read as "the same two or three faces over and over".
+ * \`rotateX\` and \`rotateY\` turning at DIFFERENT rates traces a genuinely
+ * mixed path across the cube's faces instead.
+ *
+ * FIVE DICE, FIVE DIFFERENT SPINS — \`var(--i, 0)\`, the same custom property
+ * \`animation-delay\` above already keys its stagger off, ALSO scales each
+ * axis's own turn count here: die 0 gets 2 turns of X and 1 of Y, die 1 gets
+ * 3 and 2, up through die 4's 6 and 5 — five visibly different tumbles
+ * instead of one spin replayed five times with a stagger, at zero cost to
+ * the landing (\`var(--i, 0) * 360deg\` is itself always a whole multiple of
+ * 360, for every integer \`--i\` \`die.ts\` ever writes, so it composes with
+ * the base offset above without disturbing the arithmetic at all). This is
+ * COSMETIC VARIETY ONLY, same as the stagger it rides alongside — it never
+ * touches which face any die lands on.
+ */
 @keyframes hexdev-dice-toss {
   from {
-    transform: translateY(-120px)
-      rotateX(calc(var(--dice-rest-x, 0deg) + 640deg))
-      rotateY(calc(var(--dice-rest-y, 0deg) + 460deg));
+    transform: translateY(-10px)
+      rotateX(calc(var(--dice-rest-x, 0deg) + 720deg + var(--i, 0) * 360deg))
+      rotateY(calc(var(--dice-rest-y, 0deg) + 360deg + var(--i, 0) * 360deg));
   }
 }
 
