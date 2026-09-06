@@ -17,12 +17,22 @@
  * cannot learn what a legal Generala move is, and a future game cannot
  * smuggle a rule in through the props.
  *
- * NO `assets/`, NO `LICENSE` — the first physical-piece package in this
- * repository that ships neither. A die's pips and a cup's silhouette are
- * generated vector shapes with no separate creative authorship to license,
- * unlike the tile's hanzi glyphs (CC BY-SA 4.0) or the deck's illustrated
- * suits (CC BY-SA 3.0) — see `sdd/generala-props/explore` §5 for the survey
- * that reached this conclusion.
+ * `assets/` AND `LICENSE` NOW EXIST, WHERE THEY ONCE DELIBERATELY DID NOT.
+ * The original release drew a die's pips and a cup's silhouette as flat
+ * generated vector shapes needing no attribution — the product owner
+ * rejected that art outright ("no me gustan" the pips, "quiero algo de
+ * calidad" the cup), so both are now Blender renders (`tools/render-
+ * props.py`): the die's ivory is fully procedural (no third-party input at
+ * all), the cup's leather is a CC0 Poly Haven scan (no attribution
+ * obligation either, just recorded for traceability in `assets/LICENSE`).
+ * See `art.ts` for how a face/the cup resolve to a URL, the same shape
+ * `mahjong-tile-ui/front-image.ts` already uses for its own shipped raster.
+ *
+ * THE CSS CUBE MECHANISM ITSELF IS UNCHANGED. Only what paints each
+ * facelet/the cup button changed — `die.ts` still assembles six statically-
+ * posed facelets under one `transform-style: preserve-3d` cube, and
+ * `FACE_ROTATION` below is still the one table a roll ever consults for
+ * which face lands up.
  *
  * THE ONE NON-NEGOTIABLE CONTRACT THIS PACKAGE EXISTS TO HOLD: a die's
  * resting pose (`geometry.ts`'s `FACE_ROTATION`) is written from an
@@ -34,25 +44,15 @@
  */
 export type { DieFace, DieSide } from "./geometry.js";
 export {
-  CUP_BEVEL,
-  CUP_FRAME,
   CUP_HEIGHT,
-  CUP_RIM_DEPTH,
-  CUP_RIM_INSET,
-  CUP_RIM_WALL,
   CUP_TAP_MIN,
-  CUP_VIEWBOX,
   CUP_WIDTH,
-  DIE_BEVEL,
   DIE_FACES,
-  DIE_FRAME,
-  DIE_RADIUS,
   DIE_REST_TILT,
   DIE_SIDE_FACE,
   DIE_SIDE_LOCAL_TRANSFORM,
   DIE_SIDE_ORDER,
   DIE_SIZE,
-  DIE_VIEWBOX,
   FACE_PIP_SLOTS,
   FACE_ROTATION,
   PIP_RADIUS,
@@ -61,10 +61,8 @@ export {
 } from "./geometry.js";
 export type { DiceThemeToken } from "./theme-tokens.js";
 export { DICE_THEME_DEFAULTS } from "./theme-tokens.js";
-export { dieBodySvg } from "./die-body.js";
-export { diePipsSvg } from "./die-pips.js";
-export { dieFaceSvg } from "./die-face.js";
-export { cupBodySvg } from "./cup-body.js";
+export type { DieFaceArt } from "./art.js";
+export { CUP_ART_HEIGHT, CUP_ART_WIDTH, DIE_FACE_ART_HEIGHT, DIE_FACE_ART_WIDTH, getCupArtUrl, getDieFaceArt, getDieFaceArtUrl } from "./art.js";
 export { createDieSceneElement } from "./die.js";
 export { DICE_STYLE_ID, buildDiceStylesheet, ensureDiceStyles } from "./dice-styles.js";
 export { announceRoll, createDiceAnnouncer } from "./dice-announcer.js";

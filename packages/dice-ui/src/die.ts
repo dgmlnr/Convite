@@ -1,6 +1,6 @@
+import { getDieFaceArt } from "./art.js";
 import type { DieFace } from "./geometry.js";
 import { DIE_SIDE_FACE, DIE_SIDE_LOCAL_TRANSFORM, DIE_SIDE_ORDER, restingPoseDeclaration } from "./geometry.js";
-import { dieFaceSvg } from "./die-face.js";
 
 /**
  * One die, assembled as a real six-sided cube and posed at rest — never a
@@ -52,7 +52,24 @@ export function createDieSceneElement(doc: Document, face: DieFace, index: numbe
     facelet.className = "hexdev-dice-face";
     facelet.dataset.side = side;
     facelet.style.transform = DIE_SIDE_LOCAL_TRANSFORM[side];
-    facelet.innerHTML = dieFaceSvg(DIE_SIDE_FACE[side]);
+    // A rendered WebP, not an inline `<svg>` — see `art.ts`'s own header
+    // for why the flat vector body/pips this used to mount are gone
+    // entirely, not merely restyled: the product owner rejected that art
+    // outright, and a raster face needs no in-document markup to draw,
+    // only a URL.
+    const art = getDieFaceArt(DIE_SIDE_FACE[side]);
+    const img = doc.createElement("img");
+    img.src = art.src;
+    img.width = art.width;
+    img.height = art.height;
+    img.alt = "";
+    // Decorative: the facelet's OWN number is never the information a
+    // player reads — `dice-announcer.ts`'s live region already speaks the
+    // whole roll in one sentence, and a screen reader stepping through six
+    // per-die alt texts (five of which are never the decided face at all,
+    // since a cube ships all six numbers permanently) would be noise, not
+    // help.
+    facelet.appendChild(img);
     cube.appendChild(facelet);
   }
 

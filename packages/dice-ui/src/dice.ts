@@ -1,5 +1,5 @@
+import { CUP_ART_HEIGHT, CUP_ART_WIDTH, getCupArtUrl } from "./art.js";
 import type { DieFace } from "./geometry.js";
-import { cupBodySvg } from "./cup-body.js";
 import { announceRoll, createDiceAnnouncer } from "./dice-announcer.js";
 import { ensureDiceStyles } from "./dice-styles.js";
 import { createDieSceneElement } from "./die.js";
@@ -46,11 +46,20 @@ export interface DiceCupHandle {
 /**
  * Builds one cup and its dice tray. The cup is a real `<button>` — native
  * keyboard activation and focus semantics for free — SHAPED as the cup via
- * `cupBodySvg()` rather than left as a generic rectangle, per the
- * exploration's own instruction to make the cup itself the pressure
+ * a rendered WebP (`art.ts`) rather than left as a generic rectangle, per
+ * the exploration's own instruction to make the cup itself the pressure
  * surface. `all: unset` in `dice-styles.ts` strips the browser's default
- * button chrome so the SVG reads as the control, not as a button that
+ * button chrome so the image reads as the control, not as a button that
  * happens to contain a picture of one.
+ *
+ * A REAL IMAGE, NOT INLINE SVG — the flat vector cup this used to mount
+ * (`cup-body.ts`, deleted) drew a themeable silhouette; the product owner's
+ * "quiero algo de calidad" review rejected exactly that flatness, and the
+ * Blender-rendered leather-and-felt cup (`../assets/cup.webp`) that
+ * replaces it is not something CSS custom properties can repaint. The
+ * button's own `aria-label` below still carries the control's name — the
+ * image is decorative, so it gets an empty `alt`, never a duplicate of
+ * that label a screen reader would otherwise announce twice.
  *
  * TAP ONLY. No `pointerdown`/`touchstart` shake or drag handling exists
  * anywhere in this file, deliberately: `sdd/generala-props/explore` §2 rules
@@ -71,7 +80,12 @@ export function createDiceCup(doc: Document, options: DiceCupOptions): DiceCupHa
   cup.type = "button";
   cup.className = "hexdev-dice-cup";
   cup.setAttribute("aria-label", "Tirar los dados");
-  cup.innerHTML = cupBodySvg();
+  const cupArt = doc.createElement("img");
+  cupArt.src = getCupArtUrl().href;
+  cupArt.width = CUP_ART_WIDTH;
+  cupArt.height = CUP_ART_HEIGHT;
+  cupArt.alt = "";
+  cup.appendChild(cupArt);
   cup.addEventListener("click", () => {
     options.onPress();
   });

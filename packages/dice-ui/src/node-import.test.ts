@@ -22,14 +22,13 @@ describe("the package is usable from Node, with no DOM anywhere", () => {
     expect(Object.keys(diceUi).length).toBeGreaterThan(0);
   });
 
-  it("draws a die's body, pips and full face without one — all three are strings, never elements", () => {
-    expect(typeof diceUi.dieBodySvg()).toBe("string");
-    expect(typeof diceUi.diePipsSvg(3)).toBe("string");
-    expect(typeof diceUi.dieFaceSvg(3)).toBe("string");
+  it("resolves a die face's artwork URL without one — pure string/URL arithmetic, no fetch", () => {
+    expect(diceUi.getDieFaceArtUrl(3)).toBeInstanceOf(URL);
+    expect(typeof diceUi.getDieFaceArt(3).src).toBe("string");
   });
 
-  it("draws the cup's body without one", () => {
-    expect(typeof diceUi.cupBodySvg()).toBe("string");
+  it("resolves the cup's artwork URL without one", () => {
+    expect(diceUi.getCupArtUrl()).toBeInstanceOf(URL);
   });
 
   it("writes a resting-pose declaration for every face without one", () => {
