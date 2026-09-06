@@ -106,20 +106,25 @@ export function buildDiceStylesheet(): string {
 }
 
 .hexdev-dice-scene {
-  width: 64px;
-  height: 64px;
+  /* 110px, NOT 64px — the SAME box \`dice-all-faces\` (\`dice.scene.test.ts\`)
+     already renders every face inside via its own inline \`110px\` override,
+     looked at and confirmed clean at that size. \`translateZ(50px)\`
+     (\`DIE_SIDE_LOCAL_TRANSFORM\`, half of \`DIE_SIZE\`'s 100 SVG-viewBox units
+     reused as CSS px) pushes the front facelet — and, once \`.hexdev-dice-
+     tilt\` reveals it, a sliver of whichever facelet sits adjacent —
+     proportionally far forward against the box. At the OLD 64px size, that
+     projection landed partly outside the box; \`overflow: hidden\` (this
+     rule's prior fix for the tray) clipped the shortfall, but that shortfall
+     included the decided, front-facing facelet's OWN corners, not just the
+     adjacent sliver — the regression this box size now fixes by giving the
+     projection a box actually large enough to land inside, rather than
+     cutting whatever missed. \`overflow: hidden\` stays only as a defensive
+     backstop for the mid-toss animation frames (arbitrary intermediate
+     rotations, never captured by any at-rest screenshot); at rest, nothing
+     here should ever reach that edge. */
+  width: 110px;
+  height: 110px;
   perspective: 480px;
-  /* \`translateZ(50px)\` (\`DIE_SIDE_LOCAL_TRANSFORM\`, half of \`DIE_SIZE\`'s 100
-     SVG-viewBox units reused as CSS px) pushes the front facelet — and, once
-     \`.hexdev-dice-tilt\` reveals it, a sliver of whichever facelet sits
-     adjacent — proportionally far forward against a box this small. Past
-     this pass's own tilt, that sliver projects outside the nominal 64×64
-     box entirely; left \`visible\` (this rule's only prior overflow
-     behaviour), it renders as a shape floating disconnected above the die
-     rather than read as that die's own top edge. Clipping it here is the
-     one-line fix: the cube's edge now ends exactly at the box it is drawn
-     in, the same as looking at a real cube through a window frame, instead
-     of past it. */
   overflow: hidden;
 }
 
