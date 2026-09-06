@@ -4,6 +4,22 @@ import { DICE_THEME_DEFAULTS } from "./theme-tokens.js";
 export const DICE_STYLE_ID = "hexdev-dice-styles";
 
 /**
+ * THE TOSS'S OWN CLOCK, exported rather than left as three literals buried
+ * in the template string below. `dice-toss-filmstrip.scene.test.ts` freezes
+ * this exact animation at arbitrary checkpoints via a negative
+ * `animation-delay` (the same idiom `chrome-styles.ts`'s `hexdev-deal`
+ * already uses to resume a rebuilt card mid-flight, generalized here to
+ * "resume" at a screenshot instead of at a rebuild) — a filmstrip built
+ * against a SECOND, hand-copied `640`/`55` would silently stop matching the
+ * real animation the moment either number changed here, and nothing would
+ * fail to say so. One number, read twice, same as `--dice-rest-x`/`-y`
+ * already are between the resting rule and the keyframe's `from` state.
+ */
+export const DICE_TOSS_DURATION_MS = 640;
+export const DICE_TOSS_EASING = "cubic-bezier(0.22, 0.8, 0.32, 1)";
+export const DICE_TOSS_STAGGER_MS = 55;
+
+/**
  * The tray, the cube, the toss, the cup — one stylesheet string, injected
  * once by `ensureDiceStyles`, the same "no bundler to resolve a stylesheet
  * import" arrangement `mahjong-solitaire-ui/board-styles.ts` documents for
@@ -144,11 +160,11 @@ export function buildDiceStylesheet(): string {
      ever runs — so the very first frame this rule can ever paint already
      names the real, decided face. */
   transform: rotateX(var(--dice-rest-x, 0deg)) rotateY(var(--dice-rest-y, 0deg));
-  animation: hexdev-dice-toss 640ms cubic-bezier(0.22, 0.8, 0.32, 1) backwards;
+  animation: hexdev-dice-toss ${String(DICE_TOSS_DURATION_MS)}ms ${DICE_TOSS_EASING} backwards;
   /* A small per-die stagger so five dice do not fall as one rigid block —
      cosmetic variety only, the same \`--i\`-keyed idiom \`chrome-styles.ts\`
      uses for its own deal, and it never touches which face lands where. */
-  animation-delay: calc(var(--i, 0) * 55ms);
+  animation-delay: calc(var(--i, 0) * ${String(DICE_TOSS_STAGGER_MS)}ms);
 }
 
 .hexdev-dice-face {
