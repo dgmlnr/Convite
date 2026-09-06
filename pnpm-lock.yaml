@@ -202,6 +202,15 @@ importers:
         specifier: ^8.2.0
         version: 8.2.0(@types/node@26.1.2)(jiti@2.7.0)
 
+  packages/dice-ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      '@vitest/browser':
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0))(vitest@4.1.10)
+
   packages/games/escoba-bot:
     dependencies:
       '@hexdev/escoba-engine':

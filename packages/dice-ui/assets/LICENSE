@@ -1,0 +1,47 @@
+Dice and cup renders -- packages/dice-ui/assets/dice/*.webp, cup.webp
+======================================================================
+
+Unlike packages/mahjong-tile-ui/assets/ and packages/spanish-deck-ui's own
+deck art, nothing in this directory is someone else's illustration
+rasterized. There is no attribution obligation to carry here, and this file
+records exactly why, so that claim stays checkable rather than taken on
+faith.
+
+Geometry
+  Modeled from primitives in ../tools/render-props.py: a beveled cube with
+  boolean-carved pip craters (the six die faces), and a solidified open
+  cylinder with a felt-lined interior (the cup). Original work by this
+  repository, same as every other shape this codebase draws — no source
+  asset, no derivative, nothing for a license to attach to.
+
+Ivory material (the six die faces)
+  Fully procedural: a plain Principled BSDF plus a Noise/Bump grain and an
+  Ambient-Occlusion-driven crevice tint, all authored as Blender shader
+  nodes in ../tools/render-props.py. No photographic input of any kind.
+
+Leather material (cup.webp only)
+  Photographic PBR scan: "Brown Leather" by Rob Tuytel, published by Poly
+  Haven — https://polyhaven.com/a/brown_leather
+  License: CC0 1.0 Universal (public domain dedication)
+  https://creativecommons.org/publicdomain/zero/1.0/
+
+  CC0 asks for nothing: no attribution, no share-alike, no notice
+  requirement of any kind. This section exists purely so the source is
+  traceable, not because anything here is legally required.
+
+  Fetched at 1k resolution (albedo, roughness, OpenGL-space normal map) by
+  `render-props.py fetch`, applied as a UV-mapped material with a small
+  colour tint and a shader-only cross-stitch overlay (no separate artwork),
+  and baked into the final render. The green felt interior and the ivory
+  die material carry no photographic input at all — see above.
+
+Changes made
+  Everything here IS the change: this is a from-scratch render, not an
+  edit of an existing file. Recorded for completeness rather than because
+  any license requires it:
+  1. The leather scan was UV-mapped onto original cup geometry, tinted, and
+     composited with a procedural cross-stitch seam.
+  2. Every other visible surface (ivory, felt) is fully procedural.
+  3. All seven images were rendered transparent and re-encoded from PNG to
+     lossy WebP (quality 88) — see ../tools/render-props.py's own `encode`
+     step.
