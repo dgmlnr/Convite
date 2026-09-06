@@ -50,11 +50,20 @@ tiene los tantos. Las señas nombran **cartas**, nunca tantos, así que un compa
 no tenía cómo decirlo. Por eso el pie puede **preguntar** antes de cantar: misma ventana
 que el canto, mismo precio que una seña.
 
-## Próximos juegos
+## Los otros juegos
 
-Escoba de 15 y Generala. La plataforma está construida para que ambos entren sin
-modificar el núcleo: el mazo español vive en su propio paquete —no dentro del truco—
-y el lobby deriva sus modalidades de la configuración que declara cada juego.
+Escoba de 15 y Mahjong Solitario ya se juegan de punta a punta: motor, adaptador del
+contrato de juego y —escoba, no el solitario, que no tiene contra quién jugar— bot.
+Viven en sus propios paquetes (`packages/games/escoba-*`,
+`packages/games/mahjong-solitaire-*`) y entraron sin tocar el núcleo: el mazo español
+está fuera del truco desde el principio, y el lobby deriva sus modalidades de la
+configuración que declara cada juego.
+
+**La Generala todavía no es un juego.** `dice-ui` trae los dados y el cubilete como
+piezas —forma, pose de reposo, cómo se resuelve una tirada a una cara—, pero motor,
+adaptador y reglas no existen en ningún lado del repo: el propio paquete lo deja
+escrito para que nadie lo confunda con el juego. Cuando la Generala exista va a
+pararse sobre esas piezas, no a reemplazarlas.
 
 ## Arquitectura
 
@@ -214,6 +223,7 @@ la topología está probada y no solamente descrita.
 | `apps/mint-server` | Rol acuñador: tiene la semilla de firma y sirve la puerta de entrada |
 | `apps/server` | Rol partida: sólo verifica. Cablea el registro de juegos y escucha |
 | `apps/widget-app` | El widget en sí: selección de juego, lobby y mesa |
+| `apps/admin` | Panel de operación: altas de tenant, operadores, permisos y auditoría, contra Postgres directo |
 
 ## Créditos
 
