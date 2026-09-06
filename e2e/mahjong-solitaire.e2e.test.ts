@@ -269,7 +269,28 @@ describe("mahjong solitaire: a real board, dealt by a real match room and cleare
 
         const proposal = nextProposal(reachable, refused);
         if (proposal === undefined) {
-          if (retriedClean) break; // asked twice on an unchanged board: this loop is genuinely out of moves
+          // A PROPOSAL SEARCH THAT COMES UP EMPTY CAN BE STALE, NOT STUCK.
+          // `board` here is whatever the LAST press's own read produced —
+          // a snapshot taken the instant that press's `readBoard` call
+          // returned, not the instant the server's own answer to it
+          // rendered. Those are usually the same moment, because a real
+          // cross-frame round trip is normally faster than the async gap
+          // between two lines of this loop, but "usually" is exactly what
+          // a flake is: OBSERVED failing "the match never reached an
+          // ending" at 58s with two tiles left, on a board a later run
+          // cleared with a different deal — not a slow board, a fast one
+          // whose last answer had not rendered yet when this loop asked.
+          // One more read, spent only on the two passes a real end-of-board
+          // already costs (this branch, not the per-proposal one below),
+          // gives that pending answer a chance to land before this loop
+          // decides there is none coming and reports the match unended.
+          board = await readBoard(table);
+          if (board.ended !== null || board.tiles.length !== before) {
+            refused = new Set<string>();
+            retriedClean = false;
+            continue;
+          }
+          if (retriedClean) break; // asked twice on a FRESHLY-read, unchanged board: this loop is genuinely out of moves
           retriedClean = true;
           refused = new Set<string>();
           continue;
