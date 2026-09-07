@@ -20,6 +20,7 @@
     { "path": "packages/games/mahjong-solitaire-module" },
     { "path": "packages/games/generala-module" },
     { "path": "packages/games/escoba-bot" },
+    { "path": "packages/games/generala-bot" },
     { "path": "packages/transport-colyseus" },
     { "path": "packages/transport-colyseus-client" },
     { "path": "packages/widget-sdk" },
