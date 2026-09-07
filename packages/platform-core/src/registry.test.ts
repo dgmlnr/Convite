@@ -289,4 +289,85 @@ describe("createGameModuleRegistry", () => {
       expect(seen).toEqual([{ state: { turn: 1 }, playerId: "quien-se-fue" }]);
     });
   });
+
+  /**
+   * How long the table sits still before a system action lands, declared by
+   * the registration that asks for one — beside `requestSystemAction`,
+   * because it is THAT requester's pacing. Not on `GameMetadata` (metadata is
+   * what the catalog shows a player; this is transport-only) and not on the
+   * `GameModule` port (this file's own header: a transport-only pairing
+   * belongs on the registration).
+   *
+   * `undefined` AND `0` ARE DIFFERENT ANSWERS, and keeping them apart is the
+   * whole point of this block. "No opinion — use the room's own beat" is what
+   * truco, escoba and mahjong say by declaring nothing, and the room's beat is
+   * a real 1800ms that exists for a reported reason: dealing again in the same
+   * breath made the winning card vanish before anyone could read it. "0, do
+   * not pause at all" is a different, deliberate declaration. A `?? 0` on the
+   * accessor below would collapse the first into the second and strip that
+   * 1800ms from every card game without touching one line of their
+   * registrations — which is why the two `toBeUndefined()` cases here are
+   * fences and not filler.
+   *
+   * A pause that is not an integer >= 0 can never be waited, so it is refused
+   * where the modules are assembled, naming the module — the same fail-loud
+   * discipline as the `seatCount` guard and the section straddle above.
+   */
+  describe("systemActionPauseMs — declared per registration, and `undefined` is not `0`", () => {
+    function pacedBy(systemActionPauseMs: number) {
+      return { module: fixtureModule("fixture-paced"), systemActionPauseMs };
+    }
+
+    it("returns undefined for a bare GameModule registration — no opinion, so the room keeps its own beat", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getSystemActionPauseMs("fixture-a")).toBeUndefined();
+    });
+
+    it("returns undefined for a wrapped registration that declares no pause — truco, escoba and mahjong's exact shape", () => {
+      const registry = createGameModuleRegistry([{ module: fixtureModule("fixture-a"), requestSystemAction: () => null }]);
+      expect(registry.getSystemActionPauseMs("fixture-a")).toBeUndefined();
+    });
+
+    it("returns undefined for a gameId nothing registered, the same fail-closed shape as every other lookup here", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getSystemActionPauseMs("does-not-exist")).toBeUndefined();
+    });
+
+    it("returns a declared 0 AS 0 — 'do not pause' is an answer, and it must never read back as 'no opinion'", () => {
+      const registry = createGameModuleRegistry([pacedBy(0)]);
+      expect(registry.getSystemActionPauseMs("fixture-paced")).toBe(0);
+    });
+
+    it("returns a declared value untouched", () => {
+      const registry = createGameModuleRegistry([pacedBy(350)]);
+      expect(registry.getSystemActionPauseMs("fixture-paced")).toBe(350);
+    });
+
+    /**
+     * The `[0]` trap `getAbandonedSeatAction` above already documents: with a
+     * single registration, "found it by id" and "took the only entry there is"
+     * are the same observation. Two entries, and the one being ASKED about is
+     * the one that declared nothing.
+     */
+    it("answers for the game it was ASKED about, not for whichever registration happens to declare a pause", () => {
+      const registry = createGameModuleRegistry([pacedBy(350), fixtureModule("fixture-b")]);
+      expect(registry.getSystemActionPauseMs("fixture-b")).toBeUndefined();
+    });
+
+    it("throws for a negative pause, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([pacedBy(-1)])).toThrowError(/fixture-paced.*-1/);
+    });
+
+    it("throws for a non-integer pause, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([pacedBy(1.5)])).toThrowError(/fixture-paced.*1\.5/);
+    });
+
+    /** The case a bare `< 0` check lets straight through: every comparison
+     * against `NaN` is false, so a guard written as `if (pauseMs < 0) throw`
+     * composes happily and then hands `setTimeout` a value it silently treats
+     * as 0. `Number.isInteger` is what refuses it. */
+    it("throws for NaN, which no comparison can catch", () => {
+      expect(() => createGameModuleRegistry([pacedBy(Number.NaN)])).toThrowError(/fixture-paced.*NaN/);
+    });
+  });
 });
