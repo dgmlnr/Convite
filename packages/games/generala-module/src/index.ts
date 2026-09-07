@@ -5,19 +5,22 @@ import { SYSTEM_ACTOR_ID } from "./roll.js";
 import type { RollDiceAction } from "./roll.js";
 
 export type { RollDiceAction } from "./roll.js";
-export { SYSTEM_ACTOR_ID } from "./roll.js";
+export { SYSTEM_ACTOR_ID, requestGeneralaSystemAction } from "./roll.js";
 
 /**
  * A PARTIAL BARREL, and declared partial the way `generala-engine`'s own was
  * while it was being written.
  *
- * WHAT IS HERE: the action union, and the reducer that decides who may author
- * which half of it. WHAT IS NOT, in the order it arrives:
- * `requestGeneralaSystemAction`, the one door entropy comes through, which
- * lands with the entropy budget that measures it; and the `generalaModule`
- * object that carries all of this to the registry — its metadata, its empty
- * `configOptions`, its `createBot` and the conformance suite that exercises the
- * lot — which cannot land before the bot it is required to supply.
+ * WHAT IS HERE: the action union, the reducer that decides who may author which
+ * half of it, and the one door entropy comes through. That is everything a
+ * registration pairs with a module — `requestGeneralaSystemAction` is what
+ * `apps/server`'s registry hands the room's `rng`, exactly as
+ * `requestMahjongSolitaireSystemAction` is.
+ *
+ * WHAT IS NOT is the `generalaModule` object that carries all of it to that
+ * registry — its metadata, its empty `configOptions`, its `createBot` and the
+ * conformance suite that exercises the lot — which cannot land before the bot
+ * `conformance.ts:114-134` makes mandatory at `seatCount >= 2`.
  */
 
 /**
@@ -28,7 +31,7 @@ export { SYSTEM_ACTOR_ID } from "./roll.js";
  * the one action the engine cannot own because it carries an actor and needs
  * externally materialized randomness. `roll-dice` is never in any seat's legal
  * list, so it reaches `applyAction` from exactly one caller — the transport,
- * with what the system-action requester drew.
+ * with what `requestGeneralaSystemAction` drew.
  */
 export type GeneralaModuleAction = GeneralaAction | RollDiceAction;
 
@@ -70,7 +73,7 @@ const MATCH_OVER: ApplyResult<MatchState> = { ok: false, violation: { code: "mat
  * phase and nothing else, by design, so without this line a full board would
  * accept another throw and the seat would be offered 31 holds on a card with no
  * open box. The engine says so in its own words and leaves the terminal check
- * to this layer; the system-action requester will make the same check for the
+ * to this layer; `requestGeneralaSystemAction` makes the same check for the
  * same reason, on the other side of the same loop.
  *
  * EVERY RULE BELOW THAT IS NOT ABOUT AN ACTOR BELONGS TO THE ENGINE. Which
