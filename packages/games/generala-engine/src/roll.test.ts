@@ -129,6 +129,80 @@ describe("applyRoll — what it refuses", () => {
   });
 });
 
+describe("applyRoll — a face has to be a face", () => {
+  /**
+   * `DieFace` IS COMPILE-TIME ONLY, AND THIS BLOCK IS THE RUNTIME HALF.
+   *
+   * The union `1|2|3|4|5|6` is erased before a single value moves, so every
+   * cast below is what a SECOND PRODUCER looks like from in here: a bot
+   * replaying a recorded match, a state migration, a fixture written by hand.
+   * `generala-module` is the only producer today and its `rollDie` is total
+   * over `RandomSource`'s contractual `[0, 1)`, so nothing on the shipped path
+   * can reach these lines — but that is a fact about today's callers, not about
+   * this reducer, and an L0 engine's contract cannot be conditional on its one
+   * current caller behaving.
+   *
+   * THERE IS NO "EVERY FACE IS ACCEPTED" SIBLING HERE, AND THAT IS MEASURED
+   * RATHER THAN AN OMISSION. One was written — six faces across five positions,
+   * thirty rolls — and then removed, because a guard refusing EVERY roll reds
+   * seven of this package's nine test files, two of which (`play.test.ts` and
+   * `view.test.ts`) stop collecting altogether: they drive whole matches
+   * through `applyRoll`, so an ordinary face being refused is not something
+   * they can survive. The four tests in the first describe of this very file
+   * are the same fence at closer range. A mutation a pre-existing test already
+   * catches proves nothing about a new one, and a duplicated fence is two
+   * places to fix one thing.
+   */
+  const notAFace = (value: number): DieFace => value as DieFace;
+
+  it("refuses a face outside the six, wherever it sits in the carry", () => {
+    // Last, first and middle: a guard that only looked at `faces[0]` passes a
+    // one-element case and would splice this 7 into the third slot.
+    const state = awaitingRoll([6, 6, null, null, null], 1);
+
+    expect(refused(applyRoll(state, [4, 5, notAFace(7)])).code).toBe("malformed-face");
+    expect(refused(applyRoll(state, [notAFace(0), 5, 2])).code).toBe("malformed-face");
+    expect(refused(applyRoll(state, [4, notAFace(-1), 2])).code).toBe("malformed-face");
+  });
+
+  it("refuses a number between the faces, and a number that is no number at all", () => {
+    // THE TWO CASES THAT SEPARATE MEMBERSHIP FROM A RANGE COMPARISON, and the
+    // reason the guard is written against `DIE_FACES` rather than as
+    // `face < 1 || face > 6`. That comparison admits 1.5 — inside the range and
+    // not a face — and admits NaN, because every comparison against NaN is
+    // false. A die shows one of six things; it does not show a point on an
+    // interval.
+    const state = createMatch([ALICE, BOB]);
+
+    expect(refused(applyRoll(state, [1, 2, 3, 4, notAFace(1.5)])).code).toBe("malformed-face");
+    expect(refused(applyRoll(state, [1, 2, 3, 4, notAFace(Number.NaN)])).code).toBe("malformed-face");
+  });
+
+  it("refuses a whole cup of impossible faces, which the scorer would otherwise value at nothing at all", () => {
+    // THE HARM, MEASURED RATHER THAN GUESSED — and it is not the loud one it
+    // looks like. `[7,7,7,7,7]` is NOT read as a generala: `counts` zeroes a
+    // tally over `DIE_FACES` and then increments `tally[7]`, which is
+    // `undefined + 1`, so the seventh face lands as `NaN` and `someFaceShows`
+    // never sees it. Run against the unguarded reducer, this roll was accepted
+    // into `deciding`, all eleven boxes valued 0, and the acting seat was
+    // offered the full 42 actions on five dice that show nothing.
+    //
+    // That silence is the argument for the guard, not against it: a seat gets a
+    // turn it can only cross out, and the state that did it is a legal-looking
+    // `deciding` nobody would think to question. The guard therefore runs
+    // BEFORE the splice rather than merely before the caller reads the dice
+    // back.
+    const state = createMatch([ALICE, BOB]);
+    const impossible = [7, 7, 7, 7, 7].map(notAFace);
+
+    expect(refused(applyRoll(state, impossible)).code).toBe("malformed-face");
+    // It refuses the same way twice, and the caller's own state is exactly what
+    // it handed in.
+    expect(applyRoll(state, impossible)).toEqual(applyRoll(state, impossible));
+    expect(state.turn).toEqual({ phase: "awaiting-roll", seat: 0, rollsUsed: 0, slots: [null, null, null, null, null] });
+  });
+});
+
 describe("applyRoll — a generala on the opening roll wins where it is rolled", () => {
   it("ends the match the moment the roll is applied, before any choice is offered", () => {
     const state = createMatch([ALICE, BOB]);
