@@ -1,5 +1,6 @@
 import { DIE_FACES } from "./dice.js";
 import type { Dice, DieFace } from "./dice.js";
+import type { CategoryId, Scorecard } from "./state.js";
 
 /**
  * How many dice show each face. Every face is a key, even at zero.
@@ -144,4 +145,151 @@ export function isPoker(dice: Dice): boolean {
  */
 export function isGenerala(dice: Dice): boolean {
   return someFaceShows(counts(dice), 5);
+}
+
+/** The six boxes that are just the numbers. */
+type UpperCategoryId = "ones" | "twos" | "threes" | "fours" | "fives" | "sixes";
+
+/**
+ * Which number each upper box is.
+ *
+ * ruleset §Sección superior: "1 a 6: suma de los dados de ese número. Sin
+ * bonus." The face is data rather than a parse of the category name, so the
+ * mapping is stated once and a rename cannot silently repoint a box.
+ */
+const UPPER_SECTION: Readonly<Record<UpperCategoryId, DieFace>> = {
+  ones: 1,
+  twos: 2,
+  threes: 3,
+  fours: 4,
+  fives: 5,
+  sixes: 6,
+};
+
+/**
+ * Everything that is not an upper box, DERIVED rather than listed a second
+ * time. A twelfth category added to `CategoryId` lands in exactly one of the
+ * two tables below and fails to compile until somebody says what it pays.
+ */
+type LowerCategoryId = Exclude<CategoryId, UpperCategoryId>;
+
+/**
+ * One row of the ruleset's juegos mayores table.
+ *
+ * `servida: null` is not "no bonus" — it is the SOURCE'S OWN CELL, which for
+ * those two boxes holds no number at all (see the table below). Modelling it as
+ * `null` keeps the transcription faithful and keeps `scoreFor` from inventing a
+ * value the ruleset never states.
+ */
+interface JuegoMayor {
+  readonly armada: number;
+  readonly servida: number | null;
+  readonly holds: (dice: Dice, card: Scorecard) => boolean;
+}
+
+/**
+ * ruleset §Sección inferior, transcribed cell for cell:
+ *
+ * | Categoría      | Armada | Servida            |
+ * | Escalera       |     20 |                 25 |
+ * | Full           |     30 |                 35 |
+ * | Póker          |     40 |                 45 |
+ * | Generala       |     50 | "gana en el acto"  |
+ * | Generala doble |    100 |                "—" |
+ *
+ * The two non-numeric cells are `null`, and each has its own reason:
+ *
+ * GENERALA's servida cell says the match ENDS — a generala on the opening roll
+ * wins outright, before the player chooses anything and regardless of which
+ * boxes are already filled, so the roll reducer settles it and this valuation
+ * is never reached for that case. The box stays worth 50; 55 is a number no
+ * source states.
+ *
+ * GENERALA DOBLE's cell is a dash for a sharper reason. Reaching the box at all
+ * requires the generala box to already hold a real generala, and a five of a
+ * kind on the opening roll would have won the match outright before this box
+ * could be chosen — so THE DOBLE IS ONLY EVER REACHABLE ARMADA. That is the
+ * corollary the spec derived from the servida rule, and it makes the 100-point
+ * category rarer than players expect.
+ */
+const JUEGOS_MAYORES: Readonly<Record<LowerCategoryId, JuegoMayor>> = {
+  escalera: { armada: 20, servida: 25, holds: (dice) => isEscalera(dice) },
+  full: { armada: 30, servida: 35, holds: (dice) => isFull(dice) },
+  poker: { armada: 40, servida: 45, holds: (dice) => isPoker(dice) },
+  generala: { armada: 50, servida: null, holds: (dice) => isGenerala(dice) },
+  "generala-doble": {
+    armada: 100,
+    servida: null,
+    holds: (dice, card) => isGenerala(dice) && hasScoredGenerala(card),
+  },
+};
+
+/**
+ * ruleset §La precondición de la doble: "paga 100 sólo si la casilla de
+ * generala tiene una generala DE VERDAD".
+ *
+ * `card.generala !== null && card.generala > 0`, and the `> 0` is the whole
+ * point. A generala box CROSSED OUT AT ZERO is filled, so a bare non-null test
+ * would pay 100 to a player who gave the generala up. The ruleset says "haber
+ * ANOTADO la primera generala", and tachar is not anotar: crossing the generala
+ * out is renouncing the doble.
+ *
+ * The other half of the decision lives in the legal-action enumeration rather
+ * than here: THE DOBLE BOX IS ALWAYS A LEGAL TARGET, crossable for zero exactly
+ * as at a real table. The rejected reading — untargetable until generala is
+ * scored — leaves a player who never rolls five of a kind holding a box that
+ * can never be filled, so "the match ends when every box is filled" never
+ * fires. That is a defect, not a variant, and it is why this is a VALUATION
+ * question and not a legality one.
+ */
+function hasScoredGenerala(card: Scorecard): boolean {
+  return card.generala !== null && card.generala > 0;
+}
+
+/**
+ * ruleset §Sección inferior: "servida = lograda en la primera tirada del turno,
+ * +5".
+ *
+ * The first roll of the turn is `rollsUsed === 1`, read AT SCORING TIME. It is
+ * deliberately not a flag anybody sets and clears: a combination made on the
+ * opening roll, broken, and remade on the third is ARMADA, and an engine that
+ * remembered "it was there on roll 1" would pay the bonus for it. `scoreFor`
+ * receives the counter and no history at all, so that mistake is not
+ * expressible here rather than merely untaken.
+ */
+const SERVIDA_ROLL = 1;
+
+/**
+ * What this box pays for these dice, right now — a VALUATION, not a legality
+ * check.
+ *
+ * Whether the box may be targeted at all belongs to the legal-action
+ * enumeration; answering it in two places is how the two come to disagree.
+ * A filled box scored here still returns what the dice yield, and the doble
+ * with the generala box still open returns 0 WITHOUT refusing: the generala box
+ * was simultaneously available for 50, so the choice was the player's and the
+ * engine must not second-guess it.
+ *
+ * Everything else falls out of the ruleset's own generalization — every
+ * still-open category is a legal target that evaluates to whatever its rule
+ * yields, zero included. That is what makes "crossing out" a `score` action
+ * aimed at a box worth nothing rather than an action type of its own, and it is
+ * what makes forced crossing fall straight out of "una por turno, obligatorio".
+ */
+export function scoreFor(category: CategoryId, dice: Dice, rollsUsed: number, card: Scorecard): number {
+  switch (category) {
+    case "ones":
+    case "twos":
+    case "threes":
+    case "fours":
+    case "fives":
+    case "sixes":
+      // The servida bonus rides the juegos mayores and never the upper section.
+      return faceTotal(UPPER_SECTION[category], dice);
+    default: {
+      const row = JUEGOS_MAYORES[category];
+      if (!row.holds(dice, card)) return 0;
+      return rollsUsed === SERVIDA_ROLL && row.servida !== null ? row.servida : row.armada;
+    }
+  }
 }
