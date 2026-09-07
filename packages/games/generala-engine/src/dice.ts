@@ -19,6 +19,17 @@
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
 
 /**
+ * Every face, ascending.
+ *
+ * `counts` builds its zeroed tally FROM this rather than writing `1..6` out a
+ * second time, so "a die has six faces" is stated in exactly one place. The same
+ * derive-don't-restate discipline `dice-ui` applies to its own asset set, and for
+ * the same reason: a second statement of a fact is a second chance to disagree
+ * with the first, and it is the disagreement nobody would ever see.
+ */
+export const DIE_FACES: readonly DieFace[] = [1, 2, 3, 4, 5, 6];
+
+/**
  * Exactly five dice, as a tuple rather than an array.
  *
  * The length is part of the type because every rule in the game is written
