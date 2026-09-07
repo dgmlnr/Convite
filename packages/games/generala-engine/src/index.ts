@@ -1,13 +1,16 @@
 /**
- * PARTIAL BARREL. Generala's rules land over several slices, and this file grows
- * with them: `getViewFor` is not here yet and its absence is the plan, not an
- * omission. Nothing outside this package imports it until the module exists, so
- * an incomplete surface breaks nobody.
+ * THE ENGINE'S WHOLE SURFACE, and no longer a partial one.
  *
- * The list of what is missing is kept CURRENT rather than left as it was
- * written: the scoring table, the roll reducer, the legal-action enumeration
- * and the outcome have all landed since, and a docstring naming them as absent
- * would be a statement in the shipped source that is simply false.
+ * Generala's rules landed over five slices and this file grew with them; with
+ * `getViewFor` here, everything `generala-module` needs to satisfy
+ * `platform-contract`'s port is exported and nothing is deliberately withheld.
+ *
+ * WHAT IS DELIBERATELY NOT HERE is the arithmetic behind the exports rather
+ * than the exports themselves: `scoring.ts`'s eleven predicates (only `scoreFor`
+ * is API — how a box is valued is not), `outcome.ts`'s `totalFor` (the view
+ * carries the totals already derived, and exporting the function invites a
+ * consumer to re-derive them), and `legal-actions.ts`'s `KEEP_SETS` (the offer
+ * list IS the answer to what a hold may carry).
  */
 export type { Dice, DieFace } from "./dice.js";
 export { DICE_COUNT, DIE_FACES } from "./dice.js";
@@ -24,3 +27,5 @@ export type { HoldAction, ScoreAction } from "./play.js";
 export { applyHold, applyPlayerAction, applyScore } from "./play.js";
 export type { MatchOutcome } from "./outcome.js";
 export { getOutcome } from "./outcome.js";
+export type { PlayerView, SeatView } from "./view.js";
+export { getViewFor } from "./view.js";
