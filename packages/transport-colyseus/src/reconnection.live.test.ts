@@ -139,6 +139,22 @@ describe("MatchRoom — disconnect, reconnection window, and bot takeover over a
     const views1: ReconnectState[] = [];
     client1.onMessage("view", (message: { view: ReconnectState }) => views1.push(message.view));
 
+    // THE FLOOR MOVES TO SEAT 1 FIRST, and that step is not stage-dressing.
+    // This fixture offers `demand` only to the seat on turn, so the remaining
+    // human can only make a demand once the turn is theirs — and the room now
+    // admits only actions the module actually offered, so a demand from the
+    // seat that does not hold the floor is refused rather than quietly
+    // accepted. This test used to send exactly that refused demand and pass
+    // anyway, because `applyAction` took it: the fixture's own two halves
+    // disagreed and nothing was asking them to agree.
+    //
+    // It is also what keeps the takeover bot from demanding on its OWN
+    // initiative before the human gets to: with the turn on seat 1, seat 0's
+    // legal list is empty, so `runAdvanceOnce` finds no bot to drive and the
+    // pending decision below is genuinely the human's doing.
+    client0.send("action", { type: "advance", playerId: P0 });
+    await waitForView({ views: views1, matches: (view) => view.turnSeat === 1, what: "the floor to reach seat 1 before it is abandoned", describe: describeReconnect });
+
     client0.leave(false); // seat 0 drops abruptly
     await new Promise((resolve) => setTimeout(resolve, 400)); // past the 0.2s window: takeover fires
 

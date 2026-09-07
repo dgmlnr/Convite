@@ -5,7 +5,7 @@ import { describeGameModule } from "@hexdev/platform-contract";
 import type { PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { createGameModuleRegistry } from "@hexdev/platform-core";
 import type { AbandonedSeatActionProvider, SystemActionRequester } from "@hexdev/platform-core";
-import { generateDeal } from "./deal.js";
+import { SYSTEM_ACTOR_ID, generateDeal } from "./deal.js";
 import { getAbandonedSeatAction, mahjongSolitaireModule, requestMahjongSolitaireSystemAction } from "./module.js";
 import type { MahjongSolitaireAction, SolitaireMatchState } from "./module.js";
 
@@ -89,7 +89,10 @@ describe("the solitaire module", () => {
    */
   it("plays the generator's own solution to a win, through the module", () => {
     const deal = generateDeal(seeded(21));
-    let state = apply(mahjongSolitaireModule.createMatch(config, seats), { type: "deal-board", playerId: player, placements: deal.placements });
+    // `SYSTEM_ACTOR_ID`, not `player`: the module now refuses a board laid
+    // by anybody else, so a fixture dealing as the seated player would be
+    // asserting that a solitaire can deal itself its own board.
+    let state = apply(mahjongSolitaireModule.createMatch(config, seats), { type: "deal-board", playerId: SYSTEM_ACTOR_ID, placements: deal.placements });
     expect(deal.solution).toHaveLength(LAYOUT.length / 2);
 
     for (const step of deal.solution) {
@@ -109,6 +112,35 @@ describe("the solitaire module", () => {
     expect(Object.keys(reachable).sort()).toEqual(["abandoned", "board", "playerId"]);
     expect(Object.keys(reachable.board!).sort()).toEqual(["playerId", "tiles"]);
     expect(JSON.stringify(mahjongSolitaireModule.serialize(reachable))).not.toContain("solution");
+  });
+});
+
+describe("only the system lays a board", () => {
+  /**
+   * The same guard `truco-module` and `escoba-module` now carry, kept here
+   * even though this game has nobody to cheat: one seat means a player who
+   * chose their own board only chose their own difficulty. It is asserted
+   * because the RULE is the same one, and because "the harm is self-
+   * inflicted" is a fact about `metadata.seatCount`, not about this reducer —
+   * a future variant that seats two would inherit the hole silently.
+   */
+  it("refuses a deal-board submitted by the seated player", () => {
+    const created = mahjongSolitaireModule.createMatch(config, seats);
+    expect(mahjongSolitaireModule.getLegalActions(created, player).some((action) => action.type === "deal-board")).toBe(false);
+
+    const result = mahjongSolitaireModule.applyAction(created, { type: "deal-board", playerId: player, placements: generateDeal(seeded(4)).placements });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.violation.code).toBe("not-a-system-actor");
+  });
+
+  /** `abandon-board` is deliberately NOT actor-gated, and this is the test
+   * that keeps it that way: leaving the table is the player's own act, and it
+   * arrives carrying the player's own id through `getAbandonedSeatAction`. */
+  it("still lets the seated player abandon their own board", () => {
+    expect(getAbandonedSeatAction(reachable, player)).toEqual({ type: "abandon-board", playerId: player });
+    expect(mahjongSolitaireModule.applyAction(reachable, { type: "abandon-board", playerId: player }).ok).toBe(true);
   });
 });
 

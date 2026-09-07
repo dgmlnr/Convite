@@ -2,7 +2,15 @@ import { buildDeck, deal, getMatchWinner } from "@hexdev/escoba-engine";
 import type { Card, MatchState } from "@hexdev/escoba-engine";
 import type { PlayerId, RandomSource } from "@hexdev/platform-contract";
 
-/** No human actor submits this — mirrors `truco-module/src/deal.ts`'s own sentinel. */
+/** No human actor submits this — mirrors `truco-module/src/deal.ts`'s own
+ * sentinel, including the correction recorded there. The sentinel is a TYPE
+ * BOUND satisfier and nothing more: it never refused a `start-hand` that
+ * arrived under a real seat's own id, and in escoba the forged action is
+ * worse than truco's, because `deck` is the whole 40-card permutation — the
+ * sender picks every seat's hand, the opening table, and the draw order
+ * behind them. The refusal lives in `index.ts`'s `applyAction` (this actor
+ * or nothing) and in `MatchRoom.handleAction` (the game must have offered
+ * it), never in the shape of this string. */
 export const SYSTEM_ACTOR_ID = "__system__" as PlayerId;
 
 export interface StartHandAction {
