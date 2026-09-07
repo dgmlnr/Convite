@@ -2,6 +2,23 @@ packages:
   - "packages/*"
   - "packages/games/*"
   - "apps/*"
+overrides:
+  # qs is transitive and nobody here declares it: express -> body-parser -> qs.
+  # Two moderate advisories land on every version below 6.16.0 -- a DoS through
+  # an attacker-controlled isBuffer, and an array-limit bypass via comma parsing
+  # in bracket keys -- and qs sits in RUNTIME scope, parsing query strings on the
+  # server that mints sessions.
+  #
+  # An override rather than a lockfile bump, because a lockfile bump does not
+  # HOLD: body-parser asks for `^6.15.2`, so the vulnerable 6.15.3 satisfies it
+  # and any future regeneration of the lock is free to resolve straight back to
+  # it. The floor has to be written down somewhere that survives that.
+  #
+  # Scoped as `qs@<6.16.0` and not a bare `qs`, deliberately: this raises a
+  # floor, it does not pin a version. A dependency that some day legitimately
+  # needs a newer qs is left alone instead of being silently dragged backwards
+  # to whatever this line happens to say.
+  qs@<6.16.0: ^6.16.0
 allowBuilds:
   # msgpackr-extract is colyseus's native msgpack addon (via @colyseus/schema).
   # It has a pure-JS fallback, but the widely-used, actively maintained native
