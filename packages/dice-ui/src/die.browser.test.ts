@@ -21,11 +21,11 @@ afterEach(() => {
  */
 describe("die: the resting pose is on the element before this function ever returns", () => {
   it.each([1, 2, 3, 4, 5, 6] as const)("face %s: the cube's style already carries its own FACE_ROTATION entry, synchronously", (face) => {
-    const scene = createDieSceneElement(document, face, 0);
+    const box = createDieSceneElement(document, face, 0);
     // Not appended to the document yet, and not a single microtask has run —
     // if the pose were written asynchronously this assertion would still see
     // the pre-write state.
-    const cube = scene.querySelector<HTMLElement>(".hexdev-dice-cube")!;
+    const cube = box.querySelector<HTMLElement>(".hexdev-dice-cube")!;
     const { rotateX, rotateY } = FACE_ROTATION[face];
     expect(cube.style.getPropertyValue("--dice-rest-x").trim()).toBe(`${String(rotateX)}deg`);
     expect(cube.style.getPropertyValue("--dice-rest-y").trim()).toBe(`${String(rotateY)}deg`);
@@ -37,23 +37,33 @@ describe("die: the resting pose is on the element before this function ever retu
    * on top of the cube's own resting pose deformed the decided face into a
    * rhombus; see `restingPoseDeclaration`'s own comment in `geometry.ts`.
    * The cube is now a direct child of the scene.
+   *
+   * THE SIZED BOX IS NOT THAT WRAPPER, and this test is careful to say so
+   * rather than to forbid every ancestor: `.hexdev-dice-scene-box` is a
+   * LAYOUT element that carries no transform at all (`dice-styles.ts`), so
+   * it cannot compose a rotation onto the decided face, which is the entire
+   * defect `.hexdev-dice-tilt` caused. What must stay true is that nothing
+   * sits BETWEEN the scene and the cube — that is what the parent check
+   * below asserts, now read off the scene the box contains.
    */
   it("mounts the cube as a direct child of the scene, with no wrapper element between them", () => {
-    const scene = createDieSceneElement(document, 5, 0);
-    expect(scene.querySelector(".hexdev-dice-tilt"), "expected no .hexdev-dice-tilt wrapper to remain").toBeNull();
-    const cube = scene.querySelector<HTMLElement>(".hexdev-dice-cube");
+    const box = createDieSceneElement(document, 5, 0);
+    expect(box.querySelector(".hexdev-dice-tilt"), "expected no .hexdev-dice-tilt wrapper to remain").toBeNull();
+    const scene = box.querySelector<HTMLElement>(".hexdev-dice-scene");
+    expect(scene, "expected a scene inside its sized box").not.toBeNull();
+    const cube = box.querySelector<HTMLElement>(".hexdev-dice-cube");
     expect(cube, "expected a cube inside the scene").not.toBeNull();
     expect(cube!.parentElement).toBe(scene);
   });
 
   it("builds all six facelets, each carrying the face its own side permanently owns", () => {
-    const scene = createDieSceneElement(document, 1, 0);
-    document.body.appendChild(scene);
-    mounted.push(scene);
-    const facelets = [...scene.querySelectorAll<HTMLElement>(".hexdev-dice-face")];
+    const box = createDieSceneElement(document, 1, 0);
+    document.body.appendChild(box);
+    mounted.push(box);
+    const facelets = [...box.querySelectorAll<HTMLElement>(".hexdev-dice-face")];
     expect(facelets.length).toBe(DIE_SIDE_ORDER.length);
     for (const side of DIE_SIDE_ORDER) {
-      const facelet = scene.querySelector<HTMLElement>(`[data-side="${side}"]`);
+      const facelet = box.querySelector<HTMLElement>(`[data-side="${side}"]`);
       expect(facelet, `expected a facelet for side ${side}`).not.toBeNull();
       // A rendered WebP, not inline markup — `art.ts`'s own header explains
       // why the flat SVG this facelet used to mount is gone entirely. The
