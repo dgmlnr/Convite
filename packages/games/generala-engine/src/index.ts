@@ -6,13 +6,15 @@
  * exists, so an incomplete surface breaks nobody.
  */
 export type { Dice, DieFace } from "./dice.js";
-export { DIE_FACES } from "./dice.js";
+export { DICE_COUNT, DIE_FACES } from "./dice.js";
 export type { PlayerId } from "./ids.js";
 export type { CategoryId, MatchState, Scorecard, Turn } from "./state.js";
-export { CATEGORY_IDS, createMatch } from "./state.js";
+export { CATEGORY_IDS, ROLLS_PER_TURN, createMatch } from "./state.js";
 export type { DieCounts } from "./scoring.js";
 export { counts, scoreFor } from "./scoring.js";
 export type { ApplyResult, RuleViolation } from "./violation.js";
 export { applyRoll } from "./roll.js";
 export type { GeneralaAction } from "./legal-actions.js";
 export { getLegalActions } from "./legal-actions.js";
+export type { HoldAction } from "./play.js";
+export { applyHold } from "./play.js";
