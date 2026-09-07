@@ -165,6 +165,32 @@ const BOT_BUDGET_MS = 1000;
  * even with a long turn clock: a silent partner has, in practice, declined. */
 const CONSULT_CAP_MS = 30_000;
 
+/**
+ * The most steps ONE `runAdvanceOnce` invocation will spend before it refuses
+ * to keep spending. Exported for the fence that measures a real match against
+ * it, so nothing has to copy the number into a test and let the two drift.
+ *
+ * DERIVED, NOT PICKED, and the derivation is the whole argument. One
+ * invocation of that loop can drive a WHOLE bot-vs-bot match — it continues
+ * after every bot action until the outcome is non-null — so the bound has to
+ * clear the longest real match, not the longest real turn. Truco to 30 points
+ * runs into the high hundreds of actions (more in 2v2, where señas add a move
+ * nobody else has to answer); a dice game with two seats, ten rounds and three
+ * rolls a round is around 155. A ceiling in the low hundreds would therefore
+ * not bound a bug, it would BREAK TRUCO. 10 000 is more than an order of
+ * magnitude above any of those and still bounds a runaway to milliseconds of
+ * wasted work.
+ *
+ * WHY THIS BECAME NECESSARY NOW. The loop has never had a ceiling, and what
+ * has been standing in for one is the pause before every system action: at
+ * 1800ms a spin crawls, yielding the event loop between steps, which is slow
+ * and visible rather than fatal. That was an accident, not a design — and a
+ * game that declares a small `systemActionPauseMs` of its own removes it,
+ * turning the same spin into a hot loop that pegs a core. The two changes
+ * belong together for exactly that reason.
+ */
+export const MAX_ADVANCE_STEPS = 10_000;
+
 /** An open question to a live human teammate (design D1/D7). `id` is the
  * resolve-once guard `resolveConsult` checks: the field itself IS the
  * guard, no `await` between check and clear (same argument as `advanceChain`). */
@@ -1226,7 +1252,31 @@ export class MatchRoom extends Room {
    */
   private async runAdvanceOnce(): Promise<void> {
     try {
-      for (;;) {
+      for (let step = 0; ; step += 1) {
+        // THE CEILING (design D13). Logged loudly and RETURNED from, and each
+        // of those three choices is deliberate.
+        //
+        // Not thrown: nothing exceptional happened. We are refusing to keep
+        // spending, which is the same contract the catch below already states
+        // for a misbehaving module, and a throw here would only be caught two
+        // lines further down anyway.
+        //
+        // Not silent: a table that stops moving with nothing in the log is the
+        // single hardest failure to diagnose in this file's history (the
+        // "frozen match" that turned out to be a dead process), so the message
+        // names the game, which is the one thing that identifies which
+        // module's loop could not settle.
+        //
+        // Not the end of the match: `matchState` is a real game state and a
+        // transport heuristic must never destroy one. The room stays alive and
+        // the next client action drives it again from exactly here.
+        //
+        // PER INVOCATION, never per room lifetime — a counter on the instance
+        // would eventually kill a long-lived room that had done nothing wrong.
+        if (step >= MAX_ADVANCE_STEPS) {
+          console.error(`MatchRoom.advance(): ${String(MAX_ADVANCE_STEPS)} steps without the table settling (gameId=${String(this.gameId)}) — abandoning this driving step, the room stays alive`);
+          return;
+        }
         // Checked before every other loop exit because it is the only one that
         // means "stop SPENDING". `broadcastViews`'s fence already makes what
         // follows harmless, but harmless is not free: a bot decision is a real
@@ -1278,7 +1328,21 @@ export class MatchRoom extends Room {
         // read it. The pause is here rather than on the client because the
         // server is what decides when the next hand exists -- a client-side
         // hold would just be showing a table that is already gone.
-        if (this.handEndPauseMs > 0) await new Promise((resolve) => setTimeout(resolve, this.handEndPauseMs));
+        //
+        // THE GAME GETS THE FIRST WORD, THE ROOM KEEPS THE LAST (design D12).
+        // `handEndPauseMs` was one server-wide scalar applied before EVERY
+        // system action of every game, which is right for a card game paying
+        // it once per hand and badly wrong for a game paying it once per roll.
+        // A registration may now name its own; one that names nothing gets
+        // exactly what it had.
+        //
+        // `??` AND NOT `||`, AND THE ACCESSOR MUST NOT DEFAULT EITHER: a
+        // declared `0` means "do not pause" and has to survive down to the
+        // comparison below, while `undefined` means "no opinion" and has to
+        // fall back. `||` would collapse the first into the second and hand a
+        // dice game the card games' 1800ms beat on every roll.
+        const pauseMs = registry.getSystemActionPauseMs(gameId) ?? this.handEndPauseMs;
+        if (pauseMs > 0) await new Promise((resolve) => setTimeout(resolve, pauseMs));
         if (this.matchState === undefined) return; // the room may have emptied while it waited
         const result = module.applyAction(this.matchState, systemAction);
         if (!result.ok) return; // a misbehaving requestSystemAction must not crash the room
