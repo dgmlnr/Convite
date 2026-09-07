@@ -122,6 +122,31 @@ describe("escoba-module: adapter-specific behavior beyond the generic contract",
     expect(result.ok).toBe(false);
   });
 
+  /**
+   * The reproduction, at the reducer — `truco-module`'s twin, and the worse
+   * of the two: `deck` is the whole 40-card permutation, so a sender who
+   * chose it chose every seat's hand, the opening table, and the draw order
+   * behind them. Accepted here until now, because the branch gated on "no
+   * winner" and "no hand in progress" and never on WHO was asking; both of
+   * those gates are open on a fresh match, which is exactly the window.
+   */
+  it("refuses a start-hand submitted by a seated player, before it can look at anything else", () => {
+    const fresh = escobaModule.createMatch(config, seats2p);
+    expect(escobaModule.getLegalActions(fresh, playerA).some((action) => action.type === "start-hand")).toBe(false);
+
+    const result = escobaModule.applyAction(fresh, { type: "start-hand", playerId: playerA, deck: buildDeck() });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.violation.code).toBe("not-a-system-actor");
+  });
+
+  it("still deals for the system actor — the guard refuses an impostor, not the dealer", () => {
+    const fresh = escobaModule.createMatch(config, seats2p);
+    const result = escobaModule.applyAction(fresh, { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deck: buildDeck() });
+    expect(result.ok).toBe(true);
+  });
+
   it("requestEscobaSystemAction fires on a fresh match (no hand dealt yet)", () => {
     const fresh = escobaModule.createMatch(config, seats2p);
     const action = requestEscobaSystemAction(fresh, () => 0.5);

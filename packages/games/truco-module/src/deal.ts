@@ -5,10 +5,22 @@ import type { PlayerId, RandomSource } from "@hexdev/platform-contract";
 /** `GameModule`'s `TAction` bound requires `{ playerId: PlayerId }`
  * structurally (see apply-progress). `start-hand` has no human actor — a
  * SYSTEM action, never legitimately client-submitted — so this sentinel
- * only satisfies the type bound. Incidental bonus: it never matches a real
- * seated player's id, so the room's actor-mismatch check still rejects a
- * client-forged `start-hand` — not a substitute for real system-action
- * gating (this file IS that gating, wired in by `transport-colyseus`). */
+ * only satisfies the type bound.
+ *
+ * IT USED TO CLAIM AN "INCIDENTAL BONUS" IT NEVER HAD, and the correction is
+ * worth keeping because the false claim is why nobody wrote the test. The
+ * sentence was: "it never matches a real seated player's id, so the room's
+ * actor-mismatch check still rejects a client-forged `start-hand`". That
+ * holds only for a client that CLAIMS `__system__` — which no attacker would
+ * do. Submitting `start-hand` under the sender's OWN seat id passed the
+ * actor check cleanly, reached `applyAction`, and dealt the whole table from
+ * a `deal` the sender chose. Reproduced end to end through the real room;
+ * `apps/server/src/forged-system-action.test.ts` is that reproduction.
+ *
+ * It is closed in two independent places now, and this constant is one of
+ * them: `index.ts`'s `applyAction` refuses a `start-hand` from any actor but
+ * this sentinel, and `MatchRoom.handleAction` refuses any action the game
+ * did not offer the sender — a `start-hand` being offered to nobody, ever. */
 export const SYSTEM_ACTOR_ID = "__system__" as PlayerId;
 
 export interface StartHandAction {

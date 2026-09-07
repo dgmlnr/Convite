@@ -26,7 +26,12 @@ interface FixtureState {
   readonly turnSeat: 0 | 1;
   readonly secrets: readonly [number, number];
 }
-type FixtureAction = { readonly type: "advance"; readonly playerId: PlayerId } | { readonly type: "detonate"; readonly playerId: PlayerId };
+/** `about` rides on the OFFERED action, never bolted on by the sender —
+ * truco's own `consult-partner` carries its subject exactly this way. It
+ * matters now that `handleAction` admits only actions the module itself
+ * offered: a consult whose subject the client invented is a shape the game
+ * never named, and is refused like any other. */
+type FixtureAction = { readonly type: "advance"; readonly playerId: PlayerId; readonly about?: string } | { readonly type: "detonate"; readonly playerId: PlayerId };
 interface FixtureView {
   readonly ownSecret: number;
   readonly turnSeat: 0 | 1;
@@ -67,7 +72,24 @@ const botlessFixtureModule: GameModule<FixtureState, FixtureAction, FixtureView,
     }
     return { ok: true, state: { ...state, turnSeat: state.turnSeat === 0 ? 1 : 0 } };
   },
-  getLegalActions: (state, playerId) => (seatOf(state, playerId) === state.turnSeat ? [{ type: "advance", playerId }] : []),
+  /**
+   * BOTH of this fixture's actions, and `detonate` is on the list on purpose.
+   *
+   * `handleAction` now admits only what a module has offered, so a module
+   * that throws can only ever be reached through an action it OFFERED — a
+   * fixture that kept `detonate` off this list would be modelling a
+   * situation the transport makes unreachable, and the "catches a throwing
+   * module" test below would be measuring the admission gate instead of the
+   * try/catch it is named for. `advance` stays FIRST because the bots here
+   * take `legal[0]`.
+   */
+  getLegalActions: (state, playerId) =>
+    seatOf(state, playerId) === state.turnSeat
+      ? [
+          { type: "advance", playerId },
+          { type: "detonate", playerId },
+        ]
+      : [],
   getViewFor: (state, playerId) => {
     const seat = seatOf(state, playerId);
     return { ownSecret: seat === -1 ? -1 : state.secrets[seat], turnSeat: state.turnSeat };
@@ -237,7 +259,19 @@ describe("MatchRoom", () => {
 
   it("sends each client only its own per-seat view — the opponent's secret never appears", async () => {
     const { seat0, seat1 } = await createJoinedRoom();
-    expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 11, turnSeat: 0 }, legalActions: [{ type: "advance", playerId: P0 }], outcome: null, turnDeadline: expect.any(Number), pendingConsult: null } });
+    expect(seat0.sent[0]).toEqual({
+      type: "view",
+      message: {
+        view: { ownSecret: 11, turnSeat: 0 },
+        legalActions: [
+          { type: "advance", playerId: P0 },
+          { type: "detonate", playerId: P0 },
+        ],
+        outcome: null,
+        turnDeadline: expect.any(Number),
+        pendingConsult: null,
+      },
+    });
     expect(seat1.sent[0]).toEqual({ type: "view", message: { view: { ownSecret: 22, turnSeat: 0 }, legalActions: [], outcome: null, turnDeadline: expect.any(Number), pendingConsult: null } });
     // Deliberately NOT the whole message: `turnDeadline` is an epoch
     // millisecond, and a real slice of them contain the digits "11" by pure
@@ -264,6 +298,11 @@ describe("MatchRoom", () => {
     room.handleAction(seat1.client, { type: "advance", playerId: P1 });
     expect(seat1.sent).toHaveLength(2);
     expect(seat1.sent[1]?.type).toBe("action-rejected");
+    // `action-not-offered` rather than the module's own `not-your-turn`: a
+    // seat that is not on turn is offered nothing, so the admission gate
+    // answers first and the module is never consulted. Same refusal, same
+    // untouched state, one layer earlier.
+    expect((seat1.sent[1]?.message as { code: string }).code).toBe("action-not-offered");
     expect(seat0.sent).toHaveLength(1); // no new view broadcast: nothing changed
   });
 
@@ -277,6 +316,10 @@ describe("MatchRoom", () => {
 
   it("catches a throwing module and rejects the action instead of crashing the room", async () => {
     const { room, seat0, seat1 } = await createJoinedRoom();
+    // `detonate` IS one of this fixture's offers (see its `getLegalActions`),
+    // so it gets past the admission gate and reaches the reducer that throws
+    // — which is the whole point of this test, and the reason the fixture
+    // offers it at all.
     room.handleAction(seat0.client, { type: "detonate", playerId: P0 });
     expect(seat0.sent[1]).toMatchObject({ type: "action-rejected", message: { code: "malformed-action" } });
     expect(seat1.sent).toHaveLength(1); // the crash never reached a broadcast
@@ -285,9 +328,52 @@ describe("MatchRoom", () => {
     expect(seat0.sent).toHaveLength(3);
   });
 
+  /**
+   * THE ADMISSION GATE, stated game-agnostically. `apps/server`'s
+   * `forged-system-action.test.ts` is the reproduction against the two real
+   * card games; these are the same rule asserted against a fixture that
+   * knows nothing about cards, which is what makes it a property of the ROOM
+   * rather than of truco.
+   */
+  describe("a seat may only send what the game offered it", () => {
+    it("refuses an action the module never offered, and the module never sees it", async () => {
+      const { room, seat0, seat1 } = await createJoinedRoom();
+
+      // Structurally well-formed, correctly attributed to the authenticated
+      // seat, and accepted by `applyAction` if it ever reached it — the shape
+      // a forged system action has.
+      room.handleAction(seat0.client, { type: "teleport", playerId: P0 });
+
+      expect(seat0.sent[1]).toMatchObject({ type: "action-rejected", message: { code: "action-not-offered" } });
+      expect(seat1.sent).toHaveLength(1); // nothing changed, so nothing was broadcast
+    });
+
+    it("refuses an offered action carrying an extra field — a shape the game never named", async () => {
+      const { room, seat0 } = await createJoinedRoom();
+
+      room.handleAction(seat0.client, { type: "advance", playerId: P0, level: "valeCuatro" });
+
+      expect(seat0.sent[1]).toMatchObject({ type: "action-rejected", message: { code: "action-not-offered" } });
+    });
+
+    it("admits the same action with its keys in a different order — the wire's key order is not part of the move", async () => {
+      const { room, seat0 } = await createJoinedRoom();
+
+      // `getLegalActions` builds `{ type, playerId }`; a client (or any
+      // serializer between the two) is under no obligation to preserve that.
+      room.handleAction(seat0.client, { playerId: P0, type: "advance" });
+
+      expect(seat0.sent[1]).toMatchObject({ type: "view" });
+    });
+
+  });
+
   it("sends legalActions alongside the view — the widget has no other honest way to know what's legal (architectural rule: never re-derived client-side)", async () => {
     const { seat0, seat1 } = await createJoinedRoom();
-    expect((seat0.sent[0]?.message as { legalActions: unknown }).legalActions).toEqual([{ type: "advance", playerId: P0 }]);
+    expect((seat0.sent[0]?.message as { legalActions: unknown }).legalActions).toEqual([
+      { type: "advance", playerId: P0 },
+      { type: "detonate", playerId: P0 },
+    ]);
     expect((seat1.sent[0]?.message as { legalActions: unknown }).legalActions).toEqual([]); // not seat1's turn yet
   });
 });
@@ -556,6 +642,48 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     expect(seat0.sent).toHaveLength(2);
     expect(seat0.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
     expect(seat1.sent[1]).toEqual({ type: "view", message: { view: { dealt: true }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
+  });
+
+  /**
+   * THE FAIL-CLOSED HALF, and the one that matters for games not written
+   * yet. This fixture is the shape a turn-based game takes while it waits on
+   * the system — nobody can act, and only a system action moves it on. That
+   * is Generala's `awaiting-roll` in miniature, and it is exactly the state a
+   * naive admission gate could deadlock.
+   *
+   * Both halves are asserted, because either alone would be misleading: the
+   * seated player CANNOT take the system's own move even though this
+   * module's reducer would happily accept it (it only looks at `type`), and
+   * the system STILL takes it, unprompted, through the path that never goes
+   * near `handleAction`.
+   */
+  it("refuses the system's own action from a seated player, and then takes it anyway on the system's behalf", async () => {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      { module: stuckModule, requestSystemAction: (state) => ((state as StuckState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }) },
+    ]);
+    const room = new MatchRoom();
+    // The pause parks the room on the undealt state long enough to submit
+    // into it — without it the system deal lands before the first assertion.
+    room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG, handEndPauseMs: 60 });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+
+    expect(seat0.sent).toHaveLength(1); // still undealt: the pause is running
+    // Correctly attributed to the authenticated seat, and `applyAction` here
+    // accepts ANY `deal` whoever sends it — so the module is not what refuses
+    // this.
+    room.handleAction(seat0.client, { type: "deal", playerId: P0 });
+    expect(seat0.sent[1]).toMatchObject({ type: "action-rejected", message: { code: "action-not-offered" } });
+    expect(seat1.sent).toHaveLength(1); // nothing dealt, nothing broadcast
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    // And the game is not stuck: the system's own deal still lands.
+    expect(seat1.sent).toHaveLength(2);
+    expect((seat1.sent[1]?.message as { view: StuckState }).view).toEqual({ dealt: true });
   });
 
   it("waits out handEndPauseMs before dealing again, so the last card can be read", async () => {
@@ -1922,8 +2050,22 @@ describe("MatchRoom turn clock — a game with no bot is untimed for its whole l
     return { room, seat0, seat1 };
   }
 
+  /**
+   * The same fixture with a SUBJECT on its offer — truco's `consult-partner`
+   * shape, where `about` is part of what the game hands the player rather
+   * than something the client attaches on the way out. Needed on both sides
+   * of this pair now that `handleAction` admits only offered actions: a
+   * consult that bolted an `about` onto a bare `advance` would be refused as
+   * unoffered, which would make BOTH tests below pass for the wrong reason —
+   * the negative one vacuously.
+   */
+  const withSubject = (module: GameModule<FixtureState, FixtureAction, FixtureView, void>): GameModule<FixtureState, FixtureAction, FixtureView, void> => ({
+    ...module,
+    getLegalActions: (state, playerId) => module.getLegalActions(state, playerId).map((action) => (action.type === "advance" ? { ...action, about: "algo" } : action)),
+  });
+
   it("refuses a consult on an untimed table — the second effect of no clock, stated rather than discovered later", async () => {
-    const { room, seat0, seat1 } = await twoSeats(botlessFixtureModule);
+    const { room, seat0, seat1 } = await twoSeats(withSubject(botlessFixtureModule));
 
     await room.handleConsult(seat0.client, { type: "advance", playerId: P0, about: "algo" });
 
@@ -1935,10 +2077,11 @@ describe("MatchRoom turn clock — a game with no bot is untimed for its whole l
   });
 
   it("POSITIVE CONTROL — the same two-seat game WITH a bot opens the consult window", async () => {
-    // The whole path is real: the action is legal, it changes state, the
-    // module names a partner, and the partner is a live human. The refusal
-    // above is the missing clock and nothing else.
-    const { room, seat0, seat1 } = await twoSeats(fixtureModule);
+    // The whole path is real: the action is legal AND offered with exactly
+    // this subject, it changes state, the module names a partner, and the
+    // partner is a live human. The refusal above is the missing clock and
+    // nothing else.
+    const { room, seat0, seat1 } = await twoSeats(withSubject(fixtureModule));
 
     await room.handleConsult(seat0.client, { type: "advance", playerId: P0, about: "algo" });
 

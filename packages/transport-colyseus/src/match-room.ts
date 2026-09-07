@@ -197,6 +197,41 @@ function actorOf(action: unknown): PlayerId | undefined {
 }
 
 /**
+ * Whether two actions are THE SAME action, compared as data.
+ *
+ * Structural, recursive, and total: it walks arrays by index and objects by
+ * their own enumerable keys, so it never needs to know what a game's action
+ * looks like — which is the whole requirement, since this room may not know
+ * that truco has a `card` or that escoba has a `captured` subset.
+ *
+ * KEY ORDER IS IRRELEVANT AND EXTRA KEYS ARE FATAL, both on purpose. Order is
+ * an artefact of whichever serializer put the message on the wire and says
+ * nothing about the move; an extra key is a field the game never offered, and
+ * admitting it would be admitting a shape the module was never asked about.
+ *
+ * NOT `JSON.stringify` equality, which would get the first of those wrong:
+ * two objects with the same fields in a different order stringify
+ * differently, and a client is under no obligation to preserve the server's
+ * own key order through a round trip.
+ *
+ * NaN cannot appear (it does not survive JSON) and `-0`/`0` compare equal,
+ * which is what a rank or a board position means anyway.
+ */
+function sameAction(submitted: unknown, offered: unknown): boolean {
+  if (submitted === offered) return true;
+  if (typeof submitted !== "object" || typeof offered !== "object" || submitted === null || offered === null) return false;
+  if (Array.isArray(submitted) || Array.isArray(offered)) {
+    if (!Array.isArray(submitted) || !Array.isArray(offered) || submitted.length !== offered.length) return false;
+    return submitted.every((item, index) => sameAction(item, offered[index]));
+  }
+  const left = submitted as Record<string, unknown>;
+  const right = offered as Record<string, unknown>;
+  const leftKeys = Object.keys(left);
+  if (leftKeys.length !== Object.keys(right).length) return false;
+  return leftKeys.every((key) => Object.hasOwn(right, key) && sameAction(left[key], right[key]));
+}
+
+/**
  * The one room every game shares. It holds zero game-specific knowledge:
  * every legality check and every redaction decision is delegated to the
  * `GameModule` looked up from the registry by `gameId`. There is
@@ -828,6 +863,65 @@ export class MatchRoom extends Room {
 
     let result;
     try {
+      // THE SERVER MUST HAVE OFFERED IT — the admission gate, and the reason
+      // it lives HERE rather than in each game.
+      //
+      // A REPRODUCED CHEAT, not a hypothetical (apps/server's
+      // `forged-system-action.test.ts` is the reproduction). Authenticating
+      // the SEAT was never the same as authorizing the MOVE. Every game has
+      // actions that belong to the system rather than to any player —
+      // truco's and escoba's `start-hand`, the solitaire's `deal-board` —
+      // which the room materializes from server-owned entropy in
+      // `runAdvanceOnce` and no module ever offers to a seat. Sending one
+      // under YOUR OWN id passed the actor check cleanly and went straight
+      // into `applyAction`, and since the dealing action carries the whole
+      // deal as data, a seated player could choose everyone's cards. Closing
+      // it per-module would have closed it for the two games that exist and
+      // left the next one to remember; asking `getLegalActions` closes the
+      // whole class, for every game, including the ones not written yet.
+      //
+      // WHAT THIS RELIES ON, AND WHY THAT WAS CHECKED BEFORE RELYING ON IT.
+      // A structural match refuses any move `getLegalActions` under-
+      // enumerates, so the gate is only as strong as the port's own promise
+      // that the list is the whole list. Every registered module was read
+      // against it, not assumed:
+      //
+      //   - truco-engine's `applyAction` already refuses anything its own
+      //     `getLegalActions` does not offer — every chain (truco, envido,
+      //     card play, señas, consult) runs its action through its own
+      //     `isLegal*` first, and `truco-chain.ts`'s docblock says so in
+      //     those words.
+      //   - mahjong-solitaire-module already does this exact check
+      //     internally, `.some((legal) => legal.a === action.a && ...)`.
+      //   - escoba-engine's `capture.ts` validates independently and is
+      //     marginally looser: it accepts a `captured` subset in ANY order,
+      //     while `legal-actions.ts` emits one canonical table-index order.
+      //     The gate narrows escoba to that canonical order — a real
+      //     tightening, and the correct one: the widget sends back the
+      //     offer's own array verbatim (`escoba-ui`'s `createMarkThenPlay`),
+      //     so a permutation is by definition not an action the server
+      //     offered.
+      //
+      // All three modules also refuse their OWN dealing action from a
+      // non-system actor now (`start-hand` in truco and escoba,
+      // `deal-board` in the solitaire), so the class is closed twice and
+      // independently: once here for every game, and once inside each game
+      // for every caller of a pure reducer, transport or not.
+      //
+      // NO SEAT CAN ACT IS A REAL STATE AND STAYS ONE. A game parked waiting
+      // on the system (a fresh match before its first deal; Generala's roll
+      // to come) offers every seat an empty list, and refusing a player's
+      // action there is the correct answer, not a deadlock: the SYSTEM path
+      // never comes through here at all. `runAdvanceOnce` reads that same
+      // emptiness as its cue to ask the registry for a system action and
+      // applies it through `module.applyAction` directly, and
+      // `endMatchOnAbandonedSeat` does the same for a vacated seat — neither
+      // is gated by this check, and neither should be.
+      const offered = module.getLegalActions(this.matchState, controller.playerId);
+      if (!offered.some((legal) => sameAction(action, legal))) {
+        client.send("action-rejected", { code: "action-not-offered", message: "the game did not offer this action to this seat" });
+        return; // never reaches the module: state deliberately untouched
+      }
       // Safe cast: the actor-mismatch check above already proved `action`
       // structurally carries a `playerId` matching the authenticated seat.
       result = module.applyAction(this.matchState, action as ErasedAction);

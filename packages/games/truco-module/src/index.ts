@@ -72,6 +72,17 @@ function createMatch2v2(config: MatchConfig, seats: readonly SeatAssignment[]): 
 
 function applyAction(state: MatchState, action: TrucoModuleAction): ApplyResult<MatchState> {
   if (action.type === "start-hand") {
+    // WHOSE ACTION THIS IS, asked before anything else it could do.
+    // Defence in depth behind `MatchRoom.handleAction`'s own gate, and the
+    // half that does not depend on a transport being wired correctly: a
+    // module is a pure reducer anyone may call, and "only the system deals"
+    // is a rule of the GAME, not of the wire. Without this line a seated
+    // player submitting `start-hand` under their own id dealt the whole
+    // table from a `deal` they chose — see `deal.ts`'s `SYSTEM_ACTOR_ID`
+    // for the reproduction and for the false guarantee that hid it.
+    if (action.playerId !== SYSTEM_ACTOR_ID) {
+      return { ok: false, violation: { code: "not-a-system-actor", message: "only the system deals a hand" } };
+    }
     if (getMatchWinner(state) !== null) {
       return { ok: false, violation: { code: "match-over", message: "the match already has a winner" } };
     }

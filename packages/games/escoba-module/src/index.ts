@@ -105,6 +105,15 @@ function settleHandIfNeeded(state: MatchState): MatchState {
 
 function applyAction(state: MatchState, action: EscobaModuleAction): ApplyResult<MatchState> {
   if (action.type === "start-hand") {
+    // Same guard, same reason, as `truco-module`'s own `applyAction`:
+    // "only the system deals" is a rule of the GAME, so it is enforced here
+    // and not only at the transport that happens to call this today. In
+    // escoba the forged action is the worse of the two — `deck` is the
+    // whole permutation, so it picks every hand, the opening table and the
+    // draw order — see `deal.ts`'s `SYSTEM_ACTOR_ID`.
+    if (action.playerId !== SYSTEM_ACTOR_ID) {
+      return { ok: false, violation: { code: "not-a-system-actor", message: "only the system deals a hand" } };
+    }
     if (getMatchWinner(state) !== null) {
       return { ok: false, violation: { code: "match-over", message: "the match already has a winner" } };
     }

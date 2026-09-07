@@ -57,6 +57,40 @@ describeGameModule(
   { describe, it, expect },
 );
 
+describe("truco-module: only the system deals", () => {
+  /**
+   * The reproduction, at the reducer. A seated player submitting `start-hand`
+   * under their OWN id used to be accepted here — the module gated only on
+   * "the match is not over" and "no hand is in progress", never on WHO was
+   * asking — and the `deal` an action carries is the whole table, so the
+   * sender chose both hands. `deal.ts`'s own docstring claimed the sentinel
+   * made that impossible; it never did, and the correction is recorded there.
+   *
+   * `MatchRoom.handleAction` refuses it as well now (no game ever offers a
+   * `start-hand`), which is the fix that closes this for every game at once.
+   * This one is the game's own copy of the rule, and it holds for any caller
+   * of a pure reducer, transport or not.
+   */
+  it("refuses a start-hand submitted by a seated player, before it can look at anything else", () => {
+    const created = trucoModule.createMatch(config, seats);
+    // The window the cheat used: no hand yet, no winner, so every OTHER gate
+    // in this branch is open. Nothing but the actor check stands here.
+    expect(trucoModule.getLegalActions(created, playerAId).some((action) => action.type === "start-hand")).toBe(false);
+
+    const result = trucoModule.applyAction(created, { type: "start-hand", playerId: playerAId, deal: [handA, handB] });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.violation.code).toBe("not-a-system-actor");
+  });
+
+  it("still deals for the system actor — the guard refuses an impostor, not the dealer", () => {
+    const created = trucoModule.createMatch(config, seats);
+    const result = trucoModule.applyAction(created, { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deal: [handA, handB] });
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe("truco-module: adapter-specific behavior beyond the generic contract", () => {
   it("rejects starting a new hand while one is already in progress", () => {
     const state = dealtFixtureState();

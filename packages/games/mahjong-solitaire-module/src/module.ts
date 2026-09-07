@@ -1,7 +1,7 @@
 import { getLegalActions as boardLegalActions, getOutcome as boardOutcome, layBoard } from "@hexdev/mahjong-solitaire-engine";
 import type { MatchState as BoardState, RemovePairAction, TileId } from "@hexdev/mahjong-solitaire-engine";
 import type { ApplyResult, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
-import { dealBoard } from "./deal.js";
+import { SYSTEM_ACTOR_ID, dealBoard } from "./deal.js";
 import type { DealBoardAction } from "./deal.js";
 
 /**
@@ -99,12 +99,30 @@ function applyAction(state: SolitaireMatchState, action: MahjongSolitaireAction)
   }
 
   if (action.type === "deal-board") {
+    // ONLY THE SYSTEM LAYS A BOARD — the same guard `truco-module` and
+    // `escoba-module` now carry, and included here even though this game
+    // cannot be cheated OUT OF anything: a solitaire has one seat, so a
+    // player who chose their own board would only be choosing their own
+    // difficulty. It is here because the RULE is the same one ("the deal is
+    // the system's"), because a game with no guard is the pattern the next
+    // game copies, and because the seat count is the only thing keeping the
+    // harm self-inflicted — which is a property of today's metadata, not of
+    // this reducer.
+    if (action.playerId !== SYSTEM_ACTOR_ID) {
+      return { ok: false, violation: { code: "not-a-system-actor", message: "only the system lays a board" } };
+    }
     if (state.board !== null) {
       return { ok: false, violation: { code: "board-already-dealt", message: "this match already has a board" } };
     }
     return { ok: true, state: { ...state, board: layBoard(state.playerId, action.placements) } };
   }
 
+  // NOT actor-gated, and the asymmetry with `deal-board` above is the point:
+  // leaving the table IS the player's own act. It reaches here only through
+  // `getAbandonedSeatAction` below, which the transport calls on a vacated
+  // seat — never through `handleAction`, which is why it is correct for
+  // `getLegalActions` to keep withholding it from a seat that is still
+  // sitting there.
   if (action.type === "abandon-board") {
     return { ok: true, state: { ...state, abandoned: true } };
   }
