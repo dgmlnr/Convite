@@ -2,7 +2,7 @@ import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { applyPlayerAction, applyRoll, createMatch, getLegalActions } from "@hexdev/generala-engine";
-import type { ApplyResult, DieFace, MatchState, PlayerId } from "@hexdev/generala-engine";
+import type { ApplyResult, DieFace, GeneralaAction, HoldAction, MatchState, PlayerId } from "@hexdev/generala-engine";
 
 import { createGeneralaTray } from "./tray.js";
 import type { GeneralaTrayElements } from "./tray.js";
@@ -26,11 +26,14 @@ import type { GeneralaTrayElements } from "./tray.js";
  * would be a splice this file performed rather than one the engine did, so
  * the central claim would be a claim about the test.
  *
- * THE HOLD IS APPLIED THROUGH THE ENGINE AND NOT THROUGH A CONTROL, because
- * there is not one yet: the "Tirar" control that turns a selection into the
- * single `hold` the room admits arrives with the slice that can commit it.
- * What is here is everything that has to be true before it can: the dice, the
- * element a held die keeps, the pending selection, and the row.
+ * WHY THE OFFER OBJECT IS DISPATCHED AND NOT A `keep` THIS FILE BUILT. Since
+ * PR #257 the room admits an action only when `sameAction`
+ * (`match-room.ts:220-232`) matches one the game offered, and it walks arrays
+ * BY INDEX: `keep: [1, 0]` is simply not the action `keep: [0, 1]` is. A tray
+ * assembling its own array from the order a player happened to press in would
+ * produce an unsubmittable action that a deep-equality assertion written the
+ * same way would still pass. `toContain` against the engine's own list is the
+ * assertion that cannot be satisfied that way.
  */
 
 const SEAT = "seat-0" as PlayerId;
@@ -63,10 +66,14 @@ function faceOf(node: HTMLElement): string {
 
 interface Table {
   readonly elements: GeneralaTrayElements;
+  readonly dispatched: readonly HoldAction[];
+  readonly offers: () => readonly GeneralaAction[];
   readonly roll: (faces: readonly DieFace[]) => void;
-  /** Apply the engine's OWN offer for this `keep`, exactly as the room would
-   * once a control exists to dispatch it. */
+  /** Apply the engine's OWN offer for this `keep`, exactly as the room does. */
   readonly hold: (keep: readonly number[]) => void;
+  /** Apply the hold this tray last dispatched — the real path, end to end. */
+  readonly commit: () => void;
+  readonly roller: () => HTMLButtonElement | null;
   readonly nodes: () => readonly HTMLElement[];
   readonly dice: () => readonly HTMLButtonElement[];
   readonly redraw: () => void;
@@ -74,18 +81,28 @@ interface Table {
 }
 
 function seatTable(): Table {
+  const root = document.createElement("div");
   const diceEl = document.createElement("div");
-  document.body.appendChild(diceEl);
-  mounted.push(diceEl);
+  const rollEl = document.createElement("div");
+  root.append(diceEl, rollEl);
+  document.body.appendChild(root);
+  mounted.push(root);
 
-  const elements: GeneralaTrayElements = { diceEl };
+  const elements: GeneralaTrayElements = { diceEl, rollEl };
   const render = createGeneralaTray();
+  const dispatched: HoldAction[] = [];
   let state = createMatch(SEATS);
-  const draw = (): void => render(elements, state.turn, getLegalActions(state, SEAT));
+  let offers: readonly GeneralaAction[] = [];
+  const draw = (): void => {
+    offers = getLegalActions(state, SEAT);
+    render(elements, state.turn, offers, (action) => dispatched.push(action));
+  };
   draw();
 
   return {
     elements,
+    dispatched,
+    offers: () => offers,
     roll: (faces) => {
       state = accept(applyRoll(state, faces));
       draw();
@@ -96,10 +113,15 @@ function seatTable(): Table {
       state = accept(applyPlayerAction(state, offer));
       draw();
     },
+    commit: () => {
+      state = accept(applyPlayerAction(state, dispatched[dispatched.length - 1]!));
+      draw();
+    },
+    roller: () => rollEl.querySelector<HTMLButtonElement>("button"),
     nodes: () => [...diceEl.children] as HTMLElement[],
     dice: () => [...diceEl.querySelectorAll<HTMLButtonElement>("button")],
     redraw: draw,
-    drawInto: (other) => render({ diceEl: other }, state.turn, getLegalActions(state, SEAT)),
+    drawInto: (other) => render({ diceEl: other, rollEl }, state.turn, offers, (action) => dispatched.push(action)),
   };
 }
 
@@ -216,6 +238,120 @@ describe("13.2 — aria-pressed reports the state the die is actually in", () =>
     const dice = table.dice();
     expect(dice, "the dice are still on the table — they are what the player scores").toHaveLength(5);
     for (const die of dice) expect(die.disabled, "but holding one would mean nothing now").toBe(true);
+  });
+});
+
+describe("13.3 — the hold the engine refuses is never offered", () => {
+  it("disables the roll control once all five dice are held, and re-enables it the moment one is let go", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+    const dice = table.dice();
+
+    for (const index of [0, 1, 2, 3]) dice[index]!.click();
+    expect(table.roller()!.disabled, "four held still leaves one die to throw").toBe(false);
+
+    dice[4]!.click();
+    const roller = table.roller();
+    expect(roller, "the control is still there — this is a refusal, not a disappearance").not.toBeNull();
+    expect(roller!.disabled, "keeping all five asks to re-roll nothing, which is not a move").toBe(true);
+    expect(roller!.textContent, "and it says why, rather than offering 'Tirar 0 dados'").toBe("Guardar los cinco no es una tirada");
+    roller!.click();
+    expect(table.dispatched, "a refused control dispatches nothing when it is pressed").toHaveLength(0);
+
+    dice[4]!.click();
+    expect(table.roller()!.disabled, "letting the fifth go makes it a move again").toBe(false);
+    expect(table.roller()!.textContent).toBe("Tirar 1 dado");
+  });
+});
+
+describe("13.4 — presses accumulate locally and exactly ONE action is dispatched", () => {
+  it("dispatches nothing while the player is choosing, then one hold whose keep is the engine's own ascending array", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+    const dice = table.dice();
+
+    // Pressed OUT of order on purpose: a tray building `keep` from the press
+    // order would produce [3, 0, 2], which `sameAction` walks by index and
+    // refuses — and every test that built its expectation the same way would
+    // still pass.
+    dice[3]!.click();
+    dice[0]!.click();
+    dice[2]!.click();
+    expect(table.dispatched, "three presses, and the engine has heard nothing yet").toHaveLength(0);
+    expect(table.roller()!.textContent).toBe("Tirar 2 dados");
+
+    table.roller()!.click();
+    expect(table.dispatched, "one control, one action").toHaveLength(1);
+
+    const action = table.dispatched[0]!;
+    expect(action.type).toBe("hold");
+    expect(action.keep, "strictly ascending, whatever order the player pressed in").toEqual([0, 2, 3]);
+    expect(table.offers(), "the object dispatched IS one the engine offered, so sameAction matches it by construction").toContain(action);
+  });
+
+  it("dispatches the empty keep as its own offer when nothing is held — the rulebook's explicit re-roll of all five", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+
+    expect(table.roller()!.textContent).toBe("Tirar los 5 dados");
+    table.roller()!.click();
+    expect(table.dispatched).toHaveLength(1);
+    expect(table.dispatched[0]!.keep).toEqual([]);
+    expect(table.offers()).toContain(table.dispatched[0]);
+  });
+
+  it("lets the marks go the instant the control is pressed, without waiting for the server to say so", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+    table.dice()[0]!.click();
+
+    table.roller()!.click();
+    for (const die of table.dice()) {
+      expect(die.getAttribute("aria-pressed"), "the dice just given up must not keep looking held for a round trip").toBe("false");
+    }
+
+    table.commit();
+    table.roll([4, 4, 4, 4]);
+    expect(table.dice().map(faceOf), "and the hold it dispatched is the one the engine applied").toEqual(["3", "4", "4", "4", "4"]);
+  });
+
+  it("keeps focus on the control while the player goes on choosing (WCAG 2.1.1/2.4.3)", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+
+    const roller = table.roller()!;
+    roller.focus();
+    // A press re-renders, and the label really does have to change with it.
+    // Rebuilding the control to change its text drops a keyboard player back
+    // onto the body mid-decision, which is the defect `truco-ui`'s own table
+    // renderer fences for by name.
+    table.dice()[0]!.click();
+
+    expect(table.roller(), "the same element, updated rather than replaced").toBe(roller);
+    expect(document.activeElement, "and the player is still on it").toBe(roller);
+    expect(roller.textContent, "with the label the new selection needs").toBe("Tirar 4 dados");
+  });
+});
+
+describe("13.5 — the third throw takes the control away", () => {
+  it("removes the roll control entirely once no throw remains, rather than greying it", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+
+    table.roller()!.click();
+    table.commit();
+    table.roll([4, 4, 4, 4, 4]);
+    expect(table.roller(), "two throws used, one left: the control is still there").not.toBeNull();
+
+    table.roller()!.click();
+    table.commit();
+    table.roll([1, 1, 1, 1, 1]);
+
+    // ABSENT, not disabled, and the asymmetry with 13.3 is the point: there
+    // the player is one press away from making it a move again, so a greyed
+    // control is the truth. Here there is no throw left to ask for at all.
+    expect(table.roller(), "the third throw is the last one: nothing left to press").toBeNull();
+    expect(table.elements.rollEl.textContent, "and nothing left over where it used to be").toBe("");
   });
 });
 
