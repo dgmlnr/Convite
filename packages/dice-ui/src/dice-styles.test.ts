@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CUP_TAP_MIN } from "./geometry.js";
-import { buildDiceStylesheet, DIE_SCENE_SIZE } from "./dice-styles.js";
+import { buildDiceStylesheet, DIE_CUBE_SIZE, DIE_SCENE_SIZE } from "./dice-styles.js";
 
 /**
  * Pulls one axis's whole-turn offset straight out of the toss keyframe's
@@ -162,6 +162,92 @@ describe("dice-styles: the flight's own box is bigger than — and no longer tie
     expect(sceneRule).toMatch(/overflow:\s*hidden/);
     expect(sceneRule).toMatch(/align-items:\s*center/);
     expect(sceneRule).toMatch(/justify-content:\s*center/);
+  });
+});
+
+/**
+ * The stylesheet with every CSS comment stripped.
+ *
+ * MEASURED, not a tidy-up: the three assertions below are the first in this
+ * file to claim a declaration is ABSENT, and every one of them came back red
+ * against the real stylesheet for the wrong reason. This package's rules
+ * carry long prose blocks that QUOTE the declarations they argue about —
+ * `.hexdev-dice-scene-box`'s own comment contains the words `transform:
+ * scale()` and `.hexdev-dice-cube`'s contains `var(--dice-scene-scale)`,
+ * both while explaining precisely why that declaration must not be there. A
+ * `not.toMatch` that reads commentary asserts nothing about the shipped CSS.
+ * No parser is needed: CSS comments do not nest.
+ */
+function declarationsOnly(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+describe("dice-styles: the responsive tray is two elements, because one of them cannot reflow anything", () => {
+  /**
+   * THE MECHANICAL HALF of `dice-tray-fit.browser.test.ts`'s measured fence,
+   * and the one that says WHY the recipe is two rules rather than one:
+   * `transform: scale()` is paint-time and never changes a layout box, so a
+   * scaled scene still occupies its full `DIE_SCENE_SIZE` in the flex row.
+   * The sized box is the half that reflows; the transform is the half that
+   * draws. Either one alone is a no-op or a spill.
+   */
+  it("puts the sized layout box on .hexdev-dice-scene-box and the paint-time scale on .hexdev-dice-scene", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const boxRule = css.match(/\.hexdev-dice-scene-box\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(boxRule).toContain(`width: calc(${String(DIE_SCENE_SIZE)}px * var(--dice-scene-scale, 1))`);
+    expect(boxRule).toContain(`height: calc(${String(DIE_SCENE_SIZE)}px * var(--dice-scene-scale, 1))`);
+    expect(boxRule, "the box is the LAYOUT half — a transform here would reflow nothing").not.toMatch(/transform:/);
+
+    const sceneRule = css.match(/\.hexdev-dice-scene\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(sceneRule).toContain("transform: scale(var(--dice-scene-scale, 1))");
+    expect(sceneRule).toContain("transform-origin: top left");
+  });
+
+  /**
+   * The fence for the fix the exploration originally proposed and the design
+   * corrected: shrinking the tray by RESIZING widths. `.hexdev-dice-scene`'s
+   * own `DIE_SCENE_SIZE` and `.hexdev-dice-cube`'s own `DIE_CUBE_SIZE` are
+   * both fixed pixel literals, and the cube's is the number
+   * `DIE_SIDE_LOCAL_TRANSFORM`'s `translateZ` was calibrated against — a
+   * `var(--dice-scene-scale)` reaching either one pulls the facelets off
+   * their shared edges.
+   */
+  it("never lets the scale reach a width the die's own geometry is calibrated against", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const sceneRule = css.match(/\.hexdev-dice-scene\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(sceneRule).toContain(`width: ${String(DIE_SCENE_SIZE)}px`);
+    expect(sceneRule).not.toMatch(/width:\s*calc/);
+
+    const cubeRule = css.match(/\.hexdev-dice-cube\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(cubeRule).toContain(`width: ${String(DIE_CUBE_SIZE)}px`);
+    expect(cubeRule).not.toMatch(/--dice-scene-scale/);
+
+    const faceRule = css.match(/\.hexdev-dice-face\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(faceRule).not.toMatch(/--dice-scene-scale/);
+  });
+
+  /**
+   * A LADDER THAT ONLY EVER SHRINKS, and only at width breakpoints —
+   * `prefers-reduced-motion` blocks are `@media` too and must not be counted
+   * among them, which is why this reads the width queries specifically.
+   */
+  it("declares a strictly shrinking --dice-scene-scale at narrowing width breakpoints, and never above 1", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const tiers = [...css.matchAll(/@media \(max-width:\s*(\d+)px\)\s*\{\s*\.hexdev-dice-scene-box\s*\{\s*--dice-scene-scale:\s*([\d.]+);/g)].map((m) => ({
+      maxWidth: Number(m[1]),
+      scale: Number(m[2]),
+    }));
+    expect(tiers.length, "expected at least two width tiers below the unscaled default").toBeGreaterThanOrEqual(2);
+    for (const { scale } of tiers) {
+      expect(scale).toBeGreaterThan(0);
+      expect(scale).toBeLessThan(1);
+    }
+    // Narrower must never be bigger. Written as a sort-independent check so
+    // reordering the blocks in the stylesheet cannot quietly satisfy it.
+    const byWidth = [...tiers].sort((a, b) => a.maxWidth - b.maxWidth);
+    for (let i = 1; i < byWidth.length; i++) {
+      expect(byWidth[i]!.scale).toBeGreaterThan(byWidth[i - 1]!.scale);
+    }
   });
 });
 
