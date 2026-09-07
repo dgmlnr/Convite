@@ -18,11 +18,11 @@ import type { MatchState } from "./state.js";
  *
  * `code` is a closed union rather than a bare string so a caller can switch on
  * it without reading English out of `message`. It is PARTIAL for the same
- * reason `index.ts` is a partial barrel: the player reducers' own refusals
- * arrive with the player reducers.
+ * reason `index.ts` is a partial barrel: the score reducer's own refusals
+ * arrive with the score reducer.
  */
 export interface RuleViolation {
-  readonly code: "not-awaiting-roll" | "wrong-face-count";
+  readonly code: "not-awaiting-roll" | "wrong-face-count" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold";
   readonly message: string;
 }
 
