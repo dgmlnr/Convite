@@ -14,3 +14,5 @@ export type { DieCounts } from "./scoring.js";
 export { counts, scoreFor } from "./scoring.js";
 export type { ApplyResult, RuleViolation } from "./roll.js";
 export { applyRoll } from "./roll.js";
+export type { GeneralaAction } from "./legal-actions.js";
+export { getLegalActions } from "./legal-actions.js";
