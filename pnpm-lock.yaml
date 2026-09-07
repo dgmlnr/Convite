@@ -461,6 +461,9 @@ importers:
 
   packages/widget-frontdoor:
     dependencies:
+      '@hexdev/dice-ui':
+        specifier: workspace:*
+        version: link:../dice-ui
       '@hexdev/mahjong-tile-ui':
         specifier: workspace:*
         version: link:../mahjong-tile-ui

@@ -21,6 +21,7 @@ export type Route =
   | { readonly kind: "widget-app" }
   | { readonly kind: "card-front"; readonly file: string }
   | { readonly kind: "tile-front"; readonly file: string }
+  | { readonly kind: "dice-asset"; readonly file: string }
   | { readonly kind: "not-found" };
 
 /**
@@ -44,13 +45,43 @@ export function prefersHtml(acceptHeader: string | undefined): boolean {
 const CARD_FRONT_PREFIX = "/assets/fronts/";
 
 /**
- * A SECOND LITERAL PREFIX, not a generalisation of the first. Two artworks
- * exist and no third does, and `.dependency-cruiser.cjs:38` already records
- * the objection to inventing a convention ahead of its second consumer: a
- * parameterised `/assets/<kind>/` route would have to decide which directory
- * a caller meant, and would answer for kinds nobody ships.
+ * A SECOND LITERAL PREFIX, not a generalisation of the first — and now one of
+ * THREE, which changes half the argument and leaves the other half standing.
+ *
+ * WHAT EXPIRED. This used to read "two artworks exist and no third does",
+ * citing `.dependency-cruiser.cjs:38`'s objection to inventing a convention
+ * ahead of its second consumer. A third artwork now exists — the dice below —
+ * so that clause is simply no longer true, and it is corrected rather than
+ * quietly reinterpreted.
+ *
+ * WHAT DID NOT EXPIRE, and is the reason all three stay literal. A
+ * parameterised `/assets/<kind>/` route would have to turn an ARBITRARY
+ * segment into a directory, which means answering for kinds nobody ships and
+ * making that mapping here, in a pure routing decision that has no business
+ * knowing which directories a composition root happens to have on disk. Three
+ * consumers make the convention real; they do not make the parameterisation
+ * safe. Nor is the duplication the kind that drifts: every prefix delegates
+ * its refusals to the ONE `assetFileName` below, so what a copied-and-edited
+ * branch could get wrong is written once and read three times.
  */
 const TILE_FRONT_PREFIX = "/assets/tiles/";
+
+/**
+ * THE THIRD ARTWORK, and the only one whose kind is not called a "front".
+ *
+ * `card-front` and `tile-front` name a face because a card and a tile have a
+ * back that is a different drawing. A die has six faces and no back, and this
+ * directory also holds the cubilete, which is not a face at all — so
+ * `dice-asset` is the honest kind name and the asymmetry is deliberate rather
+ * than an oversight in copying.
+ *
+ * ONE PREFIX ANSWERS FOR EVERYTHING `dice-ui` SHIPS, cup included, because
+ * the cup was moved under `assets/dice/` rather than served by an exact-path
+ * case of its own. That alternative was rejected on this file's own terms: an
+ * exact `/assets/cup.webp` route would sit OUTSIDE `assetFileName` entirely,
+ * so the one shared traversal guard would have covered two of three routes.
+ */
+const DICE_ASSET_PREFIX = "/assets/dice/";
 
 const NOT_FOUND: Route = { kind: "not-found" };
 
@@ -61,10 +92,17 @@ const NOT_FOUND: Route = { kind: "not-found" };
  * Rejected HERE, not left to the asset reader: a route that cannot express a
  * traversal is a stronger guarantee than a reader that has to remember to
  * check for one. `%2F` is checked alongside `/` because a caller may hand
- * this function a raw, undecoded pathname. Shared by both prefixes so the two
- * artworks cannot drift into different refusals — which is the failure a
- * copied-and-edited second branch would produce, silently, on whichever half
- * nobody re-read.
+ * this function a raw, undecoded pathname. Shared by all three prefixes so
+ * the three artworks cannot drift into different refusals — which is the
+ * failure a copied-and-edited branch would produce, silently, on whichever
+ * one nobody re-read.
+ *
+ * IT REFUSES SHAPES AND HOLDS NO VOCABULARY. It does not know the deck has
+ * forty cards, the wall forty-two drawings or the die six faces, so a
+ * well-shaped name that is simply not part of an artwork passes here and is
+ * refused one layer down, by the asset reader's membership check before it
+ * touches the filesystem. Two independent layers, each answering the question
+ * it can actually answer.
  */
 function assetFileName(pathname: string, prefix: string): string | undefined {
   const file = pathname.slice(prefix.length);
@@ -86,6 +124,10 @@ export function resolveRoute(method: string, pathname: string): Route {
     if (pathname.startsWith(TILE_FRONT_PREFIX)) {
       const file = assetFileName(pathname, TILE_FRONT_PREFIX);
       return file === undefined ? NOT_FOUND : { kind: "tile-front", file };
+    }
+    if (pathname.startsWith(DICE_ASSET_PREFIX)) {
+      const file = assetFileName(pathname, DICE_ASSET_PREFIX);
+      return file === undefined ? NOT_FOUND : { kind: "dice-asset", file };
     }
     return NOT_FOUND;
   }
