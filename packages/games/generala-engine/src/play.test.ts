@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { Dice } from "./dice.js";
 import type { PlayerId } from "./ids.js";
-import { applyHold } from "./play.js";
+import { getLegalActions } from "./legal-actions.js";
+import { applyHold, applyPlayerAction, applyScore } from "./play.js";
 import { applyRoll } from "./roll.js";
-import { createMatch } from "./state.js";
-import type { MatchState } from "./state.js";
+import { CATEGORY_IDS, createMatch } from "./state.js";
+import type { CategoryId, MatchState, Scorecard } from "./state.js";
+import type { ApplyResult } from "./violation.js";
 
 const ALICE = "player-0" as PlayerId;
 const BOB = "player-1" as PlayerId;
@@ -41,6 +43,27 @@ function rollsUsedOf(state: MatchState): number {
   const turn = state.turn;
   if (turn.phase === "servida-win") throw new Error("a won turn has no roll counter");
   return turn.rollsUsed;
+}
+
+function score(state: MatchState, playerId: PlayerId, category: CategoryId): MatchState {
+  return accepted(applyScore(state, { type: "score", playerId, category }));
+}
+
+/** Unwrap an accepted result, naming the refusal when there is one. */
+function accepted(result: ApplyResult): MatchState {
+  if (!result.ok) throw new Error(`expected the action to be accepted, and it was refused: ${result.violation.code} — ${result.violation.message}`);
+  return result.state;
+}
+
+/** Unwrap a refusal, naming the state when the action was accepted instead. */
+function refused(result: ApplyResult): { readonly code: string; readonly message: string } {
+  if (result.ok) throw new Error(`expected the action to be refused, and it was accepted into ${JSON.stringify(result.state.turn)}`);
+  return result.violation;
+}
+
+/** Which boxes carry a number — 0 included, because 0 is filled. */
+function filledBoxesOf(card: Scorecard): readonly CategoryId[] {
+  return CATEGORY_IDS.filter((category) => card[category] !== null);
 }
 
 describe("applyHold — a hold names positions, and two dice showing the same face are different dice", () => {
@@ -182,5 +205,148 @@ describe("applyHold — purity", () => {
 
     expect(first).toEqual(second);
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+
+describe("applyScore — one box per turn, and the turn passes", () => {
+  it("fills the named box at what the dice yield, and nothing else on the card", () => {
+    // The ruleset's own worked example: sixes on [6,6,6,2,1] is 18.
+    const state = openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]);
+
+    const scored = score(state, ALICE, "sixes");
+
+    expect(scored.cards[0]!.sixes).toBe(18);
+    expect(filledBoxesOf(scored.cards[0]!)).toEqual(["sixes"]);
+    // The other seat's card is not this turn's business.
+    expect(scored.cards[1]).toEqual(state.cards[1]);
+  });
+
+  it("crosses a box out at zero, and a crossed box is a filled box", () => {
+    // "Crossing out" has no action type in this game. It is a `score` aimed at
+    // a box that evaluates to nothing, and forced crossing then falls straight
+    // out of "one box per turn, obligatorio".
+    const state = openingRoll([ALICE, BOB], [1, 1, 2, 3, 4]);
+
+    const scored = score(state, ALICE, "fives");
+
+    expect(scored.cards[0]!.fives).toBe(0);
+    expect(filledBoxesOf(scored.cards[0]!)).toEqual(["fives"]);
+  });
+
+  it("passes the turn to the next seat in order, and wraps at the last one", () => {
+    // `(seat + 1) % players.length`, played out rather than asserted about: no
+    // rule in this engine names a seat count, so a three-seat table is the same
+    // code path a two-seat one takes.
+    const first = openingRoll([ALICE, BOB, CAROL], [6, 6, 6, 2, 1]);
+    expect(first.turn.seat).toBe(0);
+
+    const second = score(first, ALICE, "sixes");
+    expect(second.turn.seat).toBe(1);
+
+    const third = score(roll(second, [1, 2, 3, 4, 5]), BOB, "escalera");
+    expect(third.turn.seat).toBe(2);
+
+    const wrapped = score(roll(third, [2, 2, 2, 3, 3]), CAROL, "full");
+    expect(wrapped.turn.seat).toBe(0);
+  });
+
+  it("opens the next turn awaiting a roll, with the counter back at zero and every slot empty", () => {
+    // And this is where "a player may stop early" is settled: the two throws
+    // ALICE did not use are not carried anywhere, because the next turn is
+    // built from nothing rather than from what was left of this one.
+    const state = openingRoll([ALICE, BOB], [1, 2, 3, 4, 5]);
+    expect(rollsUsedOf(state)).toBe(1);
+
+    const scored = score(state, ALICE, "escalera");
+
+    expect(scored.turn).toEqual({ phase: "awaiting-roll", seat: 1, rollsUsed: 0, slots: [null, null, null, null, null] });
+  });
+
+  it("reads the roll counter at scoring time, so servida is not a memory", () => {
+    // The same five dice, scored on the first throw and on the third: 25 and
+    // 20. This reducer hands `rollsUsed` to `scoreFor`, so an implementation
+    // passing a constant scores one of these wrong.
+    const servida = openingRoll([ALICE, BOB], [1, 2, 3, 4, 5]);
+    const armada = roll(hold(roll(hold(servida, ALICE, [0, 1]), [3, 4, 5]), ALICE, [0, 1, 2]), [4, 5]);
+    expect(rollsUsedOf(armada)).toBe(3);
+
+    expect(score(servida, ALICE, "escalera").cards[0]!.escalera).toBe(25);
+    expect(score(armada, ALICE, "escalera").cards[0]!.escalera).toBe(20);
+  });
+
+  it("lets the same five dice go into any open box, each worth whatever its own rule says", () => {
+    // [6,6,6,6,6] armada with generala, sixes and doble all open: 50, 30 and 0,
+    // and every other open box offered too. That is what makes the rulebook's
+    // "a juego mayor may go into its own box or into that number's box" free
+    // rather than a special case — and the engine must NOT second-guess the 0,
+    // because the 50 was available at the same moment and the choice was the
+    // player's.
+    const armada = roll(hold(openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]), ALICE, [0, 1, 2]), [6, 6]);
+    expect(rollsUsedOf(armada)).toBe(2);
+
+    const offered = getLegalActions(armada, ALICE).flatMap((action) => (action.type === "score" ? [action.category] : []));
+    expect(offered).toEqual(CATEGORY_IDS);
+
+    expect(score(armada, ALICE, "generala").cards[0]!.generala).toBe(50);
+    expect(score(armada, ALICE, "sixes").cards[0]!.sixes).toBe(30);
+    expect(score(armada, ALICE, "generala-doble").cards[0]!["generala-doble"]).toBe(0);
+  });
+});
+
+describe("applyScore — the refusals", () => {
+  it("never reopens a box, not even one crossed out at zero", () => {
+    // A full round of the table, so ALICE meets her own crossed box again on a
+    // hand that would have been worth something.
+    const crossed = score(openingRoll([ALICE, BOB], [1, 1, 2, 3, 4]), ALICE, "fives");
+    const back = roll(score(roll(crossed, [1, 1, 2, 3, 4]), BOB, "twos"), [5, 5, 5, 5, 1]);
+
+    expect(back.turn.seat).toBe(0);
+    expect(back.cards[0]!.fives).toBe(0);
+    expect(getLegalActions(back, ALICE)).not.toContainEqual({ type: "score", playerId: ALICE, category: "fives" });
+    expect(refused(applyScore(back, { type: "score", playerId: ALICE, category: "fives" })).code).toBe("box-not-open");
+  });
+
+  it("refuses a score outside deciding, and from a seat that is not on turn", () => {
+    const state = openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]);
+    const awaiting = hold(state, ALICE, [0]);
+    const won = openingRoll([ALICE, BOB], [3, 3, 3, 3, 3]);
+
+    expect(refused(applyScore(awaiting, { type: "score", playerId: ALICE, category: "sixes" })).code).toBe("not-deciding");
+    expect(refused(applyScore(won, { type: "score", playerId: ALICE, category: "sixes" })).code).toBe("not-deciding");
+    expect(refused(applyScore(state, { type: "score", playerId: BOB, category: "sixes" })).code).toBe("not-on-turn");
+    expect(refused(applyScore(state, { type: "score", playerId: STRANGER, category: "sixes" })).code).toBe("not-on-turn");
+  });
+
+  it("agrees with itself and leaves the state it was handed alone, accepted or refused", () => {
+    const state = openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]);
+    const before = JSON.stringify(state);
+
+    const action = { type: "score", playerId: ALICE, category: "sixes" } as const;
+    expect(applyScore(state, action)).toEqual(applyScore(state, action));
+    const wrongSeat = { type: "score", playerId: BOB, category: "sixes" } as const;
+    expect(applyScore(state, wrongSeat)).toEqual(applyScore(state, wrongSeat));
+    expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+describe("applyPlayerAction — the one door a seat's move comes through", () => {
+  it("routes a hold to the hold reducer and a score to the score reducer", () => {
+    // The module above this engine has a single `applyAction`; this is what it
+    // will call for a player's move. `applyRoll` is deliberately NOT reachable
+    // from here — the roll is the server's and takes no actor at all.
+    const state = openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]);
+    const held = { type: "hold", playerId: ALICE, keep: [0, 1, 2] } as const;
+    const scored = { type: "score", playerId: ALICE, category: "sixes" } as const;
+
+    expect(applyPlayerAction(state, held)).toEqual(applyHold(state, held));
+    expect(applyPlayerAction(state, scored)).toEqual(applyScore(state, scored));
+  });
+
+  it("carries the refusals through unchanged", () => {
+    const state = openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]);
+
+    expect(refused(applyPlayerAction(state, { type: "hold", playerId: ALICE, keep: [1, 0] })).code).toBe("malformed-hold");
+    expect(refused(applyPlayerAction(state, { type: "score", playerId: BOB, category: "sixes" })).code).toBe("not-on-turn");
   });
 });

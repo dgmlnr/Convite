@@ -1,21 +1,22 @@
 import { KEEP_SETS } from "./legal-actions.js";
 import type { GeneralaAction } from "./legal-actions.js";
+import { scoreFor } from "./scoring.js";
 import { ROLLS_PER_TURN } from "./state.js";
-import type { MatchState } from "./state.js";
+import type { MatchState, Scorecard } from "./state.js";
 import { reject } from "./violation.js";
 import type { ApplyResult } from "./violation.js";
 
 /**
  * What a seat chose, as opposed to what the server threw.
  *
- * PARTIAL, and declared partial for the same reason `index.ts` and
- * `legal-actions.ts` are: the `score` reducer that ends a turn arrives in the
- * next slice. `roll.ts` stays where it is and does not move in here — its whole
- * argument is that it takes no actor at all, and a file holding both would have
- * one reducer that checks a playerId sitting beside one that must not have one
- * to check.
+ * `roll.ts` stays where it is and does not move in here — its whole argument is
+ * that it takes no actor at all, and a file holding both would have one reducer
+ * that checks a playerId sitting beside one that must not have one to check.
+ * `applyPlayerAction` below is therefore the WHOLE of what a seat can do, and
+ * the roll is not reachable through it.
  */
 export type HoldAction = Extract<GeneralaAction, { type: "hold" }>;
+export type ScoreAction = Extract<GeneralaAction, { type: "score" }>;
 
 /** Array equality the way the room's `sameAction` does it: by index. */
 function sameKeep(submitted: readonly number[], offered: readonly number[]): boolean {
@@ -73,4 +74,83 @@ export function applyHold(state: MatchState, action: HoldAction): ApplyResult {
 
   const slots = turn.dice.map((face, index) => (action.keep.includes(index) ? face : null));
   return { ok: true, state: { ...state, turn: { phase: "awaiting-roll", seat: turn.seat, rollsUsed: turn.rollsUsed, slots } } };
+}
+
+/**
+ * Write this box, and hand the table to the next seat.
+ *
+ * ONE BOX PER TURN AND IT IS MANDATORY, which is the rule that makes a match
+ * terminable at all: eleven boxes and one filled per turn means `seats × 11`
+ * turns and no more, and no sequence of legal actions can extend it. There is
+ * no "pass" and no "cross out" action to go with it — crossing out IS this,
+ * aimed at a box `scoreFor` values at nothing, and forced crossing falls out of
+ * the same rule rather than needing one of its own.
+ *
+ * The value comes from `scoreFor` and is not recomputed here. It is handed the
+ * turn's own `rollsUsed`, which is what makes "servida" a reading of the
+ * counter at scoring time rather than a memory of what the dice once showed —
+ * and it is handed the seat's card, because the doble's 100 depends on what is
+ * already written in the generala box. This reducer decides WHETHER a box may
+ * be written; `scoring.ts` decides what it is worth. Answering either question
+ * twice is how the two answers come to disagree.
+ *
+ * A BOX ONCE WRITTEN IS NEVER WRITTEN AGAIN, zero included: `null` is open and
+ * a number is filled, so a crossed-out box refuses exactly like a scored one.
+ * That is the same condition `getLegalActions` filters on, read off the same
+ * card, so the offer list and this refusal cannot drift apart.
+ *
+ * The next turn is built from NOTHING rather than from what is left of this
+ * one — seat `(seat + 1) % players.length`, counter back to zero, five empty
+ * slots — which is where "a player may stop early" is settled: unused throws
+ * have nowhere to be carried to.
+ *
+ * THE END OF THE MATCH IS NOT SPECIAL-CASED HERE, deliberately. When the last
+ * box is written this hands the turn on as usual and the state simply satisfies
+ * "every card is full", which `getOutcome` derives. A terminal flag set here
+ * would be a second source of truth for a fact the cards already carry, and the
+ * system-action requester declines on the outcome before it looks at the phase.
+ */
+export function applyScore(state: MatchState, action: ScoreAction): ApplyResult {
+  const turn = state.turn;
+  if (turn.phase !== "deciding") {
+    return reject("not-deciding", `a box can only be written while deciding, and this turn is ${turn.phase}`);
+  }
+
+  if (state.players[turn.seat] !== action.playerId) {
+    return reject("not-on-turn", "only the seat on turn may write a box");
+  }
+
+  const card = state.cards[turn.seat]!;
+  if (card[action.category] !== null) {
+    return reject("box-not-open", `${action.category} is already filled and a filled box never reopens`);
+  }
+
+  const filled: Scorecard = { ...card, [action.category]: scoreFor(action.category, turn.dice, turn.rollsUsed, card) };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cards: state.cards.map((existing, seat) => (seat === turn.seat ? filled : existing)),
+      turn: { phase: "awaiting-roll", seat: (turn.seat + 1) % state.players.length, rollsUsed: 0, slots: [null, null, null, null, null] },
+    },
+  };
+}
+
+/**
+ * Everything a seat may submit, through one door.
+ *
+ * This is what `generala-module`'s `applyAction` will call for a player's move,
+ * and the roll is deliberately not reachable from it: `applyRoll` takes no
+ * actor, so there is no argument here for a forged one to occupy. The switch is
+ * exhaustive over `GeneralaAction` by the type rather than by a `default` arm,
+ * so a third action type would fail to compile instead of falling through to a
+ * silent refusal.
+ */
+export function applyPlayerAction(state: MatchState, action: GeneralaAction): ApplyResult {
+  switch (action.type) {
+    case "hold":
+      return applyHold(state, action);
+    case "score":
+      return applyScore(state, action);
+  }
 }
