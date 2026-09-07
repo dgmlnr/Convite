@@ -39,3 +39,13 @@ export const DIE_FACES: readonly DieFace[] = [1, 2, 3, 4, 5, 6];
  * legal, and nothing but a runtime check would notice.
  */
 export type Dice = readonly [DieFace, DieFace, DieFace, DieFace, DieFace];
+
+/**
+ * How many dice are in the cup, as a VALUE.
+ *
+ * The tuple above already says five, and says it where it does the most good —
+ * but a type cannot be counted at runtime, and enumerating the hold surface
+ * means walking the five positions one by one. Stated here, beside the tuple it
+ * has to agree with, rather than as a `5` sitting in whichever file needed it.
+ */
+export const DICE_COUNT = 5;

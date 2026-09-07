@@ -90,6 +90,18 @@ export type Turn =
   | { readonly phase: "servida-win"; readonly seat: number };
 
 /**
+ * Three throws per turn and no more — the ruleset's `§El turno`, stated once.
+ *
+ * Two places read it and neither owns it: the offer list stops proposing holds
+ * once the counter arrives here, and the reducer refuses one for its own
+ * reason, because a hold at that point is asking for a fourth roll rather than
+ * being malformed. A second `= 3` in one of them would be a second chance to
+ * disagree with the other, and the disagreement would be an off-by-one nobody
+ * sees until a player gets four throws.
+ */
+export const ROLLS_PER_TURN = 3;
+
+/**
  * A whole match, and what is deliberately NOT in it.
  *
  * `players` and `cards` are PARALLEL ARRAYS of the same length: a seat index IS
