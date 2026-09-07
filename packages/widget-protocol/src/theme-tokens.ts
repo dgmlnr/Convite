@@ -388,6 +388,40 @@ const CONTRAST_RULES: readonly {
  * rules their own private `--hx-felt-text` token (`table-styles.ts`); see
  * this file's own test for the measured proof that a fully-passing theme
  * still broke the felt before that change.
+ *
+ * THIRD KNOWN LIMIT, and the one that actually bit twice: this function
+ * validates a PAYLOAD, and `DEFAULT_THEME_TOKENS` is never one — nothing
+ * here, or anywhere, ever runs `validateThemeContrast` against its own
+ * defaults. `on-surface/surface` is one of the four `CONTRAST_RULES` pairs
+ * above, yet its DEFAULT values measure 1.07:1 (proven by
+ * `theme-tokens.test.ts`'s own regression), because a rule that only ever
+ * runs against a tenant's override has no way to see two literals a
+ * component wrote into its own stylesheet. `apps/admin`'s shadcn bridge
+ * (`theme-bridge.css`) once aliased `--background`/`--foreground` straight
+ * onto exactly this pair, on the assumption that any two named `--gx-*`
+ * tokens were safe to render directly together — the admin panel's title
+ * and labels went unreadable at ~1.07:1 (`theme-contrast-fence.test.ts` is
+ * that fix's own permanent regression fence). `apps/widget-app` repeated the
+ * identical mistake independently: four `chrome-styles.ts` rules read
+ * `--gx-color-on-surface` for text that never actually sits on the raw
+ * surface at all, only on the felt (this file's own SECOND KNOWN LIMIT,
+ * above) — `chrome-contrast.browser.test.ts` is that fix's fence.
+ *
+ * NEITHER fix belongs here, and extending `CONTRAST_RULES` to cover them is
+ * the wrong shape of fix: this file validates ONE payload object against a
+ * closed set of pairings that payload can produce; it has no way to see
+ * which CSS custom property a given component's stylesheet chose to read as
+ * a `color` versus a `background`, because that choice is not data that ever
+ * flows through `sanitizeThemeOverride`/`validateThemeContrast` at all — it
+ * is source code, in a different package, decided at build time. A component
+ * that reads a `--gx-*` token directly as a rendered foreground/background
+ * pair (or bridges it into its own CSS variable, as `apps/admin` does) has
+ * to prove THAT SPECIFIC pairing legible on its own terms, with its own
+ * small, hand-maintained fence living next to the stylesheet that renders
+ * it — exactly the shape `theme-contrast-fence.test.ts` and
+ * `chrome-contrast.browser.test.ts` already are. Two focused, local fences
+ * are a better trade than turning one pairwise contrast check into a
+ * registry of every consumer's markup.
  */
 export function validateThemeContrast(theme: ThemeOverride): ThemeContrastResult {
   const accepted: ThemeOverride = { ...theme };

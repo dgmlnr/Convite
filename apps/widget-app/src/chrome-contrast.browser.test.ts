@@ -11,12 +11,30 @@ import type { LobbyDisplayEntry } from "@hexdev/platform-core";
  *
  * The status/error card paints itself with --gx-color-primary and takes
  * --gx-color-on-primary for its text, which is why its heading and body copy
- * read correctly on the deep green. The base chrome BUTTON rule, however,
- * takes --gx-color-on-surface -- correct for a button on the plain surface,
- * and wrong for the very same button sitting INSIDE that primary-coloured
- * card: near-black on deep green measures 2.91:1, under half of what small
- * text needs. Reported from a real screenshot ("el texto negro sobre ese
- * verde pierde legibilidad"), then measured here rather than eyeballed.
+ * read correctly on the deep green. That explicit override was written
+ * against a base chrome BUTTON rule that, at the time, read
+ * --gx-color-on-surface: near-black on deep green measured 2.91:1, under
+ * half of what small text needs. Reported from a real screenshot ("el texto
+ * negro sobre ese verde pierde legibilidad"), then measured here rather than
+ * eyeballed. The base rule later moved to --hx-felt-ink for an unrelated
+ * reason (chrome-styles.ts's own "the surface is ours" note) -- the override
+ * stayed, correctly: on-primary/primary is still the deliberately right
+ * pairing for a primary-coloured card, not an artifact of whichever token
+ * the base rule happened to use that day.
+ *
+ * FOUR MORE READERS OF --gx-color-on-surface were found the same way this
+ * comment was corrected -- by mapping every consumer of the token instead of
+ * trusting what a docstring already claimed about it, during the admin
+ * panel's own invisible-text investigation. .hexdev-chrome-empty,
+ * .hexdev-chrome-loading, .hexdev-about-toggle and .hexdev-about-panel all
+ * painted on-surface's near-black directly, but none of them sit on the raw
+ * --gx-color-surface -- they sit on the FELT, tinted by at most 14% of it
+ * (--hx-felt-tint). Measured across the felt's own gradient stops: 2.67:1 at
+ * the lightest, 1.26:1 at the deepest, never once at 4.5:1 for any tenant
+ * theme, because no surface colour can lighten the felt enough to rescue it.
+ * Fixed by reading --hx-felt-ink instead -- the token the status card's own
+ * body copy and the lobby's quiet copy already use -- and fenced below
+ * (second describe block) so it cannot recur.
  *
  * The threshold is WCAG 2.1 AA for normal-size text (1.4.3). This suite is
  * deliberately about the pairings a player actually reads on a coloured
@@ -135,11 +153,10 @@ describe("chrome text stays legible on the card's own coloured surface (WCAG 2.1
     expect(button).not.toBeNull();
     // status-view.ts appends retry to .hexdev-chrome-content as a SIBLING of
     // the card, never a child of it, so what shows through this transparent
-    // button is the plain content surface -- where the base rule's
-    // --gx-color-on-surface is exactly the right token and already passes.
-    // Asserted here so a future fix that repaints EVERY chrome button
-    // on-primary would break this case instead of quietly making retry
-    // illegible on the surface it really sits on.
+    // button is the felt -- where the base rule's --hx-felt-ink is the right
+    // token and already passes. Asserted here so a future fix that repaints
+    // EVERY chrome button on-primary would break this case instead of
+    // quietly making retry illegible on the surface it really sits on.
     expect(button!.closest(".hexdev-chrome-status"), "retry is a sibling of the card, not a child").toBeNull();
     expect(ratioFor(button!), "retry text vs the surface it actually sits on").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
   });
@@ -152,6 +169,72 @@ describe("chrome text stays legible on the card's own coloured surface (WCAG 2.1
     const card = el.querySelector<HTMLElement>("p.hexdev-chrome-status");
     expect(card).not.toBeNull();
     expect(ratioFor(card!), "status card copy vs the card").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+});
+
+/**
+ * THE FOUR READERS THE FIRST DESCRIBE BLOCK'S OWN DOCSTRING NOW NAMES.
+ *
+ * Every one of these sits on the felt (.convite-chrome's own background),
+ * never on a card of its own -- which is exactly why --gx-color-on-surface
+ * was the wrong token for all four: on-surface pairs with the RAW
+ * --gx-color-surface, and the felt is never that raw value, only a tint of
+ * it (chrome-styles.ts's own "THE SURFACE IS OURS" note). Each case here
+ * renders through the real widget-app entry points (renderGameSelection),
+ * not a hand-built fixture, so a future edit to any of these four rules is
+ * measured exactly as a player would see it.
+ */
+describe("chrome text stays legible on the felt itself, not just on a coloured card (WCAG 2.1 AA, 1.4.3)", () => {
+  const TRUCO: CatalogEntry = {
+    id: "truco-argentino" as GameId,
+    gameFamily: "truco",
+    section: "cartas",
+    displayNameKey: "games.truco.name",
+    seatCount: 2,
+    configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
+  };
+  const CALLBACKS = { onPlayVsPerson: () => undefined, onPlayVsBot: () => undefined };
+
+  it("the empty-catalog message reads on the felt", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [], TRUCO.gameFamily, new Map(), CALLBACKS);
+
+    const empty = el.querySelector<HTMLElement>(".hexdev-chrome-empty");
+    expect(empty, "fence setup: nothing matched .hexdev-chrome-empty").not.toBeNull();
+    expect(ratioFor(empty!), "empty-catalog message vs the felt").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it("the per-card loading placeholder reads on the felt", () => {
+    const el = freshContainer();
+    // An empty presence map: the catalog has one game, and nobody has
+    // broadcast its presence yet, so renderGame takes the loading branch.
+    renderGameSelection(el, [TRUCO], TRUCO.gameFamily, new Map(), CALLBACKS);
+
+    const loading = el.querySelector<HTMLElement>(".hexdev-chrome-loading");
+    expect(loading, "fence setup: nothing matched .hexdev-chrome-loading").not.toBeNull();
+    expect(ratioFor(loading!), "loading placeholder vs the felt").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it("the deck-credit disclosure control reads on the felt, closed", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO], TRUCO.gameFamily, new Map(), CALLBACKS);
+
+    const toggle = el.querySelector<HTMLElement>(".hexdev-about-toggle");
+    expect(toggle, "fence setup: nothing matched .hexdev-about-toggle").not.toBeNull();
+    expect(ratioFor(toggle!), "credit toggle vs the felt").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it("the deck-credit panel copy reads on the felt, open", () => {
+    const el = freshContainer();
+    renderGameSelection(el, [TRUCO], TRUCO.gameFamily, new Map(), CALLBACKS);
+
+    const details = el.querySelector<HTMLDetailsElement>(".hexdev-about");
+    if (details === null) throw new Error("fence setup: the credit disclosure never rendered");
+    details.open = true;
+
+    const panel = el.querySelector<HTMLElement>(".hexdev-about-panel");
+    expect(panel, "fence setup: nothing matched .hexdev-about-panel").not.toBeNull();
+    expect(ratioFor(panel!), "credit panel copy vs the felt").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
   });
 });
 

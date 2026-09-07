@@ -1180,18 +1180,23 @@ opacity: 0.55;
 /* A button INSIDE the status card takes the card's own text colour, not the
  * page's. Every chrome button is transparent, so what shows through it is
  * whatever it sits on -- and .hexdev-chrome-status paints itself
- * --gx-color-primary, the deep green, while the base button rule above
- * hands out --gx-color-on-surface, a near-black meant for the plain
- * surface. On the card that pairing measures 2.91:1, well under the 4.5:1
- * WCAG AA needs for normal text: the back-to-lobby button was genuinely
- * hard to read, reported from a real screenshot.
+ * --gx-color-primary, the deep green. When this override was written the
+ * base button rule above still read --gx-color-on-surface: near-black on
+ * that deep green measured 2.91:1, well under the 4.5:1 WCAG AA needs for
+ * normal text, and the back-to-lobby button was genuinely hard to read,
+ * reported from a real screenshot. STALE AS OF THIS COMMENT'S OWN REWRITE:
+ * the base rule later moved to --hx-felt-ink for an unrelated reason
+ * (PR-EST2, "the surface is ours"), which happens to clear the card too
+ * (5.22:1) -- this override stays regardless, because on-primary/primary
+ * (5.99:1) is the deliberately correct pairing for a primary-coloured card,
+ * not an accident of whichever token the base rule happens to use.
  *
  * Scoped by the card, deliberately, rather than repainting every chrome
  * button: status-view.ts appends the RETRY button to .hexdev-chrome-content
- * as a sibling of the card, never a child, so retry really does sit on the
- * plain surface where --gx-color-on-surface is the correct token and
- * already passes. chrome-contrast.browser.test.ts asserts both halves, so
- * neither can regress into the other. */
+ * as a sibling of the card, never a child, so retry sits on the felt and
+ * inherits --hx-felt-ink from the base rule -- correct there too, and
+ * unrelated to this override. chrome-contrast.browser.test.ts asserts both
+ * halves, so neither can regress into the other. */
 .hexdev-chrome-status button {
   color: var(--gx-color-on-primary, #ffffff);
 }
@@ -1227,7 +1232,20 @@ opacity: 0.55;
 .hexdev-chrome-empty,
 .hexdev-chrome-loading {
   margin: 0;
-  color: var(--gx-color-on-surface, #1a1a1a);
+  /* BUG, found mapping every reader of --gx-color-on-surface for the admin
+   * panel's own invisible-text investigation rather than by screenshot: both
+   * messages painted the near-black on-surface ink directly, but neither
+   * sits on the raw --gx-color-surface -- they sit on the FELT, which is
+   * --hx-cloth-lit/-cloth/-cloth-deep tinted by at most --hx-felt-tint (14%)
+   * of the tenant's surface colour ("THE SURFACE IS OURS" above). Measured
+   * against every stop of that gradient: 2.67:1 at the lightest, 1.26:1 at
+   * the deepest -- never once at the 4.5:1 WCAG AA floor, for ANY tenant
+   * theme, because no surface colour can lighten the felt enough to rescue
+   * it. --hx-felt-ink is the token every OTHER piece of felt-side body copy
+   * already reads (the status card's own paragraph, the lobby's quiet copy);
+   * on-surface was never the right token here. chrome-contrast.browser.test.ts
+   * fences both messages against this exact regression. */
+  color: var(--hx-felt-ink);
   opacity: 0.75;
 }
 
@@ -1279,7 +1297,9 @@ p.hexdev-chrome-status,
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  border: 1px solid var(--gx-color-on-surface, #1a1a1a);
+  /* Same bug as .hexdev-chrome-empty/.hexdev-chrome-loading above, and the
+   * same fix: this disclosure sits on the felt, not the raw surface. */
+  border: 1px solid var(--hx-felt-ink);
   opacity: 0.55;
   font-size: 0.82rem;
   font-weight: 700;
@@ -1287,7 +1307,7 @@ p.hexdev-chrome-status,
   line-height: 1;
   cursor: pointer;
   list-style: none;
-  color: var(--gx-color-on-surface, #1a1a1a);
+  color: var(--hx-felt-ink);
   transition: opacity var(--hx-motion-fast) var(--hx-ease);
 }
 
@@ -1308,7 +1328,8 @@ p.hexdev-chrome-status,
   max-width: 46ch;
   font-size: var(--hx-text-body-compact, 0.85rem);
   line-height: var(--hx-leading);
-  color: var(--gx-color-on-surface, #1a1a1a);
+  /* Same bug and same fix as .hexdev-chrome-empty above: felt, not surface. */
+  color: var(--hx-felt-ink);
   opacity: 0.8;
 }
 
