@@ -1,28 +1,8 @@
 import type { Dice, DieFace } from "./dice.js";
 import { isGenerala, SERVIDA_ROLL } from "./scoring.js";
 import type { MatchState } from "./state.js";
-
-/**
- * Re-declared locally, same shape as `platform-contract`'s `RuleViolation` —
- * NOT imported, because `generala-engine` is L0 and may not reach for a
- * workspace package at all. `escoba-engine/src/capture.ts:21-31` makes the same
- * call for the same reason.
- *
- * `code` is a closed union rather than a bare string so a caller can switch on
- * it without reading English out of `message`.
- */
-export interface RuleViolation {
-  readonly code: "not-awaiting-roll" | "wrong-face-count";
-  readonly message: string;
-}
-
-export type ApplyResult =
-  | { readonly ok: true; readonly state: MatchState }
-  | { readonly ok: false; readonly violation: RuleViolation };
-
-function reject(code: RuleViolation["code"], message: string): ApplyResult {
-  return { ok: false, violation: { code, message } };
-}
+import { reject } from "./violation.js";
+import type { ApplyResult } from "./violation.js";
 
 /**
  * Apply a throw of the cup: the faces the server just rolled, dropped into the
