@@ -4,10 +4,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "lib": [
-      "ES2022"
-    ],
-    "types": []
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
   },
   "include": [
     "src"
@@ -18,6 +16,9 @@
     },
     {
       "path": "../generala-engine"
+    },
+    {
+      "path": "../generala-bot"
     }
   ]
 }

@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
-    "@hexdev/generala-engine": "workspace:*"
+    "@hexdev/generala-engine": "workspace:*",
+    "@hexdev/generala-bot": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2"
   }
 }
