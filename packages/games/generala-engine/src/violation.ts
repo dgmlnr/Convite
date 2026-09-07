@@ -17,12 +17,11 @@ import type { MatchState } from "./state.js";
  * be declaring codes that file can never produce.
  *
  * `code` is a closed union rather than a bare string so a caller can switch on
- * it without reading English out of `message`. It is PARTIAL for the same
- * reason `index.ts` is a partial barrel: the score reducer's own refusals
- * arrive with the score reducer.
+ * it without reading English out of `message`, and it is CLOSED now: with the
+ * score reducer landed, every way this engine can say no is listed here.
  */
 export interface RuleViolation {
-  readonly code: "not-awaiting-roll" | "wrong-face-count" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold";
+  readonly code: "not-awaiting-roll" | "wrong-face-count" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold" | "box-not-open";
   readonly message: string;
 }
 
