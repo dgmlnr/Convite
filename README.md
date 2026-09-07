@@ -8,14 +8,29 @@ y adopta los colores de identidad del sitio.
 
 ## Estado
 
-En desarrollo, y jugable de punta a punta. Están el motor de reglas completo, el contrato
+En desarrollo, y jugable de punta a punta. Hay **tres juegos** —Truco Argentino, Escoba de
+15 y Mahjong Solitario—, cada uno con su motor de reglas completo, y sobre ellos el contrato
 genérico de juegos, el transporte con autenticación por tenant, los dos roles de servidor,
 el lobby con emparejamiento, los bots y el widget embebible.
 
 Se juega mano a mano y también **2 contra 2**. La suite e2e levanta la topología real
 —los dos roles detrás de un mismo origen— y juega partidas completas contra ella.
 
-## Primer juego: Truco Argentino
+Del lado de la operación está la capa que decide **quién puede jugar qué**: Postgres como
+sistema de registro, una ventana de vigencia paga por tenant, la lista de orígenes desde
+los que puede embeberse el widget y qué juegos habilita cada contrato. Se administra desde
+un panel interno con cuentas de operador, permisos asignables y revocables, y un visor de
+auditoría.
+
+Los privilegios están partidos en la base, no sólo en el código, por el mismo motivo que la
+semilla de firma vive en un solo rol: `convite_readonly` —el que tienen los dos servidores
+de juego— sólo puede **leer** tenants y no ve la auditoría siquiera; `convite_admin` —el del
+panel— escribe tenants y **agrega** entradas de auditoría sin poder modificarlas ni
+borrarlas; y el esquema no lo toca ninguno de los dos, porque las migraciones corren bajo
+una tercera credencial. Un panel comprometido no puede acuñar una sesión, no puede reescribir
+su propio rastro y no puede cambiar la forma de la base.
+
+## Truco Argentino
 
 Sin flor, a 15 o 30 puntos según elija el jugador, mano a mano o en parejas. Toda partida
 puede jugarse contra otra persona o contra bots en tres niveles de dificultad, de modo que
@@ -50,20 +65,26 @@ tiene los tantos. Las señas nombran **cartas**, nunca tantos, así que un compa
 no tenía cómo decirlo. Por eso el pie puede **preguntar** antes de cantar: misma ventana
 que el canto, mismo precio que una seña.
 
-## Los otros juegos
+## Escoba de 15 y Mahjong Solitario
 
-Escoba de 15 y Mahjong Solitario ya se juegan de punta a punta: motor, adaptador del
-contrato de juego y —escoba, no el solitario, que no tiene contra quién jugar— bot.
-Viven en sus propios paquetes (`packages/games/escoba-*`,
-`packages/games/mahjong-solitaire-*`) y entraron sin tocar el núcleo: el mazo español
-está fuera del truco desde el principio, y el lobby deriva sus modalidades de la
-configuración que declara cada juego.
+Los dos se juegan de punta a punta: motor, adaptador del contrato de juego y —escoba, no el
+solitario, que no tiene contra quién jugar— bot. Viven en sus propios paquetes
+(`packages/games/escoba-*`, `packages/games/mahjong-solitaire-*`) y entraron sin tocar el
+núcleo: el mazo español está fuera del truco desde el principio, y el lobby deriva sus
+modalidades de la configuración que declara cada juego.
 
-**La Generala todavía no es un juego.** `dice-ui` trae los dados y el cubilete como
-piezas —forma, pose de reposo, cómo se resuelve una tirada a una cara—, pero motor,
-adaptador y reglas no existen en ningún lado del repo: el propio paquete lo deja
-escrito para que nadie lo confunda con el juego. Cuando la Generala exista va a
-pararse sobre esas piezas, no a reemplazarlas.
+Que un solitario haya entrado sin excepciones es lo que probó que el contrato era genérico
+de verdad. Una mesa de un asiento no tiene rival, así que no tiene bot, no tiene reloj de
+turno y no tiene a quién entregarle un asiento abandonado: el puerto declara `createBot`
+opcional y el transporte deriva esas tres conductas de su ausencia, en vez de pedir tres
+banderas de registro más que alguien tendría que mantener en sincronía.
+
+## La Generala, todavía no
+
+`dice-ui` trae los dados y el cubilete como piezas —forma, pose de reposo, cómo se resuelve
+una tirada a una cara—, pero el motor, el adaptador y las reglas **no existen en la rama
+principal**: el propio paquete lo deja escrito para que nadie lo confunda con el juego.
+Cuando la Generala exista va a pararse sobre esas piezas, no a reemplazarlas.
 
 ## Arquitectura
 
@@ -213,10 +234,14 @@ la topología está probada y no solamente descrita.
 | `platform-contract` | El puerto `GameModule` y su suite de conformidad. Cero dependencias |
 | `platform-core` | Registro de juegos, autenticación de tenants, presencia y emparejamiento |
 | `spanish-deck-ui` | El mazo español. Fuera del truco, porque la escoba usa el mismo |
+| `mahjong-tile-ui` | Las 42 fichas como obra: las caras, su cuerpo y el crédito que la licencia exige |
+| `dice-ui` | Los dados y el cubilete como piezas. No sabe que existe una Generala |
 | `games/truco-engine` | Reglas del truco. Puro, sin entrada ni salida |
 | `games/truco-module` | Adaptador que implementa el puerto sobre el motor, mano a mano y en parejas |
 | `games/truco-ui` | La mesa: cartas, cantos, señas y el tablero |
 | `games/truco-bot` | Los tres niveles de bot |
+| `games/escoba-*` | Escoba de 15, con la misma división: motor, adaptador, mesa y bot |
+| `games/mahjong-solitaire-*` | El solitario: motor, adaptador y tablero. Sin bot, porque no hay rival |
 | `transport-colyseus` | Sala de partida genérica y sala de presencia |
 | `transport-colyseus-client` | El lado cliente del mismo transporte |
 | `widget-sdk`, `widget-protocol`, `widget-frontdoor` | Superficie de embebido para el tenant |
@@ -240,6 +265,29 @@ en `packages/spanish-deck-ui/tools/process-svg-deck.mjs`.
 Acá la atribución no es cortesía: es un término de la licencia, y por eso vive en el
 código (`packages/spanish-deck-ui/src/about.ts`) con un cercado que verifica que los tres
 requisitos —autor, enlace a la licencia, y que hubo cambios— sigan estando.
+
+El arte de las **42 fichas de mahjong** es de **碧海风 (Bi Hai Feng)**, vía Wikimedia
+Commons, licenciado [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), y
+**se le hizo un cambio**: los vectores se rasterizaron a WebP de 195×279, sin pérdida. El
+registro vive en `packages/mahjong-tile-ui/src/about.ts` con su propio cercado.
+
+**Dos obras CC BY-SA conviven en este repositorio y no son la misma licencia**: el mazo es
+3.0 y las fichas son 4.0. Por eso cada registro escribe la versión, y un test verifica que
+no se colapsen en un "CC BY-SA" a secas — una línea sola cubriendo las dos estaría
+equivocada sobre las dos.
+
+La fuente de las fichas es la lista de archivos del autor, **no** `Category:SVG Planar
+illustrations of Mahjong tiles`, y la distinción es legal y no estética: esa categoría
+tiene 176 archivos de muchos autores bajo siete licencias distintas. Citarla habría
+acreditado a la gente equivocada por casi todo lo que contiene. Las 42 se auditaron una por
+una contra la API de Commons —autor, licencia y sha1— en vez de darlas por homogéneas.
+
+**Los dados y el cubilete no deben atribución a nadie**, y eso también está escrito para
+que la afirmación sea verificable en vez de creída: la geometría y el material de marfil son
+obra original de este repositorio, generados por `packages/dice-ui/tools/render-props.py`,
+sin ningún insumo fotográfico. La única textura de origen externo es el cuero del cubilete
+("Brown Leather", de Rob Tuytel, publicado por Poly Haven), y es **CC0**, que no pide
+crédito. El detalle completo está en `packages/dice-ui/assets/LICENSE`.
 
 El mazo anterior eran los escaneos de Heraclio Fournier de 1878 (Museo Fournier de Naipes,
 Vitoria-Gasteiz), de dominio público. Se cambió por legibilidad a los tamaños que el juego
