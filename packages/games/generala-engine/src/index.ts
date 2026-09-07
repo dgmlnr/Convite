@@ -16,5 +16,5 @@ export type { ApplyResult, RuleViolation } from "./violation.js";
 export { applyRoll } from "./roll.js";
 export type { GeneralaAction } from "./legal-actions.js";
 export { getLegalActions } from "./legal-actions.js";
-export type { HoldAction } from "./play.js";
-export { applyHold } from "./play.js";
+export type { HoldAction, ScoreAction } from "./play.js";
+export { applyHold, applyPlayerAction, applyScore } from "./play.js";
