@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { BotTier } from "@hexdev/platform-contract";
-import { getLegalActions, getViewFor } from "@hexdev/generala-engine";
+import { getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
+import type { GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
 import { createBotStrategy } from "./index.js";
-import { ALICE, BOB, awaitingRollState, openingThrow, servidaWinState } from "./fixtures.js";
+import { ALICE, BOB, awaitingRollState, openBoxCount, openingThrow, reachableStates, servidaWinState } from "./fixtures.js";
 
 const TIERS: readonly BotTier[] = ["easy", "normal", "hard"];
 
@@ -12,6 +13,22 @@ const ROOM_BUDGET_MS = 1000;
 const widest = openingThrow();
 const widestView = getViewFor(widest, ALICE);
 const widestLegal = getLegalActions(widest, ALICE);
+
+const sweep = reachableStates();
+
+/** Every (state, seat) pair in the sweep where that seat is actually offered something. */
+function offeredPositions(states: readonly MatchState[]): readonly { state: MatchState; playerId: PlayerId; legal: readonly GeneralaAction[] }[] {
+  const found: { state: MatchState; playerId: PlayerId; legal: readonly GeneralaAction[] }[] = [];
+  for (const state of states) {
+    for (const playerId of state.players) {
+      const legal = getLegalActions(state, playerId);
+      if (legal.length > 0) found.push({ state, playerId, legal });
+    }
+  }
+  return found;
+}
+
+const positions = offeredPositions(sweep);
 
 describe("the widest offer really is the widest, so the tests below are not measuring a short list", () => {
   it("31 holds plus 11 open boxes", () => {
@@ -136,4 +153,85 @@ describe("normal and hard are not written yet, and say so out loud", () => {
     expect(new Set(chosen).size).toBe(1);
     expect(chosen[0]).toBe(widestLegal[21]);
   });
+});
+
+/**
+ * THE SWEEP IS COUNTED BEFORE IT IS USED, and this describe is the whole reason
+ * the property below says anything.
+ *
+ * "The bot returned one of the offered actions at every position the sweep
+ * reached" is satisfied vacuously by a sweep that reached no position at all —
+ * a driver that stopped after one turn, or a `getLegalActions` that answered
+ * `[]` for everything, would leave every assertion green and every claim
+ * unmade. So the spans spec Domain F names — both phases, every `rollsUsed`,
+ * scorecards from empty to ONE BOX REMAINING — are asserted here as numbers
+ * rather than assumed from the driver's shape.
+ */
+describe("the sampled reachable states really span what the property claims (Spec F)", () => {
+  it("the match ran to a real ending, not into the driver's ceiling", () => {
+    expect(sweep.length).toBeGreaterThan(100);
+    const last = sweep[sweep.length - 1]!;
+    expect(getOutcome(last)).not.toBeNull();
+    expect(openBoxCount(last, 0)).toBe(0);
+    expect(openBoxCount(last, 1)).toBe(0);
+    // Nothing before the end was already over: a sweep truncated early would
+    // still satisfy the assertion above.
+    expect(sweep.slice(0, -1).filter((state) => getOutcome(state) !== null)).toEqual([]);
+  });
+
+  it("both of the phases a match spends its time in appear", () => {
+    expect(new Set(sweep.map((state) => state.turn.phase))).toEqual(new Set(["awaiting-roll", "deciding"]));
+  });
+
+  it("every value of `rollsUsed` a turn can hold is decided from", () => {
+    const seen = sweep.filter((state) => state.turn.phase === "deciding").map((state) => (state.turn.phase === "deciding" ? state.turn.rollsUsed : -1));
+    expect(new Set(seen)).toEqual(new Set([1, 2, 3]));
+  });
+
+  it("scorecards run from empty all the way to ONE BOX REMAINING, for both seats", () => {
+    const deciding = sweep.filter((state) => state.turn.phase === "deciding");
+    const open = deciding.map((state) => (state.turn.phase === "deciding" ? openBoxCount(state, state.turn.seat) : -1));
+    expect(new Set(open)).toEqual(new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]));
+    const oneLeft = deciding.filter((state) => state.turn.phase === "deciding" && openBoxCount(state, state.turn.seat) === 1);
+    expect(new Set(oneLeft.map((state) => (state.turn.phase === "deciding" ? state.players[state.turn.seat] : undefined)))).toEqual(new Set([ALICE, BOB]));
+  });
+
+  it("the offer list spans its widest and its narrowest shape", () => {
+    const sizes = new Set(positions.map((position) => position.legal.length));
+    // 31 holds + 11 open boxes at one end; the last box on the third throw at the other.
+    expect(sizes.has(42)).toBe(true);
+    expect(sizes.has(1)).toBe(true);
+    expect(positions.length).toBeGreaterThan(60);
+  });
+
+  it("every re-roll budget from one die to five is exercised", () => {
+    const budgets = sweep.filter((state) => state.turn.phase === "awaiting-roll").map((state) => (state.turn.phase === "awaiting-roll" ? state.turn.slots.filter((slot) => slot === null).length : -1));
+    expect(new Set(budgets)).toEqual(new Set([1, 2, 3, 4, 5]));
+  });
+});
+
+/**
+ * A source that walks the whole of `[0, 1)` rather than sitting on one value: a
+ * fixed `() => 0` would let "always take the first offered action" satisfy every
+ * assertion below.
+ */
+function sweepingRng(): () => number {
+  let step = 0;
+  const values = [0, 0.17, 0.33, 0.5, 0.66, 0.83, 0.999999];
+  return () => values[step++ % values.length]!;
+}
+
+describe("every tier answers every reachable position (Spec F: three tiers, and none of them throws)", () => {
+  for (const tier of TIERS) {
+    it(`${tier} returns one of the offered actions — the very object it was offered — and never throws`, async () => {
+      const strategy = createBotStrategy(tier, sweepingRng());
+      let asked = 0;
+      for (const { state, playerId, legal } of positions) {
+        const chosen = await strategy.chooseAction(getViewFor(state, playerId), legal, ROOM_BUDGET_MS);
+        expect(legal).toContain(chosen);
+        asked += 1;
+      }
+      expect(asked).toBe(positions.length);
+    });
+  }
 });
