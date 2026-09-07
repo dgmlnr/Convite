@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Dice, DieFace } from "./dice.js";
 import type { PlayerId } from "./ids.js";
 import { applyRoll } from "./roll.js";
-import type { ApplyResult } from "./roll.js";
+import type { ApplyResult } from "./violation.js";
 import { createMatch } from "./state.js";
 import type { CategoryId, MatchState, Scorecard } from "./state.js";
 
