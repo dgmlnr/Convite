@@ -9,6 +9,7 @@ import {
   refererOrigin,
   renderEmbedShell,
   serveCardFrontAsset,
+  serveDiceAsset,
   serveLoaderAsset,
   serveTileFrontAsset,
   serveWidgetAppAsset,
@@ -84,6 +85,13 @@ const deckFrontsDir = fileURLToPath(new URL("../../../packages/spanish-deck-ui/a
 // Its own directory, its own artwork, its own license (CC BY-SA 4.0 rather
 // than the deck's 3.0) — see packages/mahjong-tile-ui/assets/LICENSE.
 const tileFrontsDir = fileURLToPath(new URL("../../../packages/mahjong-tile-ui/assets/tiles", import.meta.url));
+// The third artwork, and the only one that owes nobody anything: the die is
+// fully procedural and the cup's leather is CC0 Poly Haven, so `NOTICE` gains
+// no entry for it — see packages/dice-ui/assets/LICENSE, which records that
+// as a checkable claim rather than a reassurance. ONE directory holds the six
+// faces AND the cubilete, which is why this is a single path here and a
+// single prefix in `routing.ts` with no exact-path companion.
+const diceAssetsDir = fileURLToPath(new URL("../../../packages/dice-ui/assets/dice", import.meta.url));
 
 /* c8 ignore start — the HTTP plumbing; `resolveRoute` and `loadMintConfig` are what the tests pin. */
 const server = createServer((req, res) => {
@@ -174,6 +182,15 @@ const server = createServer((req, res) => {
 
     case "tile-front":
       serveTileFrontAsset(tileFrontsDir, route.file)
+        .then(({ status, contentType, body }) => {
+          res.writeHead(status, { "content-type": contentType });
+          res.end(body);
+        })
+        .catch(fail);
+      return;
+
+    case "dice-asset":
+      serveDiceAsset(diceAssetsDir, route.file)
         .then(({ status, contentType, body }) => {
           res.writeHead(status, { "content-type": contentType });
           res.end(body);

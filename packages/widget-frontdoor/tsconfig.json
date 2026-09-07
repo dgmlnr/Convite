@@ -13,6 +13,9 @@
   ],
   "references": [
     {
+      "path": "../dice-ui"
+    },
+    {
       "path": "../mahjong-tile-ui"
     },
     {

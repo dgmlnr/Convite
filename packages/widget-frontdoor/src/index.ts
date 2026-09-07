@@ -41,6 +41,7 @@ export { refererOrigin } from "./referer-origin.js";
 export { handleSessionRenewRequest } from "./session-renew-handler.js";
 export type { SessionRenewDeps, SessionRenewResult } from "./session-renew-handler.js";
 export { serveCardFrontAsset } from "./static-deck-assets.js";
+export { serveDiceAsset } from "./static-dice-assets.js";
 export { serveTileFrontAsset } from "./static-tile-assets.js";
 export { serveLoaderAsset, serveWidgetAppAsset } from "./static-widget-app.js";
 export type { StaticAssetResult } from "./static-widget-app.js";
