@@ -256,8 +256,14 @@ function hasScoredGenerala(card: Scorecard): boolean {
  * remembered "it was there on roll 1" would pay the bonus for it. `scoreFor`
  * receives the counter and no history at all, so that mistake is not
  * expressible here rather than merely untaken.
+ *
+ * Exported because `roll.ts` needs the SAME number for a different rule: a
+ * generala rolled on the first throw wins the match outright instead of scoring
+ * 50. Two rules, one meaning of "servida", stated once — a second `= 1` in the
+ * reducer would be a second chance to disagree with this one, and the two would
+ * disagree silently.
  */
-const SERVIDA_ROLL = 1;
+export const SERVIDA_ROLL = 1;
 
 /**
  * What this box pays for these dice, right now — a VALUATION, not a legality
