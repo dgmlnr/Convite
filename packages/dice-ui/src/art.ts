@@ -6,10 +6,12 @@
 // fixed identity across every tenant, exactly like the tile's and the
 // deck's own card fronts. See `../assets/LICENSE` for why none of this
 // carries an attribution obligation.
-import type { DieFace } from "./geometry.js";
+import { DIE_FACES, type DieFace } from "./geometry.js";
 
-// `../assets/dice/<face>.webp` and `../assets/cup.webp` resolve identically
-// from either `src/art.ts` (dev/test, via Vitest's Node resolution of
+// `../assets/dice/<face>.webp` and `../assets/dice/cup.webp` — ONE
+// directory holding everything this package ships, so a front door needs a
+// single prefix and no exact-path special case for the cup — resolve
+// identically from either `src/art.ts` (dev/test, via Vitest's Node resolution of
 // import.meta.url) or the compiled `dist/art.js` (`src/` and `dist/` sit
 // exactly one directory below the package root), and the assets are
 // checked into the repo rather than generated at build time, so no
@@ -46,10 +48,51 @@ export function getDieFaceArtUrl(face: DieFace): URL {
   return new URL(/* @vite-ignore */ `../assets/dice/${String(face)}.webp`, import.meta.url);
 }
 
-/** On-demand URL for the cubilete's artwork. */
+/** On-demand URL for the cubilete's artwork, beside the six faces. */
 export function getCupArtUrl(): URL {
-  return new URL(/* @vite-ignore */ `../assets/cup.webp`, import.meta.url);
+  return new URL(/* @vite-ignore */ `../assets/dice/cup.webp`, import.meta.url);
 }
+
+/**
+ * The cup's own filename, written once and read by both the set below and
+ * anything that has to name the file without resolving it.
+ */
+export const CUP_ASSET_FILENAME = "cup.webp";
+
+/**
+ * Every filename `assets/dice/` may hold, DERIVED from `DIE_FACES` rather
+ * than written down — and that difference is the whole reason this export
+ * exists instead of a regex living at whatever route serves these files.
+ *
+ * A regex can be tested for COMPLETENESS (feed it the seven valid names and
+ * watch them pass) but never for SOUNDNESS: proving it accepts nothing else
+ * means enumerating a regular language, which a test cannot do. So a route
+ * guarded by a regex is guarded by a claim. `TILE_FRONT_FILENAMES`
+ * (`mahjong-tile-ui/tiles.ts`) is the precedent and carries the same
+ * argument at length, including the neighbour that got it wrong.
+ *
+ * A Set built from the producer is sound and complete by construction: it
+ * holds these seven strings and, by the definition of a Set, nothing else —
+ * so `has(filename)` is a total, honest answer for every input, traversal
+ * shapes included, with no pattern to reason about.
+ *
+ * NOT READ BY THE TWO RESOLVERS ABOVE, deliberately. Their `new URL` calls
+ * are reproduced verbatim from `mahjong-tile-ui/front-image.ts` under a
+ * header recording two Vite failures in OPPOSITE directions, and rewriting
+ * either to interpolate from this set would be exactly the "improvement"
+ * that header warns against. The cost is that the `.webp` suffix is spelled
+ * in two places; `art.test.ts` closes it by walking both resolvers and
+ * asserting the set names precisely what they resolve, in both directions.
+ *
+ * THE COST OF CONSUMING IT, stated here so the consumer restates rather than
+ * rediscovers it: a front door reaching for this set has to import an L0 art
+ * package, which every layer rule permits and which `static-tile-assets.ts`
+ * already marks OVERTURNABLE for its own half.
+ */
+export const DICE_ASSET_FILENAMES: ReadonlySet<string> = new Set([
+  ...DIE_FACES.map((face) => `${String(face)}.webp`),
+  CUP_ASSET_FILENAME,
+]);
 
 /**
  * THE ARTWORK'S OWN PIXEL DIMENSIONS. `art.test.ts` asserts these against
