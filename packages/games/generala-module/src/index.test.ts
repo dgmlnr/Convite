@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATEGORY_IDS, applyHold, applyPlayerAction, applyRoll, createMatch, getLegalActions } from "@hexdev/generala-engine";
+import { CATEGORY_IDS, applyHold, applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
 import type { DieFace, MatchState, PlayerId, ScoreAction } from "@hexdev/generala-engine";
 import { describeGameModule } from "@hexdev/platform-contract";
 import type { ApplyResult, SeatAssignment } from "@hexdev/platform-contract";
@@ -316,5 +316,46 @@ describe("what generalaModule tells the registry", () => {
       assetBase: "/games/generala",
     });
     expect(generalaModule.id).toBe("generala");
+  });
+});
+
+describe("the engine's three read members are handed through unwrapped", () => {
+  /**
+   * THIS TEST EXISTS BECAUSE THREE MUTATIONS FOUND NOTHING, and that is the
+   * whole of its justification.
+   *
+   * Run against the module WITHOUT this assertion, all three of these came back
+   * green on 30 of 30:
+   *
+   *   - `getLegalActions` filtered down to the score actions only — every hold
+   *     silently dropped, so the acting seat can never re-roll and every turn
+   *     becomes "score whatever the cup happened to show".
+   *   - `getLegalActions` reversed on its way past.
+   *   - `getViewFor` returning the view with `totals: []`.
+   *
+   * The conformance suite cannot see any of them: it asks whether the fixture's
+   * one legal action is offered (a `score`), whether every action offered is
+   * accepted (still true of a shortened list), and whether `getViewFor` throws
+   * (it does not). The engine's own `legal-actions.exhaustive.test.ts` cannot
+   * see them either, because it tests the ENGINE and the mutation is one layer
+   * above it. It is exactly the false-green shape slice 8 hit: deep equality
+   * cannot tell a returned thing from a rebuilt one, and neither can a test
+   * that never compares the two ends of a pass-through.
+   *
+   * ASSERTED AS IDENTITY, WHICH IS THE CLAIM THE DOCSTRING MAKES. The module
+   * says these three are the engine's own functions rather than lambdas that
+   * narrow or reorder, and `toBe` is that sentence executed. The day a wrapper
+   * is genuinely needed — the union growing an action a client must not be
+   * offered would be one — this test reds and whoever adds it has to say so
+   * here, which is the outcome that was missing.
+   *
+   * `createMatch` is deliberately NOT in this list: it is a lambda on purpose,
+   * because `SeatAssignment[]` has to become a seat order and that adaptation
+   * is this layer's whole job.
+   */
+  it("exposes the engine's own getLegalActions, getViewFor and getOutcome, not a wrapper around them", () => {
+    expect(generalaModule.getLegalActions).toBe(getLegalActions);
+    expect(generalaModule.getViewFor).toBe(getViewFor);
+    expect(generalaModule.getOutcome).toBe(getOutcome);
   });
 });
