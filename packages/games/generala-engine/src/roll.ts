@@ -1,3 +1,4 @@
+import { DIE_FACES } from "./dice.js";
 import type { Dice, DieFace } from "./dice.js";
 import { isGenerala, SERVIDA_ROLL } from "./scoring.js";
 import type { MatchState } from "./state.js";
@@ -24,11 +25,12 @@ import type { ApplyResult } from "./violation.js";
  * runtime check would catch it — refusing that shape is the action's job, and
  * validating this one is this function's.
  *
- * The two refusals are both load-bearing. `not-awaiting-roll` is what stops the
- * transport's loop from re-rolling a player's dice under them, because the loop
- * re-asks after every applied system action. `wrong-face-count` is the entropy
- * budget stated as a rule: too few faces leaves a `null` in a scored hand, and
- * too many silently discards a value the rng was already charged for.
+ * The three refusals are all load-bearing. `not-awaiting-roll` is what stops
+ * the transport's loop from re-rolling a player's dice under them, because the
+ * loop re-asks after every applied system action. `wrong-face-count` is the
+ * entropy budget stated as a rule: too few faces leaves a `null` in a scored
+ * hand, and too many silently discards a value the rng was already charged for.
+ * `malformed-face` is `DieFace`'s promise made good at run time — see below.
  */
 export function applyRoll(state: MatchState, faces: readonly DieFace[]): ApplyResult {
   const turn = state.turn;
@@ -39,6 +41,33 @@ export function applyRoll(state: MatchState, faces: readonly DieFace[]): ApplyRe
   const empty = turn.slots.filter((slot) => slot === null).length;
   if (faces.length !== empty) {
     return reject("wrong-face-count", `this turn is re-rolling ${String(empty)} dice and the roll carried ${String(faces.length)} faces`);
+  }
+
+  // `DieFace` IS COMPILE-TIME ONLY, AND THIS IS THE RUNTIME HALF OF IT. The
+  // union `1|2|3|4|5|6` is erased before a single value moves, so the type
+  // constrains whoever WRITES a caller and constrains nothing that reaches this
+  // line. `generala-module` is the only producer today and its `rollDie` is
+  // total over `RandomSource`'s contractual `[0, 1)` — so nothing on the
+  // shipped path can arrive here with a seventh face, and that is a fact about
+  // today's callers rather than about this reducer. A second producer is what
+  // this refuses: a bot, a replayed match, a state migration.
+  //
+  // MEMBERSHIP IN `DIE_FACES`, NEVER `face < 1 || face > 6`. The comparison
+  // admits 1.5, which is inside the range and is not a face, and admits NaN,
+  // because every comparison against NaN is false. It is also the same list
+  // `counts` tallies over, which is what makes the two agree by construction
+  // instead of by coincidence.
+  //
+  // BEFORE THE SPLICE, and the ordering is the guard. Measured against the
+  // unguarded reducer: a cup of five 7s was accepted into `deciding`, and
+  // because `counts` increments `tally[7]` — `undefined + 1`, i.e. `NaN` — the
+  // face is never tallied, every one of the eleven boxes valued 0, and the seat
+  // was offered all 42 actions on five dice showing nothing. Not a crash and
+  // not a false win: a turn that can only be crossed out, in a state that looks
+  // exactly like a legal one.
+  const malformed = faces.findIndex((face) => !DIE_FACES.includes(face));
+  if (malformed !== -1) {
+    return reject("malformed-face", `a die shows one of ${String(DIE_FACES.length)} faces, and this roll carried ${String(faces[malformed])} at position ${String(malformed)}`);
   }
 
   let next = 0;
