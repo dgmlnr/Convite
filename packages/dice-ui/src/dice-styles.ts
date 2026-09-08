@@ -123,12 +123,13 @@ export function buildDiceStylesheet(): string {
   /* THE UNTHEMED LOOK, applied here rather than left inert.
      \`mahjong-tile-ui\` can leave \`TILE_THEME_DEFAULTS\` as pure data because a
      board (\`mahjong-solitaire-ui/board-styles.ts\`) always exists to apply
-     it; no Generala board exists yet (\`generala-ui\`, still unwritten), so a
-     die or cup built by THIS package alone would render every \`var(--dice-
-     …)\` read as nothing at all without this rule. Custom properties
-     inherit down the DOM, so setting them once here reaches the cup, the
-     tray and every die inside it — and a future themed board can still
-     override any of them by setting the same names on a closer ancestor,
+     it; \`generala-ui/board-styles.ts\` now exists and does the same, but a
+     die or cup built by THIS package ALONE — a scene test's bare gallery, a
+     filmstrip — still has no board above it, and would render every
+     \`var(--dice-…)\` read as nothing at all without this rule. Custom
+     properties inherit down the DOM, so setting them once here reaches the
+     cup, the tray and every die inside it — and a themed board still
+     overrides any of them by setting the same names on a closer ancestor,
      the identical cascade \`board-styles.ts\`'s own gx-bridge relies on. */
   ${Object.entries(DICE_THEME_DEFAULTS)
     .map(([token, value]) => `${token}: ${value};`)
@@ -149,8 +150,8 @@ export function buildDiceStylesheet(): string {
      \`dice.scene.test.ts\`'s own widest scene), left-aligning the composed
      group and leaving the REST of that width as a second, differently-
      coloured empty desert next to it. This piece does not own the page it
-     is mounted into (no board exists yet to give it one — \`generala-ui\` is
-     still unwritten) and should not silently claim more of it than its own
+     is mounted into — a board does, and \`generala-ui/board-styles.ts\` is
+     one — so it should not silently claim more of it than its own
      content needs; \`inline-flex\` shrink-wraps to the cup-plus-tray group,
      same as the cup button inside it already does. */
   display: inline-flex;
@@ -212,8 +213,8 @@ export function buildDiceStylesheet(): string {
      WHY THE SCALE IS DECLARED ON THIS ELEMENT rather than inherited from
      \`.hexdev-dice-root\`: a die built by \`createDieSceneElement\` is mounted
      by whoever wants one — a scene test's bare gallery, a filmstrip, and
-     from the next slice on a Generala board that composes each die inside
-     its own \`<button>\`. Only this element is guaranteed to be there. The
+     \`generala-ui/tray.ts\`, which composes each die inside its own
+     \`<button>\`. Only this element is guaranteed to be there. The
      scene below still reads the property through inheritance, so a caller
      that wants a fixed size (\`dice.scene.test.ts\`'s six-face gallery, which
      exists to be counted by eye at ONE known size) overrides it on this
