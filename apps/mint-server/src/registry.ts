@@ -3,6 +3,7 @@ import type { GameModuleRegistry } from "@hexdev/platform-core";
 import type { GameId } from "@hexdev/platform-contract";
 import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2 } from "@hexdev/escoba-module";
+import { generalaModule } from "@hexdev/generala-module";
 import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
 
 /**
@@ -38,12 +39,22 @@ import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
  * process can call and no test on this root can tell apart from their
  * absence, which is the shape the paragraph above already refuses for the
  * bot-driving collaborators.
+ *
+ * GENERALA JOINS BARE TOO, and for the same reason the solitaire does. Its
+ * match-root entry pairs `requestSystemAction` (a Generala turn cannot start
+ * without a throw) and declares its own `systemActionPauseMs` (a game paying a
+ * pause once per roll cannot use a card game's beat). Neither is reachable from
+ * here: this role never runs a match and never advances one. What it does need
+ * from this module is exactly what it needs from the other five — `metadata`,
+ * for `section: "dados"`, the shelf that makes Generala the first entry in this
+ * list not filed under `cartas` or `fichas`; and `configOptions`, which is
+ * empty, so `deriveModalities` yields Generala's single empty-config modality.
  */
 /** The exact module list `buildMintGameRegistry` composes with — pulled into
  * its own constant (tenant-administration slice 3b) so `MINT_GAME_IDS`
  * below can derive from the SAME array rather than authoring a second,
  * independently-maintained list of ids that could drift from it. */
-const MINT_GAME_MODULES = [trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule];
+const MINT_GAME_MODULES = [trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule, generalaModule];
 
 export function buildMintGameRegistry(): GameModuleRegistry {
   return createGameModuleRegistry(MINT_GAME_MODULES);

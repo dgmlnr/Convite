@@ -270,3 +270,91 @@ describe("createGameModuleRegistry — the factory THIS root composes with admit
     expect(registry.getSystemAction("fixture-solo", {}, () => 0.25)).toEqual({ playerId: "fixture-solo-dealer" });
   });
 });
+
+/**
+ * Slice 18: Generala's own registration on this SAME real composition-root
+ * function — the first entry in this list with an opinion about its own
+ * PACING.
+ *
+ * THREE THINGS ARE FENCED SEPARATELY BECAUSE EACH IS SILENT IN ITS OWN WAY.
+ *
+ * Without the module the game is unreachable, which is what it was for
+ * seventeen slices. Without `requestSystemAction` the room seats both players
+ * in front of a cup nobody can shake: every Generala turn begins in
+ * `awaiting-roll`, a phase where NO seat has a legal action, so the first thing
+ * that has to happen in a match is a system action — and this registration is
+ * the only thing that supplies one. That is the same pairing escoba's and the
+ * solitaire's entries above already carry, for the same reason.
+ *
+ * The third is the one nothing else in this repository would notice, because
+ * nothing about it is incorrect. Without `systemActionPauseMs` the entry
+ * composes, plays exactly by the rules, and waits the room's 1800ms before
+ * EVERY roll — 66 of them in a full match. The game would be right and
+ * unplayable, and every assertion about it would still pass.
+ *
+ * Rung 1, stated rather than assumed: the MODULE's own behaviour is fenced in
+ * `generala-module`'s tests, and re-asserting it here would prove nothing about
+ * this file. What these tests hold on their own is that THIS registry reaches
+ * THIS module's requester by game id, and that the pause travelled with it.
+ */
+describe("buildGameRegistry — Generala's registration (slice 18)", () => {
+  const seats: readonly SeatAssignment[] = [
+    { seat: 0, playerId: "generala-srv-a" as PlayerId },
+    { seat: 1, playerId: "generala-srv-b" as PlayerId },
+  ];
+
+  it("wires requestGeneralaSystemAction: a real opening throw of five faces, not null", () => {
+    const registry = buildGameRegistry();
+    const module = registry.get("generala");
+    expect(module, "null here means the module itself is missing from the registry").toBeDefined();
+    const fresh = module!.createMatch({}, seats);
+
+    const action = registry.getSystemAction("generala", fresh, () => 0.25);
+
+    expect(action, "null here means the requestSystemAction REGISTRATION itself is missing").not.toBeNull();
+    const thrown = JSON.parse(JSON.stringify(action)) as { type: string; faces: readonly number[] };
+    expect(thrown.type).toBe("roll-dice");
+    // Anti-vacuity (R6): a `roll-dice` carrying no faces would satisfy the
+    // type assertion above and put nothing in the tray.
+    expect(thrown.faces).toHaveLength(5);
+  });
+
+  it("declares its own 350ms beat — the room's 1800ms is a card game's, and this game pays it once per ROLL", () => {
+    expect(buildGameRegistry().getSystemActionPauseMs("generala")).toBe(350);
+  });
+
+  /**
+   * THE CASE THAT TELLS A LOOKUP FROM A `[0]`, and the regression this whole
+   * seam exists to avoid. Generala is the only entry here declaring a pause, so
+   * "answered for generala" and "answered from whichever entry declared one"
+   * are the same observation until some OTHER game is asked. Every one of them
+   * must still read `undefined` — "no opinion" — because that is what keeps
+   * their 1800ms beat, and an accessor answering 350 for all of them would
+   * speed up card games nobody asked to speed up.
+   */
+  it("leaves every other game on this root at the room's own beat, undefined and unopinionated", () => {
+    const registry = buildGameRegistry();
+    const others = MATCH_GAME_IDS.filter((gameId) => gameId !== "generala");
+
+    // Fence setup: read off the real list, so this cannot pass by iterating
+    // over nothing the day the registration list changes shape.
+    expect(others.length, "fence setup: some other game has to exist to be asked about").toBeGreaterThan(0);
+    for (const gameId of others) {
+      expect(registry.getSystemActionPauseMs(gameId), `${gameId} must keep the room's handEndPauseMs`).toBeUndefined();
+    }
+  });
+
+  // The same assertion escoba's and the solitaire's entries carry, for the same
+  // reason: a future copy-paste of truco's consult lines onto this entry would
+  // open a channel `generala-module` has no surface for — it registers no
+  // consult provider, and its tier signature declares no `answer` at all.
+  it("registers NO consult hooks for Generala — there is nothing to ask a partner about", () => {
+    const registry = buildGameRegistry();
+    const fresh = registry.get("generala")!.createMatch({}, seats);
+
+    expect(registry.isNonBlockingAction("generala", { type: "hold" })).toBe(false);
+    expect(registry.isHumanPriorityAction("generala", { type: "hold" })).toBe(false);
+    expect(registry.isPaidQuestion("generala", { type: "hold" })).toBe(false);
+    expect(registry.getConsultAsk("generala", fresh, seats[0]!.playerId)).toBeNull();
+  });
+});
