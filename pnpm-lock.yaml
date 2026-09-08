@@ -102,6 +102,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/generala-module':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-module
       '@hexdev/mahjong-solitaire-module':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-module
@@ -127,6 +130,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/generala-module':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-module
       '@hexdev/mahjong-solitaire-module':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-module

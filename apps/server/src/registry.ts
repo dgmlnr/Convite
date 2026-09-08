@@ -3,6 +3,7 @@ import type { AbandonedSeatActionProvider, ConsultAdviceProvider, ConsultAskProv
 import type { GameId } from "@hexdev/platform-contract";
 import { getConsultAdvice, getConsultAsk, requestSystemAction, requestSystemAction2v2, trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2, requestEscobaSystemAction } from "@hexdev/escoba-module";
+import { generalaModule, requestGeneralaSystemAction } from "@hexdev/generala-module";
 import { getAbandonedSeatAction as getMahjongAbandonedSeatAction, mahjongSolitaireModule, requestMahjongSolitaireSystemAction } from "@hexdev/mahjong-solitaire-module";
 
 // The registry erases per-module state types (same documented boundary as
@@ -34,6 +35,33 @@ const isTrucoResponseHumanFirst = (action: unknown): boolean => {
 // one type: a game that named more here would be handing bots information
 // they never paid for.
 const isTrucoPaidQuestion = (action: unknown): boolean => typeof action === "object" && action !== null && (action as { type?: unknown }).type === "consult-partner";
+
+/**
+ * THE BEAT BEFORE EACH OF GENERALA'S THROWS, and the first time any entry in
+ * this list has had an opinion about its own pacing.
+ *
+ * A card game pays the room's `handEndPauseMs` ONCE PER HAND, and that pause
+ * exists for a reported reason: without it the winning card went past in the
+ * same broadcast burst that replaced it. Generala pays a pause once per ROLL.
+ * Two seats, eleven boxes and up to three throws a turn is 66 system actions in
+ * a full match — at the room's own 1800ms that is roughly two minutes of a
+ * match in which nothing whatsoever happens, against roughly 23 seconds at 350.
+ *
+ * WHY NOT ZERO, since a shorter pause is strictly cheaper. This one is dead
+ * time BEFORE the throw rather than instead of it: `dice-ui`'s tumble runs
+ * ~640ms and starts when the view arrives, so the roll is already legible with
+ * no pause at all. What 350ms buys is the beat between the previous view
+ * leaving and the dice beginning to move — long enough for the eye to arrive at
+ * the tray, short enough that nobody waits for it.
+ *
+ * DECLARED RATHER THAN OMITTED, and the difference is not cosmetic: omitting it
+ * is the answer "no opinion, keep the room's own beat", which is what every
+ * other entry below says. This one has an opinion, so it states it. A named
+ * constant rather than a literal in the entry itself, because the number is the
+ * conclusion of the arithmetic above and a bare 350 down there would read as a
+ * magic value nobody could argue with.
+ */
+const GENERALA_SYSTEM_ACTION_PAUSE_MS = 350;
 
 /**
  * The composition root's own game registry — EXTRACTED from `index.ts`
@@ -132,6 +160,40 @@ const MATCH_GAME_REGISTRATIONS: readonly GameModuleRegistration[] = [
       module: mahjongSolitaireModule,
       requestSystemAction: requestMahjongSolitaireSystemAction as SystemActionRequester,
       getAbandonedSeatAction: getMahjongAbandonedSeatAction as AbandonedSeatActionProvider,
+    },
+    /**
+     * THE FIRST GAME THAT PACES ITSELF, and the first one whose system action
+     * is not a deal but a THROW.
+     *
+     * `requestSystemAction` is the same pairing escoba's and the solitaire's
+     * entries above already carry, and here it is the entire game's supply of
+     * randomness: `applyAction` is pinned pure by an executed conformance test
+     * and receives no `rng` at all, so a roll cannot be materialized inside it.
+     * Every Generala turn begins in `awaiting-roll`, a phase in which NO seat
+     * has a legal action — which is exactly the condition
+     * `MatchRoom.runAdvanceOnce` reads as its cue to ask this registry for a
+     * system action. An entry registered without the pairing would seat both
+     * players and then sit in front of a cup nobody in the process is able to
+     * shake.
+     *
+     * `systemActionPauseMs` is the member NO OTHER ENTRY declares, and the
+     * reason is arithmetic rather than taste — see the constant's own comment.
+     * It is declared HERE, on the registration, rather than by changing
+     * `index.ts`'s `handEndPauseMs`: that scalar is the ROOM's default beat and
+     * it keeps both its name and its meaning, so truco, escoba and the
+     * solitaire are unaffected by construction rather than by migration.
+     *
+     * No consult hooks, and that is a decision rather than an omission.
+     * Generala has no señas, no partner and nothing a seat could usefully be
+     * asked; the module registers no consult provider and its bot tiers declare
+     * no `answer` parameter at all. `createGameModuleRegistry`'s own
+     * fail-closed defaults already answer correctly for an entry that supplies
+     * none of them.
+     */
+    {
+      module: generalaModule,
+      requestSystemAction: requestGeneralaSystemAction as SystemActionRequester,
+      systemActionPauseMs: GENERALA_SYSTEM_ACTION_PAUSE_MS,
     },
 ];
 
