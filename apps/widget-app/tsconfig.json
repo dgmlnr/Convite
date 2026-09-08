@@ -19,6 +19,9 @@
       "path": "../../packages/spanish-deck-ui"
     },
     {
+      "path": "../../packages/dice-ui"
+    },
+    {
       "path": "../../packages/mahjong-tile-ui"
     },
     {

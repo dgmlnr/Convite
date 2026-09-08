@@ -167,6 +167,9 @@ importers:
 
   apps/widget-app:
     dependencies:
+      '@hexdev/dice-ui':
+        specifier: workspace:*
+        version: link:../../packages/dice-ui
       '@hexdev/escoba-engine':
         specifier: workspace:*
         version: link:../../packages/games/escoba-engine
