@@ -64,6 +64,34 @@ export const DIE_SCENE_SIZE = 210;
 export const DIE_CUBE_SIZE = 110;
 
 /**
+ * How much bigger a die LOOKS at rest than the box it lays out in, as a
+ * multiple of `DIE_CUBE_SIZE`.
+ *
+ * A resting cube is not painted at its own size: it sits inside
+ * `.hexdev-dice-scene`'s `perspective: 480px` under a real 3D rotation, so
+ * what a browser draws is its PROJECTED box — the same perspective
+ * enlargement `.hexdev-dice-scene`'s `overflow: hidden` exists to crop.
+ * MEASURED, not derived: a browser paints 124.235px for a 110px cube at
+ * scale 1, and the perspective arithmetic alone (`480 / (480 - 50)`, which is
+ * 1.1163) does not get there because the resting ROTATION contributes too.
+ * `dice-tray-fit.browser.test.ts` compares this constant against the cube a
+ * browser really paints, at every tier of the ladder, to within a twentieth
+ * of a pixel — which is what keeps a published number nothing in this package
+ * reads from quietly drifting away from the thing it describes.
+ *
+ * PUBLISHED, because a consumer that wants to draw something AROUND a die has
+ * no other way to find out how big the die is. `.hexdev-dice-scene-box` is
+ * sized for the FLIGHT — `DIE_SCENE_SIZE` is the smallest box that keeps every
+ * instant of a tumbling die inside it — so anything drawn on that box is drawn
+ * around the flight envelope, which is what `generala-ui`'s held cue was doing
+ * until somebody looked at it: a 214px ring around a 110px die, reading as a
+ * plate the die sat on. The alternative was that package copying these
+ * numbers, which is the coupling `DIE_SIDE_LOCAL_TRANSFORM`'s own comment
+ * spends a paragraph refusing.
+ */
+export const DIE_REST_ENLARGEMENT = 1.1294;
+
+/**
  * The tray, the cube, the toss, the cup — one stylesheet string, injected
  * once by `ensureDiceStyles`, the same "no bundler to resolve a stylesheet
  * import" arrangement `mahjong-solitaire-ui/board-styles.ts` documents for
@@ -192,6 +220,16 @@ export function buildDiceStylesheet(): string {
      element and gets both halves at once. */
   width: calc(${String(DIE_SCENE_SIZE)}px * var(--dice-scene-scale, 1));
   height: calc(${String(DIE_SCENE_SIZE)}px * var(--dice-scene-scale, 1));
+  /* THE RESTING DIE'S OWN PAINTED SIZE, published for whoever has to draw
+     something around it. Nothing in this package reads it — a die needs no
+     ring — and that is exactly why it is declared here rather than invented
+     by the consumer: the two numbers behind it (\`DIE_CUBE_SIZE\` and the
+     perspective enlargement it is painted with) are this package's, and a
+     board that copied them would be holding a duplicate of geometry that
+     \`.hexdev-dice-cube\`'s own comment spends a paragraph keeping in one
+     place. Scaled here so a consumer reads ONE property and never has to
+     multiply it by the ladder itself. */
+  --dice-rest-size: calc(${String(DIE_CUBE_SIZE)}px * ${String(DIE_REST_ENLARGEMENT)} * var(--dice-scene-scale, 1));
 }
 
 /* THE LADDER, at the widths this repository already standardizes on for a

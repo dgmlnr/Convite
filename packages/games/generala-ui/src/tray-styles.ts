@@ -49,12 +49,27 @@ export const TRAY_STYLE_ID = "hexdev-generala-tray-styles";
  * this tray the tray's own box decides, whatever order the two stylesheets
  * were injected in.
  *
- * THE BORDER IS DECLARED ON EVERY DIE, TRANSPARENT WHEN IT IS NOT HELD, and
- * that is deliberate rather than tidy. A border that appears only on the held
- * die would grow the flex item by 4px the instant it is pressed, so the whole
- * row would reflow under the player's finger and the dice beside it would
- * step sideways. Reserving it costs the same 4px on all five, always, which
- * is a layout nobody has to think about.
+ * THE HELD RING IS DRAWN AROUND THE DIE, NOT AROUND THE ROOM IT FLIES
+ * THROUGH, and getting there took two reviews. The first draft put a border
+ * on the control, which wraps `.hexdev-dice-scene-box` — a box sized for the
+ * FLIGHT, since a tumbling die needs far more room than a resting one. At
+ * scale 1 that is a 214px ring around a die painted at 124px, with about
+ * 45px of felt between the two on every side: slice 13's review recorded that
+ * it read as a plate the die was sitting on, and slice 15's saw the same
+ * thing at every tier, because the ratio is fixed.
+ *
+ * That review also concluded it could not be fixed from here, and it was
+ * right at the time: the resting footprint is `dice-ui`'s geometry and this
+ * package must not copy it. `dice-ui` now PUBLISHES it as `--dice-rest-size`,
+ * already multiplied by the ladder, so the ring below is positioned by
+ * reading one property and no number here is a copy of one there.
+ *
+ * IT IS OUT OF FLOW, which is what replaced the reserved transparent border.
+ * That border existed so a die would not grow by 4px the instant it was
+ * pressed and step the whole row sideways under the player's finger. An
+ * absolutely-positioned pseudo-element cannot change its control's size at
+ * all, so the claim survives and the reservation is gone — measured, in
+ * `held-ring.browser.test.ts`, by comparing all five controls.
  *
  * TWO NON-COLOUR CUES FOR "HELD" (WCAG 1.4.1), the same pair
  * `escoba-ui`'s marked card uses and for the same reason: a solid border
@@ -72,6 +87,10 @@ export function buildTrayStylesheet(): string {
      \`--generala-\` a namespace this package owns, and it is a real knob
      besides: the one number the row spends between dice. */
   --generala-die-gap: 4px;
+  /* How far outside the die the held ring is drawn. A real knob: a board
+     with a busier felt may want more separation between the mark and the
+     face it marks. */
+  --generala-held-air: 6px;
   /* THE CONTAINER \`dice-ui\` CANNOT DECLARE FOR ITSELF. Safe here and not
      there because this is a BLOCK-LEVEL flex row: \`contain: inline-size\`
      makes an element's inline size ignore its contents, which is fatal to a
@@ -91,7 +110,7 @@ export function buildTrayStylesheet(): string {
   background: transparent;
   font: inherit;
   padding: 0;
-  border: 2px solid transparent;
+  border: 0;
   border-radius: 10px;
   /* NO \`line-height: 0\` HERE, and its absence was measured rather than
      assumed. It is the reflex declaration for a button wrapping artwork, and
@@ -102,8 +121,29 @@ export function buildTrayStylesheet(): string {
   cursor: pointer;
 }
 
+/* THE RING, INSET TO THE DIE'S OWN PAINTED SIZE PLUS A LITTLE AIR. The
+   fallback is \`100%\`, which degrades to the flight-box ring this replaced
+   rather than to a ring of nothing: a stylesheet that failed to load is a
+   worse cue, not an absent one. */
+/* DRAWN ON THE SCENE BOX AND NOT ON THE CONTROL, because \`--dice-rest-size\`
+   is declared ON that box and custom properties only ever inherit downwards —
+   the control is its parent and cannot see it. Positioning it is scoped to
+   this tray so nothing about a die mounted anywhere else changes, and
+   \`position: relative\` with no offsets moves nothing. */
+.hexdev-generala-tray .hexdev-dice-scene-box {
+  position: relative;
+}
+
+.hexdev-generala-die[aria-pressed="true"] .hexdev-dice-scene-box::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  inset: calc((100% - var(--dice-rest-size, 100%)) / 2 - var(--generala-held-air));
+  border: 2px solid var(--gx-color-accent, var(--hx-gold, #e8c877));
+  border-radius: 10px;
+}
+
 .hexdev-generala-die[aria-pressed="true"] {
-  border-color: var(--gx-color-accent, var(--hx-gold, #e8c877));
   transform: translateY(-6px);
 }
 
