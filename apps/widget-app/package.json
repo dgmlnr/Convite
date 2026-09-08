@@ -7,8 +7,11 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@hexdev/dice-ui": "workspace:*",
     "@hexdev/escoba-engine": "workspace:*",
     "@hexdev/escoba-ui": "workspace:*",
+    "@hexdev/generala-engine": "workspace:*",
+    "@hexdev/generala-ui": "workspace:*",
     "@hexdev/mahjong-solitaire-ui": "workspace:*",
     "@hexdev/mahjong-tile-ui": "workspace:*",
     "@hexdev/platform-contract": "workspace:*",

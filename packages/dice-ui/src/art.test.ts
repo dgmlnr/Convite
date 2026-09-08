@@ -1,10 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DIE_FACES, type DieFace } from "./geometry.js";
 import {
   CUP_ART_HEIGHT,
   CUP_ART_WIDTH,
+  CUP_ASSET_FILENAME,
+  DICE_ASSET_FILENAMES,
   DIE_FACE_ART_HEIGHT,
   DIE_FACE_ART_WIDTH,
   getCupArtUrl,
@@ -112,10 +115,95 @@ describe("art: getCupArtUrl resolves to a real, distinct file", () => {
     const dieUrls = new Set((DIE_FACES as readonly DieFace[]).map((face) => getDieFaceArtUrl(face).href));
     expect(dieUrls.has(getCupArtUrl().href)).toBe(false);
   });
+
+  /**
+   * ONE DIRECTORY FOR EVERYTHING THIS PACKAGE SHIPS, and this is the
+   * assertion that makes it one rather than an intention. While the cup sat
+   * at `assets/cup.webp` beside `assets/dice/<face>.webp`, any front door
+   * serving this package needed a prefix for the faces PLUS a permanent
+   * exact-path case for a single file — and that second case would sit
+   * outside whatever traversal guard the prefix already shares, which is the
+   * whole reason the alternative was rejected rather than merely disliked.
+   *
+   * THE DIRECTORY IS WHAT IS ASSERTED, not the basename. A URL ending in
+   * `cup.webp` says nothing at all about which directory it ends up in, so an
+   * assertion on the basename alone stays green through exactly the arrangement
+   * this test exists to rule out.
+   */
+  it("resolves under `assets/dice/`, so one prefix covers every asset the package ships", () => {
+    expect(getCupArtUrl().pathname.endsWith("/assets/dice/cup.webp")).toBe(true);
+  });
 });
 
 describe("art: the die's declared size is square, matching the cube's own square facelets", () => {
   it("has equal width and height", () => {
     expect(DIE_FACE_ART_WIDTH).toBe(DIE_FACE_ART_HEIGHT);
+  });
+});
+
+/**
+ * A DERIVED SET, NOT A REGEX, and that difference is the whole reason this
+ * export exists here instead of a pattern living at whatever route serves
+ * these files. `static-tile-assets.ts` already carries the argument and
+ * `TILE_FRONT_FILENAMES` already carries the shape: a regex can be tested for
+ * COMPLETENESS — feed it the seven valid names and watch them pass — and never
+ * for SOUNDNESS, because proving it accepts nothing else means enumerating a
+ * regular language, which is not something a test can do. A Set built from
+ * `DIE_FACES` holds those names and, by the definition of a Set, nothing else,
+ * so `has(filename)` is a total and honest answer for every input, traversal
+ * shapes included.
+ *
+ * THE ONE THING CONSTRUCTION DOES NOT CLOSE, asserted here rather than left
+ * implied. The set spells the `.webp` suffix in its own expression, and so do
+ * `getDieFaceArtUrl` and `getCupArtUrl` inside their `new URL` calls — those
+ * calls are reproduced verbatim from `mahjong-tile-ui/front-image.ts` under a
+ * header recording two Vite failures in opposite directions, so they are not
+ * refactored to read from the set. The set and the resolvers can therefore
+ * drift, and the second test below is what refuses to let them: it walks the
+ * package's own resolvers and checks every basename they produce is in the
+ * set, and that the set has nothing the resolvers never name.
+ */
+describe("art: DICE_ASSET_FILENAMES is derived from DIE_FACES, never typed", () => {
+  it("holds one filename per face plus the cup, and nothing else", () => {
+    expect(DICE_ASSET_FILENAMES.size).toBe(DIE_FACES.length + 1);
+    for (const face of DIE_FACES as readonly DieFace[]) {
+      expect(DICE_ASSET_FILENAMES.has(`${String(face)}.webp`), `missing face ${String(face)}`).toBe(true);
+    }
+    expect(DICE_ASSET_FILENAMES.has(CUP_ASSET_FILENAME)).toBe(true);
+  });
+
+  it("names exactly what the package's own resolvers resolve, in both directions", () => {
+    const resolved = new Set(
+      [...(DIE_FACES as readonly DieFace[]).map((face) => getDieFaceArtUrl(face)), getCupArtUrl()].map((url) =>
+        url.pathname.slice(url.pathname.lastIndexOf("/") + 1),
+      ),
+    );
+    for (const name of resolved) {
+      expect(DICE_ASSET_FILENAMES.has(name), `resolver produces ${name}, set does not hold it`).toBe(true);
+    }
+    for (const name of DICE_ASSET_FILENAMES) {
+      expect(resolved.has(name), `set holds ${name}, no resolver produces it`).toBe(true);
+    }
+  });
+
+  it("rejects a name with the right extension and a wrong stem — the case a bare /\\.webp$/ would accept", () => {
+    expect(DICE_ASSET_FILENAMES.has("7.webp")).toBe(false);
+    expect(DICE_ASSET_FILENAMES.has("0.webp")).toBe(false);
+    expect(DICE_ASSET_FILENAMES.has("dado.webp")).toBe(false);
+    expect(DICE_ASSET_FILENAMES.has("../secret.webp")).toBe(false);
+  });
+
+  it("rejects a real asset under any other extension, and the bare stem", () => {
+    expect(DICE_ASSET_FILENAMES.has("cup.png")).toBe(false);
+    expect(DICE_ASSET_FILENAMES.has("3.svg")).toBe(false);
+    expect(DICE_ASSET_FILENAMES.has("cup")).toBe(false);
+    expect(DICE_ASSET_FILENAMES.has("3")).toBe(false);
+  });
+
+  it("names only files that really are in `assets/dice/` — the set is not a wish", () => {
+    const dir = fileURLToPath(new URL("../assets/dice/", import.meta.url));
+    for (const name of DICE_ASSET_FILENAMES) {
+      expect(existsSync(join(dir, name)), `${name} is named by the set and missing on disk`).toBe(true);
+    }
   });
 });

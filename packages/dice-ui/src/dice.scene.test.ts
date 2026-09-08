@@ -120,10 +120,25 @@ describe("scene: the six faces, each beside the number it is supposed to be", ()
       cell.style.margin = "0";
       cell.style.width = "110px";
 
-      const scene = createDieSceneElement(document, face, 0);
-      (scene.style as CSSStyleDeclaration).width = "110px";
-      (scene.style as CSSStyleDeclaration).height = "110px";
-      cell.appendChild(scene);
+      // A FIXED SIZE, DELIBERATELY OPTING OUT OF THE RESPONSIVE LADDER. This
+      // gallery exists so a person can count pips at ONE known size at every
+      // viewport, which is the opposite of what `--dice-scene-scale` is for
+      // — so it is pinned to 1 here rather than left to whichever `@media`
+      // tier this scene's own 900px viewport happens to land in.
+      // Both elements are sized, because a die is two of them now: the outer
+      // `.hexdev-dice-scene-box` is what this cell lays out, the inner
+      // `.hexdev-dice-scene` is what crops the cube's enlarged front facelet
+      // (`overflow: hidden`), and sizing only one leaves the other at its
+      // full `DIE_SCENE_SIZE`, spilling over the neighbouring faces.
+      const box = createDieSceneElement(document, face, 0);
+      box.style.setProperty("--dice-scene-scale", "1");
+      box.style.width = "110px";
+      box.style.height = "110px";
+      const scene = box.querySelector<HTMLElement>(".hexdev-dice-scene");
+      if (scene === null) throw new Error("createDieSceneElement did not produce a .hexdev-dice-scene");
+      scene.style.width = "110px";
+      scene.style.height = "110px";
+      cell.appendChild(box);
 
       const caption = document.createElement("figcaption");
       caption.textContent = String(face);

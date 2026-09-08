@@ -87,31 +87,102 @@ describe("sectionUiFor — what the catalog's shelves are called, on the client'
     expect(sectionUiFor("fichas")?.title, "the Spanish string itself lives in i18n.ts; this record only points at it").toBe("Fichas");
   });
 
+  /* REPLACED, NOT DELETED, for the second time and by the same rule the
+   * `"fichas"` assertion above records. This read
+   * `expect(sectionUiFor("dados")).toBeUndefined()` and was correct for
+   * exactly as long as no module declared that shelf; `generalaModule`
+   * declares `section: "dados"`, so the row has its referent and the shelf
+   * has its name. */
+  it("names the shelf the dice game declares", () => {
+    expect(sectionUiFor("dados")?.id).toBe("dados");
+    expect(sectionUiFor("dados")?.title, "the Spanish string itself lives in i18n.ts; this record only points at it").toBe("Dados");
+  });
+
   /* The missing-copy path is still real and still exercised — that is the
    * half of the old assertion that had to survive its replacement. It is
    * `undefined` for a shelf this build has no copy for, so `game-list.ts`
    * falls back to the raw section id and shows a visible bug report, rather
    * than a record with an empty title or a silent merge under the shelf
-   * above. Asserted on an id no module declares, which is what the old
-   * `"fichas"` assertion was until this slice. */
+   * above. Asserted on an id no module declares, and deliberately on a
+   * PLAUSIBLE one — a bingo shelf is the kind of thing that lands next — so
+   * the assertion keeps meaning what it says when it is replaced in turn. */
   it("returns undefined for a shelf this build has no copy for, rather than an empty name", () => {
-    expect(sectionUiFor("dados")).toBeUndefined();
+    expect(sectionUiFor("cartones")).toBeUndefined();
   });
 
-  /* Two shelves now, and they are two different records with two different
-   * names — a `sectionUiFor` that ignored its argument and answered
+  /* Three shelves now, and they are three different records with three
+   * different names — a `sectionUiFor` that ignored its argument and answered
    * "Cartas" for everything would pass each lookup above on its own. */
-  it("the two shelves are told apart", () => {
-    const cartas = sectionUiFor("cartas");
-    const fichas = sectionUiFor("fichas");
+  it("the three shelves are told apart", () => {
+    const titles = ["cartas", "fichas", "dados"].map((id) => sectionUiFor(id)?.title);
 
     // Anti-vacuity, and it is not decoration: measured (M9f) that dropping
     // `FICHAS_SECTION` from `SECTIONS` leaves this comparison GREEN, because
     // `undefined` differs from "Cartas" as happily as "Fichas" does. A fence
-    // about two things being different has to say that both exist.
-    expect(cartas?.title, "fence setup: the card shelf must have a name").toBeDefined();
-    expect(fichas?.title, "fence setup: the tile shelf must have a name").toBeDefined();
-    expect(cartas?.title).not.toBe(fichas?.title);
+    // about three things being different has to say that all three exist.
+    expect(titles.filter((title) => title !== undefined), "fence setup: every shelf must have a name").toHaveLength(3);
+    expect(new Set(titles).size, "two shelves sharing a name is a shelf that reads as somebody else's").toBe(3);
+  });
+});
+
+/**
+ * THE FOURTH FAMILY, and the first that is neither cards nor tiles.
+ *
+ * `familyUiFor` rather than `createGameUiRegistry`, for the reason escoba's
+ * and mahjong's blocks already record: no lobby screen reads the match
+ * registry. What a player sees on screen one and screen two comes from here.
+ */
+describe("familyUiFor(\"generala\") — the dice shelf's only game", () => {
+  it("declares the game's own name as its heroTitle, so screen two says which game before it says which format", () => {
+    expect(familyUiFor("generala")?.heroTitle).toBe("Generala");
+  });
+
+  /* IT DECLARES ART, and the reason is measured rather than aesthetic. The
+   * mahjong family's own docblock records what a card with no `cardArt` does:
+   * `chrome-styles.ts`'s min-height reservation is scoped to
+   * `:has(.hexdev-game-card-art)`, so an art-less card comes out at roughly
+   * half its neighbours' height and reads as a broken image rather than as a
+   * game with no art yet. Generala has real artwork — `dice-ui` ships six
+   * rendered faces — so declaring none would be that defect chosen on
+   * purpose. */
+  it("names itself with dice faces, so its card is a card and not a gap in the shelf", () => {
+    const art = familyUiFor("generala")?.cardArt ?? [];
+    expect(art.length, "an art-less card measures roughly half its neighbours' height").toBeGreaterThan(0);
+    // URLs, not markup: a die face is a whole picture, so the `CardArtItem`
+    // branch this takes is the plain `<img>` one every card took before that
+    // contract widened for the transparent tiles.
+    expect(art.every((item) => typeof item === "string")).toBe(true);
+  });
+
+  /* NO CREDITS, AND THAT IS A FINDING RATHER THAN AN OMISSION. `dice-ui`'s
+   * own `assets/LICENSE` records that the die's ivory is fully procedural and
+   * the cup's leather is a CC0 scan — neither carries an attribution
+   * obligation — so a credit here would be a licence term invented for a
+   * screen that already prints two real ones. Asserted rather than left
+   * blank, because "we owe nothing" and "somebody forgot" look identical in a
+   * record that simply omits the field. */
+  it("owes no attribution, and says so rather than leaving the question open", () => {
+    expect(familyUiFor("generala")?.credits).toBeUndefined();
+    expect(GAME_UI_CREDITS.map((credit) => credit.author), "the dice added an obligation the art does not carry").toHaveLength(2);
+  });
+});
+
+/**
+ * THE ROW WITHOUT WHICH THE WHOLE CHAIN ENDS AT AN APOLOGY.
+ *
+ * Eighteen slices registered Generala on both composition roots, seeded the
+ * dev tenant entitled to it and gave it a lobby button. Without this entry
+ * `enterMatch` resolves nothing and falls through to `renderUnsupportedGame`
+ * — "Este juego todavía no está disponible en esta versión." — which is the
+ * one failure mode that looks deliberate.
+ */
+describe("createGameUiRegistry — the dice game reaches its own renderer", () => {
+  it("resolves the registered id to an entry rather than to the unsupported-game fallback", () => {
+    expect(createGameUiRegistry().get("generala" as GameId)).toBeDefined();
+  });
+
+  it("resolves that entry to its own family, so screen two wears the right name", () => {
+    expect(createGameUiRegistry().family("generala" as GameId)?.heroTitle).toBe("Generala");
   });
 });
 

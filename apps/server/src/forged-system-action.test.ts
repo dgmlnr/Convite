@@ -4,6 +4,7 @@ import { createJtiReplayGuard, createRateLimiter, createStaticTenantRepository }
 import { MatchRoom } from "@hexdev/transport-colyseus";
 import type { MatchRoomAuthOptions } from "@hexdev/transport-colyseus";
 import { escobaModule } from "@hexdev/escoba-module";
+import { SYSTEM_ACTOR_ID, generalaModule } from "@hexdev/generala-module";
 import { trucoModule } from "@hexdev/truco-module";
 import type { Card as EscobaCard, Rank as EscobaRank, Suit as EscobaSuit } from "@hexdev/escoba-engine";
 import { buildGameRegistry } from "./registry.js";
@@ -16,7 +17,8 @@ import { buildGameRegistry } from "./registry.js";
  * `playerId` had to match the authenticated controller — and then handed the
  * action straight to `module.applyAction`, without ever asking
  * `getLegalActions` whether the game had offered it. Every game's dealing
- * action (`start-hand` in truco and escoba, `deal-board` in the solitaire) is
+ * action (`start-hand` in truco and escoba, `deal-board` in the solitaire, and
+ * now `roll-dice` in Generala) is
  * a SYSTEM action: the room materializes it from server-owned entropy inside
  * `runAdvanceOnce`, and no module ever offers it to a player. But nothing
  * refused one that ARRIVED from a player, under that player's own id, in the
@@ -50,6 +52,40 @@ const P1 = "forged-seat-1" as PlayerId;
 /** Fixed rather than random so nothing here varies run to run; the deal it
  * produces is never asserted on by VALUE, only by shape. */
 const RNG: RandomSource = () => 0.5;
+
+/**
+ * A DICE GAME BREAKS THE CONSTANT FIXTURE, and it has to — which is why the two
+ * helpers below take a source instead of closing over one.
+ *
+ * `RNG` answers 0.5 to everything. The card games consume that as one shuffle
+ * and never look at it again; Generala reads it once PER DIE, and
+ * `Math.floor(0.5 * 6) + 1` is 4 five times over. The opening throw would be
+ * `[4,4,4,4,4]` — a generala servida, which ends the match outright BEFORE any
+ * seat is offered anything (spec Domain C). `afterTheDeal` would then spend its
+ * whole five seconds waiting for a legal action that was never coming, and the
+ * failure would read as a hung deal rather than as a fixture that had rolled a
+ * winning hand.
+ *
+ * Five ascending draws instead: `[1,2,3,4,5]`, deterministic in exactly the way
+ * the constant is, and an escalera rather than a generala, so the match stays
+ * live and the seat gets its turn. Written as literal draws rather than `i / 6`
+ * because `(1 / 6) * 6` is 0.9999999999999999 in binary floating point, which
+ * floors to the WRONG face — a fixture that reads right and rolls a 1 where it
+ * says 2.
+ *
+ * A factory, never a shared cursor: two tests drawing from one source would
+ * each roll whatever the other had left behind, and the second would depend on
+ * the first having run.
+ */
+const ASCENDING_DRAWS = [0, 0.2, 0.4, 0.6, 0.8] as const;
+function ascendingFaces(): RandomSource {
+  let index = 0;
+  return () => {
+    const draw = ASCENDING_DRAWS[index % ASCENDING_DRAWS.length]!;
+    index += 1;
+    return draw;
+  };
+}
 
 /**
  * `onCreate` only STORES `auth` (it is read in `onAuth`, which these tests
@@ -121,9 +157,9 @@ function rejections(seat: FakeSeat): { code: string; message: string }[] {
  * lets the deal's own microtask run. Everything the caller does before
  * `settle()` happens in the undealt window.
  */
-function beforeTheDeal(gameId: string, config: unknown): { room: MatchRoom; seat0: FakeSeat; seat1: FakeSeat; settle: () => Promise<void> } {
+function beforeTheDeal(gameId: string, config: unknown, rng: RandomSource = RNG): { room: MatchRoom; seat0: FakeSeat; seat1: FakeSeat; settle: () => Promise<void> } {
   const room = new MatchRoom();
-  room.onCreate({ gameId, config, registry: buildGameRegistry(), auth: AUTH, rng: RNG });
+  room.onCreate({ gameId, config, registry: buildGameRegistry(), auth: AUTH, rng });
   const seat0 = fakeSeat("s0", P0);
   const seat1 = fakeSeat("s1", P1);
   // The first join settles with no match state at all (`createMatch` waits
@@ -153,9 +189,9 @@ function beforeTheDeal(gameId: string, config: unknown): { room: MatchRoom; seat
  * afterwards. Bounded, and it fails naming what it waited for — the same
  * discipline `transport-colyseus`'s own `waitForView` states.
  */
-async function afterTheDeal(gameId: string, config: unknown): Promise<{ room: MatchRoom; seat0: FakeSeat; seat1: FakeSeat }> {
+async function afterTheDeal(gameId: string, config: unknown, rng: RandomSource = RNG): Promise<{ room: MatchRoom; seat0: FakeSeat; seat1: FakeSeat }> {
   const room = new MatchRoom();
-  room.onCreate({ gameId, config, registry: buildGameRegistry(), auth: AUTH, rng: RNG });
+  room.onCreate({ gameId, config, registry: buildGameRegistry(), auth: AUTH, rng });
   const seat0 = fakeSeat("s0", P0);
   const seat1 = fakeSeat("s1", P1);
   await room.onJoin(seat0.client as never);
@@ -182,6 +218,14 @@ const ESCOBA_RANKS: readonly EscobaRank[] = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
  * that the SUBMITTER chose it: in escoba the deck order is every seat's hand,
  * the opening table, and the whole draw order behind them. */
 const STACKED_DECK: readonly EscobaCard[] = ESCOBA_SUITS.flatMap((suit) => ESCOBA_RANKS.map((rank) => ({ suit, rank })));
+
+/**
+ * Five of a kind — the throw a seat that could author its own would send every
+ * single time, because it does not merely help, it ENDS THE MATCH in that
+ * seat's favour on the spot. Never asserted on by value; what matters is that
+ * the submitter chose it.
+ */
+const STACKED_FACES = [5, 5, 5, 5, 5] as const;
 
 /** The three best cards in truco (both matas and the seven of oro) for seat
  * 0, and three fours for seat 1. */
@@ -242,6 +286,65 @@ describe("MatchRoom.handleAction — a seated player cannot submit an action the
     const { room, seat0, settle } = beforeTheDeal("truco-argentino", { pointsToWin: 15 });
 
     room.handleAction(seat0.client as never, { type: "start-hand", playerId: "__system__", deal: STACKED_DEAL });
+
+    expect(rejections(seat0).map((rejection) => rejection.code)).toEqual(["actor-mismatch"]);
+
+    await settle();
+  });
+
+  /**
+   * GENERALA IS THE GAME THIS GATE WAS WRITTEN FOR. `MatchRoom.handleAction`'s
+   * own docblock names "Generala's roll to come" by name, written months before
+   * there was one; this is that sentence becoming an executed test.
+   *
+   * It is also the sharpest of the four, because a forged action is worth more
+   * here than in either card game. A truco `start-hand` chooses everybody's
+   * cards ONCE, at the start of a hand. A Generala `roll-dice` chooses five
+   * faces, and a seat that could author its own would win every match it ever
+   * played by sending `[5,5,5,5,5]` on its first turn: five of a kind on the
+   * opening throw is a generala servida, and it ends the match outright in that
+   * seat's favour before anybody chooses anything.
+   *
+   * AND THE WINDOW IS THE WHOLE MATCH, not just its beginning. Every Generala
+   * turn starts in `awaiting-roll` and every hold returns to it, so this window
+   * opens 66 times in a full match rather than once per hand. The undealt
+   * window `beforeTheDeal` reaches is simply the first of them.
+   */
+  it("generala: refuses a self-chosen roll submitted under the player's own id", async () => {
+    const { room, seat0, seat1, settle } = beforeTheDeal("generala", {});
+
+    // The premise, asserted rather than assumed: `roll-dice` is in NOBODY's
+    // legal list, ever. If a future Generala ever offered one, this line says
+    // so first, and nothing below would be measuring a forgery any more.
+    const fresh = generalaModule.createMatch({}, [
+      { seat: 0, playerId: P0 },
+      { seat: 1, playerId: P1 },
+    ]);
+    expect(generalaModule.getLegalActions(fresh, P0).some((action) => action.type === "roll-dice")).toBe(false);
+    // The stronger half of the same premise, and the one neither card game has
+    // an equivalent of: in `awaiting-roll` the list is empty for EVERY seat.
+    // That emptiness is not an accident of the fixture, it is what makes the
+    // room ask for a system action at all — and it is why the refusal below is
+    // the correct answer rather than a deadlock.
+    expect(generalaModule.getLegalActions(fresh, P0)).toEqual([]);
+    expect(generalaModule.getLegalActions(fresh, P1)).toEqual([]);
+
+    room.handleAction(seat0.client as never, { type: "roll-dice", playerId: P0, faces: STACKED_FACES });
+
+    expect(rejections(seat0).map((rejection) => rejection.code)).toEqual(["action-not-offered"]);
+    // Nothing changed, so nobody was told anything changed.
+    expect(views(seat1)).toHaveLength(1);
+
+    await settle();
+  });
+
+  it("generala: a roll-dice claiming the system actor is still refused by the seat check, which runs first", async () => {
+    const { room, seat0, settle } = beforeTheDeal("generala", {});
+
+    // The module's own sentinel rather than a re-typed `"__system__"`: this is
+    // the exact id `requestGeneralaSystemAction` signs its throws with, so the
+    // test cannot pass by refusing a string the real system never uses.
+    room.handleAction(seat0.client as never, { type: "roll-dice", playerId: SYSTEM_ACTOR_ID, faces: STACKED_FACES });
 
     expect(rejections(seat0).map((rejection) => rejection.code)).toEqual(["actor-mismatch"]);
 
@@ -320,6 +423,58 @@ describe("MatchRoom.handleAction — the legality gate admits ordinary play, it 
     const viewsBefore = views(acting).length;
 
     await room.handleAction(acting.client as never, { type: "play-card", playerId: self.playerId, card: handCard, captured: offer.captured });
+
+    expect(rejections(acting)).toEqual([]);
+    expect(views(acting).length).toBeGreaterThan(viewsBefore);
+
+    await room.onDispose();
+  });
+
+  /**
+   * THE HALF THAT CAN PASS WHILE THE GAME IS BROKEN, and Generala is where it
+   * matters most.
+   *
+   * A gate proven only by what it refuses would look perfect nailed shut — and
+   * for this game "nailed shut" is the resting state. Every turn begins in a
+   * phase where no seat has a legal action, so a registration that supplied no
+   * `requestSystemAction` at all would refuse every action forever and pass
+   * every refusal test in the block above without a word. The cup has to be
+   * thrown BY THE SERVER, and what it throws has to be what the seat then gets
+   * to play; those are one claim, and this is it.
+   */
+  it("generala: the system throws the cup on its own, and the seat is offered exactly the faces it threw", async () => {
+    const { room, seat0, seat1 } = await afterTheDeal("generala", {}, ascendingFaces());
+
+    const acting = seatOnTurn([seat0, seat1]);
+    const turn = (latestView(acting).view as { turn: unknown }).turn;
+
+    // What the server drew, read back off the seat's own view. The faces are
+    // asserted BY VALUE here, unlike every card fixture in this file, because
+    // the claim is precisely that the seat sees the throw the injected source
+    // produced — a roll the seat cannot see is a roll the seat cannot play.
+    expect(turn).toEqual({ phase: "deciding", seat: 0, rollsUsed: 1, dice: [1, 2, 3, 4, 5] });
+    // 31 holds plus 11 open boxes, and not one `roll-dice` among them: the
+    // system's own action is offered to nobody, before or after it fires.
+    expect(latestView(acting).legalActions).toHaveLength(42);
+    expect(latestView(acting).legalActions.some((action) => action.type === "roll-dice")).toBe(false);
+    expect(rejections(seat0)).toEqual([]);
+    expect(rejections(seat1)).toEqual([]);
+
+    await room.onDispose();
+  });
+
+  it("generala: an action the server itself offered is applied, and the table moves on to the next throw", async () => {
+    const { room, seat0, seat1 } = await afterTheDeal("generala", {}, ascendingFaces());
+
+    const acting = seatOnTurn([seat0, seat1]);
+    // Submitted back VERBATIM. `sameAction` walks arrays by index, and a hold's
+    // `keep` is an array, so the canonical ascending order the engine emits is
+    // the only order the gate admits — `generala-ui` dispatches the offer
+    // object itself for exactly that reason.
+    const offer = latestView(acting).legalActions[0]!;
+    const viewsBefore = views(acting).length;
+
+    await room.handleAction(acting.client as never, offer);
 
     expect(rejections(acting)).toEqual([]);
     expect(views(acting).length).toBeGreaterThan(viewsBefore);

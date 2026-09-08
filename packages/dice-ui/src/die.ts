@@ -29,8 +29,26 @@ import { DIE_SIDE_FACE, DIE_SIDE_LOCAL_TRANSFORM, DIE_SIDE_ORDER, restingPoseDec
  * comment in `geometry.ts`. `cube` mounts directly under `scene`, so the
  * decided face renders exactly as `FACE_ROTATION` poses it: square, front-on,
  * no extra rotation composed on top.
+ *
+ * WHAT THIS RETURNS IS THE SIZED BOX, NOT THE SCENE — and the wrapper it
+ * adds is a LAYOUT element, not a cosmetic one, which is why it does not
+ * contradict the paragraph above. `.hexdev-dice-scene-box` carries the only
+ * width the flex row ever measures; `.hexdev-dice-scene` inside it carries
+ * the paint-time `transform: scale()` that draws the die small enough to sit
+ * in that box. `dice-styles.ts`'s own comment on the box has the full
+ * argument for why one element cannot be both — a transform never reflows
+ * anything, so a die that is merely drawn smaller still asks the tray for
+ * its full `DIE_SCENE_SIZE`.
+ *
+ * It lives HERE rather than in a consumer on purpose: how big a die is drawn
+ * is a property of rendering a die, not of any game's rules, so a board
+ * composing these into a tray stays free of geometry it has no business
+ * owning.
  */
 export function createDieSceneElement(doc: Document, face: DieFace, index: number): HTMLElement {
+  const box = doc.createElement("div");
+  box.className = "hexdev-dice-scene-box";
+
   const scene = doc.createElement("div");
   scene.className = "hexdev-dice-scene";
 
@@ -68,5 +86,6 @@ export function createDieSceneElement(doc: Document, face: DieFace, index: numbe
   }
 
   scene.appendChild(cube);
-  return scene;
+  box.appendChild(scene);
+  return box;
 }

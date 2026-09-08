@@ -11,12 +11,29 @@ export interface DiceCupOptions {
    * `Math.random`, no `rng()` call anywhere in this file — mirroring the
    * exact split `truco-module/deal.ts` already draws between a module-level
    * function that decides and an engine that only ever receives what was
-   * already decided (`sdd/generala-props/explore` §3). A future
-   * `generala-module` calls `rng()` five times, materializes the faces, and
-   * hands them to `roll()`; this handler is where that module's own press-
-   * to-roll request would be wired in. No such module exists yet
-   * (`src/index.ts`'s own scope note), so a caller today — a scene, a demo —
-   * supplies the already-decided faces itself.
+   * already decided (`sdd/generala-props/explore` §3).
+   *
+   * WHAT THIS COMMENT USED TO PREDICT, AND WHAT `generala-module` ACTUALLY
+   * DOES — corrected against the shipped module rather than re-guessed. It
+   * said a future module "calls `rng()` five times, materializes the faces,
+   * and hands them to `roll()`", and every clause of that is now wrong:
+   *
+   * 1. The module exists (`packages/games/generala-module`), so "future" and
+   *    "no such module exists yet" are simply out of date.
+   * 2. It draws `5 - kept.length` values, not five. Five is only the OPENING
+   *    roll; a player who holds two dice re-rolls three, and the number of
+   *    `rng()` calls being exactly the number of dice re-rolled is that
+   *    package's whole integrity claim, pinned by a counting `RandomSource`.
+   * 3. Nothing hands them to `roll()`. `generala-ui/tray.ts` composes the tray
+   *    from `createDieSceneElement` itself and calls `roll()` nowhere,
+   *    precisely because `roll()` replaces the whole tray (see
+   *    `DiceCupHandle.roll`'s own note) and a game with held dice cannot
+   *    afford that. Shipped, not predicted.
+   *
+   * `createDiceCup` is therefore NOT on Generala's path, and is neither
+   * deleted nor redesigned for it: it stays the honest way to mount a cup and
+   * a tray for a caller — a scene, a demo — that supplies the already-decided
+   * faces itself and keeps no die between rolls.
    */
   readonly onPress: () => void;
 }
@@ -32,8 +49,10 @@ export interface DiceCupHandle {
    * values. Every existing die is discarded and rebuilt — a roll replaces
    * the whole tray rather than repositioning five persistent dice, because
    * nothing about a die's identity survives between rolls in this package
-   * (a future engine may decide otherwise; this is the rendering layer, not
-   * the rules).
+   * (`generala-engine` DOES decide otherwise — a held die is the same die
+   * afterwards — which is exactly why `generala-ui` builds its own tray out
+   * of `createDieSceneElement` instead of calling this; the rules live there
+   * and this is the rendering layer).
    *
    * Announces the result the same synchronous call, before the toss
    * animation has played a single frame — a screen-reader user must not

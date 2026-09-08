@@ -187,6 +187,28 @@ export type GameModuleRegistration =
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       readonly module: GameModule<any, any, any, any>;
       readonly requestSystemAction?: SystemActionRequester;
+      /**
+       * How long the table sits still before THIS game's system action lands,
+       * in milliseconds — the pacing of the requester right above it, which is
+       * why it is declared beside it.
+       *
+       * The pause itself is not new and is not optional in spirit: it exists
+       * because dealing again in the same breath made the winning card vanish
+       * before anyone could read it (`MatchRoom`'s own comment at the sleep).
+       * What is new is that it stops being one server-wide scalar. A card game
+       * pays it ONCE PER HAND; a dice game would pay it once per ROLL, which
+       * at the room's 1800ms beat is minutes of dead time per match.
+       *
+       * OMITTING IT IS AN ANSWER — "no opinion, use the room's own
+       * `handEndPauseMs`" — and it is the answer every game registered today
+       * gives, which is why their pacing is preserved by construction rather
+       * than by a migration. `0` is a DIFFERENT answer: "do not pause at all".
+       * The accessor below therefore returns `number | undefined` and never
+       * `?? 0`.
+       *
+       * Must be an integer >= 0; anything else is refused at composition time.
+       */
+      readonly systemActionPauseMs?: number;
       readonly isNonBlockingAction?: NonBlockingActionClassifier;
       readonly isHumanPriorityAction?: HumanPriorityActionClassifier;
       readonly getConsultAdvice?: ConsultAdviceProvider;
@@ -209,6 +231,17 @@ export interface GameModuleRegistry {
    * module has no `requestSystemAction`, OR the module itself decides no
    * system action is currently needed — all three fail closed identically. */
   getSystemAction(gameId: GameId, state: unknown, rng: RandomSource): ActorTaggedAction | null;
+  /**
+   * The pause this game declared before its system action, or `undefined`
+   * when nothing is registered for `gameId` OR the registration declared
+   * none — "no opinion", which is what every game registered today says.
+   *
+   * `undefined` DELIBERATELY DOES NOT COLLAPSE TO `0`. A caller is expected
+   * to write `getSystemActionPauseMs(gameId) ?? <its own default>`; a `?? 0`
+   * here would answer "do not pause" on behalf of games that never said it,
+   * silently stripping the beat the card games were given.
+   */
+  getSystemActionPauseMs(gameId: GameId): number | undefined;
   /** `false` (every action blocks — the safe, conservative default) when
    * nothing is registered for `gameId` OR the registered module supplied no
    * classifier at all. */
@@ -268,6 +301,25 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
       );
     }
   }
+  for (const entry of entries) {
+    // Same fail-loud-at-composition discipline as the seatCount guard above,
+    // and for the same reason: this value is only ever read inside a
+    // transport's driving loop, so a bad one would otherwise surface as a
+    // room that paces wrongly — or not at all — with nothing naming the
+    // module that caused it.
+    //
+    // `Number.isInteger` FIRST, and it is what does the real work. A guard
+    // written as `if (pauseMs < 0) throw` looks equivalent and is not: every
+    // comparison against `NaN` is false, so `NaN` walks straight through it
+    // and then reaches `setTimeout`, which coerces it to 0 without a word.
+    // Non-integers are refused for the same reason a fractional `seatCount`
+    // is — a duration nobody wrote down is worse than a wrong one.
+    if (entry.systemActionPauseMs !== undefined && (!Number.isInteger(entry.systemActionPauseMs) || entry.systemActionPauseMs < 0)) {
+      throw new Error(
+        `createGameModuleRegistry: module "${entry.module.id}" declares systemActionPauseMs ${String(entry.systemActionPauseMs)} — must be an integer >= 0 (0 means "no pause"; omit it entirely to keep the room's own handEndPauseMs)`,
+      );
+    }
+  }
   // The same "fail loud at composition time" discipline as the seatCount
   // guard above, for the other invariant nothing else can hold.
   //
@@ -309,6 +361,10 @@ export function createGameModuleRegistry(modules: readonly GameModuleRegistratio
   return {
     get: (gameId) => byId.get(gameId)?.module,
     getSystemAction: (gameId, state, rng) => byId.get(gameId)?.requestSystemAction?.(state, rng) ?? null,
+    // NEVER `?? 0`: see this member's own docstring on `GameModuleRegistry`.
+    // Optional chaining alone already answers `undefined` for both "no such
+    // game" and "declared nothing", which are the same answer here.
+    getSystemActionPauseMs: (gameId) => byId.get(gameId)?.systemActionPauseMs,
     isNonBlockingAction: (gameId, action) => byId.get(gameId)?.isNonBlockingAction?.(action) ?? false,
     isHumanPriorityAction: (gameId, action) => byId.get(gameId)?.isHumanPriorityAction?.(action) ?? false,
     getConsultAdvice: async (gameId, state, playerId, tier, about) => (await byId.get(gameId)?.getConsultAdvice?.(state, playerId, tier, about)) ?? null,

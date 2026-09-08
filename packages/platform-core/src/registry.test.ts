@@ -193,6 +193,40 @@ describe("createGameModuleRegistry", () => {
     it("accepts distinct families on distinct shelves, which is the arrangement this whole tier is for", () => {
       expect(() => createGameModuleRegistry([grouped("truco-argentino", "truco", "cartas"), grouped("mahjong-solo", "mahjong", "fichas")])).not.toThrow();
     });
+
+    /**
+     * THE FAMILY THIS GUARD IS ABOUT TO MATTER FOR, pinned by name while it
+     * still costs nothing.
+     *
+     * Generala declares `section: "dados"` — a shelf no other family sits on —
+     * and it registers today as exactly ONE entry. One entry can never straddle
+     * anything, so for this family the guard above is unreachable code until a
+     * second id lands: `generala-3`, the additive registration `truco-module`'s
+     * own 1v1/2v2 pair already models and which needs no engine change. That is
+     * the whole reason to assert it NOW. The day somebody writes that entry the
+     * question "does it have to repeat the section?" is answered by a test that
+     * already fails, rather than by a boot that already failed.
+     *
+     * THE SECOND CASE IS A SHAPE NOTHING ABOVE COVERS. Every accepting case so
+     * far has either nobody declaring a section (both entries normalize to
+     * their own family) or two distinct families on two shelves. "Two entries
+     * of ONE family, both declaring the same non-family section" is a third
+     * shape, and it is the shape a shipped `generala-3` would actually have.
+     */
+    it("refuses a second Generala entry that forgets `dados`, naming the family, both ids and both resolved sections", () => {
+      const compose = (): unknown => createGameModuleRegistry([grouped("generala", "generala", "dados"), grouped("generala-3", "generala")]);
+
+      // Quoted, for the reason the first case in this block records.
+      for (const named of ["generala", "generala-3", "dados"]) expect(compose, `the message has to name ${named}`).toThrowError(new RegExp(`"${named}"`));
+      // And it names the shelf the silent entry was normalized INTO, which for
+      // this family is the family's own name — the one thing a reader of the
+      // message cannot work out for themselves.
+      expect(compose, "the fallback section has to be named AS a section, not merely as the family").toThrowError(/section "generala"/);
+    });
+
+    it("accepts the pair once BOTH declare `dados` — one family, one shelf, two ways of playing it", () => {
+      expect(() => createGameModuleRegistry([grouped("generala", "generala", "dados"), grouped("generala-3", "generala", "dados")])).not.toThrow();
+    });
   });
 
   describe("getConsultAsk — paired with a module, mirrors ConsultAdviceProvider's fail-closed shape (design D7)", () => {
@@ -287,6 +321,87 @@ describe("createGameModuleRegistry", () => {
       // ignores its arguments answers identically for every one of them.
       expect(registry.getAbandonedSeatAction("fixture-a", { turn: 1 }, "quien-se-fue" as PlayerId)).toEqual({ playerId: "quien-se-fue" });
       expect(seen).toEqual([{ state: { turn: 1 }, playerId: "quien-se-fue" }]);
+    });
+  });
+
+  /**
+   * How long the table sits still before a system action lands, declared by
+   * the registration that asks for one — beside `requestSystemAction`,
+   * because it is THAT requester's pacing. Not on `GameMetadata` (metadata is
+   * what the catalog shows a player; this is transport-only) and not on the
+   * `GameModule` port (this file's own header: a transport-only pairing
+   * belongs on the registration).
+   *
+   * `undefined` AND `0` ARE DIFFERENT ANSWERS, and keeping them apart is the
+   * whole point of this block. "No opinion — use the room's own beat" is what
+   * truco, escoba and mahjong say by declaring nothing, and the room's beat is
+   * a real 1800ms that exists for a reported reason: dealing again in the same
+   * breath made the winning card vanish before anyone could read it. "0, do
+   * not pause at all" is a different, deliberate declaration. A `?? 0` on the
+   * accessor below would collapse the first into the second and strip that
+   * 1800ms from every card game without touching one line of their
+   * registrations — which is why the two `toBeUndefined()` cases here are
+   * fences and not filler.
+   *
+   * A pause that is not an integer >= 0 can never be waited, so it is refused
+   * where the modules are assembled, naming the module — the same fail-loud
+   * discipline as the `seatCount` guard and the section straddle above.
+   */
+  describe("systemActionPauseMs — declared per registration, and `undefined` is not `0`", () => {
+    function pacedBy(systemActionPauseMs: number) {
+      return { module: fixtureModule("fixture-paced"), systemActionPauseMs };
+    }
+
+    it("returns undefined for a bare GameModule registration — no opinion, so the room keeps its own beat", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getSystemActionPauseMs("fixture-a")).toBeUndefined();
+    });
+
+    it("returns undefined for a wrapped registration that declares no pause — truco, escoba and mahjong's exact shape", () => {
+      const registry = createGameModuleRegistry([{ module: fixtureModule("fixture-a"), requestSystemAction: () => null }]);
+      expect(registry.getSystemActionPauseMs("fixture-a")).toBeUndefined();
+    });
+
+    it("returns undefined for a gameId nothing registered, the same fail-closed shape as every other lookup here", () => {
+      const registry = createGameModuleRegistry([fixtureModule("fixture-a")]);
+      expect(registry.getSystemActionPauseMs("does-not-exist")).toBeUndefined();
+    });
+
+    it("returns a declared 0 AS 0 — 'do not pause' is an answer, and it must never read back as 'no opinion'", () => {
+      const registry = createGameModuleRegistry([pacedBy(0)]);
+      expect(registry.getSystemActionPauseMs("fixture-paced")).toBe(0);
+    });
+
+    it("returns a declared value untouched", () => {
+      const registry = createGameModuleRegistry([pacedBy(350)]);
+      expect(registry.getSystemActionPauseMs("fixture-paced")).toBe(350);
+    });
+
+    /**
+     * The `[0]` trap `getAbandonedSeatAction` above already documents: with a
+     * single registration, "found it by id" and "took the only entry there is"
+     * are the same observation. Two entries, and the one being ASKED about is
+     * the one that declared nothing.
+     */
+    it("answers for the game it was ASKED about, not for whichever registration happens to declare a pause", () => {
+      const registry = createGameModuleRegistry([pacedBy(350), fixtureModule("fixture-b")]);
+      expect(registry.getSystemActionPauseMs("fixture-b")).toBeUndefined();
+    });
+
+    it("throws for a negative pause, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([pacedBy(-1)])).toThrowError(/fixture-paced.*-1/);
+    });
+
+    it("throws for a non-integer pause, naming the module id and the offending value", () => {
+      expect(() => createGameModuleRegistry([pacedBy(1.5)])).toThrowError(/fixture-paced.*1\.5/);
+    });
+
+    /** The case a bare `< 0` check lets straight through: every comparison
+     * against `NaN` is false, so a guard written as `if (pauseMs < 0) throw`
+     * composes happily and then hands `setTimeout` a value it silently treats
+     * as 0. `Number.isInteger` is what refuses it. */
+    it("throws for NaN, which no comparison can catch", () => {
+      expect(() => createGameModuleRegistry([pacedBy(Number.NaN)])).toThrowError(/fixture-paced.*NaN/);
     });
   });
 });

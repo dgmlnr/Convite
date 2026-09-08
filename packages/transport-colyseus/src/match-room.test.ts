@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Client } from "@colyseus/core";
 import type { ApplyResult, BotTier, GameModule, JsonValue, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
 import {
@@ -10,8 +10,9 @@ import {
   createStaticTenantRepository,
   deriveTestSessionSigningKey,
 } from "@hexdev/platform-core";
-import type { RateLimiter, SessionTokenIssuer, TenantId, TenantRepository } from "@hexdev/platform-core";
-import { MatchRoom } from "./match-room.js";
+import type { RateLimiter, SessionTokenIssuer, SystemActionRequester, TenantId, TenantRepository } from "@hexdev/platform-core";
+import { requestSystemAction as requestTrucoSystemAction, trucoModule } from "@hexdev/truco-module";
+import { MAX_ADVANCE_STEPS, MatchRoom } from "./match-room.js";
 import type { MatchRoomAuthOptions } from "./match-room.js";
 
 /**
@@ -163,7 +164,7 @@ async function createAuth(overrides: { joinRateLimiter?: RateLimiter; repository
         id: TENANT_ID,
         embedKey: "pk_fixture",
         allowedOrigins: [ALLOWED_ORIGIN],
-        entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal", "fixture-solo", "fixture-solo-with-bot"],
+        entitledGames: ["fixture-secret", "fixture-stuck", "fixture-terminal", "fixture-race", "fixture-signal", "fixture-solo", "fixture-solo-with-bot", "fixture-spinner", "truco-argentino"],
         validUntil: FAR_FUTURE_VALID_UNTIL,
       },
       { id: OTHER_TENANT_ID, embedKey: "pk_other", allowedOrigins: [ALLOWED_ORIGIN], entitledGames: ["some-other-game"], validUntil: FAR_FUTURE_VALID_UNTIL },
@@ -187,6 +188,20 @@ async function createAuth(overrides: { joinRateLimiter?: RateLimiter; repository
  * the mechanism firing — the real CSPRNG lives in `apps/server` (design §4:
  * "the server is where the entropy lives"). */
 const DEFAULT_RNG = () => 0.5;
+
+/** A seeded source for the one test that plays a REAL match end to end and
+ * pins the step count it costs: a fixed 0.5 would deal the same hand forever,
+ * and an unseeded source would make that number today's dice rather than a
+ * fence. Mulberry32 — small enough to read, uniform enough to shuffle. */
+function seededRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let drawn = Math.imul(state ^ (state >>> 15), 1 | state);
+    drawn = (drawn + Math.imul(drawn ^ (drawn >>> 7), 61 | drawn)) ^ drawn;
+    return ((drawn ^ (drawn >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 function mintToken(issuer: SessionTokenIssuer, playerId: PlayerId, overrides: { tenantId?: TenantId; ttlSeconds?: number } = {}) {
   return issuer.mint({ tenantId: overrides.tenantId ?? TENANT_ID, playerId, entitlements: [] }, overrides.ttlSeconds ?? 60);
@@ -743,6 +758,98 @@ describe("MatchRoom + system actions (design: paired in the registry, never a Ga
     await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
     expect(seat0.sent).toHaveLength(1); // stuck: no second broadcast ever arrives
     expect(seat0.sent[0]).toEqual({ type: "view", message: { view: { dealt: false }, legalActions: [], outcome: null, turnDeadline: null, pendingConsult: null } });
+  });
+});
+
+/**
+ * ONE SERVER-WIDE PAUSE WAS NEVER GOING TO FIT EVERY GAME, and the reason is
+ * arithmetic rather than taste.
+ *
+ * `handEndPauseMs` exists for a reported defect and must not be weakened: the
+ * table has to sit still after a hand ends or the winning card vanishes before
+ * anybody can read it. A card game pays that beat ONCE PER HAND. A dice game
+ * pays it once per ROLL — at 1800ms, two seats × ten rounds × three rolls is
+ * about 108 seconds of dead time in a single match.
+ *
+ * So the room's beat stops being the law and becomes the DEFAULT: a
+ * registration may declare its own `systemActionPauseMs`, and one that declares
+ * nothing keeps exactly what it has today. Truco, escoba and mahjong declare
+ * nothing, so their pacing is preserved BY CONSTRUCTION rather than by anyone
+ * remembering to migrate it — and the first test below is the fence that says
+ * so out loud.
+ *
+ * BOTH DIRECTIONS ARE ASSERTED, deliberately. "The declared value is waited"
+ * alone passes for an implementation that waits `Math.min` of the two, or
+ * `Math.max`, or that reads the room's value whenever it happens to be
+ * smaller. One case makes the declaration SHORTER than the room's beat and one
+ * makes it LONGER, so no arithmetic on the pair can satisfy both.
+ */
+describe("MatchRoom + per-registration systemActionPauseMs (design D12: the room's beat is a default, not the law)", () => {
+  /**
+   * `undefined` and `0` reach `onCreate`/the registration as different things
+   * on purpose — spreading a conditional key rather than passing `undefined`
+   * is what keeps "declared 0" distinguishable from "declared nothing" all the
+   * way down, which is the whole distinction under test.
+   */
+  async function dealingTable(options: { readonly handEndPauseMs: number; readonly systemActionPauseMs?: number }) {
+    const auth = await createAuth();
+    const registry = createGameModuleRegistry([
+      {
+        module: stuckModule,
+        requestSystemAction: (state: unknown) => ((state as StuckState).dealt ? null : { type: "deal", playerId: SYSTEM_ACTOR }),
+        ...(options.systemActionPauseMs === undefined ? {} : { systemActionPauseMs: options.systemActionPauseMs }),
+      },
+    ]);
+    const room = new MatchRoom();
+    room.onCreate({ gameId: "fixture-stuck", config: undefined, registry, auth, rng: DEFAULT_RNG, handEndPauseMs: options.handEndPauseMs });
+    const seat0 = fakeClient("s0");
+    const seat1 = fakeClient("s1");
+    await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+    await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+    // The initial (undealt) view is broadcast [0]; the deal is [1]. One
+    // observation, read through the same channel a real client reads.
+    return { dealt: () => seat0.sent.length > 1 };
+  }
+
+  const after = (ms: number): Promise<unknown> => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /**
+   * THE REGRESSION FENCE for every game already in production. Deleting the
+   * `?? this.handEndPauseMs` fallback — so an absent declaration means "no
+   * pause" — must red this, which is why the early read is asserted as well as
+   * the late one: a fence that only checked "the deal eventually arrived"
+   * cannot tell the fallback from zero and would prove nothing at all.
+   */
+  it("waits the room's handEndPauseMs for a registration that declares nothing — truco, escoba and mahjong, unchanged", async () => {
+    const table = await dealingTable({ handEndPauseMs: 150 });
+
+    await after(50);
+    expect(table.dealt(), "an undeclared registration dealt in the same breath — the room's beat was dropped").toBe(false);
+
+    await after(250);
+    expect(table.dealt(), "the next hand never arrived at all").toBe(true);
+  });
+
+  it("does not wait at all for a registration that declares 0, even in a room with a beat — '0' is an answer, not an absence", async () => {
+    const table = await dealingTable({ handEndPauseMs: 150, systemActionPauseMs: 0 });
+    expect(table.dealt()).toBe(true);
+  });
+
+  it("waits the DECLARED value when it is shorter than the room's beat, and the room's beat is not consulted", async () => {
+    const table = await dealingTable({ handEndPauseMs: 2000, systemActionPauseMs: 30 });
+
+    await after(200);
+    expect(table.dealt(), "still waiting: the room's 2000ms was consulted for a game that named its own 30").toBe(true);
+  });
+
+  it("waits the DECLARED value when it is longer than the room's beat too, so no min/max of the pair can pass", async () => {
+    const table = await dealingTable({ handEndPauseMs: 20, systemActionPauseMs: 250 });
+
+    await after(100);
+    expect(table.dealt(), "dealt early: the room's 20ms was consulted for a game that named its own 250").toBe(false);
+
+    await after(300);
+    expect(table.dealt(), "the declared pause never elapsed").toBe(true);
   });
 });
 
@@ -2300,5 +2407,198 @@ describe("MatchRoom — a vacated seat is a rules question, and the module answe
     await room.onLeave(seat0.client);
 
     expect(asked, "asked once, for the seat that left").toEqual([P0]);
+  });
+});
+
+/**
+ * A spin in the driving loop was survivable only by accident, and the accident
+ * is about to be removed.
+ *
+ * `runAdvanceOnce`'s loop had no ceiling. Nothing registered today spins it,
+ * but nothing has to be written that way on purpose either: one
+ * `requestSystemAction` that keeps answering, or one `getLegalActions` that
+ * keeps offering the same action back, is enough — `match-room.human-priority.
+ * test.ts` records that exact shape happening to a FIXTURE and killing the
+ * test worker rather than failing it. In production the 1800ms pause before
+ * every system action was what made such a spin merely crawl, yielding the
+ * event loop between steps. Once a game may declare a pause of its own, that
+ * accidental backstop is gone and the same spin pegs a core instead.
+ *
+ * WHY THE CEILING IS 10 000 AND NOT SOMETHING SMALLER. One invocation of the
+ * loop can drive a WHOLE bot-vs-bot match: it continues after every bot action
+ * until the outcome is non-null. A truco match to 30 points is hundreds of
+ * steps, so a ceiling in the low hundreds would not bound a bug — it would
+ * break truco. The second test below is that claim, measured rather than
+ * asserted, on the real engine.
+ */
+interface SpinState {
+  readonly spins: number;
+}
+type SpinAction = { readonly type: "spin"; readonly playerId: PlayerId };
+
+/**
+ * The shape the loop can never satisfy: no seat can EVER act (so a system
+ * action is always requested), and applying that action lands in a state where
+ * no seat can act either (so it is requested again). Terminality never
+ * arrives, because `getOutcome` is what would end it and this module has no
+ * ending.
+ */
+const spinningModule: GameModule<SpinState, SpinAction, SpinState, void> = {
+  id: "fixture-spinner",
+  metadata: { seatCount: 2, displayNameKey: "fixture.spinner", assetBase: "/fixture-spinner" },
+  configOptions: [],
+  createMatch: () => ({ spins: 0 }),
+  applyAction: (state) => ({ ok: true, state: { spins: state.spins + 1 } }),
+  getLegalActions: () => [],
+  getViewFor: (state) => state,
+  getOutcome: () => null,
+  serialize: (state) => state as never,
+  deserialize: (json) => json as unknown as SpinState,
+};
+
+describe("MatchRoom + the advance loop is bounded (design D13)", () => {
+  /**
+   * AN EXPLICIT TIMEOUT, AND IT IS NOT DECORATION. Without the ceiling this
+   * case does not fail — it never returns, so a suite running it stalls
+   * instead of going red. The timeout is what turns "hung" back into
+   * "reported", and it is the reason this test is safe to keep beside 3000
+   * others.
+   */
+  it(
+    "stops a module that can never satisfy the loop, logs naming the gameId, and leaves the room answering",
+    { timeout: 5000 },
+    async () => {
+      const logged: string[] = [];
+      const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+        logged.push(args.map((arg) => String(arg)).join(" "));
+      });
+      try {
+        const auth = await createAuth();
+        const registry = createGameModuleRegistry([{ module: spinningModule, requestSystemAction: () => ({ type: "spin", playerId: SYSTEM_ACTOR }) }]);
+        const room = new MatchRoom();
+        room.onCreate({ gameId: "fixture-spinner", config: undefined, registry, auth, rng: DEFAULT_RNG });
+        const seat0 = fakeClient("s0");
+        const seat1 = fakeClient("s1");
+        await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+        await joinWithToken(room, seat1.client, await mintToken(auth.issuer, P1));
+        // `onJoin` dispatches the advance with `void`; one macrotask is enough
+        // to let a bounded loop finish, and is not enough to rescue an
+        // unbounded one.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // EXACTLY the ceiling, not merely under it: the bound is per
+        // invocation, so an off-by-one or a per-room counter reads differently
+        // here.
+        const last = seat0.sent[seat0.sent.length - 1]?.message as { readonly view: SpinState };
+        expect(last.view.spins).toBe(MAX_ADVANCE_STEPS);
+        expect(logged.join(" "), "the ceiling was reached silently").toContain("fixture-spinner");
+
+        // Alive, and answering from a state that is still consistent — the
+        // loop refused to keep spending, it did not throw and it did not end
+        // the match.
+        const before = seat0.sent.length;
+        await room.handleAction(seat0.client, { type: "spin", playerId: P0 });
+        expect(seat0.sent[before]).toMatchObject({ type: "action-rejected", message: { code: "action-not-offered" } });
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  /**
+   * THE LOAD-BEARING HALF. A ceiling nothing real ever approaches is a ceiling
+   * nobody can be sure is high enough, so this plays a FULL truco match to 30
+   * points — real engine, real reducer, both seats driven by the room — and
+   * measures how many steps one invocation of the loop actually spends.
+   *
+   * The bot is a uniform choice over the offered legal actions rather than
+   * `truco-bot`'s tiers, for a reason that is about the harness and not about
+   * strength: the shipped tiers are wrapped in a 2400ms deliberate thinking
+   * pause, so a real match through them takes half an hour of wall clock. What
+   * is under measurement here is the TRANSPORT's step count, and random legal
+   * play is the conservative choice for it — it wastes points and therefore
+   * plays MORE hands than a competent bot would.
+   *
+   * Seeded, so the number this fence pins is reproducible and a drift toward
+   * the ceiling is a real signal rather than today's dice.
+   *
+   * THE CONTROL COUNTS HANDS, NOT POINTS, and that is a measured correction
+   * rather than a preference. The obvious control — "to 30 costs more steps
+   * than to 15" — is not sound in truco: an accepted falta envido awards
+   * `pointsToWin` minus the leading score, so a single hand can end a match at
+   * either target and two configurations can cost the identical number of
+   * steps. Measured on this seed: both ended at 82. Hands dealt is the
+   * property that actually says a match was played.
+   *
+   * AND WHAT THIS NUMBER IS NOT: random legal play concedes hands a competent
+   * bot would play out, so it is a LOWER bound on a real match rather than an
+   * estimate of one. Design D13 puts a real 30-point match in the high
+   * hundreds. 10 000 clears both readings by more than an order of magnitude,
+   * which is the point — and any bound in the low hundreds would break truco
+   * rather than bound a bug.
+   */
+  it("a full bot-vs-bot truco match to 30 points stays under 10% of the ceiling", { timeout: 20_000 }, async () => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args.map((arg) => String(arg)).join(" "));
+    });
+    try {
+      const rng = seededRng(0x5eed);
+      // The counting wrapper lives HERE and nowhere else. A step counter in
+      // production would be a number nobody reads until it is already too
+      // late; every reducer call the loop makes goes through this one, and
+      // `start-hand` is the system action that opens a hand, so counting it
+      // counts hands.
+      let applied = 0;
+      let hands = 0;
+      let ended = false;
+      const counting: typeof trucoModule = {
+        ...trucoModule,
+        applyAction: (state, action) => {
+          applied += 1;
+          if (action.type === "start-hand") hands += 1;
+          return trucoModule.applyAction(state, action);
+        },
+        getOutcome: (state) => {
+          const outcome = trucoModule.getOutcome(state);
+          if (outcome !== null) ended = true;
+          return outcome;
+        },
+        createBot: () => ({ chooseAction: (_view, legal) => Promise.resolve(legal[Math.floor(rng() * legal.length)]!) }),
+      };
+
+      const auth = await createAuth();
+      const registry = createGameModuleRegistry([{ module: counting, requestSystemAction: requestTrucoSystemAction as SystemActionRequester }]);
+      const room = new MatchRoom();
+      // Seat 1 is a bot from the start; seat 0 becomes one the moment its
+      // human's reconnection window expires. That is the only way to reach a
+      // table with nobody in it — `humanSeatsNeeded` refuses 0 by design — and
+      // it is a real production path rather than a test-only door.
+      room.onCreate({ gameId: "truco-argentino", config: { pointsToWin: 30 }, registry, auth, rng, botTier: "easy", reconnectionWindowSeconds: 0.01, turnTimeoutSeconds: 3600 });
+      const seat0 = fakeClient("s0");
+      await joinWithToken(room, seat0.client, await mintToken(auth.issuer, P0));
+      await room.onLeave(seat0.client);
+      // Waits until the table stops moving, the way
+      // `match-room.human-priority.test.ts` does: `takeOverSeat` dispatches
+      // the advance with `void`, and with both seats now bots there is no
+      // client left to broadcast to — so the reducer's own call count is the
+      // only honest thing to watch settle.
+      for (let quiet = 0, tick = 0; quiet < 2 && tick < 500; tick += 1) {
+        const before = applied;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        quiet = applied === before ? quiet + 1 : 0;
+      }
+
+      // THE CONTROLS, and without them "fewer than a thousand steps" is
+      // satisfied by a match that never started. `ended` says the loop drove
+      // this to a real outcome; `hands` says it was a MATCH and not one deal.
+      expect(ended, "the match never reached an outcome, so the step count below measures nothing").toBe(true);
+      // Measured on this seed: 11 hands over 82 steps.
+      expect(hands, `only ${String(hands)} hand(s) were dealt — that is not a match`).toBeGreaterThan(5);
+      expect(logged.join(" "), "the ceiling fired on a well-behaved game").not.toContain("without the table settling");
+      expect(applied, `a real truco match spent ${String(applied)} steps over ${String(hands)} hands — the ceiling is ${String(MAX_ADVANCE_STEPS)}`).toBeLessThan(MAX_ADVANCE_STEPS / 10);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

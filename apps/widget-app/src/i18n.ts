@@ -28,6 +28,12 @@ const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   // so unlike truco's and escoba's pairs there is no sibling for it to
   // differ from.
   "games.mahjongSolitario.name": "Mahjong Solitario",
+  // A proper noun, like "Escoba de 15" and unlike the shelf it sits on: a
+  // second language would translate "Dados" and would leave this alone. It is
+  // the only entry of its family and its `configOptions` is empty
+  // permanently, so there is no sibling and no knob for a name to be narrowed
+  // by — the game is called what a player calls it and nothing else.
+  "games.generala.name": "Generala",
 };
 
 const CONFIG_LABELS: Readonly<Record<string, string>> = {
@@ -81,6 +87,19 @@ const MODALITY_SUMMARY: Readonly<Record<GameId, string>> = {
    * commitment, and it is the number that is true of every deal this game
    * ever hands out. */
   "mahjong-solitario": "Tablero de 144 fichas",
+  /* Generala's `configOptions` is empty and permanently so in this change
+   * (spec Domain D: "there is no knob a lobby could offer that this game
+   * has"), so it reaches this table for the same platform reason the other
+   * two do rather than as a third special case.
+   *
+   * THE NUMBER OF BOXES, because it is the one fact that says what the match
+   * IS: eleven categories, every one of them written exactly once, and the
+   * match ends when the last is filled. It is also the number that is true of
+   * every Generala this build will ever deal — there is no variant here with
+   * a longer card. Eleven is `CATEGORY_IDS.length`, and it is written out
+   * rather than imported for the reason this whole file is hand-written copy:
+   * a line computed from the engine would reword itself silently. */
+  generala: "Planilla de 11 categorías",
 };
 
 export const STRINGS = {
@@ -127,6 +146,13 @@ export const STRINGS = {
    * future dominoes or a future backgammon belongs on this same row without
    * the row having to be renamed. */
   sectionFichas: "Fichas",
+  /** The shelf the dice sit on, named after what its games are PLAYED WITH
+   * for the third time and on purpose: "Cartas", "Fichas", "Dados" is one
+   * vocabulary, so a future dados game — a generala doble, a 10.000 — belongs
+   * on this row without the row being renamed after any one of them. An
+   * ordinary common noun a second language would translate, which is the rule
+   * that keeps it here and keeps "Generala" itself in `GAME_NAME_LABELS`. */
+  sectionDados: "Dados",
   backToGames: "Todos los juegos",
   brand: "Convite",
   /**

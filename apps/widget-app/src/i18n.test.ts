@@ -103,4 +103,50 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
       expect(STRINGS.formatDescription(3)).toBeUndefined();
     });
   });
+
+  /**
+   * SLICE 19 — THE DICE GAME'S OWN COPY.
+   *
+   * Its name is a proper noun and survives untranslated, so unlike the shelf
+   * it sits on there is nothing here to decide except that the key resolves
+   * at all: without this row the front door prints the raw key
+   * `games.generala.name` over a card a tenant is entitled to, which is the
+   * visible-bug-report failure `translateGameName` chose on purpose.
+   *
+   * The copy is written out BY HAND rather than read off the production
+   * table, the same rule the block above states: asserting the lookup
+   * against whatever the lookup returns would agree with any rewording,
+   * including an empty string.
+   */
+  describe("the dice game (slice 19)", () => {
+    it("names the game itself", () => {
+      expect(translateGameName("games.generala.name")).toBe("Generala");
+    });
+
+    /* Anti-vacuity, and it is the same shape the escoba pair above needs: a
+     * `GAME_NAME_LABELS` that answered one string for every key would satisfy
+     * the assertion above on its own. Compared against a name from a
+     * DIFFERENT family, so the two cannot be one entry read twice. */
+    it("is a name of its own, not the shelf's or a neighbour's", () => {
+      expect(translateGameName("games.generala.name")).not.toBe(translateGameName("games.mahjongSolitario.name"));
+      expect(translateGameName("games.generala.name")).not.toBe(STRINGS.sectionDados);
+    });
+
+    /* `configOptions` is empty and permanently so (spec Domain D), so
+     * `describeModality` has nothing to compute and screen two would render
+     * NO heading at all — the exact gap the solitaire's own line closed one
+     * slice's worth of copy ago. Eleven is the number of boxes on the card
+     * (`CATEGORY_IDS`), which is what a player is actually sitting down to
+     * fill. */
+    it("gives the empty-configOptions summary a true, useful line rather than nothing", () => {
+      expect(STRINGS.modalitySummary("generala")).toBe("Planilla de 11 categorías");
+    });
+
+    /* The shelf, not the game: an ordinary common noun a second language
+     * would translate, which is the rule that put "Cartas" and "Fichas" in
+     * this table and left "Escoba de 15" out of it. */
+    it("names the shelf the dice sit on", () => {
+      expect(STRINGS.sectionDados).toBe("Dados");
+    });
+  });
 });

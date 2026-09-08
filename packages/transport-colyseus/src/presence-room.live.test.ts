@@ -22,7 +22,8 @@ import { LIVE_TEST_TIMEOUT_MS, waitForView } from "./live-wait.test-support.js";
  * Deliberately non-truco (same reasoning as `match-room.test.ts`'s fixture):
  * two `configOptions` values, proving the lobby derives its modalities
  * generically instead of a hardcoded "pointsToWin" name (roadmap constraint,
- * obs 2943 — Escoba/Generala are next and must need zero lobby changes).
+ * obs 2943 — Escoba, the mahjong solitaire and Generala have all shipped
+ * since, and none of the three needed a lobby change).
  */
 const fixtureModule: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
   id: "fixture-lobby",
@@ -422,8 +423,8 @@ describe("PresenceRoom — game isolation over real matchmaking (closes the disc
 
   beforeEach(async () => {
     // BOTH fixture games share one registry and one matchmaking pool —
-    // exactly the real `apps/server` composition root shape once a second
-    // game (Escoba/Generala) ships alongside truco.
+    // exactly the real `apps/server` composition root shape, which today
+    // registers truco, escoba, the mahjong solitaire and generala together.
     const registry = createGameModuleRegistry([isolationModuleA, isolationModuleB]);
     const pool = createMatchmakingPool();
     const httpServer = createServer();

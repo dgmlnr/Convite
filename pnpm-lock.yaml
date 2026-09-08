@@ -102,6 +102,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/generala-module':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-module
       '@hexdev/mahjong-solitaire-module':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-module
@@ -127,6 +130,9 @@ importers:
       '@hexdev/escoba-module':
         specifier: workspace:*
         version: link:../../packages/games/escoba-module
+      '@hexdev/generala-module':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-module
       '@hexdev/mahjong-solitaire-module':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-module
@@ -161,12 +167,21 @@ importers:
 
   apps/widget-app:
     dependencies:
+      '@hexdev/dice-ui':
+        specifier: workspace:*
+        version: link:../../packages/dice-ui
       '@hexdev/escoba-engine':
         specifier: workspace:*
         version: link:../../packages/games/escoba-engine
       '@hexdev/escoba-ui':
         specifier: workspace:*
         version: link:../../packages/games/escoba-ui
+      '@hexdev/generala-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-engine
+      '@hexdev/generala-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-ui
       '@hexdev/mahjong-solitaire-ui':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-ui
@@ -249,6 +264,49 @@ importers:
       '@hexdev/spanish-deck-ui':
         specifier: workspace:*
         version: link:../../spanish-deck-ui
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      '@vitest/browser':
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0))(vitest@4.1.10)
+
+  packages/games/generala-bot:
+    dependencies:
+      '@hexdev/generala-engine':
+        specifier: workspace:*
+        version: link:../generala-engine
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
+
+  packages/games/generala-engine: {}
+
+  packages/games/generala-module:
+    dependencies:
+      '@hexdev/generala-bot':
+        specifier: workspace:*
+        version: link:../generala-bot
+      '@hexdev/generala-engine':
+        specifier: workspace:*
+        version: link:../generala-engine
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
+  packages/games/generala-ui:
+    dependencies:
+      '@hexdev/dice-ui':
+        specifier: workspace:*
+        version: link:../../dice-ui
+      '@hexdev/generala-engine':
+        specifier: workspace:*
+        version: link:../generala-engine
     devDependencies:
       '@types/node':
         specifier: ^26.1.2
@@ -434,6 +492,9 @@ importers:
 
   packages/widget-frontdoor:
     dependencies:
+      '@hexdev/dice-ui':
+        specifier: workspace:*
+        version: link:../dice-ui
       '@hexdev/mahjong-tile-ui':
         specifier: workspace:*
         version: link:../mahjong-tile-ui

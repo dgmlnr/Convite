@@ -13,6 +13,22 @@ function player(n: number): WaitingPlayer {
   return { connectionId: `c${String(n)}`, playerId: `p${String(n)}` };
 }
 
+/**
+ * A game id NO registry in this repository composes, and that is the whole
+ * fixture: the independence probe below needs a second key, not a second
+ * game. The pool is a string-keyed store that never consults a registry, so
+ * the id it is handed is arbitrary by design.
+ *
+ * IT USED TO SAY `"generala"`, with truco's own `{ pointsToWin: 15 }` beside
+ * it — a config Generala can never carry, since it ships with
+ * `configOptions: []` and therefore exactly one modality, the empty one. That
+ * assertion passed when it was written and passes now (the pool cannot tell,
+ * which is the point of this suite). What it stopped being, the day Generala
+ * shipped as a real game, is TRUE AS A SENTENCE: a reader was being shown a
+ * real game queued under a modality the lobby could never derive for it.
+ */
+const UNREGISTERED_GAME = "fixture-unregistered-game";
+
 export function describeMatchmakingPoolContract(name: string, create: () => MatchmakingPool): void {
   describe(`MatchmakingPool contract — ${name}`, () => {
     it("counts 0 for a modality nobody has joined", async () => {
@@ -39,7 +55,7 @@ export function describeMatchmakingPoolContract(name: string, create: () => Matc
       const pool = create();
       await pool.join("truco-argentino", { pointsToWin: 15 }, { connectionId: "c1", playerId: "p1" });
       expect(await pool.count("truco-argentino", { pointsToWin: 30 })).toBe(0);
-      expect(await pool.count("generala", { pointsToWin: 15 })).toBe(0);
+      expect(await pool.count(UNREGISTERED_GAME, { pointsToWin: 15 })).toBe(0);
       expect(await pool.count("truco-argentino", { pointsToWin: 15 }, "tenant-a")).toBe(0);
     });
 
