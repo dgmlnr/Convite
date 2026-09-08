@@ -9,6 +9,15 @@ export const MATCH_OVER_STYLE_ID = "hexdev-generala-match-over-styles";
  * has no children, and a rule that keys on that cannot get out of step with
  * the state the way a `data-` attribute somebody forgot to clear would.
  *
+ * A CONTAINER QUERY AND NEVER A WIDTH `@media`, which is the convention
+ * `escoba-ui` states about every sheet it ships and `rail.browser.test.ts`
+ * asserts of its own. An overlay sits on top of the board that mounts it, so
+ * the board's box is the measurement that means something — a phone-sized
+ * viewport with a wide board and a desktop viewport with a narrow one are
+ * both real, and only one of the two axes can tell them apart, which is
+ * exactly the case this game will be in from the slice that mounts a tray
+ * beside a planilla.
+ *
  * THE BOARD PROVIDES THE POSITIONING CONTEXT. This element is
  * `position: absolute; inset: 0`, so it covers whatever is positioned above
  * it — the identical contract `escoba-ui`'s overlay has with the mount its
@@ -16,21 +25,6 @@ export const MATCH_OVER_STYLE_ID = "hexdev-generala-match-over-styles";
  * escoba's sheet reaches out and declares `position: relative` on somebody
  * else's element, and this one does not, because a board may want the overlay
  * over the whole table or over one panel of it and only the board knows which.
- *
- * IT DECLARES ITS OWN CONTAINER even though nothing queries it yet. An
- * overlay sits on top of the board that mounts it, so the board's box is the
- * measurement that means something — a phone-sized viewport with a wide board
- * and a desktop viewport with a narrow one are both real, and only one of the
- * two axes can tell them apart. The shape change that reads it arrives with
- * the controls, in the next unit; establishing the container here is what
- * keeps that a stylesheet edit rather than a structural one.
- *
- * IT ANCHORS ITSELF ON ITS OWN CONTAINER, not on a class it hopes the board
- * declared. `.hexdev-escoba-match-over-styles` had to add `position: relative`
- * to the outer mount the widget registry builds, which is a rule about
- * somebody else's element; here the renderer sets `position: relative` on the
- * container it is handed, so a board that mounts this anywhere gets a
- * correctly anchored overlay without being told to add a class.
  */
 export function buildMatchOverStylesheet(): string {
   return `
@@ -72,6 +66,57 @@ export function buildMatchOverStylesheet(): string {
   font-weight: 600;
 }
 
+.hexdev-generala-match-over-score {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.hexdev-generala-match-over-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* The standard's 44px, again — the same floor \`scorecard-styles.ts\` states
+   for a score box and for the same reason, and declared rather than imported
+   from it: a rematch button and a planilla cell agree because they read one
+   standard, not because one reads the other. */
+.hexdev-generala-match-over-actions button {
+  min-height: 44px;
+  padding: 10px 24px;
+  border-radius: var(--gx-radius, 12px);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hexdev-generala-match-over-actions button[data-action="play-again"] {
+  border: 0;
+  background: var(--gx-color-accent, var(--hx-gold, #e8c877));
+  color: var(--gx-color-on-primary, #14231d);
+}
+
+.hexdev-generala-match-over-actions button[data-action="leave-match"] {
+  border: 2px solid currentColor;
+  background: transparent;
+  color: inherit;
+}
+
+.hexdev-generala-match-over-actions button:focus-visible {
+  outline: 3px solid var(--generala-focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+/* THE ONE SHAPE CHANGE, ON THE BOARD'S OWN BOX. Below this the two controls
+   stack, because side by side in a narrow board they are two 44px targets
+   sharing a row with a gap and neither is comfortably reachable. */
+@container hexdev-generala-match-over (max-width: 360px) {
+  .hexdev-generala-match-over-actions {
+    flex-direction: column;
+    align-self: stretch;
+  }
+}
 `;
 }
 

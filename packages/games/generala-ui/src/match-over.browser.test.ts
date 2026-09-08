@@ -1,3 +1,4 @@
+import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CATEGORY_IDS, applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
@@ -35,9 +36,10 @@ const LEVEL_ROLL: readonly DieFace[] = [1, 2, 3, 4, 5];
 const BOOST_ROLL: readonly DieFace[] = [6, 6, 6, 6, 1];
 
 const mounted: HTMLElement[] = [];
-afterEach(() => {
+afterEach(async () => {
   while (mounted.length > 0) mounted.pop()!.remove();
   document.getElementById(MATCH_OVER_STYLE_ID)?.remove();
+  await page.viewport(414, 896);
 });
 
 function accept(result: ApplyResult): MatchState {
@@ -80,7 +82,9 @@ function overlayFor(view: PlayerView): Overlay {
   const container = document.createElement("div");
   document.body.appendChild(container);
   mounted.push(container);
-  renderGeneralaMatchOver(container, view);
+  // The verdict cases below say nothing about the way out, so they hand over
+  // the one action the overlay requires and read none of it back.
+  renderGeneralaMatchOver(container, view, { onPlayAgain: () => {} });
 
   const textOf = (selector: string): string => container.querySelector(selector)?.textContent ?? "";
   return {
@@ -183,12 +187,12 @@ describe("generala match over: it is an overlay, not a screen that replaces the 
     document.body.appendChild(container);
     mounted.push(container);
 
-    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT));
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {} });
     expect(container.children.length).toBeGreaterThan(0);
 
     const running = getViewFor(createMatch(SEATS), SEAT);
     expect(running.outcome).toBeNull();
-    renderGeneralaMatchOver(container, running);
+    renderGeneralaMatchOver(container, running, { onPlayAgain: () => {} });
 
     expect(container.children).toHaveLength(0);
     expect(container.dataset.result).toBeUndefined();
@@ -216,7 +220,7 @@ describe("generala match over: it is an overlay, not a screen that replaces the 
     document.body.appendChild(board);
     mounted.push(board);
 
-    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT));
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {} });
 
     const boardBox = board.getBoundingClientRect();
     const overlayBox = container.getBoundingClientRect();
@@ -231,5 +235,163 @@ describe("generala match over: it is an overlay, not a screen that replaces the 
     overlayFor(view);
     overlayFor(view);
     expect(document.querySelectorAll(`#${MATCH_OVER_STYLE_ID}`)).toHaveLength(1);
+  });
+});
+
+describe("generala match over: the two ways out, and the numbers you decide with", () => {
+  interface Exits {
+    readonly container: HTMLElement;
+    readonly played: readonly string[];
+    readonly left: readonly string[];
+  }
+
+  function overlayWithExits(view: PlayerView, options: { readonly onLeaveMatch?: boolean; readonly focusOnOpen?: boolean } = {}): Exits {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    mounted.push(container);
+
+    const played: string[] = [];
+    const left: string[] = [];
+    renderGeneralaMatchOver(container, view, {
+      onPlayAgain: () => played.push("again"),
+      onLeaveMatch: options.onLeaveMatch === true ? () => left.push("lobby") : undefined,
+      focusOnOpen: options.focusOnOpen,
+    });
+    return { container, played, left };
+  }
+
+  it("shows every seat's final total, in seat order, the way the planilla's columns are", () => {
+    // The planilla underneath already carries a totals row, so this is not the
+    // only place the numbers exist — it is the place they are while the
+    // player decides whether to play again, which is a different moment.
+    const view = getViewFor(playToTheEnd(0), SEAT);
+    const exits = overlayWithExits(view);
+
+    expect(exits.container.querySelector(".hexdev-generala-match-over-score")?.textContent).toBe(`Resultado final: Vos ${String(view.totals[0])} — Rival ${String(view.totals[1])}`);
+  });
+
+  it("carries real modal semantics, because it is the most disruptive thing this UI does", () => {
+    const exits = overlayWithExits(getViewFor(playToTheEnd(0), SEAT));
+
+    expect(exits.container.getAttribute("role")).toBe("dialog");
+    expect(exits.container.getAttribute("aria-modal")).toBe("true");
+    expect(exits.container.tabIndex).toBe(-1);
+  });
+
+  it("drops the dialog semantics again when the overlay is cleared, so a running match is not a dialog", () => {
+    // The attributes outlive the children unless somebody removes them, and a
+    // `role="dialog"` sitting on an emptied container is a dialog assistive
+    // tech can be told about while nothing is on screen at all.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    mounted.push(container);
+
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {} });
+    renderGeneralaMatchOver(container, getViewFor(createMatch(SEATS), SEAT), { onPlayAgain: () => {} });
+
+    expect(container.getAttribute("role")).toBeNull();
+    expect(container.getAttribute("aria-modal")).toBeNull();
+    expect(container.hasAttribute("tabindex")).toBe(false);
+  });
+
+  it("takes focus only on the render that OPENS it, never on the ones after", () => {
+    const view = getViewFor(playToTheEnd(0), SEAT);
+    const opened = overlayWithExits(view, { focusOnOpen: true });
+    expect(document.activeElement).toBe(opened.container);
+
+    const redrawn = overlayWithExits(view);
+    expect(document.activeElement).toBe(opened.container);
+    expect(document.activeElement).not.toBe(redrawn.container);
+  });
+
+  it("offers a rematch, and calls back exactly once per press", () => {
+    const exits = overlayWithExits(getViewFor(playToTheEnd(0), SEAT));
+    const again = exits.container.querySelector<HTMLButtonElement>('button[data-action="play-again"]');
+
+    // `type="button"`, stated. A `<button>` with no type is a SUBMIT button,
+    // and it does nothing here only because there is no form above it — a
+    // board that later wraps this overlay in one would find the rematch
+    // reloading the page instead of starting a match.
+    expect([again?.tagName, again?.type]).toEqual(["BUTTON", "button"]);
+    expect(again?.textContent).toBe("Jugar de nuevo");
+    again?.click();
+
+    expect(exits.played).toEqual(["again"]);
+  });
+
+  it("offers the lobby only when there is one to go back to, and Escape is the same way out", () => {
+    const withLobby = overlayWithExits(getViewFor(playToTheEnd(0), SEAT), { onLeaveMatch: true });
+    expect(withLobby.container.querySelector<HTMLButtonElement>('button[data-action="leave-match"]')?.textContent).toBe("Volver al lobby");
+    withLobby.container.querySelector<HTMLButtonElement>('button[data-action="leave-match"]')?.click();
+    withLobby.container.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(withLobby.left).toEqual(["lobby", "lobby"]);
+
+    // A rematch is not a way OUT, so with no lobby target there is nothing for
+    // Escape to cancel back to and it stays inert rather than closing an
+    // overlay the next broadcast would immediately redraw.
+    const withoutLobby = overlayWithExits(getViewFor(playToTheEnd(0), SEAT));
+    expect(withoutLobby.container.querySelector('button[data-action="leave-match"]')).toBeNull();
+    withoutLobby.container.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(withoutLobby.left).toEqual([]);
+  });
+
+  it("forgets the previous match's Escape handler when the overlay is cleared", () => {
+    // A handler left on the container fires for a match that is running
+    // again, so a player pressing Escape mid-turn would be thrown back to the
+    // lobby by the PREVIOUS match's overlay.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    mounted.push(container);
+    const left: string[] = [];
+
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {}, onLeaveMatch: () => left.push("lobby") });
+    renderGeneralaMatchOver(container, getViewFor(createMatch(SEATS), SEAT), { onPlayAgain: () => {} });
+    container.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(left).toEqual([]);
+  });
+
+  it("stacks the two controls on a NARROW BOARD inside a WIDE viewport, which is what a container query is for", async () => {
+    // THE VIEWPORT IS DELIBERATELY WIDE, and that is the whole point of the
+    // case: at 900px no width `@media` can match, so anything that changes
+    // here changed because of the BOARD's box. A desktop window with the
+    // overlay over one panel is exactly the shape this game takes from the
+    // slice that mounts a tray beside a planilla, and it is exactly the shape
+    // a viewport ladder reads as "plenty of room".
+    await page.viewport(900, 700);
+
+    const board = document.createElement("div");
+    board.style.position = "relative";
+    board.style.width = "320px";
+    board.style.height = "300px";
+    const container = document.createElement("div");
+    board.appendChild(container);
+    document.body.appendChild(board);
+    mounted.push(board);
+
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {}, onLeaveMatch: () => {} });
+
+    const buttons = [...container.querySelectorAll<HTMLElement>(".hexdev-generala-match-over-actions button")];
+    expect(buttons).toHaveLength(2);
+    const row = container.querySelector<HTMLElement>(".hexdev-generala-match-over-actions");
+    expect(row).not.toBeNull();
+
+    // STACKED IS NOT THE SAME CLAIM AS WRAPPED, and the first draft of this
+    // measured the wrong one: the row is `flex-wrap: wrap`, so two controls
+    // that do not fit go onto two lines with or without any query at all and
+    // the assertion passed against a stylesheet with the query deleted. What
+    // the query actually does is STRETCH — the row spans the board and both
+    // controls take its full width — and equal, full-width buttons are
+    // something only the query produces.
+    const narrow = buttons.map((button) => button.getBoundingClientRect());
+    expect(narrow[1]!.top).toBeGreaterThanOrEqual(narrow[0]!.bottom);
+    expect(narrow[0]!.width).toBeCloseTo(narrow[1]!.width, 1);
+    expect(narrow[0]!.width).toBeCloseTo(row!.getBoundingClientRect().width, 1);
+
+    board.style.width = "640px";
+    const wide = buttons.map((button) => button.getBoundingClientRect());
+    expect(wide[1]!.top).toBeCloseTo(wide[0]!.top, 1);
+    // Their own widths again, which differ because the two labels do.
+    expect(wide[0]!.width).not.toBeCloseTo(wide[1]!.width, 1);
   });
 });
