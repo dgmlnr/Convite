@@ -1,6 +1,18 @@
 export const SCORECARD_STYLE_ID = "hexdev-generala-scorecard-styles";
 
 /**
+ * The smallest a box a thumb has to hit is allowed to be, in CSS pixels.
+ *
+ * WCAG 2.5.5's number, declared here rather than imported. `dice-ui` exports
+ * a `CUP_TAP_MIN` holding the same 44, and reading THAT here would tie the
+ * size of a scorecard box to the size of a dice cup: somebody enlarging the
+ * cup for grip would silently grow eleven table cells. The two constants
+ * agree because they read the same standard, not because one reads the
+ * other.
+ */
+export const SCORE_TAP_MIN = 44;
+
+/**
  * THE PLANILLA'S OWN SHEET.
  *
  * A table is the rare element that lays itself out well with almost no CSS,
@@ -8,9 +20,9 @@ export const SCORECARD_STYLE_ID = "hexdev-generala-scorecard-styles";
  * rules drawn between the boxes, and the two marks that say what a box IS —
  * blank because nobody has written in it, or a zero somebody spent.
  *
- * IT DECLARES NO WIDTH, and that is deliberate rather than unfinished. The
- * planilla takes the row it is given; how it survives the narrow end of the
- * range is a measurement nothing here has taken yet.
+ * IT DECLARES NO COLUMN WIDTH, and that is deliberate rather than
+ * unfinished. The planilla takes the row it is given; how it survives the
+ * narrow end of the range is a measurement nothing here has taken yet.
  */
 export function buildScorecardStylesheet(): string {
   return `
@@ -69,7 +81,10 @@ export function buildScorecardStylesheet(): string {
    planilla leaves it empty; a screen reader reading an empty cell says so,
    which is the truth, while a literal "—" in the markup would have it read
    out an em dash eleven times per card. So the mark is generated content:
-   sighted players get the notation, assistive tech gets the blank.
+   sighted players get the notation, assistive tech gets the blank. Only
+   where the box is EMPTY: an open box this seat may write carries a control
+   with a number in it, and a dash beside the number would be the notation
+   for "nothing here" printed on top of something.
 
    THE 0.5 IS THE ONE NUMBER HERE THAT COULD HIDE SOMETHING. Twenty-two of a
    fresh planilla's twenty-two boxes are open, so a full-contrast dash would
@@ -80,18 +95,73 @@ export function buildScorecardStylesheet(): string {
    very little room under it. The SHIPPED background belongs to the board
    that mounts this planilla and does not exist yet, so that ratio is a
    measurement on a stand-in and not a guarantee this package can make. */
-.hexdev-generala-scorecard-cell[data-state="open"]::after {
+.hexdev-generala-scorecard-cell[data-state="open"]:empty::after {
   content: "—";
   opacity: 0.5;
 }
 
-/* A BOX CROSSED AT ZERO KEEPS FULL CONTRAST. It is the information a rival
-   plans around — a category already spent — so it is drawn as legibly as
-   every other filled box, and the "0" it carries is what says it is spent
-   (WCAG 1.4.1: the fact is in the text, never in a colour). The italic is a
-   second, redundant cue and carries nothing on its own. */
+/* THE OPEN BOX THIS SEAT MAY WRITE, and the highest-value affordance on the
+   screen: it says what this roll would be worth here BEFORE the player
+   commits to it. It fills its cell so the target is the whole box a finger
+   aims at rather than the three characters inside it, and it is never
+   shorter than the standard's 44px. Its WIDTH is its column's, which is a
+   question about how the table lays itself out and not one this rule can
+   answer alone. The cell's padding comes off so the two agree about where
+   the box ends. */
+.hexdev-generala-scorecard-cell:has(> .hexdev-generala-score) {
+  padding: 0;
+}
+
+.hexdev-generala-score {
+  appearance: none;
+  /* NO \`display: block\` HERE, and its absence was measured rather than
+     assumed. It is the reflex declaration for a button meant to fill
+     something, and deleting it moved nothing: \`width: 100%\` on the only
+     child of a zero-padding cell already gives the corner-for-corner box
+     \`scorecard.browser.test.ts\` asserts, and a button is not laid out as
+     ordinary inline content. Deleting \`width: 100%\` instead reds six cases,
+     which is which of the two is doing the work. A clause with nothing to
+     observe is not a free belt. */
+  width: 100%;
+  min-height: ${String(SCORE_TAP_MIN)}px;
+  box-sizing: border-box;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  padding: 4px;
+  border: 0;
+  border-radius: 0;
+  /* AND IT LOOKS LIKE SOMETHING YOU CAN PRESS, AT REST. Also found by
+     looking: a preview and a box already written are both a bare number, so
+     the column a player is choosing from was indistinguishable from the part
+     of it already spent — and on a touch screen there is no hover to reveal
+     it. A lightness tint rather than a hue, so it survives being
+     colour-blind, and the control it marks is a real \`<button>\` besides,
+     so assistive tech never needed the cue at all. */
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  cursor: pointer;
+}
+
+.hexdev-generala-score:hover {
+  background: var(--gx-color-accent, var(--hx-gold, #e8c877));
+  color: var(--gx-color-on-primary, #14231d);
+}
+
+.hexdev-generala-score:focus-visible {
+  outline: 3px solid var(--generala-focus-ring, #2563eb);
+  outline-offset: -3px;
+}
+
+/* A BOX CROSSED AT ZERO IS STRUCK THROUGH, which is what crossing out IS at
+   a real table — and it stopped being decoration the moment previews
+   arrived. FOUND BY LOOKING: an open box worth 0 with this roll and a box
+   somebody spent at 0 both read "0", and eight of eleven boxes preview 0 on
+   an ordinary roll, so a whole column of them sits beside the one that is
+   gone for good. The strike is the notation that tells them apart, it is not
+   a colour (WCAG 1.4.1), and it keeps full contrast because a spent category
+   is exactly what a rival plans around. */
 .hexdev-generala-scorecard-cell[data-state="crossed"] {
-  font-style: italic;
+  text-decoration: line-through;
 }
 `;
 }

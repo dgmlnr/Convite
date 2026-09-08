@@ -26,4 +26,5 @@ export { createGeneralaTray } from "./tray.js";
 export type { GeneralaTrayElements, GeneralaTrayRender } from "./tray.js";
 export { ensureTrayStyles, TRAY_STYLE_ID } from "./tray-styles.js";
 export { renderGeneralaScorecard } from "./scorecard.js";
+export type { GeneralaScorecardRender } from "./scorecard.js";
 export { ensureScorecardStyles, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
