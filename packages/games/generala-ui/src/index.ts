@@ -17,8 +17,9 @@
  *
  * PARTIAL, AND SAYING SO. The tray, the dice it holds, the control that
  * commits a hold, the planilla every seat reads and the region that says what
- * was thrown, what was written, what a servida throw is worth and who won
- * are here; the way out of a finished match is not yet. `createDieSlot` is deliberately NOT exported: nothing
+ * was thrown, what was written, what a servida throw is worth, who won and
+ * the two ways out of a finished match are all here. It is no longer partial:
+ * what is left is a board that mounts them. `createDieSlot` is deliberately NOT exported: nothing
  * outside this package composes a single die, and a public export with zero
  * consumers is the shape `escoba-ui`'s own barrel comment argues against.
  * `CATEGORY_LABELS` and `seatLabel` are not exported either, for the same
@@ -37,5 +38,5 @@ export type { GeneralaAnnouncer } from "./announcer.js";
 export { renderServidaCallout } from "./servida.js";
 export { ensureServidaStyles, SERVIDA_STYLE_ID } from "./servida-styles.js";
 export { renderGeneralaMatchOver } from "./match-over.js";
-export type { GeneralaMatchOverRender } from "./match-over.js";
+export type { GeneralaMatchOverActions, GeneralaMatchOverRender } from "./match-over.js";
 export { ensureMatchOverStyles, MATCH_OVER_STYLE_ID } from "./match-over-styles.js";
