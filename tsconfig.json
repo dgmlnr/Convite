@@ -18,6 +18,7 @@
     { "path": "packages/games/truco-module" },
     { "path": "packages/games/escoba-module" },
     { "path": "packages/games/mahjong-solitaire-module" },
+    { "path": "packages/games/generala-module" },
     { "path": "packages/games/escoba-bot" },
     { "path": "packages/transport-colyseus" },
     { "path": "packages/transport-colyseus-client" },
