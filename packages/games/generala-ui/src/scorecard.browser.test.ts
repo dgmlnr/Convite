@@ -560,3 +560,79 @@ describe("generala scorecard: an open box the acting seat may write is a control
     expect(getComputedStyle(planilla.cell("sixes", 1), "::after").content).toBe('"—"');
   });
 });
+
+/** Sub-pixel slack, the same order of magnitude `dice-tray-fit.browser.test.ts`
+ * allows: these are real laid-out boxes, not integers. */
+const EPSILON = 0.5;
+
+describe("generala scorecard: it fits the narrow end of the range, measured rather than eyeballed", () => {
+  it.each([320, 375])("at %i px nothing overflows the page and no category name is clipped", async (width) => {
+    await page.viewport(width, 900);
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    // A planilla wider than the phone is one a player scrolls sideways to
+    // read, and for a grid that means losing the column headers off the left
+    // edge — the one thing that makes a cell mean anything.
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+
+    const table = planilla.table().getBoundingClientRect();
+    expect(table.left).toBeGreaterThanOrEqual(-EPSILON);
+    expect(table.right).toBeLessThanOrEqual(width + EPSILON);
+
+    // EVERY CATEGORY NAME ON ONE LINE. The row headers do not wrap, so a
+    // label column too narrow to hold "Generala doble" overflows measurably
+    // instead of quietly stacking into two lines and turning an eleven-row
+    // planilla into a twenty-row one on the phone that could least afford it.
+    for (const header of planilla.table().querySelectorAll<HTMLElement>("tbody th")) {
+      expect(header.scrollWidth, `${header.textContent ?? ""} is clipped at ${String(width)}px`).toBeLessThanOrEqual(header.clientWidth + EPSILON);
+    }
+  });
+
+  it.each([320, 375])("at %i px every open box is a target a thumb can hit", async (width) => {
+    await page.viewport(width, 900);
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    const rects = planilla.buttons().map((button) => button.getBoundingClientRect());
+    expect(rects).toHaveLength(CATEGORY_IDS.length);
+    for (const rect of rects) {
+      expect(rect.width, `a score control is ${String(rect.width)}px wide at ${String(width)}px`).toBeGreaterThanOrEqual(SCORE_TAP_MIN - EPSILON);
+      expect(rect.height, `a score control is ${String(rect.height)}px tall at ${String(width)}px`).toBeGreaterThanOrEqual(SCORE_TAP_MIN - EPSILON);
+    }
+  });
+
+  it.each([320, 375])("at %i px the planilla is eleven rows tall and not nineteen", async (width) => {
+    await page.viewport(width, 900);
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+
+    // A LABEL COLUMN TOO NARROW ABSORBS IT BY GROWING TALLER, which is the
+    // failure no width measurement can see: "Generala doble" quietly stacks
+    // onto two lines and the card gets a row taller than its neighbours on
+    // the phone that could least afford it. Every row the same height is the
+    // claim that says it did not, and it is what the row headers' refusal to
+    // wrap exists to protect — the two are measured together here because
+    // neither is observable alone at the shipped width.
+    const heights = [...planilla.table().querySelectorAll<HTMLElement>("tbody tr")].map((row) => row.getBoundingClientRect().height);
+    expect(heights).toHaveLength(CATEGORY_IDS.length);
+    for (const height of heights) expect(height).toBeCloseTo(heights[0]!, 1);
+  });
+
+  it.each([320, 375])("at %i px a column is the same width whatever number happens to be in it", async (width) => {
+    await page.viewport(width, 900);
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    // THE COLUMNS DO NOT DEPEND ON THEIR CONTENTS, and this is the assertion
+    // that says so. A content-sized table gives the column holding "0" less
+    // room than the one holding "18", so two controls side by side are
+    // different sizes — and the whole planilla re-flows as the match fills
+    // it in, moving a box under the thumb that is reaching for it.
+    const widths = planilla.buttons().map((button) => button.getBoundingClientRect().width);
+    for (const buttonWidth of widths) expect(buttonWidth).toBeCloseTo(widths[0]!, 1);
+
+    const seatCells = [0, 1].map((seat) => planilla.cell("generala-doble", seat).getBoundingClientRect().width);
+    expect(seatCells[0]).toBeCloseTo(seatCells[1]!, 1);
+  });});
