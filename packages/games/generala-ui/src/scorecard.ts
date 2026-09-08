@@ -54,15 +54,24 @@ function seatsInOrder(view: PlayerView): readonly SeatView[] {
 }
 
 /**
- * What one box reads as.
+ * What one box reads as, and the three states are three different facts.
  *
- * A box nobody has written in is BLANK, exactly as it is on paper. What a box
- * that HAS been written says about itself — a category spent at zero is not
- * the same fact as one still worth playing for — is the next unit's, and it is
- * a distinction this function cannot make while it only knows a number.
+ * `null` is OPEN: nobody has written here and it is still worth playing for.
+ * `0` is CROSSED: written, spent, and never scorable again — the box a player
+ * gave up. Anything else is what it is worth. The engine draws that
+ * distinction with `null` versus `0` for exactly this reason (`state.ts`), and
+ * this is where it reaches somebody's eye; a planilla that rendered a spent
+ * box and an open one the same way would be hiding the single most useful
+ * thing about a rival's card.
  */
 function fillCell(cell: HTMLTableCellElement, value: number | null): void {
-  cell.textContent = value === null ? "" : String(value);
+  if (value === null) {
+    cell.dataset.state = "open";
+    cell.textContent = "";
+    return;
+  }
+  cell.dataset.state = value === 0 ? "crossed" : "filled";
+  cell.textContent = String(value);
 }
 
 /**
@@ -88,12 +97,11 @@ function fillCell(cell: HTMLTableCellElement, value: number | null): void {
  * would be a second source of truth about the score that could disagree with
  * the first.
  *
- * IT DRAWS A CARD AND NOT A MOVE. Nothing here is pressable, and no box says
- * yet what KIND of thing it is holding. The three states a written box can be
- * in, and the control that writes one, are the two units after this: both need
- * something this signature deliberately does not take, and a parameter for a
- * caller that does not exist is the forward-looking API this repository's
- * barrels argue against.
+ * IT DRAWS A CARD AND NOT A MOVE. Nothing here is pressable yet: an open box
+ * the acting seat may write, previewing what this roll would put in it, is the
+ * next unit's, and it needs the offer list this signature deliberately does not
+ * take. A callback for a control that does not exist is the forward-looking API
+ * this repository's barrels argue against.
  */
 export function renderGeneralaScorecard(container: HTMLElement, view: PlayerView): void {
   const doc = container.ownerDocument;
