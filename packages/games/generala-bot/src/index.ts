@@ -4,16 +4,19 @@ import { createEasyBot } from "./easy.js";
 import type { GeneralaTier, NonEmptyActions } from "./tier.js";
 
 export { createEasyBot } from "./easy.js";
+export { DEFAULT_THINKING_DELAY_MS, withThinkingDelay } from "./latency.js";
+export type { Sleep } from "./latency.js";
 export type { GeneralaTier, NonEmptyActions } from "./tier.js";
 
 /**
  * A PARTIAL BARREL, and it says which slice closes it.
  *
  * `createNormalBot` (slice 16) and `createHardBot` (slice 17) are not written,
- * so they are not exported. `withThinkingDelay` is this slice's other half and
- * lands with it; `fixtures.ts` is deliberately never exported, exactly as
- * `escoba-bot`'s is not — a fixture builder is this package's test scaffolding,
- * not its API.
+ * so they are not exported. `withThinkingDelay` and its default now are: it is
+ * what `generala-module`'s `createBot` wraps `createBotStrategy` in (slice 9),
+ * the same call `escoba-module/src/index.ts:165` already makes. `fixtures.ts`
+ * is deliberately never exported, exactly as `escoba-bot`'s is not — a fixture
+ * builder is this package's test scaffolding, not its API.
  */
 
 /**
