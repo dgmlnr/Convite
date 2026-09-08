@@ -1,7 +1,7 @@
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DieFace } from "./geometry.js";
-import { DIE_CUBE_SIZE, DIE_SCENE_SIZE, ensureDiceStyles } from "./dice-styles.js";
+import { DIE_CUBE_SIZE, DIE_REST_ENLARGEMENT, DIE_SCENE_SIZE, ensureDiceStyles } from "./dice-styles.js";
 import { createDiceCup } from "./dice.js";
 import { createDieSceneElement } from "./die.js";
 
@@ -253,5 +253,47 @@ describe("dice: a die still knows its own size where nothing above it declares o
     const rect = box.getBoundingClientRect();
     expect(rect.width, "a die is self-sizing; it never inherits its container's width").toBeCloseTo(DIE_SCENE_SIZE, 1);
     expect(rect.height).toBeCloseTo(DIE_SCENE_SIZE, 1);
+  });
+});
+
+describe("dice: the resting die's own painted size, published for whoever draws around it", () => {
+  /**
+   * `--dice-rest-size` IS THE ONE NUMBER A CONSUMER CANNOT WORK OUT FOR
+   * ITSELF, and this is where it is held to the truth.
+   *
+   * `.hexdev-dice-scene-box` is sized for the FLIGHT, so anything drawn on it
+   * is drawn around the flight envelope — which is what `generala-ui`'s held
+   * cue was doing until a person looked at it and saw a 214px ring around a
+   * die painted at 124px. That package now reads this property instead of
+   * copying `DIE_CUBE_SIZE` and the perspective enlargement into its own
+   * stylesheet.
+   *
+   * A PUBLISHED NUMBER NOTHING IN THIS PACKAGE READS IS EXACTLY THE KIND THAT
+   * DRIFTS. Nothing here draws a ring, so no rendering here would change if
+   * `DIE_REST_ENLARGEMENT` were wrong; the only thing standing between it and
+   * a silent lie is this comparison against the die a browser actually paints.
+   */
+  it.each(LADDER)("at $width px it matches the cube a browser really paints, to within half a pixel", async ({ width, scale }) => {
+    await page.viewport(width, 900);
+    const handle = mountRolledCup();
+
+    const box = handle.trayElement.querySelector<HTMLElement>(".hexdev-dice-scene-box");
+    expect(box, "expected a sized box").not.toBeNull();
+    const cube = box!.querySelector<HTMLElement>(".hexdev-dice-cube");
+    expect(cube, "expected a cube inside it").not.toBeNull();
+
+    // Read the only way CSS lets a test read a `calc()` custom property: give
+    // a real element that width and measure what the browser made of it.
+    const probe = document.createElement("div");
+    probe.style.width = "var(--dice-rest-size)";
+    box!.appendChild(probe);
+    const declared = probe.getBoundingClientRect().width;
+    probe.remove();
+
+    expect(declared).toBeCloseTo(cube!.getBoundingClientRect().width, 1);
+    // And it is the constant times the cube's own box times this tier, which
+    // is what makes the number in the source the one under test rather than
+    // whatever the browser happened to paint.
+    expect(declared).toBeCloseTo(DIE_CUBE_SIZE * DIE_REST_ENLARGEMENT * scale, 1);
   });
 });
