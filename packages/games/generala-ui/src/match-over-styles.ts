@@ -36,7 +36,10 @@ export function buildMatchOverStylesheet(): string {
   /* Declared, not only read: \`--generala-\` is a namespace this package owns
      (\`stylesheet-tokens.test.ts\`), and the veil is a real knob — a board with
      a lighter felt wants a different one. */
-  --generala-veil: rgba(0, 0, 0, 0.72);
+  --generala-veil: rgba(0, 0, 0, 0.45);
+  /* The panel's own ink, declared beside the veil because the two only make
+     sense as a pair: the veil is thin precisely because the panel is not. */
+  --generala-verdict-surface: #0e1713;
   container-type: inline-size;
   container-name: hexdev-generala-match-over;
   position: absolute;
@@ -46,12 +49,29 @@ export function buildMatchOverStylesheet(): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 24px;
+  padding: 16px;
   text-align: center;
   font-family: var(--gx-font-family, system-ui, sans-serif);
   background: var(--generala-veil);
   color: var(--gx-color-on-surface, #f2f2f2);
+}
+
+/* THE PANEL THE VERDICT IS PRINTED ON. Opaque, and that is the whole point:
+   a background you can see through is a background somebody else's text comes
+   through, which is exactly what a finished planilla under a 0.72 veil did to
+   these four lines. With the panel carrying the reading, the veil can go back
+   to being thin enough to leave the card legible AROUND it — which is why
+   this is an overlay and not the opaque screen \`escoba-ui\` mounts. */
+.hexdev-generala-match-over-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  padding: 16px 20px;
+  border: 1px solid var(--generala-planilla-rule, rgba(232, 200, 119, 0.35));
+  border-radius: var(--gx-radius, 12px);
+  background: var(--generala-verdict-surface);
 }
 
 .hexdev-generala-match-over-headline {

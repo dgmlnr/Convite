@@ -142,20 +142,29 @@ export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view
   container.setAttribute("aria-modal", "true");
   container.tabIndex = -1;
 
+  // ONE PANEL, AND EVERY WORD OF THE VERDICT ON IT. Found by looking: over a
+  // finished planilla the veil alone let the card's own rows read straight
+  // through the sentences — two layers of pale text at similar sizes, and the
+  // verdict was the one that lost. The panel is what makes the veil able to
+  // stay light enough to keep the planilla legible around it.
+  const panel = doc.createElement("div");
+  panel.className = "hexdev-generala-match-over-panel";
+  container.appendChild(panel);
+
   const headline = doc.createElement("h2");
   headline.className = "hexdev-generala-match-over-headline";
   headline.textContent = won ? "¡Ganaste la partida!" : "Perdiste la partida";
-  container.appendChild(headline);
+  panel.appendChild(headline);
 
   const winnersLine = doc.createElement("p");
   winnersLine.className = "hexdev-generala-match-over-winners";
   winnersLine.textContent = winnersSentence(view, winners, view.totals[winners[0]!.seat] ?? 0);
-  container.appendChild(winnersLine);
+  panel.appendChild(winnersLine);
 
   const score = doc.createElement("p");
   score.className = "hexdev-generala-match-over-score";
   score.textContent = finalScoreLine(view);
-  container.appendChild(score);
+  panel.appendChild(score);
 
   const row = doc.createElement("div");
   row.className = "hexdev-generala-match-over-actions";
@@ -170,7 +179,7 @@ export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view
       leave();
     };
   }
-  container.appendChild(row);
+  panel.appendChild(row);
 
   if (actions.focusOnOpen === true) container.focus();
 };

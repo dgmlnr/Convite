@@ -395,3 +395,60 @@ describe("generala match over: the two ways out, and the numbers you decide with
     expect(wide[0]!.width).not.toBeCloseTo(wide[1]!.width, 1);
   });
 });
+
+describe("generala match over: the verdict is readable over a planilla, not printed on top of it", () => {
+  /**
+   * FOUND BY LOOKING, and no assertion in this file could have seen it. The
+   * overlay's veil was `rgba(0, 0, 0, 0.72)` over a finished planilla, and
+   * the argument for a veil rather than escoba's opaque panel is good: the
+   * card underneath is exactly what a player wants once the match is over —
+   * which box cost them it, what the rival crossed out. At 0.72 it was
+   * neither. "Empataron Vos y Rival con 40 puntos." sat directly on top of
+   * the Escalera and Full rows, two layers of pale text at similar sizes, and
+   * the verdict was genuinely hard to read.
+   *
+   * The fix keeps both halves: ONE solid panel behind the verdict, on a
+   * LIGHTER veil. The planilla stays legible around the panel and nothing is
+   * ever printed over anything.
+   */
+  it("puts every word of the verdict on one opaque panel", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    mounted.push(container);
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {}, onLeaveMatch: () => {} });
+
+    const panel = container.querySelector<HTMLElement>(".hexdev-generala-match-over-panel");
+    expect(panel, "expected a panel to carry the verdict").not.toBeNull();
+
+    // EVERY part of it, not merely the headline: the sentence that overlapped
+    // the planilla worst was the score line, which is the last one somebody
+    // would think to check.
+    for (const selector of [".hexdev-generala-match-over-headline", ".hexdev-generala-match-over-winners", ".hexdev-generala-match-over-score", ".hexdev-generala-match-over-actions"]) {
+      const part = container.querySelector(selector);
+      expect(part, selector).not.toBeNull();
+      expect(panel!.contains(part), `${selector} is inside the panel`).toBe(true);
+    }
+
+    // OPAQUE, asserted as the alpha channel rather than as a colour: the
+    // whole defect was that a background you can see through is a background
+    // somebody else's text comes through.
+    const background = getComputedStyle(panel!).backgroundColor;
+    expect(background).not.toBe("rgba(0, 0, 0, 0)");
+    expect(background).not.toMatch(/^rgba\(/);
+  });
+
+  it("keeps the planilla legible around it, which is why the veil is not opaque either", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    mounted.push(container);
+    renderGeneralaMatchOver(container, getViewFor(playToTheEnd(0), SEAT), { onPlayAgain: () => {} });
+
+    // The veil is a knob this package declares, so it can be read back. Both
+    // bounds matter: opaque hides the card the panel exists to leave visible,
+    // and too thin puts the planilla's own contrast behind the panel's edge.
+    const veil = getComputedStyle(container).getPropertyValue("--generala-veil").trim();
+    const alpha = Number.parseFloat(/rgba?\([^)]*,\s*([\d.]+)\s*\)/.exec(veil)?.[1] ?? "1");
+    expect(alpha).toBeGreaterThan(0.2);
+    expect(alpha).toBeLessThan(0.7);
+  });
+});
