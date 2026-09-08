@@ -527,6 +527,62 @@ describe("two shelves: headed groups, in the catalog's own order", () => {
 });
 
 /**
+ * THE SHELVES A REAL ENTITLED TENANT NOW GETS, rendered rather than argued
+ * (spec Domain D: "a new shelf exists with Spanish copy").
+ *
+ * The three ids below are the three the four registered modules actually
+ * declare — `cartas` from the card games, `fichas` from the solitaire,
+ * `dados` from Generala — so this is the catalog shape, not a fixture shape.
+ * `sectionUiFor` is unit-tested next door; what only a render can say is that
+ * every one of those ids reaches the heading a player reads.
+ *
+ * WHAT MAKES IT NOT VACUOUS is the raw-id comparison. `game-list.ts` falls
+ * back to the section id when the client has no copy, so a shelf with a
+ * missing name still renders a heading with text in it — `toBeTruthy()` on
+ * these would pass on the exact defect this exists to catch. Each heading is
+ * therefore asserted to differ from its own id, which is a claim only a
+ * translated shelf can satisfy.
+ */
+const CATALOG_SHELVES: readonly GameSection[] = [
+  { id: "cartas", families: [TRUCO, ALFA] },
+  { id: "fichas", families: [{ id: "gamma-fixture", entries: [plainEntry("gamma-fixture-game", "gamma-fixture", "fichas", "games.mahjongSolitario.name")] }] },
+  { id: "dados", families: [{ id: "delta-fixture", entries: [plainEntry("delta-fixture-game", "delta-fixture", "dados", "games.generala.name")] }] },
+];
+
+describe("three shelves: the catalog an entitled tenant is served today", () => {
+  it("names every shelf in Spanish, and none of them by its own raw id", () => {
+    const el = fresh();
+    renderGameList(el, CATALOG_SHELVES, { onOpenGame: noop });
+
+    const headings = [...el.querySelectorAll(".hexdev-chrome-section-title")].map((heading) => heading.textContent);
+    expect(headings).toEqual(["Cartas", "Fichas", "Dados"]);
+    // The half a `toEqual` above cannot state on its own: a heading equal to
+    // its section id is the untranslated fallback, which is a real render and
+    // a visible bug.
+    expect(headings, "a heading that is its own section id is the missing-copy fallback").not.toEqual(CATALOG_SHELVES.map((shelf) => shelf.id));
+  });
+
+  it("lays the dice shelf out beside the other two, with its own game under it", () => {
+    const el = fresh();
+    renderGameList(el, CATALOG_SHELVES, { onOpenGame: noop });
+
+    const shelves = [...el.querySelectorAll<HTMLElement>(".hexdev-chrome-content > .hexdev-chrome-section")];
+    expect(shelves, "one wrapper per shelf, and each a direct child of the content column").toHaveLength(3);
+    expect(
+      shelves.map((shelf) => [...shelf.querySelectorAll<HTMLElement>(".hexdev-game-card")].map((card) => card.dataset.family)),
+      "each heading is followed by exactly its own shelf's games, in catalog order",
+    ).toEqual([["truco", "alfa-fixture"], ["gamma-fixture"], ["delta-fixture"]]);
+  });
+
+  it("titles the dice game's own card from its display-name key", () => {
+    const el = fresh();
+    renderGameList(el, CATALOG_SHELVES, { onOpenGame: noop });
+
+    expect(el.querySelector<HTMLElement>('[data-family="delta-fixture"] h3')?.textContent).toBe("Generala");
+  });
+});
+
+/**
  * THE BAND, MEASURED — because "a heading over some cards" is what BOTH
  * arrangements look like, and only one of them is right.
  *
