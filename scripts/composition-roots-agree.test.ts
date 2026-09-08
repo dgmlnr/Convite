@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { MINT_GAME_IDS } from "../apps/mint-server/src/registry.js";
 import { MATCH_GAME_IDS } from "../apps/server/src/registry.js";
+import { createGameUiRegistry } from "../apps/widget-app/src/game-ui-registry.js";
 
 /**
  * THE TWO COMPOSITION ROOTS HAVE TO NAME THE SAME GAMES, and until this file
@@ -71,5 +72,51 @@ describe("the two composition roots agree on which games exist", () => {
 
   it("every game the match root registers is reachable through the catalog", () => {
     expect(MATCH_GAME_IDS.filter((gameId) => !MINT_GAME_IDS.includes(gameId))).toEqual([]);
+  });
+});
+
+/**
+ * AND THE THIRD LIST, which is the one a player actually ends up looking at.
+ *
+ * The question this answers was raised and deliberately left open one slice
+ * ago: `apps/widget-app`'s `createGameUiRegistry` is a hand-written map from
+ * `GameId` to a renderer, and until now nothing compared it to anything. Both
+ * roots can agree perfectly and the game still ends at
+ * `renderUnsupportedGame` — "Este juego todavía no está disponible en esta
+ * versión." — over a live connection, a real seat and a catalog that offered
+ * the button. That is the worst-looking failure this stack has, because it
+ * reads as a decision somebody made rather than as a row somebody forgot.
+ *
+ * IT IS NOT A HYPOTHETICAL EITHER. The solitaire's own entry carries a
+ * docblock saying exactly this ("Without this row `enterMatch` resolves
+ * nothing and falls through to `renderUnsupportedGame`"), which is what
+ * finding it once and writing it down looks like when nothing fences it.
+ *
+ * WHY IT LIVES HERE. Same argument as the pair above, one list longer: the
+ * invariant spans three composition roots and belongs to none of them.
+ * Hosting it in `apps/widget-app` would mean that app importing two servers.
+ * The import is cheap and was measured before this was written — nothing in
+ * `game-ui-registry.ts`'s module graph touches `document` at module scope, so
+ * it loads under the `node` project with no DOM at all.
+ *
+ * BOTH DIRECTIONS, for the same reason the pair above has two: a widget entry
+ * for a game no root registers is code that ships and can never run, which is
+ * the quieter half and the one nothing else would ever notice.
+ */
+describe("the widget can draw every game the servers agree exists", () => {
+  const uiRegistry = createGameUiRegistry();
+
+  it("fence setup: the match root's list is not empty, so neither comparison below can pass vacuously", () => {
+    expect(MATCH_GAME_IDS.length).toBeGreaterThan(0);
+  });
+
+  it("every registered game resolves to a renderer, so none of them ends at the unsupported-game screen", () => {
+    // Named individually rather than counted, so a failure says WHICH game a
+    // player would be seated at and then apologised to.
+    expect(MATCH_GAME_IDS.filter((gameId) => uiRegistry.get(gameId) === undefined)).toEqual([]);
+  });
+
+  it("every registered game resolves to a family, so screen two has a name and art to show", () => {
+    expect(MATCH_GAME_IDS.filter((gameId) => uiRegistry.family(gameId) === undefined)).toEqual([]);
   });
 });

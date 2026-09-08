@@ -176,6 +176,12 @@ importers:
       '@hexdev/escoba-ui':
         specifier: workspace:*
         version: link:../../packages/games/escoba-ui
+      '@hexdev/generala-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-engine
+      '@hexdev/generala-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/generala-ui
       '@hexdev/mahjong-solitaire-ui':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-ui
