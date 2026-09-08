@@ -116,6 +116,21 @@ function scoreSentence(view: PlayerView, written: { readonly seat: number; reado
 }
 
 /**
+ * A GENERALA SERVIDA IS A MATCH-ENDING EVENT AND NOT A SCORE, and the
+ * sentence has to be shaped like one.
+ *
+ * The ruleset's `§Generala servida` wins "en el acto": no card is written,
+ * the generala box holds no number afterwards, and `getOutcome` reads the win
+ * off the turn rather than off any total. A region that said "Anotaste 50 en
+ * Generala" would send a player looking for a box that is still empty, and
+ * the planilla beside it would contradict what they just heard.
+ */
+function servidaWinSentence(view: PlayerView, seat: number): string {
+  if (seat === view.self.seat) return "Generala servida: ganaste la partida.";
+  return `Generala servida: ${labelForSeat(view, seat)} ganó la partida.`;
+}
+
+/**
  * THE ONE NEW FACT IN THIS VIEW, or nothing.
  *
  * THE TWO EVENTS ARE MUTUALLY EXCLUSIVE BY THE STATE MACHINE rather than by
@@ -127,11 +142,11 @@ function scoreSentence(view: PlayerView, written: { readonly seat: number; reado
  * the region is read whole and two events joined into one string is a
  * sentence nobody can follow.
  *
- * PARTIAL, AND SAYING SO: the generala servida that ends a match before
- * anybody writes anything is neither of them — it fills no box and shows no
- * dice, so it falls through both questions and says nothing here. It is a
- * match-ending event and belongs to the unit that owns everything this board
- * says about servida.
+ * THE THIRD EVENT IS ASKED FIRST BECAUSE IT IS THE ONE THAT ENDS THINGS. A
+ * generala servida fills no box and shows no dice, so it would fall through
+ * both of the other questions in silence; it is also the only one of the
+ * three after which nothing else can happen, so nothing it could be competing
+ * with matters.
  *
  * THE PHASE IS ASKED WITHOUT A CAST. `deciding` is the only arm carrying
  * dice, so narrowing is what lets `throwSentence` receive a turn that HAS
@@ -140,6 +155,9 @@ function scoreSentence(view: PlayerView, written: { readonly seat: number; reado
  * `undefined.join(...)` at the player rather than an error at the compiler.
  */
 function newsIn(before: PlayerView, after: PlayerView): string | null {
+  if (after.turn.phase === "servida-win") {
+    return before.turn.phase === "servida-win" ? null : servidaWinSentence(after, after.turn.seat);
+  }
   const written = boxWritten(before, after);
   if (written !== null) return scoreSentence(after, written);
   const turn = after.turn;
