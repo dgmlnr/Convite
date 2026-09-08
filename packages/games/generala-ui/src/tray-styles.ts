@@ -1,14 +1,53 @@
 export const TRAY_STYLE_ID = "hexdev-generala-tray-styles";
 
 /**
- * THE TRAY'S OWN SHEET, AND IT DECLARES NO GEOMETRY.
+ * THE TRAY'S OWN SHEET, AND THE ONLY GEOMETRY IT DECLARES IS AN AXIS.
  *
- * There is no width, no height and no scale below. Every die in this tray is
- * a `.hexdev-dice-scene-box` that `dice-ui` already sizes — responsive ladder
- * included — and the whole reason slice 12 put that box in `dice-ui` was so
- * that this file would never have a number to get wrong. What is here is the
- * part that IS this package's: a button reset, a held cue, a focus ring, and
- * a row that wraps.
+ * There is no width and no height below. Every die in this tray is a
+ * `.hexdev-dice-scene-box` that `dice-ui` sizes, and the whole reason slice 12
+ * put that box in `dice-ui` was so that this file would never have a size to
+ * get wrong. What IS here beside the button reset, the held cue, the focus
+ * ring and the row that wraps is the one thing `dice-ui` structurally cannot
+ * provide for itself: a container to measure.
+ *
+ * THE TWO RESPONSIVE CONVENTIONS IN THIS REPOSITORY ARE ONE DECISION, AND
+ * THIS IS WHERE THEY MEET. `escoba-ui` and `truco-ui` switch shape on
+ * `@container` and assert of their own stylesheets that they never switch on
+ * the viewport; `dice-ui` ships two width `@media` tiers. That looked like
+ * the same question answered twice in opposite directions. It is not — it is
+ * one rule applied to two structures, and the rule is: THE PACKAGE THAT OWNS
+ * THE ROW ESTABLISHES THE CONTAINER AND QUERIES IT; A PACKAGE THAT OWNS ONLY
+ * A DIE KEEPS THE VIEWPORT LADDER AS ITS FLOOR.
+ *
+ * Both halves of that were measured rather than argued.
+ *
+ * `dice-ui` CANNOT establish one. The only element it always owns above a die
+ * is `.hexdev-dice-root`, which is deliberately `inline-flex` and shrink-wraps
+ * to its content; `container-type: inline-size` implies `contain: inline-size`,
+ * which makes an element's inline size ignore its contents. MEASURED: that
+ * root goes from **1218px to 24px** the instant the property is applied — it
+ * collapses the very shrink-wrap the rule exists for.
+ *
+ * And it cannot simply move its ladder onto the container axis either: a
+ * `@container` query with NO ancestor container does not match at all.
+ * MEASURED with a probe styled only inside one — it kept its unqueried width.
+ * So `dice-ui`'s `@media` tiers are not a competing convention, they are the
+ * floor for every consumer that establishes no container, starting with its
+ * own cup and its own scene gallery.
+ *
+ * THIS PACKAGE OWNS A ROW, so it can, and the defect it closes is real and
+ * measured: at a **1280px viewport with the tray in a 600px board**, the
+ * viewport ladder is at its unscaled tier and five dice took **three rows and
+ * 638px of height**. On the container axis the same box gives 126px dice, two
+ * rows and 256px. A desktop window with a tray beside a planilla is the shape
+ * this game is heading for, and it is exactly the case the viewport cannot
+ * see.
+ *
+ * THE TIERS ARE `dice-ui`'S OWN, deliberately — 700 and 375, 0.6 and 0.45 —
+ * because this is one ladder read on two axes and not a second ladder that
+ * happens to share numbers. The selector is two classes deep so that inside
+ * this tray the tray's own box decides, whatever order the two stylesheets
+ * were injected in.
  *
  * THE BORDER IS DECLARED ON EVERY DIE, TRANSPARENT WHEN IT IS NOT HELD, and
  * that is deliberate rather than tidy. A border that appears only on the held
@@ -33,6 +72,13 @@ export function buildTrayStylesheet(): string {
      \`--generala-\` a namespace this package owns, and it is a real knob
      besides: the one number the row spends between dice. */
   --generala-die-gap: 4px;
+  /* THE CONTAINER \`dice-ui\` CANNOT DECLARE FOR ITSELF. Safe here and not
+     there because this is a BLOCK-LEVEL flex row: \`contain: inline-size\`
+     makes an element's inline size ignore its contents, which is fatal to a
+     shrink-wrapping \`inline-flex\` root and is a no-op for a row that was
+     always going to fill the box the board gave it. */
+  container-type: inline-size;
+  container-name: hexdev-generala-tray;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -101,6 +147,24 @@ export function buildTrayStylesheet(): string {
 .hexdev-generala-roll:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+/* THE LADDER, ON THIS TRAY'S OWN BOX. Same two tiers and same two scales
+   \`dice-styles.ts\` ships on the viewport axis, because it is one decision:
+   below 700px of TRAY a row of five full-size dice stops being a row, and
+   below 375px it stops fitting at any honest size. Two classes deep so that
+   inside this tray the tray's box wins over the viewport tier regardless of
+   which stylesheet a document happened to inject first. */
+@container hexdev-generala-tray (max-width: 700px) {
+  .hexdev-generala-tray .hexdev-dice-scene-box {
+    --dice-scene-scale: 0.6;
+  }
+}
+
+@container hexdev-generala-tray (max-width: 375px) {
+  .hexdev-generala-tray .hexdev-dice-scene-box {
+    --dice-scene-scale: 0.45;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
