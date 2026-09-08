@@ -17,11 +17,17 @@ import type { MatchState } from "./state.js";
  * be declaring codes that file can never produce.
  *
  * `code` is a closed union rather than a bare string so a caller can switch on
- * it without reading English out of `message`, and it is CLOSED now: with the
- * score reducer landed, every way this engine can say no is listed here.
+ * it without reading English out of `message`, and it is CLOSED: with both
+ * reducers landed, every way this engine can say no is listed here.
+ *
+ * `malformed-face` and `malformed-hold` are the pair, and the pairing is the
+ * point. Each of them refuses a payload whose TYPE already claims to be well
+ * formed — `DieFace` and an index into five dice are both erased before a
+ * single value moves — so both are the runtime half of a compile-time promise
+ * this engine cannot make its callers keep.
  */
 export interface RuleViolation {
-  readonly code: "not-awaiting-roll" | "wrong-face-count" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold" | "box-not-open";
+  readonly code: "not-awaiting-roll" | "wrong-face-count" | "malformed-face" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold" | "box-not-open";
   readonly message: string;
 }
 
