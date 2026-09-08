@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CATEGORY_IDS, getLegalActions, getViewFor, scoreFor } from "@hexdev/generala-engine";
-import type { CategoryId, GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
-import { ALICE, driveTo, turnShowing } from "./fixtures.js";
+import type { CategoryId, DieFace, GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
+import { ALICE, BOB, driveTo, turnShowing } from "./fixtures.js";
 import type { DriveStep } from "./fixtures.js";
 import { SACRIFICE_ORDER } from "./heuristics.js";
 import { createNormalBot } from "./normal.js";
@@ -153,6 +153,56 @@ describe("the tier is total, with no throw and no undefined on any path (D7's se
 });
 
 /**
+ * ruleset §La precondición de la doble: the 11th box "paga 100 sólo si la
+ * casilla de generala tiene una generala DE VERDAD" — `card.generala !== null &&
+ * card.generala > 0`, because "tachar no es anotar".
+ *
+ * NORMAL DOES NOT KNOW THAT RULE AND MUST NOT, and that is what these three
+ * cases are really about. It asks the engine's own `scoreFor` what a box pays
+ * for these dice, this `rollsUsed` and this card, so the precondition and the
+ * servida bonus arrive with the answer. A bot carrying its own table of what a
+ * box is worth would be a second source of truth about the ruleset, and the two
+ * would disagree the day one of them was edited.
+ *
+ * All three positions show the SAME five faces on the SAME throw. Only the
+ * generala box on the card differs, so anything that changes is the
+ * precondition changing it.
+ */
+describe("normal values a box by asking the engine, so the doble precondition arrives for free", () => {
+  /** Seat 0 has already written its generala box; the faces it wrote it on are the argument. */
+  function withGeneralaWrittenOn(faces: readonly DieFace[]): MatchState {
+    return driveTo([...turnShowing(faces), { score: "generala" }, ...bobBurns("ones"), ...turnShowing([5, 5, 5, 5, 5])]);
+  }
+
+  it("a generala SCORED at 50 unlocks the doble, and 100 beats the póker's 40", () => {
+    expect(scoredBox(withGeneralaWrittenOn([6, 6, 6, 6, 6]))).toBe("generala-doble");
+  });
+
+  it("a generala CROSSED at 0 does not unlock it — the doble pays nothing and póker's 40 wins", () => {
+    expect(scoredBox(withGeneralaWrittenOn([1, 2, 3, 4, 6]))).toBe("poker");
+  });
+
+  it("with the generala box still open the 50 is simply the biggest number on offer", () => {
+    expect(scoredBox(driveTo(turnShowing([5, 5, 5, 5, 5])))).toBe("generala");
+  });
+
+  it("the crossed-generala position really is the same dice and the same throw as the scored one", () => {
+    // Non-vacuity for the pair above: if these two positions differed in the
+    // dice or the roll counter, the difference in the answer would prove
+    // nothing about the precondition.
+    for (const faces of [[6, 6, 6, 6, 6], [1, 2, 3, 4, 6]] as const) {
+      const turn = withGeneralaWrittenOn(faces).turn;
+      expect(turn.phase).toBe("deciding");
+      if (turn.phase !== "deciding") continue;
+      expect(turn.dice).toEqual([5, 5, 5, 5, 5]);
+      expect(turn.rollsUsed).toBe(2);
+    }
+    expect(withGeneralaWrittenOn([6, 6, 6, 6, 6]).cards[0]!.generala).toBe(50);
+    expect(withGeneralaWrittenOn([1, 2, 3, 4, 6]).cards[0]!.generala).toBe(0);
+  });
+});
+
+/**
  * design §D7, normal: "when everything yields 0, cross by a fixed
  * `SACRIFICE_ORDER` constant."
  *
@@ -246,5 +296,41 @@ describe("SACRIFICE_ORDER is the tie-break, and crossing out is just its zero ca
     expect(CATEGORY_IDS.indexOf("sixes")).toBeLessThan(CATEGORY_IDS.indexOf("full"));
     expect(SACRIFICE_ORDER.indexOf("full")).toBeLessThan(SACRIFICE_ORDER.indexOf("sixes"));
     expect(scoredBox(state)).toBe("full");
+  });
+});
+
+/**
+ * Normal reads no entropy, and this is where that is a property rather than an
+ * accident of the current code.
+ *
+ * `createEasyBot` takes an `rng` and genuinely consults it. `createNormalBot`
+ * takes none: a parameter it never read would be a claim that it might, and the
+ * transport builds ONE strategy per room and reuses it for every seat
+ * (`match-room.ts:315-318`), so a normal tier that drifted with a source would
+ * answer differently on the second identical position it saw.
+ */
+describe("normal is deterministic, and answers the same the tenth time as the first", () => {
+  it("the same position decided ten times, by one instance and by ten fresh ones", () => {
+    const state = driveTo(turnShowing([6, 2, 2, 2, 1]));
+    const legal = offered(state, ALICE);
+    const view = getViewFor(state, ALICE);
+    const reused = createNormalBot();
+    // The expected answer is named by its `keep`, not by its index in the offer
+    // list: an index would pin the engine's subset-enumeration order, which is
+    // `legal-actions.ts`'s business and not this bot's.
+    const expected = legal.find((action) => action.type === "hold" && action.keep.join() === "1,2,3");
+    expect(expected).toBeDefined();
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      expect(reused.chooseAction(view, legal, ROOM_BUDGET_MS)).toBe(expected);
+      expect(createNormalBot().chooseAction(view, legal, ROOM_BUDGET_MS)).toBe(expected);
+    }
+  });
+
+  it("it decides for whichever seat it is asked about, not for a seat it remembers", () => {
+    // One instance, two seats, opposite answers — the reuse `match-room.ts`
+    // does. Seat 1 is on turn here, so seat 0 is the one with nothing.
+    const state = driveTo([...turnShowing([6, 2, 2, 2, 1]), { score: "twos" }, { throw: [3, 6, 3, 6, 3] }]);
+    expect(getLegalActions(state, ALICE)).toEqual([]);
+    expect(heldIndices(state, BOB)).toEqual([0, 2, 4]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BotTier } from "@hexdev/platform-contract";
-import { getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
-import type { GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
+import { ROLLS_PER_TURN, applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
+import type { ApplyResult, DieFace, GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
 import { createBotStrategy } from "./index.js";
 import { ALICE, BOB, awaitingRollState, openBoxCount, openingThrow, reachableStates, servidaWinState } from "./fixtures.js";
 
@@ -9,6 +9,22 @@ const TIERS: readonly BotTier[] = ["easy", "normal", "hard"];
 
 /** The room's own budget, `match-room.ts:162`. No tier reads it; it is passed because the port does. */
 const ROOM_BUDGET_MS = 1000;
+
+/**
+ * `fixtures.ts`'s own face script, and it is reused rather than re-picked for
+ * the reason written there: no window of five is five of a kind, so no turn can
+ * open on a generala servida and end the match before it has been played.
+ */
+const SELF_PLAY_FACES: readonly DieFace[] = [1, 2, 3, 4, 5, 6, 4, 4, 4, 2, 6, 1, 3, 3, 5, 2];
+
+/** Two seats × eleven boxes × three throws, each costing a roll state and a decision state, is 132. */
+const SELF_PLAY_CEILING = 400;
+
+/** A move the engine refused is a bug in this test, not a result: say so loudly rather than carrying on. */
+function applied(result: ApplyResult): MatchState {
+  if (!result.ok) throw new Error(`the engine refused a move normal chose: ${result.violation.code} — ${result.violation.message}`);
+  return result.state;
+}
 
 const widest = openingThrow();
 const widestView = getViewFor(widest, ALICE);
@@ -138,20 +154,42 @@ describe("ONE shared empty-list guard, and the tiers have no throw of their own 
 });
 
 /**
- * The placeholder, executed rather than left in a comment — `conformance.ts`'s
- * own "never a mute `if`" discipline.
+ * THE DIVERGENCE TEST SLICE 16 OWED, replacing the placeholder that reded when
+ * `normal` was wired.
  *
- * `normal` is slice 16 and `hard` is slice 17. Until they are written every
- * tier resolves to the uniform one, and the difference between "Generala's
- * tiers deliberately agree" and "somebody forgot to wire two of them" has to be
- * visible in a green run. This test is what turns red the day slice 16 lands,
- * which is when it should be replaced by that slice's own divergence test.
+ * The old assertion said all three tiers answer identically because all three
+ * WERE the uniform one. Two of them no longer are, and the same
+ * `conformance.ts:114-134` discipline applies to what is left: `hard` is still
+ * slice 17's, so the difference between "deliberately identical" and "somebody
+ * forgot" stays legible in a green run rather than living in a comment.
  */
-describe("normal and hard are not written yet, and say so out loud", () => {
-  it("all three tiers make the same choice from the same source, because all three ARE the uniform tier today", () => {
-    const chosen = TIERS.map((tier) => createBotStrategy(tier, () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS));
-    expect(new Set(chosen).size).toBe(1);
-    expect(chosen[0]).toBe(widestLegal[21]);
+describe("normal is its own tier now, and hard is the one still saying so out loud", () => {
+  it("easy and normal answer the same position differently", () => {
+    const easy = createBotStrategy("easy", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
+    const normal = createBotStrategy("normal", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
+    expect(easy).toBe(widestLegal[21]);
+    expect(normal).not.toBe(easy);
+    // Named, not merely different: five distinct faces means five groups of
+    // one, and D7's tie rule takes the higher face — the 6 sitting at index 4.
+    expect(normal).toEqual({ type: "hold", playerId: ALICE, keep: [4] });
+  });
+
+  /**
+   * The half that makes the case above more than a coincidence of one rng
+   * value. Easy IS its source; normal does not have one.
+   */
+  it("easy moves with the source and normal does not move at all", () => {
+    const sources = [() => 0, () => 0.5, () => 0.999999];
+    const easy = sources.map((rng) => createBotStrategy("easy", rng).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS));
+    const normal = sources.map((rng) => createBotStrategy("normal", rng).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS));
+    expect(new Set(easy).size).toBe(3);
+    expect(new Set(normal).size).toBe(1);
+  });
+
+  it("hard still resolves to the uniform tier, and this is the assertion slice 17 reds", () => {
+    const easy = createBotStrategy("easy", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
+    const hard = createBotStrategy("hard", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
+    expect(hard).toBe(easy);
   });
 });
 
@@ -234,4 +272,125 @@ describe("every tier answers every reachable position (Spec F: three tiers, and 
       expect(asked).toBe(positions.length);
     });
   }
+});
+
+/**
+ * TASK 16.2 — the property of task 8.1 re-run for `normal`, over the positions
+ * NORMAL'S OWN PLAY reaches rather than the ones a fixed script does.
+ *
+ * The sweep above is driven by `fixtures.ts`'s deliberately boring policy: hold
+ * while throws remain, then write the first open box. Every tier is asked about
+ * those 133 states and that is worth having — but it is a claim about a list
+ * somebody else built. A deterministic tier can do something stronger, and only
+ * a deterministic one can: play both seats itself, all the way to a terminal
+ * outcome, and be asked at exactly the positions its own decisions produced.
+ *
+ * WHAT WOULD OTHERWISE GO UNSEEN. A bot whose holds converge on one shape drives
+ * itself into a corner of the state space that no external script visits. The
+ * counts below are asserted for the same reason slice 8 counted its sweep: "it
+ * returned a legal action at every position it was asked about" is satisfied
+ * vacuously by a match that ended on turn two, and one-box-remaining — named by
+ * spec Domain F because that is where a "pick the best category" heuristic falls
+ * through — would simply never occur.
+ */
+describe("normal plays a whole match out by itself, and the property holds at every position it reaches (16.2, Spec F)", () => {
+  /**
+   * The cup, for a match nobody is sitting at. The faces are `fixtures.ts`'s own
+   * script and cycle through it: no window of five is five of a kind, so no
+   * TURN can open on a generala servida and cut the match short (ruleset
+   * §Generala servida) — which would truncate every count below without failing
+   * anything.
+   */
+  function scriptedCup(): (budget: number) => readonly DieFace[] {
+    let cursor = 0;
+    return (budget) => {
+      const faces: DieFace[] = [];
+      for (let index = 0; index < budget; index += 1) {
+        faces.push(SELF_PLAY_FACES[cursor % SELF_PLAY_FACES.length]!);
+        cursor += 1;
+      }
+      return faces;
+    };
+  }
+
+  const selfPlay = ((): { states: readonly MatchState[]; asked: number; openCounts: ReadonlySet<number>; rollsUsed: ReadonlySet<number> } => {
+    const strategy = createBotStrategy("normal", () => 0.5);
+    const cup = scriptedCup();
+    const states: MatchState[] = [];
+    const openCounts = new Set<number>();
+    const rollsUsed = new Set<number>();
+    let state = createMatch([ALICE, BOB]);
+    let asked = 0;
+
+    for (let step = 0; step < SELF_PLAY_CEILING; step += 1) {
+      states.push(state);
+      if (getOutcome(state) !== null) return { states, asked, openCounts, rollsUsed };
+
+      const turn = state.turn;
+      if (turn.phase === "awaiting-roll") {
+        state = applied(applyRoll(state, cup(turn.slots.filter((slot) => slot === null).length)));
+        continue;
+      }
+      if (turn.phase === "servida-win") return { states, asked, openCounts, rollsUsed };
+
+      const playerId = state.players[turn.seat]!;
+      const legal = getLegalActions(state, playerId);
+      const chosen = strategy.chooseAction(getViewFor(state, playerId), legal, ROOM_BUDGET_MS);
+      // The property itself, asserted at every single position rather than
+      // collected and checked afterwards: IDENTITY, because `sameAction`
+      // (`match-room.ts:220-232`) walks `keep` by index and a rebuilt hold is
+      // unsubmittable however equal it looks.
+      expect(legal).toContain(chosen);
+      openCounts.add(openBoxCount(state, turn.seat));
+      rollsUsed.add(turn.rollsUsed);
+      asked += 1;
+      state = applied(applyPlayerAction(state, chosen as GeneralaAction));
+    }
+
+    throw new Error(`normal drove ${String(SELF_PLAY_CEILING)} steps without the match ending`);
+  })();
+
+  it("the match reached a real ending, with every box on both cards written", () => {
+    const last = selfPlay.states[selfPlay.states.length - 1]!;
+    expect(getOutcome(last)).not.toBeNull();
+    expect(openBoxCount(last, 0)).toBe(0);
+    expect(openBoxCount(last, 1)).toBe(0);
+    // Nothing before the end was already over, so the match was played rather
+    // than abandoned into a terminal state early.
+    expect(selfPlay.states.slice(0, -1).filter((state) => getOutcome(state) !== null)).toEqual([]);
+  });
+
+  it("it was really asked, at more positions than the scripted sweep offers", () => {
+    // 22 turns of up to three decisions each. A tier that answered once and
+    // then stalled would satisfy every `toContain` above without making a claim.
+    expect(selfPlay.asked).toBeGreaterThan(40);
+  });
+
+  it("its own play spans every open-box count from a full card down to ONE BOX REMAINING", () => {
+    for (let open = 1; open <= 11; open += 1) expect(selfPlay.openCounts).toContain(open);
+  });
+
+  it("and every value of `rollsUsed` a turn can hold", () => {
+    expect(selfPlay.rollsUsed).toEqual(new Set([1, 2, 3]));
+  });
+
+  /**
+   * The half the counts above cannot make: at the LAST box, normal must write
+   * it. There is exactly one score on offer, so an implementation whose value
+   * comparison never selected anything would fall through to `legalActions[0]`
+   * — which at `rollsUsed < 3` is a hold, and the turn would go round again
+   * without the box ever being filled.
+   */
+  it("with one box left and no throws left, it writes that box", () => {
+    const lastBoxes = selfPlay.states.filter((state) => state.turn.phase === "deciding" && state.turn.rollsUsed === ROLLS_PER_TURN && openBoxCount(state, state.turn.seat) === 1);
+    expect(lastBoxes.length).toBeGreaterThan(0);
+    for (const state of lastBoxes) {
+      const turn = state.turn;
+      if (turn.phase !== "deciding") continue;
+      const playerId = state.players[turn.seat]!;
+      const legal = getLegalActions(state, playerId);
+      expect(legal.length).toBe(1);
+      expect(createBotStrategy("normal", () => 0.5).chooseAction(getViewFor(state, playerId), legal, ROOM_BUDGET_MS)).toBe(legal[0]);
+    }
+  });
 });

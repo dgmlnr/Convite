@@ -1,22 +1,26 @@
 import type { BotStrategy, BotTier, RandomSource } from "@hexdev/platform-contract";
 import type { GeneralaAction, PlayerView } from "@hexdev/generala-engine";
 import { createEasyBot } from "./easy.js";
+import { createNormalBot } from "./normal.js";
 import type { GeneralaTier, NonEmptyActions } from "./tier.js";
 
 export { createEasyBot } from "./easy.js";
+export { createNormalBot } from "./normal.js";
+export { SACRIFICE_ORDER, immediateValue, largestMatchingGroup, sacrificeRank } from "./heuristics.js";
+export type { MatchingGroup } from "./heuristics.js";
 export { DEFAULT_THINKING_DELAY_MS, withThinkingDelay } from "./latency.js";
 export type { Sleep } from "./latency.js";
 export type { GeneralaTier, NonEmptyActions } from "./tier.js";
 
 /**
- * A PARTIAL BARREL, and it says which slice closes it.
+ * STILL A PARTIAL BARREL, and it still says which slice closes it.
  *
- * `createNormalBot` (slice 16) and `createHardBot` (slice 17) are not written,
- * so they are not exported. `withThinkingDelay` and its default now are: it is
- * what `generala-module`'s `createBot` wraps `createBotStrategy` in (slice 9),
- * the same call `escoba-module/src/index.ts:165` already makes. `fixtures.ts`
- * is deliberately never exported, exactly as `escoba-bot`'s is not — a fixture
- * builder is this package's test scaffolding, not its API.
+ * `createHardBot` (slice 17) is not written, so it is not exported.
+ * `createNormalBot` now is, together with the three things `heuristics.ts`
+ * holds — which slice 17 consumes rather than re-deriving, so they are API of
+ * this package and not private to one tier. `fixtures.ts` is deliberately never
+ * exported, exactly as `escoba-bot`'s is not: a fixture builder is this
+ * package's test scaffolding, not its API.
  */
 
 /**
@@ -66,19 +70,26 @@ function isNonEmpty(legalActions: readonly GeneralaAction[]): legalActions is No
 }
 
 /**
- * EVERY TIER IS THE UNIFORM ONE TODAY, and the three arms are kept apart so the
- * two that are placeholders are visible as placeholders.
+ * TWO REAL TIERS AND ONE PLACEHOLDER, and the arms are kept apart so the
+ * placeholder is visible as one.
  *
- * `normal` is slice 16 (greedy, `SACRIFICE_ORDER`) and `hard` is slice 17
- * (exact one-ply EV). Collapsing this to a single `return createEasyBot(rng)`
- * would read as a decision that Generala's tiers are the same, which is the
- * opposite of what the design says. `index.test.ts` asserts the placeholder out
- * loud for the same reason `conformance.ts:114-134` refuses a mute `if`: the
- * difference between "deliberately identical" and "somebody forgot" has to be
- * legible in a green run.
+ * `hard` is slice 17 (exact one-ply EV over multisets). Collapsing its arm into
+ * `normal`'s would read as a decision that the two are the same, which is the
+ * opposite of what the design says, so `index.test.ts` asserts the placeholder
+ * out loud for the same reason `conformance.ts:114-134` refuses a mute `if`:
+ * the difference between "deliberately identical" and "somebody forgot" has to
+ * be legible in a green run.
+ *
+ * ONLY `easy` TAKES THE SOURCE, and that is not an oversight either. Uniform
+ * choice IS entropy, so `createEasyBot` cannot be written without it; normal is
+ * a total function of the position and would be claiming something false by
+ * accepting one. `truco-bot/src/index.ts:25` draws the same line in the other
+ * direction, handing `rng` to `normal` and `hard` while `createEasyBot()` takes
+ * none. What every caller programs against is `createBotStrategy(tier, rng)`,
+ * which is uniform whatever this function does behind it.
  */
 function tierFor(tier: BotTier, rng: RandomSource): GeneralaTier {
   if (tier === "easy") return createEasyBot(rng);
-  if (tier === "normal") return createEasyBot(rng); // slice 16 replaces this with `createNormalBot(rng)`
-  return createEasyBot(rng); //                        slice 17 replaces this with `createHardBot(rng)`
+  if (tier === "normal") return createNormalBot();
+  return createEasyBot(rng); // slice 17 replaces this with `createHardBot(rng)`
 }
