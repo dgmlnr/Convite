@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
-import type { ApplyResult, DieFace, MatchState, PlayerId } from "@hexdev/generala-engine";
+import type { ApplyResult, CategoryId, DieFace, MatchState, PlayerId } from "@hexdev/generala-engine";
 
 import { createGeneralaAnnouncer } from "./announcer.js";
 
@@ -52,6 +52,13 @@ interface Table {
   /** Re-announce the CURRENT view — the shape a board takes on every
    * broadcast that changed nothing this region cares about. */
   readonly reannounce: () => void;
+  /** Roll these five faces for whoever is on turn and write the box named,
+   * using the engine's own offer. A category the engine would not accept
+   * fails loudly here rather than producing a card nobody could reach. */
+  readonly playTurn: (faces: readonly DieFace[], category: CategoryId) => void;
+  /** Write the box for the seat already deciding, with the view it produces
+   * NEVER handed to the region — a board that drew only the render after it. */
+  readonly scoreUnseen: (category: CategoryId) => void;
 }
 
 function seatTable(seatId: PlayerId = SEAT): Table {
@@ -64,6 +71,15 @@ function seatTable(seatId: PlayerId = SEAT): Table {
     announcer.announce(getViewFor(state, seatId));
   };
   tell();
+
+  const applyScore = (category: CategoryId): void => {
+    const turn = state.turn;
+    if (turn.phase !== "deciding") throw new Error(`a score needs a deciding turn, and this one is ${turn.phase}`);
+    const actor = state.players[turn.seat]!;
+    const offer = getLegalActions(state, actor).find((action) => action.type === "score" && action.category === category);
+    if (offer === undefined) throw new Error(`the engine did not offer ${category} to seat ${String(turn.seat)}`);
+    state = accept(applyPlayerAction(state, offer));
+  };
 
   const applyHold = (keep: readonly number[]): void => {
     const turn = state.turn;
@@ -87,6 +103,12 @@ function seatTable(seatId: PlayerId = SEAT): Table {
     },
     holdUnseen: applyHold,
     reannounce: tell,
+    playTurn: (faces, category) => {
+      state = accept(applyRoll(state, faces));
+      applyScore(category);
+      tell();
+    },
+    scoreUnseen: applyScore,
   };
 }
 
@@ -188,5 +210,69 @@ describe("generala announcer: the throw, numbered", () => {
     table.roll([6, 6, 6, 2, 1]);
 
     expect(table.said()).toBe("Tirada 1: 6, 6, 6, 2, 1");
+  });
+});
+
+describe("generala announcer: the box that was written, with the number in it", () => {
+  it("says what THIS seat just wrote and what it was worth", () => {
+    const table = seatTable();
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+
+    expect(table.said()).toBe("Anotaste 18 en Seises.");
+  });
+
+  it("names the rival who wrote a box, and says the zero out loud when they crossed one out", () => {
+    const table = seatTable();
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+    // A crossed box and an open one both hold no number a player can use, and
+    // only one of them can still be played for. The planilla draws that
+    // difference with a strike; the region has to say it, because "el rival
+    // no anotó nada" would be true of a turn that never happened.
+    table.playTurn([1, 1, 2, 3, 4], "fives");
+
+    expect(table.said()).toBe("Rival anotó 0 en Cincos.");
+  });
+
+  it("reads the same event from the rival's own seat, with the roles the other way round", () => {
+    // The label follows WHO IS READING, not who wrote. Keyed on a literal seat
+    // index instead, this sentence would tell the seat that did not play that
+    // it had just written a box.
+    const table = seatTable(RIVAL);
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+
+    expect(table.said()).toBe("Rival anotó 18 en Seises.");
+  });
+
+  it("calls the box exactly what the planilla's own row header calls it, accent and all", () => {
+    // Shared rather than re-typed. The engine's id for this box is `poker`;
+    // the planilla heads its row "Póker". A region announcing the identifier
+    // would be a second name for one box, and a player who went to check the
+    // card would not find the row they were told about.
+    const table = seatTable();
+    table.playTurn([3, 3, 3, 3, 1], "poker");
+
+    expect(table.said()).toBe("Anotaste 45 en Póker.");
+  });
+
+  it("announces the box and not the throw when a board draws only the render that follows a score", () => {
+    // Both facts changed between these two views: a box was written AND the
+    // next seat's dice are on the table. `aria-atomic` reads the region whole,
+    // so the two joined would be one sentence nobody can follow — the box is
+    // the consequential half, and the dice are on screen either way.
+    //
+    // THE SCORE HAPPENS AT THE SECOND THROW ON PURPOSE, and the first draft of
+    // this test did it at the first. Both seats' opening throws are `rollsUsed
+    // === 1`, so the counter did not move across the seat change and the two
+    // orderings were indistinguishable — the case passed while asserting
+    // nothing. Scoring at throw 2 makes the counter go 2 → 1, which is the
+    // only shape in which the order of these two questions is observable.
+    const table = seatTable();
+    table.roll([6, 6, 6, 2, 1]);
+    table.hold([0, 1, 2]);
+    table.roll([2, 1]);
+    table.scoreUnseen("sixes");
+    table.roll([1, 1, 2, 3, 4]);
+
+    expect(table.said()).toBe("Anotaste 18 en Seises.");
   });
 });

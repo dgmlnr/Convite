@@ -17,11 +17,14 @@
  *
  * PARTIAL, AND SAYING SO. The tray, the dice it holds, the control that
  * commits a hold, the planilla every seat reads and the region that says what
- * was thrown are here; what that region says about a box being written, and
- * the match-over surface, are not yet. `createDieSlot` is deliberately NOT
- * exported: nothing outside this package composes a single die, and a public
- * export with zero consumers is the shape `escoba-ui`'s own barrel comment
- * argues against.
+ * was thrown and what was written are here; the servida and the match-over
+ * surface are not yet. `createDieSlot` is deliberately NOT exported: nothing
+ * outside this package composes a single die, and a public export with zero
+ * consumers is the shape `escoba-ui`'s own barrel comment argues against.
+ * `CATEGORY_LABELS` and `seatLabel` are not exported either, for the same
+ * reason and one more: they are how the planilla and the announcer agree with
+ * EACH OTHER, and a board naming a box its own third way is exactly the
+ * disagreement sharing them exists to prevent.
  */
 export { createGeneralaTray } from "./tray.js";
 export type { GeneralaTrayElements, GeneralaTrayRender } from "./tray.js";
