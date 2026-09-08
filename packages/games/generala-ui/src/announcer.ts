@@ -1,0 +1,135 @@
+import { createDiceAnnouncer } from "@hexdev/dice-ui";
+import type { PlayerView, Turn } from "@hexdev/generala-engine";
+
+/** The region, and the one call that keeps it truthful. Mounted once by the
+ * board and mutated afterwards — never rebuilt, which is the whole reason
+ * this is a factory holding a node instead of a render that makes one. */
+export interface GeneralaAnnouncer {
+  readonly announcerEl: HTMLElement;
+  readonly announce: (view: PlayerView) => void;
+}
+
+/**
+ * Which throw of the turn is on the table, or `null` when the dice are not
+ * showing.
+ *
+ * THE SEAT IS NOT PART OF THIS, AND ITS ABSENCE WAS MEASURED. The first draft
+ * keyed on `seat:rollsUsed`, on the reasoning that "throw 1" happens once per
+ * turn and the seat is what tells two of them apart. Deleting the seat left
+ * the whole suite green, and the reason is structural rather than a missing
+ * test: a turn only passes to the next seat by WRITING a box, so any pair of
+ * views that straddles a seat change also straddles a filled box — a question
+ * this region answers before it ever reaches this one. The seat could not be
+ * observed because it can never decide anything.
+ *
+ * THE COUNTER CAN, and it needed a test of its own to prove it, because on
+ * the ordinary path a hold sits between two throws and this reads the same
+ * number on both sides of it. What it is for is a board that renders only the
+ * LATER of two broadcasts: the hold is never drawn, the region sees two
+ * `deciding` views in a row, and without the counter the second throw is not
+ * a new event.
+ *
+ * `servida-win` IS THE ONLY ARM WITHOUT ONE, and that is the type's doing
+ * rather than a case chosen here: a match won off the cup ends before
+ * anybody is at a throw, so the arm carries no counter to read. Narrowing it
+ * to `deciding` instead was the first draft and measured as unobservable —
+ * `awaiting-roll` carries the counter of the throw that already happened, so
+ * it never equals the next one either way.
+ */
+function throwNumberOf(turn: Turn): number | null {
+  return turn.phase === "servida-win" ? null : turn.rollsUsed;
+}
+
+/**
+ * THE THROW, BY NUMBER AS WELL AS BY FACE — and the number is not decoration.
+ *
+ * `dice-ui` already ships this sentence: `announceRoll` writes
+ * "Tirada: 3, 5, 5, 2, 6" and guards on equality so an identical re-announce
+ * stays silent. That guard is right for the cup it was written for, which
+ * throws all five dice and can only repeat itself if a caller re-announces
+ * the same event. Generala re-rolls a SUBSET, so two consecutive throws can
+ * genuinely land on the same five faces — keep three sixes, throw the other
+ * two, get the same two back — and there the guard swallows a real event: a
+ * player who cannot see the dice is told nothing about a throw that just
+ * happened, while a sighted player watched it. Measured in
+ * `announcer.browser.test.ts` rather than reasoned about.
+ *
+ * So this package writes its own sentence and imports the REGION rather than
+ * the wording (D8 names both; this is the half of it that does not transfer,
+ * and it is recorded as a deviation rather than taken quietly). The throw
+ * counter is something everybody at a real table is keeping anyway — it is
+ * what decides whether a juego is servida or armada — so saying it costs a
+ * word and carries a rule.
+ */
+function throwSentence(turn: Extract<Turn, { phase: "deciding" }>): string {
+  return `Tirada ${String(turn.rollsUsed)}: ${turn.dice.join(", ")}`;
+}
+
+/**
+ * THE ONE NEW FACT IN THIS VIEW, or nothing.
+ *
+ * PARTIAL, AND SAYING SO: a throw is the only event this region has learned
+ * so far. The box somebody writes and the generala servida that ends a match
+ * before anybody writes anything are the next two units, and each is a
+ * differently-shaped question rather than a longer version of this one.
+ *
+ * THE PHASE IS ASKED FIRST, AND NOT WITH A CAST. `deciding` is the only arm
+ * carrying dice, so narrowing here is what lets `throwSentence` receive a
+ * turn that HAS five faces instead of one asserted to. The first draft read
+ * the counter first and cast afterwards, which a wrong answer above turns
+ * into `undefined.join(...)` at the player rather than an error at the
+ * compiler.
+ */
+function newsIn(before: PlayerView, after: PlayerView): string | null {
+  const turn = after.turn;
+  if (turn.phase !== "deciding") return null;
+  if (turn.rollsUsed === throwNumberOf(before.turn)) return null;
+  return throwSentence(turn);
+}
+
+/**
+ * WHAT THE TABLE SAYS OUT LOUD.
+ *
+ * THE REGION IS `dice-ui`'S, ON PURPOSE (D8). `createDiceAnnouncer` builds the
+ * polite, atomic, additions-only live region three packages in this repository
+ * have now independently converged on, and `dice-styles.ts` already carries
+ * the clip-rect rule that keeps `.hexdev-dice-announcer` visually hidden and
+ * still in the accessibility tree. Borrowing the node is what makes this
+ * package need no stylesheet of its own for it; rebuilding one here would be a
+ * fourth copy of the same ten lines plus a fourth chance to write
+ * `display: none` by reflex and silence the thing entirely.
+ *
+ * IT ANNOUNCES EVENTS, WHICH MEANS IT NEEDS THE PREVIOUS VIEW. A `PlayerView`
+ * is a snapshot: "seat 1's Cincos holds 0" is true for the rest of the match,
+ * and announcing a state on every broadcast would repeat the whole card
+ * forever. The difference between two consecutive views is the event, so this
+ * closure remembers the last one it was given — the same reason `tray.ts`
+ * holds its pending selection rather than deriving it.
+ *
+ * THE FIRST VIEW IS NEVER AN EVENT. A board mounting mid-match — a reconnect,
+ * a replay, a spectator arriving — hands over a position, not something that
+ * just happened, and a region that greeted it with the last throw would
+ * announce a sentence over whatever the player was already listening to.
+ *
+ * NOTHING IS WRITTEN WHEN THERE IS NO NEWS, and that is stronger than writing
+ * the same string again: a reader that treats every write as a change would
+ * repeat the sentence on every packet, which is exactly the defect
+ * `truco-ui/announcer.ts`'s own equality guard exists for. Here the guard is
+ * structural — no news produces no call — so a broadcast storm is silent.
+ */
+export function createGeneralaAnnouncer(doc: Document): GeneralaAnnouncer {
+  const announcerEl = createDiceAnnouncer(doc);
+  let previous: PlayerView | null = null;
+
+  return {
+    announcerEl,
+    announce: (view) => {
+      const before = previous;
+      previous = view;
+      if (before === null) return;
+      const message = newsIn(before, view);
+      if (message === null) return;
+      announcerEl.textContent = message;
+    },
+  };
+}
