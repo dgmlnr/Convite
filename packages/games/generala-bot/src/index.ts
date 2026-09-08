@@ -1,11 +1,15 @@
 import type { BotStrategy, BotTier, RandomSource } from "@hexdev/platform-contract";
 import type { GeneralaAction, PlayerView } from "@hexdev/generala-engine";
 import { createEasyBot } from "./easy.js";
+import { createHardBot } from "./hard.js";
 import { createNormalBot } from "./normal.js";
 import type { GeneralaTier, NonEmptyActions } from "./tier.js";
 
 export { createEasyBot } from "./easy.js";
+export { createHardBot, expectedValueOfHold } from "./hard.js";
 export { createNormalBot } from "./normal.js";
+export { orderedThrowCount, rollOutcomes } from "./outcomes.js";
+export type { RollOutcome } from "./outcomes.js";
 export { SACRIFICE_ORDER, immediateValue, largestMatchingGroup, sacrificeRank } from "./heuristics.js";
 export type { MatchingGroup } from "./heuristics.js";
 export { DEFAULT_THINKING_DELAY_MS, withThinkingDelay } from "./latency.js";
@@ -13,14 +17,21 @@ export type { Sleep } from "./latency.js";
 export type { GeneralaTier, NonEmptyActions } from "./tier.js";
 
 /**
- * STILL A PARTIAL BARREL, and it still says which slice closes it.
+ * THE BARREL IS CLOSED. Three tiers, and every fact they reason from.
  *
- * `createHardBot` (slice 17) is not written, so it is not exported.
- * `createNormalBot` now is, together with the three things `heuristics.ts`
- * holds — which slice 17 consumes rather than re-deriving, so they are API of
- * this package and not private to one tier. `fixtures.ts` is deliberately never
- * exported, exactly as `escoba-bot`'s is not: a fixture builder is this
- * package's test scaffolding, not its API.
+ * It said "still partial" through slices 8 and 16 and named the slice that
+ * would close it; this is that slice. `heuristics.ts` holds facts about a
+ * POSITION and `outcomes.ts` holds facts about the CUP, and both are exported
+ * for the same reason `createHardBot` is: they are what a tier reasons from
+ * rather than one tier's private business, and a second copy inside a tier is
+ * how two tiers come to disagree about the RULES instead of about strategy.
+ *
+ * `expectedValueOfHold` is exported beside its tier because it is that tier's
+ * valuation and the only thing that makes its decisions checkable as
+ * arithmetic rather than only as outcomes.
+ *
+ * `fixtures.ts` is still deliberately never exported, exactly as `escoba-bot`'s
+ * is not: a fixture builder is this package's test scaffolding, not its API.
  */
 
 /**
@@ -70,26 +81,31 @@ function isNonEmpty(legalActions: readonly GeneralaAction[]): legalActions is No
 }
 
 /**
- * TWO REAL TIERS AND ONE PLACEHOLDER, and the arms are kept apart so the
- * placeholder is visible as one.
+ * THREE REAL TIERS, AND NO PLACEHOLDER LEFT.
  *
- * `hard` is slice 17 (exact one-ply EV over multisets). Collapsing its arm into
- * `normal`'s would read as a decision that the two are the same, which is the
- * opposite of what the design says, so `index.test.ts` asserts the placeholder
- * out loud for the same reason `conformance.ts:114-134` refuses a mute `if`:
- * the difference between "deliberately identical" and "somebody forgot" has to
- * be legible in a green run.
+ * The arm that returned the uniform tier for `hard` is gone, and the assertion
+ * slice 8 wrote to make it visible — "hard still resolves to the uniform tier,
+ * and this is the assertion slice 17 reds" — did red, on schedule, and was
+ * replaced by this slice's own divergence test. The same collection slice 16
+ * made on slice 8's placeholder, one slice later.
  *
- * ONLY `easy` TAKES THE SOURCE, and that is not an oversight either. Uniform
- * choice IS entropy, so `createEasyBot` cannot be written without it; normal is
- * a total function of the position and would be claiming something false by
+ * The three arms stay apart rather than collapsing into a shared expression,
+ * for the reason `conformance.ts:114-134` refuses a mute `if`: the difference
+ * between "deliberately identical" and "somebody forgot" has to be legible in a
+ * green run, and one position now answers three ways to say so.
+ *
+ * ONLY `easy` TAKES THE SOURCE, and that is not an oversight. Uniform choice IS
+ * entropy, so `createEasyBot` cannot be written without it; `normal` and `hard`
+ * are total functions of the position and would be claiming something false by
  * accepting one. `truco-bot/src/index.ts:25` draws the same line in the other
- * direction, handing `rng` to `normal` and `hard` while `createEasyBot()` takes
- * none. What every caller programs against is `createBotStrategy(tier, rng)`,
- * which is uniform whatever this function does behind it.
+ * direction. What every caller programs against is `createBotStrategy(tier,
+ * rng)`, which is uniform whatever this function does behind it — and
+ * `match-room.ts:315-318` builds ONE strategy per room and reuses it for every
+ * seat, so a tier that drifted with a source would answer the same position
+ * differently depending on how many decisions came before it.
  */
 function tierFor(tier: BotTier, rng: RandomSource): GeneralaTier {
   if (tier === "easy") return createEasyBot(rng);
   if (tier === "normal") return createNormalBot();
-  return createEasyBot(rng); // slice 17 replaces this with `createHardBot(rng)`
+  return createHardBot();
 }

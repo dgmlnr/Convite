@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getLegalActions, getViewFor } from "@hexdev/generala-engine";
-import type { DieFace, GeneralaAction, MatchState, PlayerView } from "@hexdev/generala-engine";
+import type { CategoryId, DieFace, GeneralaAction, MatchState, PlayerView } from "@hexdev/generala-engine";
 import { ALICE, driveTo, turnShowing } from "./fixtures.js";
+import type { DriveStep } from "./fixtures.js";
 import { createHardBot, expectedValueOfHold } from "./hard.js";
 import { immediateValue } from "./heuristics.js";
 import type { NonEmptyActions } from "./tier.js";
@@ -194,5 +195,114 @@ describe("the servida bonus changes the answer, and nothing else in the position
     expect(expectedValueOfHold(armada, KEEP_THE_SIXES)).toBeCloseTo(250 / 6, 10);
     expect(immediateValue(servida, "poker")).toBe(45);
     expect(immediateValue(armada, "poker")).toBe(40);
+  });
+});
+
+/**
+ * Eight boxes spent, leaving `twos`, `escalera` and `generala`.
+ *
+ * THE THREE READINGS DISAGREE ON THIS FIXTURE, WHICH IS THE ONLY SHAPE THAT
+ * MEASURES ANYTHING. The engine offers open boxes in `CATEGORY_IDS` order, so
+ * the list arrives as twos, escalera, generala. `SACRIFICE_ORDER` puts escalera
+ * cheapest of the three — the MIDDLE one. "Keep the first tied box" answers
+ * twos, "keep the last" answers generala, and only the ladder answers escalera.
+ * Slice 16's M4 found the other shape green: its ladder's answer was also the
+ * last box on the printed card, so the two readings were indistinguishable.
+ *
+ * Both mutations this pins were GREEN when `hard.ts` shipped — dropping the
+ * tie-break, and flipping the comparison to keep the last best — and both are
+ * red now. Said plainly rather than smoothed over: the slicing pass moved this
+ * test to a later PR than the code it measures.
+ */
+const SPENT: readonly CategoryId[] = ["ones", "threes", "fours", "fives", "sixes", "full", "poker", "generala-doble"];
+
+/** One category crossed by each seat in turn, so a two-seat match really walks to the position. */
+function bothSeatsCross(categories: readonly CategoryId[]): readonly DriveStep[] {
+  return categories.flatMap((category) => [{ throw: NOTHING_HAND }, { score: category }, { throw: NOTHING_HAND }, { score: category }]);
+}
+
+/** Throw, keep nothing, throw, keep nothing, throw: the turn arrives at the third roll with no hold left to offer. */
+const TO_THE_LAST_THROW: readonly DriveStep[] = [{ throw: NOTHING_HAND }, { hold: [] }, { throw: NOTHING_HAND }, { hold: [] }, { throw: NOTHING_HAND }];
+
+describe("when nothing on the table is worth anything, the ladder decides", () => {
+  it("the cheapest of the three tied boxes is written, and it is neither the first nor the last offered", () => {
+    const state = driveTo([...bothSeatsCross(SPENT), ...TO_THE_LAST_THROW]);
+    const { view, legal } = asked(state);
+
+    // The premise asserted rather than assumed: three boxes, all worth zero, in
+    // the order the engine offers them, and no hold on the third throw.
+    expect(legal.map((action) => (action.type === "score" ? action.category : "hold"))).toEqual(["twos", "escalera", "generala"]);
+    expect(legal.map((action) => (action.type === "score" ? immediateValue(view, action.category) : -1))).toEqual([0, 0, 0]);
+
+    expect(decide(state).chosen).toEqual({ type: "score", playerId: ALICE, category: "escalera" });
+  });
+});
+
+/**
+ * ONE BOX LEFT AND NOTHING THAT CAN FILL IT, which is where a hold and a score
+ * tie EXACTLY and the tier has to prefer one.
+ *
+ * Seat 0 crossed its generala at zero, so `hasScoredGenerala` is false and the
+ * doble pays 100 to nobody, ever, for the rest of the match (ruleset §La
+ * precondición de la doble — "tachar no es anotar"). With the doble the only
+ * box left, every leaf of every re-roll is worth 0 and so is writing it now:
+ * 31 holds and one score, all valued the same.
+ *
+ * Writing it is the right answer, and it is a real preference rather than a
+ * coincidence — giving a hold a better rank than every box left the whole suite
+ * green until this fixture existed. A tier that held here would spend both
+ * remaining throws to arrive at the same box with the same zero.
+ *
+ * It also catches the other reading of "open": counting FILLED boxes as
+ * available would let the leaf score a box that is gone, value the holds above
+ * zero, and hold.
+ */
+describe("with nothing left to gain, it writes the box instead of spending throws", () => {
+  it("the doble alone, unreachable for the rest of the match, is written on the first throw", () => {
+    const state = driveTo([...bothSeatsCross(["ones", "twos", "threes", "fours", "fives", "sixes", "escalera", "full", "poker", "generala"]), { throw: NOTHING_HAND }]);
+    const { view, legal } = asked(state);
+
+    expect(view.cards[0]?.generala).toBe(0);
+    expect(legal.filter((action) => action.type === "score").length).toBe(1);
+    expect(legal.filter((action) => action.type === "hold").length).toBe(31);
+    // Every hold really is worth nothing, so this is a tie and not a win.
+    expect(Math.max(...legal.filter((action) => action.type === "hold").map((action) => expectedValueOfHold(view, action.keep)))).toBe(0);
+    expect(immediateValue(view, "generala-doble")).toBe(0);
+
+    expect(decide(state).chosen).toEqual({ type: "score", playerId: ALICE, category: "generala-doble" });
+  });
+});
+describe("the tier is total, and its off-phase arm answers rather than throws", () => {
+  /**
+   * `awaiting-roll` offers nobody anything, so this list cannot arrive through
+   * the engine — it is constructible AT THE TIER, though, which is exactly the
+   * argument `easy.ts` already makes for its own out-of-range case and slice 16
+   * re-made for `normal.ts`'s fall-back. D7's second layer is that no tier's
+   * path carries a throw, and an unreachable arm is where that would be easiest
+   * to forget.
+   *
+   * WHAT IT ANSWERS THERE WAS MEASURED, NOT PREDICTED. The first draft asserted
+   * "the first action offered" on the reasoning that everything values at 0 and
+   * a strict `>` keeps the first — and it went red, because the LADDER still
+   * breaks the tie. `ones` is rank 1 and `sixes` is rank 10, so the cheaper box
+   * wins even here. That is worth pinning rather than papering over: it is also
+   * the proof that a phase guard returning `legalActions[0]` would NOT be a
+   * redundant second mechanism but a different answer, which is why this tier
+   * carries no such guard instead of carrying one nobody could distinguish.
+   */
+  it("handed a position with no dice showing, every value is zero and the ladder still decides", () => {
+    const waiting = driveTo([{ throw: [1, 2, 3, 4, 6] }, { hold: [0] }]);
+    expect(waiting.turn.phase).toBe("awaiting-roll");
+
+    const view = getViewFor(waiting, ALICE);
+    const invented: NonEmptyActions = [
+      { type: "score", playerId: ALICE, category: "sixes" },
+      { type: "score", playerId: ALICE, category: "ones" },
+    ];
+    expect(immediateValue(view, "sixes")).toBe(0);
+    expect(expectedValueOfHold(view, [])).toBe(0);
+    // The cheaper box, which is the SECOND offered — so this is not the loop
+    // falling through to its seed.
+    expect(hard.chooseAction(view, invented, ROOM_BUDGET_MS)).toBe(invented[1]);
   });
 });
