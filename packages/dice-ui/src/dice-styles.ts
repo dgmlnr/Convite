@@ -75,7 +75,7 @@ export function buildDiceStylesheet(): string {
   /* THE UNTHEMED LOOK, applied here rather than left inert.
      \`mahjong-tile-ui\` can leave \`TILE_THEME_DEFAULTS\` as pure data because a
      board (\`mahjong-solitaire-ui/board-styles.ts\`) always exists to apply
-     it; no Generala board exists yet (\`index.ts\`'s own scope note), so a
+     it; no Generala board exists yet (\`generala-ui\`, still unwritten), so a
      die or cup built by THIS package alone would render every \`var(--dice-
      …)\` read as nothing at all without this rule. Custom properties
      inherit down the DOM, so setting them once here reaches the cup, the
@@ -101,8 +101,8 @@ export function buildDiceStylesheet(): string {
      \`dice.scene.test.ts\`'s own widest scene), left-aligning the composed
      group and leaving the REST of that width as a second, differently-
      coloured empty desert next to it. This piece does not own the page it
-     is mounted into (no board exists yet to give it one, \`index.ts\`'s own
-     scope note) and should not silently claim more of it than its own
+     is mounted into (no board exists yet to give it one — \`generala-ui\` is
+     still unwritten) and should not silently claim more of it than its own
      content needs; \`inline-flex\` shrink-wraps to the cup-plus-tray group,
      same as the cup button inside it already does. */
   display: inline-flex;
