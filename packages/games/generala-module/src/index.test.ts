@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { CATEGORY_IDS, applyHold, applyPlayerAction, applyRoll, createMatch, getLegalActions } from "@hexdev/generala-engine";
 import type { DieFace, MatchState, PlayerId, ScoreAction } from "@hexdev/generala-engine";
-import type { ApplyResult } from "@hexdev/platform-contract";
-import { SYSTEM_ACTOR_ID, applyAction } from "./index.js";
-import type { RollDiceAction } from "./index.js";
+import { describeGameModule } from "@hexdev/platform-contract";
+import type { ApplyResult, SeatAssignment } from "@hexdev/platform-contract";
+import { SYSTEM_ACTOR_ID, applyAction, generalaModule } from "./index.js";
+import type { GeneralaModuleAction, RollDiceAction } from "./index.js";
 
 const ALICE = "alice" as PlayerId;
 const BOB = "bob" as PlayerId;
 const SEATS: readonly PlayerId[] = [ALICE, BOB];
+
+/** What the platform hands `createMatch`: a seat number and who is in it. */
+const SEAT_ASSIGNMENTS: readonly SeatAssignment[] = [
+  { seat: 0, playerId: ALICE },
+  { seat: 1, playerId: BOB },
+];
 
 /**
  * Five DIFFERENT faces, so no throw a helper applies is ever a generala servida
@@ -168,5 +175,146 @@ describe("the module's applyAction", () => {
       ok: false,
       violation: { code: "match-over", message: expect.any(String) },
     });
+  });
+});
+
+/**
+ * THE CONTRACT SUITE, AND EVERY FIXTURE IT RUNS ON WAS BUILT BY A PRODUCER.
+ *
+ * `describeGameModule` never invents game-specific data, so what it asserts is
+ * only as strong as the states it is handed. Every one below comes out of
+ * `generalaModule`'s own port — `createMatch`, then the system's throw through
+ * `applyAction` — rather than out of an object literal written here.
+ * `generala-engine`'s own `state.test.ts` carries the lesson
+ * (`mahjong-solitaire-engine/src/board.test.ts:144-152` before it): a state a
+ * test assembled can only read back what the test put in it, and is green
+ * against any production code at all.
+ *
+ * IT COVERS THE ≤42-ACTION SURFACE FOR FREE. `getLegalActions` on the reachable
+ * state below offers 31 holds plus 11 open boxes, and the suite's own "every
+ * action getLegalActions offers is accepted by applyAction" walks all of them —
+ * so the offer list and the reducer are asserted to agree through the MODULE,
+ * not only inside the engine where `legal-actions.exhaustive.test.ts` already
+ * says it.
+ */
+function reachable(): MatchState {
+  const opened = generalaModule.createMatch({}, SEAT_ASSIGNMENTS);
+  return ok(applyAction(opened, { type: "roll-dice", playerId: SYSTEM_ACTOR_ID, faces: OPENING_FACES }));
+}
+
+/** The escalera the opening throw shows, servida, worth 25 — one of the 42 the
+ * reachable state offers, named as a literal so the suite's `toContainEqual`
+ * has something to find rather than something to echo back. */
+const LEGAL_ACTION: GeneralaModuleAction = { type: "score", playerId: ALICE, category: "escalera" };
+
+describeGameModule(
+  generalaModule,
+  { config: {}, seats: SEAT_ASSIGNMENTS, playerId: ALICE, reachableState: reachable(), legalAction: LEGAL_ACTION, terminalState: playedOut(), botTier: "easy" },
+  { describe, it, expect },
+);
+
+describe("the table generalaModule builds", () => {
+  /**
+   * THE CARRIED ITEM, AND `createMatch` IS WHERE IT HAS TO BE REFUSED.
+   *
+   * Two seats holding the same `playerId` are not distinguishable anywhere
+   * downstream. `getViewFor` resolves a seat with `indexOf` and takes the first
+   * of them, so seat 1 would be shown seat 0's view forever; worse,
+   * `applyHold`/`applyScore` decide whose turn it is by reading
+   * `state.players[turn.seat]` and comparing, so with two identical ids the
+   * check passes for BOTH seats and the wrong one acts. The engine's own
+   * `view.ts` names the hole and says the place to close it is where a table is
+   * BUILT — by then a state exists and every consumer of it is already wrong.
+   *
+   * This function is that place: `SeatAssignment[]` arrives from the platform
+   * here and nowhere else, and `truco-module/src/index.ts:37-42` and
+   * `escoba-module/src/index.ts:29-33` already refuse a malformed seat list on
+   * exactly this line. Named by slices 4, 5, 6 and 7 without a task; assigned
+   * to slice 9 because task 9.2 touches this same function for
+   * `configOptions: []`.
+   */
+  it("refuses to seat one player twice", () => {
+    expect(() => generalaModule.createMatch({}, [{ seat: 0, playerId: ALICE }, { seat: 1, playerId: ALICE }])).toThrow(/distinct player/);
+  });
+
+  it("refuses it whichever order the seats arrive in", () => {
+    // The guard is over the players AT the seats, never over the array's own
+    // order — a check comparing `seats[0]` with `seats[1]` would pass a list
+    // the platform happened to hand over sorted and fail one it did not.
+    expect(() => generalaModule.createMatch({}, [{ seat: 1, playerId: BOB }, { seat: 0, playerId: BOB }])).toThrow(/distinct player/);
+  });
+
+  it("refuses a seat list that is not one player at each of its two seats", () => {
+    // Every shape the platform could hand over that is not a two-seat table:
+    // too few, too many, and the same seat number twice — which collapses to
+    // one seat and leaves the other empty.
+    expect(() => generalaModule.createMatch({}, [{ seat: 0, playerId: ALICE }])).toThrow(/seats 0/);
+    expect(() => generalaModule.createMatch({}, [...SEAT_ASSIGNMENTS, { seat: 2, playerId: "carol" as PlayerId }])).toThrow(/seats 0/);
+    expect(() => generalaModule.createMatch({}, [{ seat: 0, playerId: ALICE }, { seat: 0, playerId: BOB }])).toThrow(/seats 0/);
+    expect(() => generalaModule.createMatch({}, [{ seat: 3, playerId: ALICE }, { seat: 4, playerId: BOB }])).toThrow(/seats 0/);
+  });
+
+  /**
+   * THE SIBLING THAT KEEPS ALL THREE REFUSALS FROM BEING VACUOUS, and the one
+   * that says seat ORDER is read off the seat NUMBER.
+   *
+   * A `createMatch` that threw for everything satisfies every assertion above.
+   * This one hands the seats over BACKWARDS and reads the seating back through
+   * the module's own view: Alice is still seat 0, because the platform's
+   * `SeatAssignment.seat` is the number and the array is just a carrier. An
+   * implementation mapping `seats.map((s) => s.playerId)` passes a sorted list
+   * and seats the table backwards here.
+   */
+  it("seats the table by the seat number, not by the order the assignments arrived in", () => {
+    const backwards = generalaModule.createMatch({}, [{ seat: 1, playerId: BOB }, { seat: 0, playerId: ALICE }]);
+
+    expect(generalaModule.getViewFor(backwards, ALICE).self).toEqual({ playerId: ALICE, seat: 0 });
+    expect(generalaModule.getViewFor(backwards, BOB).self).toEqual({ playerId: BOB, seat: 1 });
+    expect(backwards.turn).toEqual({ phase: "awaiting-roll", seat: 0, rollsUsed: 0, slots: [null, null, null, null, null] });
+  });
+});
+
+describe("what generalaModule tells the registry", () => {
+  /**
+   * `configOptions` IS EMPTY, AND THE ASSERTION THAT COLLECTS ON IT IS SOMEBODY
+   * ELSE'S.
+   *
+   * `deriveModalities` cartesian-products every declared option into its own
+   * independent matchmaking pool, so one knob here is two lobbies to fill.
+   * `platform-core/src/presence.test.ts:14` has asserted "yields exactly one
+   * modality — the empty config — for a game with zero configOptions (Generala
+   * has none)" since before this game existed, and `:70` counts
+   * `pool.count("generala", {})`. Neither is touched by this change: the point
+   * of a standing assertion is that the thing it was waiting for arrives and it
+   * keeps passing. This test is the declaration on THIS side of that pair.
+   *
+   * The escalera al as is what makes it load-bearing rather than tidy: the
+   * popular ruleset lists it "opcional, a convenir de antemano", and with no
+   * knob to turn, "to be agreed" is not on by default — spec Domain C.
+   */
+  it("declares no config option at all, so the empty config is its only modality", () => {
+    expect(generalaModule.configOptions).toEqual([]);
+  });
+
+  /**
+   * EVERY FIELD, AS ONE OBJECT, BECAUSE `section` IS A BOOT-TIME FENCE.
+   *
+   * `catalogGroupingOf` falls back `section ?? gameFamily`, and
+   * `createGameModuleRegistry` THROWS at composition when one family's entries
+   * resolve to two sections. With a single entry that can never fire, and it
+   * fires the day a `generala-3` lands without `section` — so the value is
+   * pinned now rather than discovered then. Asserted as a whole object rather
+   * than field by field: a sixth key appearing is a change to what the catalog
+   * is told, and it should have to be written down here.
+   */
+  it("declares two seats, the dados shelf and its own family", () => {
+    expect(generalaModule.metadata).toEqual({
+      seatCount: 2,
+      gameFamily: "generala",
+      section: "dados",
+      displayNameKey: "games.generala.name",
+      assetBase: "/games/generala",
+    });
+    expect(generalaModule.id).toBe("generala");
   });
 });

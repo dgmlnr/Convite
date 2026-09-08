@@ -270,12 +270,19 @@ importers:
 
   packages/games/generala-module:
     dependencies:
+      '@hexdev/generala-bot':
+        specifier: workspace:*
+        version: link:../generala-bot
       '@hexdev/generala-engine':
         specifier: workspace:*
         version: link:../generala-engine
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../platform-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
 
   packages/games/mahjong-solitaire-engine: {}
 
