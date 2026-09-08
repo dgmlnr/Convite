@@ -4,8 +4,10 @@ import type { Clock, ConfigOption, ConfigOptionValue, GameId } from "@hexdev/pla
  * One concrete combination of a game's `configOptions` values — e.g. truco's
  * `{ pointsToWin: 15 }`. NEVER a fixed field name: derived generically from
  * whatever `configOptions` a `GameModule` declares (roadmap constraint, obs
- * 2943 — the lobby must not hardcode truco's 15/30, or the day Generala
- * arrives someone writes `if (gameId === 'truco')` here).
+ * 2943 — the lobby must not hardcode truco's 15/30, or the day a second game
+ * arrives someone writes `if (gameId === 'truco')` here). Escoba, the mahjong
+ * solitaire and Generala have all shipped since, and not one of them needed a
+ * line in this file.
  */
 export type ModalityConfig = Readonly<Record<string, ConfigOptionValue>>;
 
@@ -23,8 +25,9 @@ export function modalityKey(config: ModalityConfig): string {
 /**
  * Every concrete modality a `GameModule` offers: the cartesian product of
  * its `configOptions`' declared values. A module with zero `configOptions`
- * (Generala, per the roadmap) yields exactly one modality, the empty config
- * — the lobby still works for a game with no per-modality queues at all.
+ * (`generalaModule`, which ships with none) yields exactly one modality, the
+ * empty config — the lobby still works for a game with no per-modality queues
+ * at all.
  */
 export function deriveModalities(configOptions: readonly ConfigOption[]): readonly ModalityConfig[] {
   return configOptions.reduce<ModalityConfig[]>(
