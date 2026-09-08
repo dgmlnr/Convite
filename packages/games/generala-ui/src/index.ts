@@ -17,8 +17,8 @@
  *
  * PARTIAL, AND SAYING SO. The tray, the dice it holds, the control that
  * commits a hold, the planilla every seat reads and the region that says what
- * was thrown and what was written are here; the servida and the match-over
- * surface are not yet. `createDieSlot` is deliberately NOT exported: nothing
+ * was thrown, what was written and what a servida throw is worth are here;
+ * the match-over surface is not yet. `createDieSlot` is deliberately NOT exported: nothing
  * outside this package composes a single die, and a public export with zero
  * consumers is the shape `escoba-ui`'s own barrel comment argues against.
  * `CATEGORY_LABELS` and `seatLabel` are not exported either, for the same
@@ -34,3 +34,5 @@ export type { GeneralaScorecardRender } from "./scorecard.js";
 export { ensureScorecardStyles, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
 export { createGeneralaAnnouncer } from "./announcer.js";
 export type { GeneralaAnnouncer } from "./announcer.js";
+export { renderServidaCallout } from "./servida.js";
+export { ensureServidaStyles, SERVIDA_STYLE_ID } from "./servida-styles.js";
