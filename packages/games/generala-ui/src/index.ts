@@ -16,8 +16,9 @@
  * list somebody hands it.
  *
  * PARTIAL, AND SAYING SO. The tray, the dice it holds, the control that
- * commits a hold and the planilla every seat reads are here; the announcer
- * and the match-over surface are not yet. `createDieSlot` is deliberately NOT
+ * commits a hold, the planilla every seat reads and the region that says what
+ * was thrown are here; what that region says about a box being written, and
+ * the match-over surface, are not yet. `createDieSlot` is deliberately NOT
  * exported: nothing outside this package composes a single die, and a public
  * export with zero consumers is the shape `escoba-ui`'s own barrel comment
  * argues against.
@@ -28,3 +29,5 @@ export { ensureTrayStyles, TRAY_STYLE_ID } from "./tray-styles.js";
 export { renderGeneralaScorecard } from "./scorecard.js";
 export type { GeneralaScorecardRender } from "./scorecard.js";
 export { ensureScorecardStyles, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
+export { createGeneralaAnnouncer } from "./announcer.js";
+export type { GeneralaAnnouncer } from "./announcer.js";
