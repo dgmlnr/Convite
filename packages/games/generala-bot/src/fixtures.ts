@@ -1,5 +1,5 @@
 import { CATEGORY_IDS, ROLLS_PER_TURN, applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome } from "@hexdev/generala-engine";
-import type { ApplyResult, DieFace, MatchState, PlayerId } from "@hexdev/generala-engine";
+import type { ApplyResult, CategoryId, DieFace, MatchState, PlayerId } from "@hexdev/generala-engine";
 
 export const ALICE = "player-0" as PlayerId;
 export const BOB = "player-1" as PlayerId;
@@ -137,4 +137,67 @@ export function reachableStates(seats: readonly PlayerId[] = [ALICE, BOB]): read
 export function openBoxCount(state: MatchState, seat: number): number {
   const card = state.cards[seat]!;
   return CATEGORY_IDS.filter((category) => card[category] === null).length;
+}
+
+/**
+ * One move in a scripted match, in the vocabulary of the three things that can
+ * actually happen: the cup is thrown, a seat sets dice aside, a seat writes a
+ * box.
+ *
+ * `throw` is the SYSTEM's move and carries only the faces landing in the empty
+ * slots, which is the same `5 - kept.length` budget `requestGeneralaSystemAction`
+ * draws. It takes no seat because nothing about a throw belongs to one: the
+ * cup is the room's.
+ */
+export type DriveStep = { readonly throw: readonly DieFace[] } | { readonly hold: readonly number[] } | { readonly score: CategoryId };
+
+/**
+ * Drive a match to one exact position through the real reducers, and nowhere
+ * else.
+ *
+ * `reachableStates` above spans positions by playing a fixed policy; this walks
+ * to ONE NAMED position instead, which is what a test about a specific decision
+ * needs — five equal faces on the second throw, a card whose generala box was
+ * crossed at zero, a seat with nothing left worth anything. Every one of those
+ * is a claim about the engine's own output rather than about a literal a test
+ * assembled, which is the whole reason this file refuses hand-built states
+ * (see the header).
+ *
+ * The seat is never named by a step because it is never a choice: `state.turn`
+ * carries whose turn it is, and a script that could disagree with the engine
+ * about that would be scripting a match the engine cannot play. A step the
+ * engine refuses throws through `accepted`, so a script that drifts out of the
+ * rules fails loudly at the line that drifted rather than quietly returning a
+ * position nobody meant.
+ */
+export function driveTo(steps: readonly DriveStep[], seats: readonly PlayerId[] = [ALICE, BOB]): MatchState {
+  let state = createMatch(seats);
+  for (const step of steps) {
+    const playerId = seats[state.turn.seat]!;
+    if ("throw" in step) {
+      state = accepted(applyRoll(state, step.throw));
+    } else if ("hold" in step) {
+      state = accepted(applyPlayerAction(state, { type: "hold", playerId, keep: step.hold }));
+    } else {
+      state = accepted(applyPlayerAction(state, { type: "score", playerId, category: step.score }));
+    }
+  }
+  return state;
+}
+
+/**
+ * The one turn shape every decision test below is built out of: throw
+ * something harmless, set nothing aside, then throw the five faces the test is
+ * really about.
+ *
+ * TWO THROWS, NEVER ONE, and that is forced by the rules rather than chosen. A
+ * turn's opening throw showing five of a kind is a generala servida and ends
+ * the match on the spot (ruleset §Generala servida), so a builder that reached
+ * `[5,5,5,5,5]` in one throw would hand back a finished match offering nobody
+ * anything. Coming through `hold: []` — the rulebook's explicit "re-roll all
+ * five" — lands the same faces at `rollsUsed: 2`, where they are an ordinary,
+ * scorable hand.
+ */
+export function turnShowing(faces: readonly DieFace[]): readonly DriveStep[] {
+  return [{ throw: [1, 2, 3, 4, 6] }, { hold: [] }, { throw: faces }];
 }
