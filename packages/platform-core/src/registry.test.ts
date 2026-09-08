@@ -193,6 +193,40 @@ describe("createGameModuleRegistry", () => {
     it("accepts distinct families on distinct shelves, which is the arrangement this whole tier is for", () => {
       expect(() => createGameModuleRegistry([grouped("truco-argentino", "truco", "cartas"), grouped("mahjong-solo", "mahjong", "fichas")])).not.toThrow();
     });
+
+    /**
+     * THE FAMILY THIS GUARD IS ABOUT TO MATTER FOR, pinned by name while it
+     * still costs nothing.
+     *
+     * Generala declares `section: "dados"` — a shelf no other family sits on —
+     * and it registers today as exactly ONE entry. One entry can never straddle
+     * anything, so for this family the guard above is unreachable code until a
+     * second id lands: `generala-3`, the additive registration `truco-module`'s
+     * own 1v1/2v2 pair already models and which needs no engine change. That is
+     * the whole reason to assert it NOW. The day somebody writes that entry the
+     * question "does it have to repeat the section?" is answered by a test that
+     * already fails, rather than by a boot that already failed.
+     *
+     * THE SECOND CASE IS A SHAPE NOTHING ABOVE COVERS. Every accepting case so
+     * far has either nobody declaring a section (both entries normalize to
+     * their own family) or two distinct families on two shelves. "Two entries
+     * of ONE family, both declaring the same non-family section" is a third
+     * shape, and it is the shape a shipped `generala-3` would actually have.
+     */
+    it("refuses a second Generala entry that forgets `dados`, naming the family, both ids and both resolved sections", () => {
+      const compose = (): unknown => createGameModuleRegistry([grouped("generala", "generala", "dados"), grouped("generala-3", "generala")]);
+
+      // Quoted, for the reason the first case in this block records.
+      for (const named of ["generala", "generala-3", "dados"]) expect(compose, `the message has to name ${named}`).toThrowError(new RegExp(`"${named}"`));
+      // And it names the shelf the silent entry was normalized INTO, which for
+      // this family is the family's own name — the one thing a reader of the
+      // message cannot work out for themselves.
+      expect(compose, "the fallback section has to be named AS a section, not merely as the family").toThrowError(/section "generala"/);
+    });
+
+    it("accepts the pair once BOTH declare `dados` — one family, one shelf, two ways of playing it", () => {
+      expect(() => createGameModuleRegistry([grouped("generala", "generala", "dados"), grouped("generala-3", "generala", "dados")])).not.toThrow();
+    });
   });
 
   describe("getConsultAsk — paired with a module, mirrors ConsultAdviceProvider's fail-closed shape (design D7)", () => {
