@@ -1,5 +1,5 @@
-import { CATEGORY_IDS } from "@hexdev/generala-engine";
-import type { CategoryId, PlayerView, SeatView } from "@hexdev/generala-engine";
+import { CATEGORY_IDS, scoreFor } from "@hexdev/generala-engine";
+import type { CategoryId, GeneralaAction, PlayerView, ScoreAction, Scorecard, SeatView, Turn } from "@hexdev/generala-engine";
 
 import { ensureScorecardStyles } from "./scorecard-styles.js";
 
@@ -54,6 +54,39 @@ function seatsInOrder(view: PlayerView): readonly SeatView[] {
 }
 
 /**
+ * What THIS ROLL would put in that box, asked of the engine and never worked
+ * out here.
+ *
+ * `scoreFor` takes four arguments and every one of them changes the answer:
+ * an escalera is 25 servida and 20 armada, so `rollsUsed` decides it, and the
+ * doble pays 100 only when the card already holds a real generala, so the
+ * CARD decides that one. A preview built from the dice alone is wrong in both
+ * cases and looks right in every other, which is exactly why it is not built
+ * here at all (D8: never re-derived in the UI).
+ *
+ * `deciding` is the only phase with five faces to score. It is also the only
+ * phase in which a `score` is ever offered, so the guard below is the type
+ * narrowing the compiler needs rather than a case a caller can reach.
+ */
+function previewOf(turn: Turn, card: Scorecard, category: CategoryId): number | null {
+  if (turn.phase !== "deciding") return null;
+  return scoreFor(category, turn.dice, turn.rollsUsed, card);
+}
+
+/**
+ * The offer that writes THIS box for THIS seat, or nothing.
+ *
+ * Looked up by the offer's own `playerId`, not by comparing a seat to
+ * `view.self`. The two agree today — a seat is only ever handed its own legal
+ * actions — but only one of them stays right if that ever stops being true,
+ * and reading the actor off the action is the same discipline `tray.ts` uses
+ * for holds: the offer list is the authority, and this file learns no rule.
+ */
+function offerFor(scores: readonly ScoreAction[], seat: SeatView, category: CategoryId): ScoreAction | undefined {
+  return scores.find((score) => score.category === category && score.playerId === seat.playerId);
+}
+
+/**
  * What one box reads as, and the three states are three different facts.
  *
  * `null` is OPEN: nobody has written here and it is still worth playing for.
@@ -72,6 +105,30 @@ function fillCell(cell: HTMLTableCellElement, value: number | null): void {
   }
   cell.dataset.state = value === 0 ? "crossed" : "filled";
   cell.textContent = String(value);
+}
+
+/**
+ * The open box turned into the control that writes it.
+ *
+ * THE PREVIEW IS THE POINT. A player choosing where to spend a roll is
+ * choosing between eleven numbers they would otherwise have to work out in
+ * their head, eleven times, every turn — and the arithmetic is the game's,
+ * not theirs to redo. It is the highest-value affordance on this screen and
+ * it costs one call.
+ *
+ * The number is the visible label because that is what is being compared; the
+ * accessible name says what pressing it DOES, since "18" on its own is not a
+ * sentence anybody can act on (WCAG 2.5.3 is satisfied by the name containing
+ * the visible text).
+ */
+function makeScoreControl(doc: Document, label: string, preview: number, onPress: () => void): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "hexdev-generala-score";
+  button.textContent = String(preview);
+  button.setAttribute("aria-label", `Anotar ${String(preview)} en ${label}`);
+  button.addEventListener("click", onPress);
+  return button;
 }
 
 /**
@@ -97,18 +154,28 @@ function fillCell(cell: HTMLTableCellElement, value: number | null): void {
  * would be a second source of truth about the score that could disagree with
  * the first.
  *
- * IT DRAWS A CARD AND NOT A MOVE. Nothing here is pressable yet: an open box
- * the acting seat may write, previewing what this roll would put in it, is the
- * next unit's, and it needs the offer list this signature deliberately does not
- * take. A callback for a control that does not exist is the forward-looking API
- * this repository's barrels argue against.
+ * IT READS THE OFFER LIST AND NEVER THE RULES. Which boxes are pressable is
+ * one question — does this list contain a `score` for this seat and this
+ * category? — and answering it makes the planilla correct in states it was
+ * never separately taught: another seat's turn, the moment the cup is
+ * shaking, a box already written, and a match that is over all offer nothing
+ * and all draw the same card with nothing to press. The same argument
+ * `tray.ts` makes for holds, and the reason neither file knows what a rule is.
  */
-export function renderGeneralaScorecard(container: HTMLElement, view: PlayerView): void {
+export type GeneralaScorecardRender = (
+  container: HTMLElement,
+  view: PlayerView,
+  legalActions: readonly GeneralaAction[],
+  onScore: (action: ScoreAction) => void,
+) => void;
+
+export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view, legalActions, onScore) => {
   const doc = container.ownerDocument;
   ensureScorecardStyles(doc);
   container.className = "hexdev-generala-scorecard";
 
   const seats = seatsInOrder(view);
+  const scores = legalActions.filter((action): action is ScoreAction => action.type === "score");
   const table = doc.createElement("table");
   table.className = "hexdev-generala-scorecard-table";
 
@@ -149,7 +216,14 @@ export function renderGeneralaScorecard(container: HTMLElement, view: PlayerView
       const cell = doc.createElement("td");
       cell.className = "hexdev-generala-scorecard-cell";
       cell.dataset.seat = String(seat.seat);
-      fillCell(cell, view.cards[seat.seat]?.[category] ?? null);
+      const card = view.cards[seat.seat];
+      fillCell(cell, card?.[category] ?? null);
+
+      const offer = offerFor(scores, seat, category);
+      const preview = card === undefined || offer === undefined ? null : previewOf(view.turn, card, category);
+      if (offer !== undefined && preview !== null) {
+        cell.appendChild(makeScoreControl(doc, CATEGORY_LABELS[category], preview, () => onScore(offer)));
+      }
       row.appendChild(cell);
     }
     body.appendChild(row);
@@ -172,4 +246,4 @@ export function renderGeneralaScorecard(container: HTMLElement, view: PlayerView
   table.appendChild(foot);
 
   container.replaceChildren(table);
-}
+};

@@ -1,11 +1,11 @@
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { CATEGORY_IDS, applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
-import type { ApplyResult, CategoryId, DieFace, MatchState, PlayerId, PlayerView } from "@hexdev/generala-engine";
+import { CATEGORY_IDS, applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor, scoreFor } from "@hexdev/generala-engine";
+import type { ApplyResult, CategoryId, DieFace, GeneralaAction, MatchState, PlayerId, PlayerView, ScoreAction } from "@hexdev/generala-engine";
 
 import { renderGeneralaScorecard } from "./scorecard.js";
-import { SCORECARD_STYLE_ID } from "./scorecard-styles.js";
+import { SCORE_TAP_MIN, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
 
 /**
  * THE PLANILLA, AND WHY IT IS A `<table>` AND NOT A GRID OF DIVS.
@@ -55,6 +55,16 @@ interface Planilla {
   readonly view: () => PlayerView;
   readonly table: () => HTMLTableElement;
   readonly cell: (category: CategoryId, seat: number) => HTMLTableCellElement;
+  readonly button: (category: CategoryId, seat: number) => HTMLButtonElement | null;
+  readonly buttons: () => readonly HTMLButtonElement[];
+  readonly dispatched: readonly ScoreAction[];
+  readonly offers: () => readonly GeneralaAction[];
+  /** Roll these faces and STOP, leaving the turn in `deciding` with a seat
+   * that may write a box. This is the state the preview exists for. */
+  readonly roll: (faces: readonly DieFace[]) => void;
+  /** Apply the engine's OWN hold offer for this `keep`, exactly as the room
+   * would, so the next roll lands at a higher `rollsUsed`. */
+  readonly hold: (keep: readonly number[]) => void;
   /** Roll these five faces for whoever is on turn and write the box named. The
    * `score` applied is the engine's OWN offer, so a category this test asks
    * for that the engine would not accept fails loudly here instead of
@@ -70,9 +80,12 @@ function seatPlanilla(seatId: PlayerId = SEAT): Planilla {
 
   let state = createMatch(SEATS);
   let view = getViewFor(state, seatId);
+  let offers: readonly GeneralaAction[] = [];
+  const dispatched: ScoreAction[] = [];
   const draw = (): void => {
     view = getViewFor(state, seatId);
-    renderGeneralaScorecard(container, view);
+    offers = getLegalActions(state, seatId);
+    renderGeneralaScorecard(container, view, offers, (action) => dispatched.push(action));
   };
   draw();
 
@@ -87,6 +100,23 @@ function seatPlanilla(seatId: PlayerId = SEAT): Planilla {
     state: () => state,
     view: () => view,
     table,
+    dispatched,
+    offers: () => offers,
+    button: (category, seat) => table().querySelector<HTMLButtonElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"] button`),
+    buttons: () => [...table().querySelectorAll<HTMLButtonElement>("tbody button")],
+    roll: (faces) => {
+      state = accept(applyRoll(state, faces));
+      draw();
+    },
+    hold: (keep) => {
+      const turn = state.turn;
+      if (turn.phase !== "deciding") throw new Error(`a hold needs a deciding turn, and this one is ${turn.phase}`);
+      const actor = state.players[turn.seat]!;
+      const offer = getLegalActions(state, actor).find((action) => action.type === "hold" && action.keep.length === keep.length && action.keep.every((index, at) => index === keep[at]));
+      if (offer === undefined) throw new Error(`the engine did not offer a hold of [${keep.join(", ")}]`);
+      state = accept(applyPlayerAction(state, offer));
+      draw();
+    },
     cell: (category, seat) => {
       const found = table().querySelector<HTMLTableCellElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"]`);
       if (found === null) throw new Error(`no cell for ${category} at seat ${String(seat)}`);
@@ -245,7 +275,7 @@ describe("generala scorecard: there is a column per seat, in seat order, named f
     document.body.appendChild(container);
     mounted.push(container);
     const third = "seat-2" as PlayerId;
-    renderGeneralaScorecard(container, getViewFor(createMatch([SEAT, RIVAL, third]), SEAT));
+    renderGeneralaScorecard(container, getViewFor(createMatch([SEAT, RIVAL, third]), SEAT), [], () => {});
 
     const names = [...container.querySelectorAll<HTMLTableCellElement>("thead th[scope=col]")].map((column) => column.textContent?.trim());
     expect(names).toHaveLength(3);
@@ -351,5 +381,182 @@ describe("generala scorecard: the sheet it needs is in the document, and it is t
     seatPlanilla();
 
     expect(document.querySelectorAll(`#${SCORECARD_STYLE_ID}`)).toHaveLength(1);
+  });
+});
+
+describe("generala scorecard: an open box the acting seat may write is a control that says what it is worth", () => {
+  it("previews every open box with the value the ENGINE would write there, never one this UI derived", () => {
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    const card = planilla.view().cards[0]!;
+    for (const category of CATEGORY_IDS) {
+      const button = planilla.button(category, 0);
+      expect(button, `${category} is open and offered, so it must be pressable`).not.toBeNull();
+      expect(button?.textContent?.trim()).toBe(String(scoreFor(category, [6, 6, 6, 2, 1], 1, card)));
+    }
+    // The worked example the ruleset itself cites, written out so the loop
+    // above cannot be satisfied by a UI that agrees with a wrong `scoreFor`.
+    expect(planilla.button("sixes", 0)?.textContent?.trim()).toBe("18");
+    // "18" ON ITS OWN IS NOT A SENTENCE ANYBODY CAN ACT ON. The number is
+    // the visible label because that is what is being compared across eleven
+    // boxes; the accessible name has to say what pressing it DOES, and it
+    // contains the visible text so the two agree (WCAG 2.5.3).
+    expect(planilla.button("sixes", 0)?.getAttribute("aria-label")).toBe("Anotar 18 en Seises");
+  });
+
+  it("carries the roll counter into the preview, so a servida shows the servida value", () => {
+    const servida = seatPlanilla();
+    servida.roll([1, 2, 3, 4, 5]);
+    // 25, not 20: `rollsUsed === 1` at scoring time is the whole of what
+    // servida means. A preview computed from the dice alone shows 20 here and
+    // passes every other assertion in this file.
+    expect(servida.button("escalera", 0)?.textContent?.trim()).toBe("25");
+
+    const armada = seatPlanilla();
+    armada.roll([1, 2, 3, 4, 5]);
+    armada.hold([0, 1, 2, 3]);
+    armada.roll([5]);
+    const turn = armada.view().turn;
+    expect(turn.phase === "deciding" ? turn.rollsUsed : turn.phase).toBe(2);
+    expect(armada.button("escalera", 0)?.textContent?.trim()).toBe("20");
+  });
+
+  it("carries the CARD into the preview, so the doble is worth nothing until a generala is written", () => {
+    const planilla = seatPlanilla();
+    // FIVE OF A KIND, ARMADA. It cannot be reached in one throw: five of a
+    // kind on a turn's FIRST roll wins the match outright, before anybody
+    // chooses anything, so the doble is only ever reachable armada — which
+    // is exactly the corollary the closed ruleset records.
+    planilla.roll([5, 5, 5, 5, 1]);
+    planilla.hold([0, 1, 2, 3]);
+    planilla.roll([5]);
+    // With the generala box still open. The
+    // doble pays 100 only when `card.generala` holds a real generala, so
+    // here it is worth 0 and the generala box is worth 50. A preview that
+    // read the dice and forgot the card shows 100 in both.
+    expect(planilla.button("generala", 0)?.textContent?.trim()).toBe("50");
+    expect(planilla.button("generala-doble", 0)?.textContent?.trim()).toBe("0");
+  });
+
+  it("refuses the escalera al as, because the engine does", () => {
+    const planilla = seatPlanilla();
+    planilla.roll([3, 4, 5, 6, 1]);
+    // `3-4-5-6-1` is listed by the popular set as "opcional, a convenir de
+    // antemano", and the decided ruleset leaves it out. A UI with its own
+    // idea of a straight shows 20 here.
+    expect(planilla.button("escalera", 0)?.textContent?.trim()).toBe("0");
+  });
+
+  it("dispatches the engine's own offer OBJECT, once, and only from a press", () => {
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+    expect(planilla.dispatched).toHaveLength(0);
+
+    planilla.button("sixes", 0)!.click();
+
+    expect(planilla.dispatched).toHaveLength(1);
+    // `toContain` compares by IDENTITY against the engine's own list. Since
+    // PR #257 the room admits an action only when `sameAction` matches one
+    // the game offered, so an equal-looking object this file assembled would
+    // be unsubmittable — and a deep-equality assertion would not know.
+    expect(planilla.offers()).toContain(planilla.dispatched[0]);
+    expect(planilla.dispatched[0]?.category).toBe("sixes");
+  });
+
+  it("puts no control on a box already written, nor on anybody else's card", () => {
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    // Written boxes: gone for good, and a filled box never reopens.
+    expect(planilla.button("sixes", 0)).toBeNull();
+    expect(planilla.cell("sixes", 0).textContent?.trim()).toBe("18");
+
+    // THE RIVAL'S COLUMN IS NEVER PRESSABLE. Not because this file knows
+    // whose turn it is — it reads the offers, and every `score` in that list
+    // names its own actor, so a column can only grow a control when the
+    // engine offered one FOR THAT SEAT.
+    for (const category of CATEGORY_IDS) expect(planilla.button(category, 1), `${category} at the rival's seat`).toBeNull();
+  });
+
+  it("offers nothing while the cup is shaking, and nothing on another seat's turn", () => {
+    const shaking = seatPlanilla();
+    expect(shaking.view().turn.phase).toBe("awaiting-roll");
+    expect(shaking.buttons()).toHaveLength(0);
+
+    const theirTurn = seatPlanilla();
+    playedOut(theirTurn);
+    theirTurn.playTurn([1, 1, 1, 2, 3], "ones");
+    theirTurn.roll([2, 2, 4, 5, 6]);
+    // Seat 1 is deciding, so somebody has offers — just not this seat.
+    expect(theirTurn.view().turn.phase).toBe("deciding");
+    expect(theirTurn.buttons()).toHaveLength(0);
+  });
+  it("makes the whole box the target, corner for corner", () => {
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    // WHAT A FINGER AIMS AT IS THE BOX, not the two or three characters
+    // inside it. A control that only covers its own text leaves most of a
+    // ruled box inert, and a press that lands a few pixels off does nothing
+    // at all — with no feedback, because the cell around it is not a
+    // control. Corner for corner is the assertion that says the two are the
+    // same rectangle — give or take the ruled line between boxes, which
+    // `border-collapse: collapse` makes a SHARED 1px that each of the two
+    // cells owns half of, so the content box a control fills starts half a
+    // pixel inside its cell's border box. Measured, not allowed for in
+    // advance: without it this read 165.55 against 165.05.
+    const RULE = 1;
+    const cell = planilla.cell("sixes", 0).getBoundingClientRect();
+    const control = planilla.button("sixes", 0)!.getBoundingClientRect();
+    expect(control.left - cell.left).toBeLessThanOrEqual(RULE);
+    expect(cell.right - control.right).toBeLessThanOrEqual(RULE);
+    expect(control.top - cell.top).toBeLessThanOrEqual(RULE);
+    expect(cell.bottom - control.bottom).toBeLessThanOrEqual(RULE);
+    // AND IT IS NEVER SHORTER THAN A THUMB. Eleven of these stack down a
+    // phone, so the row height IS the target height; the standard's 44px is
+    // the floor a control declares for itself rather than inherits from
+    // whatever the table happened to lay out.
+    expect(control.height).toBeGreaterThanOrEqual(SCORE_TAP_MIN);
+  });
+
+  it("keeps a box you may still take from looking like one already spent", () => {
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+    planilla.playTurn([1, 1, 2, 3, 5], "fours"); // seat 0 crosses fours at 0 — not a 4 in sight
+    planilla.playTurn([2, 2, 4, 5, 6], "ones"); // seat 1 takes a turn
+    planilla.roll([6, 6, 6, 2, 1]); // seat 0 deciding again
+
+    // THREE BOXES, THREE MEANINGS, AND TWO OF THEM READ "0". `threes` is
+    // open and worth nothing with THIS roll; `fours` was crossed out and is
+    // gone for good; `sixes` holds a real 18 somebody wrote. On an ordinary
+    // roll most previews are 0, so a column of them sits right
+    // beside the ones already spent — and a player choosing where to spend a
+    // turn has to tell them apart at a glance.
+    const worthNothingNow = planilla.button("threes", 0);
+    const spent = planilla.cell("fours", 0);
+    const written = planilla.cell("sixes", 0);
+    expect(worthNothingNow?.textContent?.trim()).toBe("0");
+    expect(spent.textContent?.trim()).toBe("0");
+    expect(written.textContent?.trim()).toBe("18");
+
+    // Struck through means spent; nothing else here is.
+    expect(getComputedStyle(spent).textDecorationLine).toBe("line-through");
+    expect(getComputedStyle(worthNothingNow!).textDecorationLine).toBe("none");
+
+    // And a box still on offer is marked as one AT REST, not only under a
+    // pointer that a phone does not have.
+    expect(getComputedStyle(worthNothingNow!).backgroundColor).not.toBe(getComputedStyle(written).backgroundColor);
+  });
+
+  it("draws no open-box dash underneath a box that carries a preview", () => {
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    // The dash means "nothing here yet". Printed on top of a number it means
+    // nothing at all, and it reads as "— 18".
+    expect(getComputedStyle(planilla.cell("sixes", 0), "::after").content).toBe("none");
+    expect(getComputedStyle(planilla.cell("sixes", 1), "::after").content).toBe('"—"');
   });
 });
