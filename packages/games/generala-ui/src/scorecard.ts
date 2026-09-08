@@ -15,8 +15,16 @@ import { ensureScorecardStyles } from "./scorecard-styles.js";
  *
  * Keyed by `CategoryId` rather than listed in parallel, so a twelfth box fails
  * to compile here instead of rendering an empty row header.
+ *
+ * EXPORTED FROM HERE, AND NOT FROM THE BARREL. `announcer.ts` says which box
+ * was just written and has to call it what the planilla calls it — a region
+ * announcing "Póker" over a row headed something else is two names for one
+ * box, and a player who went to check the card would not find what they were
+ * told. Sharing the map is what makes them agree; re-typing it would make
+ * them agree today. Nothing OUTSIDE this package composes a box label, which
+ * is the same line `SCORE_TAP_MIN` is drawn on.
  */
-const CATEGORY_LABELS: Readonly<Record<CategoryId, string>> = {
+export const CATEGORY_LABELS: Readonly<Record<CategoryId, string>> = {
   ones: "Unos",
   twos: "Doses",
   threes: "Treses",
@@ -39,7 +47,7 @@ const CATEGORY_LABELS: Readonly<Record<CategoryId, string>> = {
  * and a three-handed table would otherwise show two columns both headed
  * "Rival", which is worse than a number nobody needs at two.
  */
-function seatLabel(seat: SeatView, self: SeatView, rivals: number): string {
+export function seatLabel(seat: SeatView, self: SeatView, rivals: number): string {
   if (seat.seat === self.seat) return "Vos";
   return rivals > 1 ? `Rival ${String(seat.seat + 1)}` : "Rival";
 }

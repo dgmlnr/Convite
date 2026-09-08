@@ -1,5 +1,8 @@
 import { createDiceAnnouncer } from "@hexdev/dice-ui";
-import type { PlayerView, Turn } from "@hexdev/generala-engine";
+import { CATEGORY_IDS } from "@hexdev/generala-engine";
+import type { CategoryId, PlayerView, SeatView, Turn } from "@hexdev/generala-engine";
+
+import { CATEGORY_LABELS, seatLabel } from "./scorecard.js";
 
 /** The region, and the one call that keeps it truthful. Mounted once by the
  * board and mutated afterwards — never rebuilt, which is the whole reason
@@ -65,22 +68,80 @@ function throwSentence(turn: Extract<Turn, { phase: "deciding" }>): string {
   return `Tirada ${String(turn.rollsUsed)}: ${turn.dice.join(", ")}`;
 }
 
+/** What this seat is CALLED to the seat reading the region — "Vos", "Rival",
+ * "Rival 2" — asked of the planilla's own naming so the two surfaces cannot
+ * disagree about a column. A seat index that is not at this table cannot
+ * reach here: the view is built from every seat, and the only indices this
+ * file has come out of that same view. */
+function labelForSeat(view: PlayerView, seat: number): string {
+  const seats: readonly SeatView[] = [view.self, ...view.others];
+  return seatLabel(seats.find((candidate) => candidate.seat === seat) ?? view.self, view.self, view.others.length);
+}
+
+/** The box somebody just wrote, or `null`. At most one is written per turn —
+ * `applyScore` fills exactly one — so the first difference IS the event, and
+ * the scan stops at it rather than pretending to collect a list. */
+function boxWritten(before: PlayerView, after: PlayerView): { readonly seat: number; readonly category: CategoryId; readonly value: number } | null {
+  for (const [seat, card] of after.cards.entries()) {
+    const previous = before.cards[seat];
+    if (previous === undefined) continue;
+    for (const category of CATEGORY_IDS) {
+      const value = card[category];
+      if (value === null || previous[category] !== null) continue;
+      return { seat, category, value };
+    }
+  }
+  return null;
+}
+
+/**
+ * What was written, where, and by whom — with the NUMBER in it.
+ *
+ * "Anotaste en Seises" is the sentence this is written against: it names the
+ * event and withholds the only thing a player needs from it. A zero is spoken
+ * out loud for the same reason the planilla strikes the box through rather
+ * than leaving it looking like any other number — crossing a category out is
+ * a decision somebody made, and it is exactly what a rival plans around.
+ *
+ * The box's name comes from `scorecard.ts` so the region and the card cannot
+ * call the same row two different things. The VERB does not: "Anotaste" is
+ * the second person the reading seat is addressed in everywhere else on this
+ * board ("Tirar los 5 dados", "Anotar 18 en Seises"), and a rival is spoken
+ * about in the third.
+ */
+function scoreSentence(view: PlayerView, written: { readonly seat: number; readonly category: CategoryId; readonly value: number }): string {
+  const label = CATEGORY_LABELS[written.category];
+  if (written.seat === view.self.seat) return `Anotaste ${String(written.value)} en ${label}.`;
+  return `${labelForSeat(view, written.seat)} anotó ${String(written.value)} en ${label}.`;
+}
+
 /**
  * THE ONE NEW FACT IN THIS VIEW, or nothing.
  *
- * PARTIAL, AND SAYING SO: a throw is the only event this region has learned
- * so far. The box somebody writes and the generala servida that ends a match
- * before anybody writes anything are the next two units, and each is a
- * differently-shaped question rather than a longer version of this one.
+ * THE TWO EVENTS ARE MUTUALLY EXCLUSIVE BY THE STATE MACHINE rather than by
+ * preference: a score transitions the turn to `awaiting-roll` or ends the
+ * match, and a roll transitions `awaiting-roll` to `deciding`. One applied
+ * action produces one of them, and the room broadcasts per action. The ORDER
+ * is what happens if a consumer ever coalesces two broadcasts into one
+ * render: the more consequential fact survives, because `aria-atomic` means
+ * the region is read whole and two events joined into one string is a
+ * sentence nobody can follow.
  *
- * THE PHASE IS ASKED FIRST, AND NOT WITH A CAST. `deciding` is the only arm
- * carrying dice, so narrowing here is what lets `throwSentence` receive a
- * turn that HAS five faces instead of one asserted to. The first draft read
- * the counter first and cast afterwards, which a wrong answer above turns
- * into `undefined.join(...)` at the player rather than an error at the
- * compiler.
+ * PARTIAL, AND SAYING SO: the generala servida that ends a match before
+ * anybody writes anything is neither of them — it fills no box and shows no
+ * dice, so it falls through both questions and says nothing here. It is a
+ * match-ending event and belongs to the unit that owns everything this board
+ * says about servida.
+ *
+ * THE PHASE IS ASKED WITHOUT A CAST. `deciding` is the only arm carrying
+ * dice, so narrowing is what lets `throwSentence` receive a turn that HAS
+ * five faces instead of one asserted to. The first draft read the counter
+ * first and cast afterwards, which a wrong answer above turns into
+ * `undefined.join(...)` at the player rather than an error at the compiler.
  */
 function newsIn(before: PlayerView, after: PlayerView): string | null {
+  const written = boxWritten(before, after);
+  if (written !== null) return scoreSentence(after, written);
   const turn = after.turn;
   if (turn.phase !== "deciding") return null;
   if (turn.rollsUsed === throwNumberOf(before.turn)) return null;
