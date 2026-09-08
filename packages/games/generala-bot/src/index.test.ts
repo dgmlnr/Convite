@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { BotTier } from "@hexdev/platform-contract";
-import { ROLLS_PER_TURN, applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
+import { DICE_COUNT, ROLLS_PER_TURN, applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
 import type { ApplyResult, DieFace, GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
-import { createBotStrategy } from "./index.js";
-import { ALICE, BOB, awaitingRollState, openBoxCount, openingThrow, reachableStates, servidaWinState } from "./fixtures.js";
+import { createBotStrategy, rollOutcomes } from "./index.js";
+import { ALICE, BOB, awaitingRollState, driveTo, openBoxCount, openingThrow, reachableStates, servidaWinState } from "./fixtures.js";
 
 const TIERS: readonly BotTier[] = ["easy", "normal", "hard"];
 
@@ -154,16 +154,44 @@ describe("ONE shared empty-list guard, and the tiers have no throw of their own 
 });
 
 /**
- * THE DIVERGENCE TEST SLICE 16 OWED, replacing the placeholder that reded when
- * `normal` was wired.
+ * THE DIVERGENCE TEST SLICE 17 OWES, on the position that names what it is for.
  *
- * The old assertion said all three tiers answer identically because all three
- * WERE the uniform one. Two of them no longer are, and the same
- * `conformance.ts:114-134` discipline applies to what is left: `hard` is still
- * slice 17's, so the difference between "deliberately identical" and "somebody
- * forgot" stays legible in a green run rather than living in a comment.
+ * An escalera servida is worth 25 and is on the table already. `easy` picks by
+ * chance, `normal` breaks it to keep the highest single die — the weakness its
+ * own docstring records — and `hard` writes it, because one exact throw of
+ * lookahead values the best re-roll available at 11.5. Three tiers, one
+ * position, three answers, and the difference between "deliberately identical"
+ * and "somebody forgot" stays legible in a green run.
  */
-describe("normal is its own tier now, and hard is the one still saying so out loud", () => {
+describe("all three tiers are their own now, and they answer one position three ways", () => {
+  const servidaEscalera = driveTo([{ throw: [1, 2, 3, 4, 5] }]);
+  const view = getViewFor(servidaEscalera, ALICE);
+  const legal = getLegalActions(servidaEscalera, ALICE);
+  const answerOf = (tier: BotTier): GeneralaAction => createBotStrategy(tier, () => 0.5).chooseAction(view, legal, ROOM_BUDGET_MS) as GeneralaAction;
+
+  it("hard writes the escalera rather than breaking it", () => {
+    expect(answerOf("hard")).toEqual({ type: "score", playerId: ALICE, category: "escalera" });
+  });
+
+  it("normal breaks it for the highest single die, and easy takes whatever the source lands on", () => {
+    expect(answerOf("normal")).toEqual({ type: "hold", playerId: ALICE, keep: [4] });
+    expect(answerOf("easy")).toEqual({ type: "hold", playerId: ALICE, keep: [1, 4] });
+  });
+
+  it("and the three answers really are three, not two that happen to differ", () => {
+    expect(new Set([answerOf("easy"), answerOf("normal"), answerOf("hard")]).size).toBe(3);
+  });
+});
+
+/**
+ * WHICH TIER OWNS A SOURCE, asserted on the widest offer in the game.
+ *
+ * The describe above says the three tiers differ; this says why two of them
+ * cannot be told apart by handing them a different source. `easy` IS its
+ * source, so three values give three answers; `normal` and `hard` are total
+ * functions of the position, so a source cannot move either of them at all.
+ */
+describe("easy moves with its source and the other two do not move at all", () => {
   it("easy and normal answer the same position differently", () => {
     const easy = createBotStrategy("easy", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
     const normal = createBotStrategy("normal", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
@@ -178,18 +206,17 @@ describe("normal is its own tier now, and hard is the one still saying so out lo
    * The half that makes the case above more than a coincidence of one rng
    * value. Easy IS its source; normal does not have one.
    */
-  it("easy moves with the source and normal does not move at all", () => {
+  it("easy moves with the source and neither of the others does", () => {
     const sources = [() => 0, () => 0.5, () => 0.999999];
-    const easy = sources.map((rng) => createBotStrategy("easy", rng).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS));
-    const normal = sources.map((rng) => createBotStrategy("normal", rng).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS));
-    expect(new Set(easy).size).toBe(3);
-    expect(new Set(normal).size).toBe(1);
-  });
-
-  it("hard still resolves to the uniform tier, and this is the assertion slice 17 reds", () => {
-    const easy = createBotStrategy("easy", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
-    const hard = createBotStrategy("hard", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
-    expect(hard).toBe(easy);
+    const answers = (tier: BotTier): GeneralaAction[] => sources.map((rng) => createBotStrategy(tier, rng).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS) as GeneralaAction);
+    expect(new Set(answers("easy")).size).toBe(3);
+    expect(new Set(answers("normal")).size).toBe(1);
+    // The line that used to sit below this one asserted the opposite for
+    // `hard`: that it answered whatever `easy` answered. It reded the moment
+    // slice 17 wired the tier in — `expected { type: 'hold', …(2) } to be
+    // { type: 'hold', …(2) }` — which is exactly what slice 8 wrote it to do,
+    // and slice 16 made the same collection one slice earlier.
+    expect(new Set(answers("hard")).size).toBe(1);
   });
 });
 
@@ -275,8 +302,15 @@ describe("every tier answers every reachable position (Spec F: three tiers, and 
 });
 
 /**
- * TASK 16.2 — the property of task 8.1 re-run for `normal`, over the positions
- * NORMAL'S OWN PLAY reaches rather than the ones a fixed script does.
+ * TASKS 16.2 AND 17.3 — the property of task 8.1 re-run for each DETERMINISTIC
+ * tier, over the positions ITS OWN PLAY reaches rather than the ones a fixed
+ * script does.
+ *
+ * Slice 16 wrote this for `normal`; slice 17 owes the same for `hard` and takes
+ * the loop rather than a copy. A second self-play harness would be a second
+ * place to fix the same thing, and the two tiers reach genuinely different
+ * corners of the state space — `hard` writes made hands early, so its own play
+ * visits shapes a greedy tier never stops on.
  *
  * The sweep above is driven by `fixtures.ts`'s deliberately boring policy: hold
  * while throws remain, then write the first open box. Every tier is asked about
@@ -293,7 +327,9 @@ describe("every tier answers every reachable position (Spec F: three tiers, and 
  * spec Domain F because that is where a "pick the best category" heuristic falls
  * through — would simply never occur.
  */
-describe("normal plays a whole match out by itself, and the property holds at every position it reaches (16.2, Spec F)", () => {
+const DETERMINISTIC_TIERS = ["normal", "hard"] as const;
+
+for (const tier of DETERMINISTIC_TIERS) describe(`${tier} plays a whole match out by itself, and the property holds at every position it reaches (Spec F)`, () => {
   /**
    * The cup, for a match nobody is sitting at. The faces are `fixtures.ts`'s own
    * script and cycle through it: no window of five is five of a kind, so no
@@ -314,7 +350,7 @@ describe("normal plays a whole match out by itself, and the property holds at ev
   }
 
   const selfPlay = ((): { states: readonly MatchState[]; asked: number; openCounts: ReadonlySet<number>; rollsUsed: ReadonlySet<number> } => {
-    const strategy = createBotStrategy("normal", () => 0.5);
+    const strategy = createBotStrategy(tier, () => 0.5);
     const cup = scriptedCup();
     const states: MatchState[] = [];
     const openCounts = new Set<number>();
@@ -347,7 +383,7 @@ describe("normal plays a whole match out by itself, and the property holds at ev
       state = applied(applyPlayerAction(state, chosen as GeneralaAction));
     }
 
-    throw new Error(`normal drove ${String(SELF_PLAY_CEILING)} steps without the match ending`);
+    throw new Error(`${tier} drove ${String(SELF_PLAY_CEILING)} steps without the match ending`);
   })();
 
   it("the match reached a real ending, with every box on both cards written", () => {
@@ -375,7 +411,7 @@ describe("normal plays a whole match out by itself, and the property holds at ev
   });
 
   /**
-   * The half the counts above cannot make: at the LAST box, normal must write
+   * The half the counts above cannot make: at the LAST box, the tier must write
    * it. There is exactly one score on offer, so an implementation whose value
    * comparison never selected anything would fall through to `legalActions[0]`
    * — which at `rollsUsed < 3` is a hold, and the turn would go round again
@@ -390,7 +426,58 @@ describe("normal plays a whole match out by itself, and the property holds at ev
       const playerId = state.players[turn.seat]!;
       const legal = getLegalActions(state, playerId);
       expect(legal.length).toBe(1);
-      expect(createBotStrategy("normal", () => 0.5).chooseAction(getViewFor(state, playerId), legal, ROOM_BUDGET_MS)).toBe(legal[0]);
+      expect(createBotStrategy(tier, () => 0.5).chooseAction(getViewFor(state, playerId), legal, ROOM_BUDGET_MS)).toBe(legal[0]);
     }
+  });
+});
+
+/**
+ * TASK 17.2 — every decision completes inside `BOT_BUDGET_MS` (1000,
+ * `match-room.ts:162`).
+ *
+ * The claim is made twice, and the two halves are not the same claim. A clock
+ * measures this machine on this day; a COUNT measures the search. The count is
+ * the one that cannot drift, and it is also where design D7's own arithmetic
+ * turns out to be conservative by a factor of nearly five.
+ *
+ * It matters more than a passing number suggests. `withThinkingDelay` runs the
+ * decision and the presentation pause CONCURRENTLY (`latency.ts`, and the fence
+ * slice 8 wrote after a mutation found none), so a slow decision does not fail
+ * anything — it just makes the turn longer. A bot that thinks for thirty
+ * seconds is a defect every test passes.
+ */
+describe("the exact search fits inside the room's budget (task 17.2)", () => {
+  /**
+   * D7 sizes this as "≤31 holds × 252 ≈ 7.8k weighted evaluations per
+   * decision". That is the right shape and the wrong number: 252 is the table
+   * for FIVE re-rolled dice, and exactly one of the 31 holds re-rolls five.
+   * The other thirty keep one to four dice and draw from tables of 126, 56, 21
+   * and 6, so the widest decision in the game is 1682 leaves — 30 × 6 plus
+   * 10 × 21 plus 10 × 56 plus 5 × 126 plus 252. Reported, not quietly corrected.
+   */
+  it("the widest decision in the game is 1682 weighted leaves, counted rather than timed", () => {
+    const holds = widestLegal.filter((action) => action.type === "hold");
+    expect(holds.length).toBe(31);
+    const leaves = holds.reduce((total, action) => total + rollOutcomes(DICE_COUNT - action.keep.length).length, 0);
+    expect(leaves).toBe(1682);
+    expect(leaves).toBeLessThan(31 * 252);
+  });
+
+  /**
+   * And the clock, over every position the scripted sweep reaches rather than
+   * one hand-picked decision. The margin is three orders of magnitude, so this
+   * is a fence against a rewrite that walked 7776 sequences per hold — not a
+   * timing test anybody should tune.
+   */
+  it("and no single decision in the whole scripted sweep comes near 1000 ms", () => {
+    const strategy = createBotStrategy("hard", () => 0.5);
+    let slowest = 0;
+    for (const { state, playerId, legal } of positions) {
+      const started = performance.now();
+      strategy.chooseAction(getViewFor(state, playerId), legal, ROOM_BUDGET_MS);
+      slowest = Math.max(slowest, performance.now() - started);
+    }
+    expect(positions.length).toBeGreaterThan(60);
+    expect(slowest).toBeLessThan(ROOM_BUDGET_MS);
   });
 });
