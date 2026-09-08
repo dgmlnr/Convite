@@ -5,13 +5,12 @@ export const SCORECARD_STYLE_ID = "hexdev-generala-scorecard-styles";
  *
  * A table is the rare element that lays itself out well with almost no CSS,
  * so what is here is only the part a browser would not do for a planilla: the
- * rules drawn between the boxes, which is what turns a stack of numbers into
- * a grid somebody can read a row across.
+ * rules drawn between the boxes, and the two marks that say what a box IS —
+ * blank because nobody has written in it, or a zero somebody spent.
  *
- * IT SAYS NOTHING YET ABOUT WHAT A BOX IS, and it declares no width. What a
- * written box says about itself, and how the planilla survives the narrow end
- * of the range, are two later units — neither is a measurement anything here
- * has taken.
+ * IT DECLARES NO WIDTH, and that is deliberate rather than unfinished. The
+ * planilla takes the row it is given; how it survives the narrow end of the
+ * range is a measurement nothing here has taken yet.
  */
 export function buildScorecardStylesheet(): string {
   return `
@@ -64,6 +63,35 @@ export function buildScorecardStylesheet(): string {
    blank it is rather than as a box somebody forgot to fill. */
 .hexdev-generala-scorecard-corner {
   border-color: transparent;
+}
+
+/* AN OPEN BOX IS BLANK, AND THE DASH IS DRAWN RATHER THAN WRITTEN. A real
+   planilla leaves it empty; a screen reader reading an empty cell says so,
+   which is the truth, while a literal "—" in the markup would have it read
+   out an em dash eleven times per card. So the mark is generated content:
+   sighted players get the notation, assistive tech gets the blank.
+
+   THE 0.5 IS THE ONE NUMBER HERE THAT COULD HIDE SOMETHING. Twenty-two of a
+   fresh planilla's twenty-two boxes are open, so a full-contrast dash would
+   out-shout the handful of numbers a player is actually reading; dimming it
+   is what makes the card scan. MEASURED rather than assumed: against
+   \`#f4efe2\` on the \`#14231d\` felt the scene renders on, the blended mark
+   computes to 4.62:1 — above the 4.5:1 AA floor for text this size, with
+   very little room under it. The SHIPPED background belongs to the board
+   that mounts this planilla and does not exist yet, so that ratio is a
+   measurement on a stand-in and not a guarantee this package can make. */
+.hexdev-generala-scorecard-cell[data-state="open"]::after {
+  content: "—";
+  opacity: 0.5;
+}
+
+/* A BOX CROSSED AT ZERO KEEPS FULL CONTRAST. It is the information a rival
+   plans around — a category already spent — so it is drawn as legibly as
+   every other filled box, and the "0" it carries is what says it is spent
+   (WCAG 1.4.1: the fact is in the text, never in a colour). The italic is a
+   second, redundant cue and carries nothing on its own. */
+.hexdev-generala-scorecard-cell[data-state="crossed"] {
+  font-style: italic;
 }
 `;
 }
