@@ -3,7 +3,18 @@ import type { PlayerView, SeatView } from "@hexdev/generala-engine";
 import { ensureMatchOverStyles } from "./match-over-styles.js";
 import { seatLabel } from "./scorecard.js";
 
-export type GeneralaMatchOverRender = (container: HTMLElement, view: PlayerView) => void;
+/** The two ways out, and they are deliberately not one callback. A rematch
+ * and a return to the lobby are different intentions, and a board that has
+ * nowhere to go back to simply omits the second. `focusOnOpen` is true only
+ * on the render that OPENS the overlay — the caller tracks that transition,
+ * the same convention `truco-ui` and `escoba-ui` both state. */
+export interface GeneralaMatchOverActions {
+  readonly onPlayAgain: () => void;
+  readonly onLeaveMatch?: () => void;
+  readonly focusOnOpen?: boolean;
+}
+
+export type GeneralaMatchOverRender = (container: HTMLElement, view: PlayerView, actions: GeneralaMatchOverActions) => void;
 
 /** Seat order, the order the planilla's columns are in, so a name means the
  * same thing on both surfaces. */
@@ -56,6 +67,22 @@ function winnersSentence(view: PlayerView, winners: readonly SeatView[], total: 
   return `Ganó ${seatLabel(winner, view.self, view.others.length)} con ${points}.`;
 }
 
+/** The final line, drawn in seat order so it reads like the planilla's own
+ * totals row. */
+function finalScoreLine(view: PlayerView): string {
+  const columns = seatsInOrder(view).map((seat) => `${seatLabel(seat, view.self, view.others.length)} ${String(view.totals[seat.seat] ?? 0)}`);
+  return `Resultado final: ${columns.join(" — ")}`;
+}
+
+function makeAction(doc: Document, action: string, label: string, onPress: () => void): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.dataset.action = action;
+  button.textContent = label;
+  button.addEventListener("click", onPress);
+  return button;
+}
+
 /**
  * THE END OF THE MATCH, ON TOP OF THE TABLE RATHER THAN INSTEAD OF IT.
  *
@@ -72,29 +99,38 @@ function winnersSentence(view: PlayerView, winners: readonly SeatView[], total: 
  * about the offer list.
  *
  * THE BOARD PROVIDES THE POSITIONING CONTEXT, and this renderer sets no
- * inline style to get one. The first draft wrote `position: relative` onto
- * the container — which is the very element the sheet makes
- * `position: absolute; inset: 0`, so it cancelled the overlay outright and
- * laid it out in flow, pushing the board down the page. No assertion here saw
- * it, because nothing measured where the overlay landed; the fence that does
- * is in `match-over.browser.test.ts` now.
+ * inline style to get one. An earlier draft wrote `position: relative` onto
+ * the container — the very element the sheet makes `position: absolute;
+ * inset: 0` — so the overlay cancelled itself and laid out in flow, pushing
+ * the board down the page while every text assertion passed.
  *
- * PARTIAL, AND SAYING SO: this states the result and offers no way out of it
- * yet. The final totals row, the rematch, the return to the lobby, Escape and
- * the modal semantics that make an overlay a dialog rather than a panel are
- * the next unit — a `role="dialog"` with nothing focusable inside it would be
- * a worse lie than no role at all.
+ * REAL MODAL SEMANTICS, because it is the most disruptive thing this UI does.
+ * Focus moves here on the render that opens it and Escape is the way out —
+ * both skipped when there is no lobby to return to, because a rematch is not
+ * a way out and an Escape that closed the overlay would only have it redrawn
+ * by the next broadcast.
+ *
+ * EVERY ONE OF THOSE IS UNDONE WHEN THE OVERLAY CLEARS, and each undoing is
+ * its own fence. An attribute outlives the children that justified it: a
+ * `role="dialog"` on an emptied container is a dialog assistive tech can be
+ * told about with nothing on screen, and a `keydown` handler left behind
+ * throws a player back to the lobby for pressing Escape mid-turn in the NEXT
+ * match.
  */
-export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view) => {
+export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view, actions) => {
   const doc = container.ownerDocument;
   ensureMatchOverStyles(doc);
   container.className = "hexdev-generala-match-over";
   container.replaceChildren();
+  container.onkeydown = null;
 
   const outcome = view.outcome;
   if (outcome === null) {
     delete container.dataset.result;
     delete container.dataset.winners;
+    container.removeAttribute("role");
+    container.removeAttribute("aria-modal");
+    container.removeAttribute("tabindex");
     return;
   }
 
@@ -102,6 +138,9 @@ export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view
   const won = winners.some((seat) => seat.seat === view.self.seat);
   container.dataset.result = won ? "won" : "lost";
   container.dataset.winners = String(winners.length);
+  container.setAttribute("role", "dialog");
+  container.setAttribute("aria-modal", "true");
+  container.tabIndex = -1;
 
   const headline = doc.createElement("h2");
   headline.className = "hexdev-generala-match-over-headline";
@@ -112,4 +151,26 @@ export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view
   winnersLine.className = "hexdev-generala-match-over-winners";
   winnersLine.textContent = winnersSentence(view, winners, view.totals[winners[0]!.seat] ?? 0);
   container.appendChild(winnersLine);
+
+  const score = doc.createElement("p");
+  score.className = "hexdev-generala-match-over-score";
+  score.textContent = finalScoreLine(view);
+  container.appendChild(score);
+
+  const row = doc.createElement("div");
+  row.className = "hexdev-generala-match-over-actions";
+  row.appendChild(makeAction(doc, "play-again", "Jugar de nuevo", actions.onPlayAgain));
+
+  const leave = actions.onLeaveMatch;
+  if (leave !== undefined) {
+    row.appendChild(makeAction(doc, "leave-match", "Volver al lobby", leave));
+    container.onkeydown = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      leave();
+    };
+  }
+  container.appendChild(row);
+
+  if (actions.focusOnOpen === true) container.focus();
 };
