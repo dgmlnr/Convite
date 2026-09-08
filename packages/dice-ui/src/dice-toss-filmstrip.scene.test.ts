@@ -264,13 +264,18 @@ describe("scene: the toss, frame by frame — the animation the visual suite alw
       // a `pixelmatch` tolerance.
       frame.style.flexShrink = "0";
 
-      const scene = createDieSceneElement(document, FACE, 0);
+      const box = createDieSceneElement(document, FACE, 0);
       // `.hexdev-dice-scene` is deliberately never RESIZED smaller here —
       // `dice-styles.ts`'s own comment on that class names the exact
-      // clipping regression a box smaller than `DIE_SCENE_SIZE` reopens.
-      frame.appendChild(scene);
+      // clipping regression a box smaller than `DIE_SCENE_SIZE` reopens. The
+      // responsive ladder does not shrink it either: this strip renders at a
+      // viewport of `STRIP_CONTENT_WIDTH_PX + 40`, comfortably above the
+      // widest `--dice-scene-scale` tier, so every column below is a
+      // full-size `DIE_SCENE_SIZE` box and the width arithmetic above still
+      // describes what is actually laid out.
+      frame.appendChild(box);
 
-      const cube = scene.querySelector<HTMLElement>(".hexdev-dice-cube");
+      const cube = box.querySelector<HTMLElement>(".hexdev-dice-cube");
       if (cube === null) throw new Error("createDieSceneElement did not produce a .hexdev-dice-cube");
       seeks.push({ cube, freezeAtMs });
 

@@ -44,6 +44,26 @@ export const DICE_TOSS_STAGGER_MS = 55;
 export const DIE_SCENE_SIZE = 210;
 
 /**
+ * THE CUBE'S OWN BOX, and the one number in this package that a responsive
+ * tray must never touch. Exported rather than left as a literal inside the
+ * stylesheet below for the same "one number, read twice" reason
+ * `DICE_TOSS_DURATION_MS` states above: `dice-tray-fit.browser.test.ts`
+ * measures this exact box back off a laid-out cube at six viewport widths to
+ * prove the shrink is happening at paint time, and a second hand-copied 110
+ * there would stop meaning anything the moment either copy moved.
+ *
+ * WHY IT IS FIXED. `DIE_SIDE_LOCAL_TRANSFORM` (`geometry.ts`) pushes every
+ * facelet out of the cube's centre by `translateZ(50px)` — a constant,
+ * calibrated once against `DIE_SIZE` and deliberately decoupled from
+ * whatever box contains the cube (`.hexdev-dice-cube`'s own comment in the
+ * stylesheet has the full argument). Scale this number and that push does
+ * not follow: the six faces stop meeting at their shared edges and the die
+ * comes apart at the seams. The responsive tray therefore scales the SCENE
+ * at paint time and leaves this alone.
+ */
+export const DIE_CUBE_SIZE = 110;
+
+/**
  * The tray, the cube, the toss, the cup — one stylesheet string, injected
  * once by `ensureDiceStyles`, the same "no bundler to resolve a stylesheet
  * import" arrangement `mahjong-solitaire-ui/board-styles.ts` documents for
@@ -146,8 +166,72 @@ export function buildDiceStylesheet(): string {
   min-height: 0;
 }
 
+.hexdev-dice-scene-box {
+  /* THE LAYOUT HALF OF THE RESPONSIVE TRAY, and the reason a die is two
+     elements instead of one.
+
+     \`transform: scale()\` on the scene below is PAINT-TIME: it changes what
+     the browser draws and never what it lays out. A scaled
+     \`.hexdev-dice-scene\` still occupies its full ${String(DIE_SCENE_SIZE)}px in the flex row
+     above, so five of them keep asking a 320px phone for
+     ${String(DIE_SCENE_SIZE * 5 + 14 * 4)}px whether they are drawn small or not, and the tray does not
+     reflow by a single pixel. Scaling alone is a no-op for FITTING — which
+     is exactly the correction this package's own design record carries
+     against the first proposed fix. This box is the half a flex line can
+     measure; the scene's transform is the half that draws the die small
+     enough to sit inside it.
+
+     WHY THE SCALE IS DECLARED ON THIS ELEMENT rather than inherited from
+     \`.hexdev-dice-root\`: a die built by \`createDieSceneElement\` is mounted
+     by whoever wants one — a scene test's bare gallery, a filmstrip, and
+     from the next slice on a Generala board that composes each die inside
+     its own \`<button>\`. Only this element is guaranteed to be there. The
+     scene below still reads the property through inheritance, so a caller
+     that wants a fixed size (\`dice.scene.test.ts\`'s six-face gallery, which
+     exists to be counted by eye at ONE known size) overrides it on this
+     element and gets both halves at once. */
+  width: calc(${String(DIE_SCENE_SIZE)}px * var(--dice-scene-scale, 1));
+  height: calc(${String(DIE_SCENE_SIZE)}px * var(--dice-scene-scale, 1));
+}
+
+/* THE LADDER, at the widths this repository already standardizes on for a
+   geometry fence (\`dice.browser.test.ts\`'s own \`BREAKPOINTS\`, the set
+   \`table-viewport-fit.browser.test.ts\` and siblings sweep). Two tiers, not
+   six, and the two that are missing are missing on purpose: at 960px and up
+   the tray already fits — one row of five at 1280 and 1550, a 3+2 wrap at
+   960 — so a tier there would shrink dice nothing was squeezing. Below
+   700px it does not fit at any honest size, and the question stops being
+   "one row or two" and becomes "how many rows of a phone does a tray of
+   dice get to be": unscaled, five ${String(DIE_SCENE_SIZE)}px boxes stack FIVE rows deep on a
+   390px screen, taller than the viewport that has to show them.
+
+   \`@media\`, not \`@container\` — the newer convention \`truco-ui\` and
+   \`escoba-ui\` both switched to, and it does not transfer here. A container
+   query needs a container, and the only element this package always owns
+   above a die is \`.hexdev-dice-root\`, which is deliberately \`inline-flex\`
+   and shrink-wraps to its own content (its own comment above says why).
+   \`container-type: inline-size\` implies \`contain: inline-size\`, which makes
+   an element's inline size ignore its contents — it would collapse the very
+   shrink-wrap that rule exists for. The alternative is asking the BOARD to
+   establish the container, which puts this package's geometry back in a
+   consumer that is supposed to stay free of it. Inside the widget the
+   viewport IS the embed's own box (\`widget-sdk/mount.ts\` sizes the iframe at
+   \`width: 100%\` of the tenant's container), so the viewport axis is not the
+   wrong measurement here the way it was for a board inside a shell. */
+@media (max-width: 700px) {
+  .hexdev-dice-scene-box {
+    --dice-scene-scale: 0.6;
+  }
+}
+
+@media (max-width: 375px) {
+  .hexdev-dice-scene-box {
+    --dice-scene-scale: 0.45;
+  }
+}
+
 .hexdev-dice-scene {
-  /* GREW FROM 110px TO ${String(DIE_SCENE_SIZE)}px (\`DIE_SCENE_SIZE\`) THE DAY SOMEBODY FINALLY
+  /* GREW FROM ${String(DIE_CUBE_SIZE)}px TO ${String(DIE_SCENE_SIZE)}px (\`DIE_SCENE_SIZE\`) THE DAY SOMEBODY FINALLY
      LOOKED AT THE FLIGHT, NOT JUST THE LANDING. 110px was sized ONLY for the
      resting cube's own perspective enlargement (still true, still math'd
      below) — nobody had a reason to size it for a ROTATING one, because
@@ -180,6 +264,24 @@ export function buildDiceStylesheet(): string {
      allowance for the flight. */
   width: ${String(DIE_SCENE_SIZE)}px;
   height: ${String(DIE_SCENE_SIZE)}px;
+  /* THE PAINT HALF OF THE RESPONSIVE TRAY — see \`.hexdev-dice-scene-box\`
+     above for why the layout half is a separate element and why neither
+     works alone. Everything inside this box scales together: the cube, its
+     six facelets, the fixed \`translateZ\` push that holds them at their
+     shared edges, and this rule's own \`perspective\`. That is precisely what
+     makes it safe where a smaller WIDTH is not — a uniform scale is a
+     property of the drawing, not of the geometry, so nothing in
+     \`geometry.ts\` has to be recalibrated for a die to be drawn at 45 %.
+
+     \`top left\`, NOT the browser's default \`50% 50%\`. The scene still LAYS
+     OUT at ${String(DIE_SCENE_SIZE)}px whatever the scale is (that is what paint-time means), so a
+     centre origin would paint the shrunken die in the middle of the full-size
+     area it occupies and leave it spilling out of the ${String(DIE_SCENE_SIZE)}px-times-scale box
+     on every side. Anchoring the origin to the box's own top-left corner is
+     what makes the painted die land exactly ON its layout box, which
+     \`dice-tray-fit.browser.test.ts\` measures corner for corner. */
+  transform: scale(var(--dice-scene-scale, 1));
+  transform-origin: top left;
   perspective: 480px;
   overflow: hidden;
   /* The cube below no longer fills this box (it has its own fixed 110px,
@@ -211,9 +313,18 @@ export function buildDiceStylesheet(): string {
      unaffected in everything but how tightly \`.hexdev-dice-scene\`'s
      \`overflow: hidden\` used to crop its enlarged front facelet — see that
      rule's own comment for why THAT part is a deliberate, known side effect
-     of this change rather than an oversight. */
-  width: 110px;
-  height: 110px;
+     of this change rather than an oversight.
+
+     STILL FIXED NOW THAT THE TRAY IS RESPONSIVE, and \`DIE_CUBE_SIZE\` is
+     where that number lives so a test can measure it back. The responsive
+     shrink deliberately does not reach this rule: it is a \`scale()\` on
+     \`.hexdev-dice-scene\` above, which draws this box smaller without
+     changing it, exactly the distinction the paragraph above draws between
+     a box that grew for the flight and a facelet push that could not follow
+     it. A \`calc(… * var(--dice-scene-scale))\` here would reopen the seam
+     defect on every phone. */
+  width: ${String(DIE_CUBE_SIZE)}px;
+  height: ${String(DIE_CUBE_SIZE)}px;
   transform-style: preserve-3d;
   /* THE RESTING POSE. Written from \`restingPoseDeclaration(face)\` onto this
      exact element's \`style\` attribute before this class, or this animation,
