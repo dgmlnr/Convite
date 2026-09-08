@@ -38,6 +38,17 @@ import {
 import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
 import { getCupArtUrl, getDieFaceArtUrl } from "@hexdev/dice-ui";
 import type { DieFace } from "@hexdev/dice-ui";
+import type { GeneralaAction, HoldAction, PlayerView as GeneralaPlayerView, ScoreAction } from "@hexdev/generala-engine";
+import {
+  BOARD_CLASS,
+  createGeneralaAnnouncer,
+  createGeneralaTray,
+  ensureBoardStyles,
+  ensureMatchOverStyles as ensureGeneralaMatchOverStyles,
+  renderGeneralaMatchOver,
+  renderGeneralaScorecard,
+  renderServidaCallout,
+} from "@hexdev/generala-ui";
 import { STRINGS } from "./i18n.js";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
@@ -882,6 +893,150 @@ function createMahjongRenderer(): GameUiEntry["createRenderer"] {
  */
 const mahjongEntry: GameUiEntry = { id: "mahjong-solitario" as GameId, gameFamily: MAHJONG_FAMILY.id, createRenderer: createMahjongRenderer() };
 
+/**
+ * THE BOARD — the last piece of Generala, and the only one that was never
+ * going to live in `generala-ui`.
+ *
+ * That package ships five things and no table: a tray, a planilla, an
+ * announcer, a servida callout and a match-over overlay, each fenced in its
+ * own file, and its barrel says outright that what is left is "a board that
+ * mounts them". This is that board. It is here rather than there for the same
+ * reason `createEscobaRenderer` above is here — composing a game's regions
+ * into a screen is what an L3 composition root does — and `board-styles.ts`
+ * holds the half of it that is CSS, because a positioning context and a
+ * ground are presentation and belong to the game's own package.
+ *
+ * WHAT IS COMPOSED HERE AND WHAT IS NOT. Every rule is next door and fenced
+ * there: the tray decides which dice may be held and dispatches the engine's
+ * own offer object, the planilla decides which boxes are pressable and what
+ * each would score, the announcer decides when there is news, the callout
+ * reads `SERVIDA_ROLL` from the engine. What is left here is wiring — six
+ * elements, one order, and two dispatches — which is the same split the two
+ * renderers above already keep.
+ *
+ * THE ANNOUNCER IS BUILT ONCE, HERE, AND NOT PER RENDER, exactly as
+ * `createMahjongRenderer`'s chronometer is. It holds the PREVIOUS view: that
+ * is the whole mechanism by which it stays silent when a broadcast carries no
+ * news, and rebuilding it per render would reset that memory and make every
+ * packet an announcement.
+ *
+ * THE TRAY IS BUILT ONCE FOR A STRONGER REASON — it holds the pending hold
+ * selection AND the die elements themselves. A tray rebuilt per render would
+ * replace all five dice on every message, which is precisely the defect
+ * `tray.ts` exists to avoid and the reason `createDiceCup(...).roll()` is not
+ * called anywhere in this game.
+ *
+ * FIVE REGIONS, IN READING ORDER, AND THE OVERLAY OUTSIDE THEM. The callout
+ * sits between the dice and the card because it is a note about the throw
+ * that is on the table, and the announcer has no geometry at all. The overlay
+ * is a sibling of the column rather than a member of it: it is
+ * `position: absolute; inset: 0` against this container, which is why
+ * `BOARD_CLASS` — and not this file — declares the positioning context.
+ *
+ * THE COLUMN IS A SECOND ELEMENT AND NOT A CLASS ON THE FIRST. The board has
+ * to reach the widget's edges — a ground that stops short is a panel floating
+ * on somebody else's page — while the table a player reads has a width past
+ * which a planilla stops being a planilla. Those are two boxes, and in
+ * fullscreen the outer one is also the fixed positioning context while the
+ * inner one is what scrolls (`board-styles.ts` has the whole argument).
+ */
+function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
+  return () => {
+    const tray = createGeneralaTray();
+    let mounted: {
+      readonly stackEl: HTMLElement;
+      readonly diceEl: HTMLElement;
+      readonly rollEl: HTMLElement;
+      readonly servidaEl: HTMLElement;
+      readonly scorecardEl: HTMLElement;
+      readonly matchOverEl: HTMLElement;
+      readonly announce: (view: GeneralaPlayerView) => void;
+    } | null = null;
+    // Whether the overlay has already claimed focus once this match — the
+    // same transition both renderers above track, for the same reason: a
+    // panel that re-focuses on every broadcast steals the keyboard from
+    // somebody already reading it.
+    let matchOverShown = false;
+
+    return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
+      ensureBoardStyles(document);
+      ensureGeneralaMatchOverStyles(document);
+
+      // ASKED OF THE DOM, NOT OF A REMEMBERED CONTAINER. The two are
+      // different questions and `tray.ts` records which: comparing the
+      // container catches a renderer mounted somewhere else and MISSES one
+      // whose container somebody emptied under it, in which case every
+      // element this closure holds is detached and the board draws into
+      // nothing while every reference it kept still looks valid.
+      if (mounted === null || mounted.stackEl.parentElement !== container) {
+        container.replaceChildren();
+        container.className = BOARD_CLASS;
+        const stackEl = document.createElement("div");
+        stackEl.className = `${BOARD_CLASS}-column`;
+        const diceEl = document.createElement("div");
+        const rollEl = document.createElement("div");
+        rollEl.className = `${BOARD_CLASS}-roll`;
+        const servidaEl = document.createElement("div");
+        const scorecardEl = document.createElement("div");
+        const matchOverEl = document.createElement("div");
+        const announcer = createGeneralaAnnouncer(document);
+        stackEl.append(diceEl, rollEl, servidaEl, scorecardEl);
+        // The announcer is out of the stack because it has no geometry, and
+        // the overlay is out of it because it covers the whole table — both
+        // for the reasons the two renderers above give for the same split.
+        container.append(stackEl, announcer.announcerEl, matchOverEl);
+        mounted = { stackEl, diceEl, rollEl, servidaEl, scorecardEl, matchOverEl, announce: announcer.announce };
+      }
+
+      const view = payload.view as GeneralaPlayerView;
+      const legalActions = payload.legalActions as readonly GeneralaAction[];
+
+      // THE OFFER OBJECT IS DISPATCHED, NEVER A SHAPE THIS FILE BUILDS. Both
+      // pieces below hand back one of the actions they were given, and since
+      // PR #257 `MatchRoom` admits an action only when `sameAction` matches
+      // one the game offered — walking arrays BY INDEX, so `[1, 0]` is not
+      // `[0, 1]`. Forwarding the object makes canonical ordering a fact
+      // rather than a convention two files would have to remember.
+      tray({ diceEl: mounted.diceEl, rollEl: mounted.rollEl }, view.turn, legalActions, (action: HoldAction) => {
+        dispatch(action);
+      });
+      renderServidaCallout(mounted.servidaEl, view);
+      renderGeneralaScorecard(mounted.scorecardEl, view, legalActions, (action: ScoreAction) => {
+        dispatch(action);
+      });
+
+      // AFTER the two renders above, never before: the region announces the
+      // difference between the view it last saw and this one, and reading it
+      // first would announce a throw the player has not been shown yet.
+      mounted.announce(view);
+
+      // `view.outcome`, not `payload.outcome`. Generala redacts nothing (D6)
+      // and its own `PlayerView` carries the outcome, so the overlay reads the
+      // same object the planilla and the announcer just read — there is no
+      // second copy of "the match is over" for the two to disagree about.
+      const finished = view.outcome !== null;
+      const focusOnOpen = finished && !matchOverShown;
+      matchOverShown = finished;
+      renderGeneralaMatchOver(mounted.matchOverEl, view, {
+        onPlayAgain: onPlayAgain ?? ((): void => undefined),
+        onLeaveMatch,
+        focusOnOpen,
+      });
+    };
+  };
+}
+
+/**
+ * ONE ENTRY, AND WITHOUT IT THE WHOLE CHAIN ENDS AT AN APOLOGY. Both
+ * composition roots register `generala`, `scripts/dev-stack.mjs` seeds the dev
+ * tenant entitled to it and the lobby offers a button for it; without this row
+ * `enterMatch` resolves nothing and falls through to `renderUnsupportedGame` —
+ * "Este juego todavía no está disponible en esta versión." —
+ * over a live connection and a real seat. `composition-roots-agree.test.ts`
+ * is what now refuses that shape for every game, not only for this one.
+ */
+const generalaEntry: GameUiEntry = { id: "generala" as GameId, gameFamily: GENERALA_FAMILY.id, createRenderer: createGeneralaRenderer() };
+
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
   /** The identity behind a joinable id — see `GameFamilyUi`. Screen 2 asks
@@ -897,6 +1052,7 @@ export function createGameUiRegistry(): GameUiRegistry {
     [escobaEntry.id, escobaEntry],
     [escobaEntry2v2.id, escobaEntry2v2],
     [mahjongEntry.id, mahjongEntry],
+    [generalaEntry.id, generalaEntry],
   ]);
   const byFamily = new Map<GameFamilyId, GameFamilyUi>(FAMILIES.map((entry) => [entry.id, entry]));
   return {

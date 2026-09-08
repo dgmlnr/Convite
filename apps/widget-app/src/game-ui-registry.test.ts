@@ -168,6 +168,25 @@ describe("familyUiFor(\"generala\") — the dice shelf's only game", () => {
 });
 
 /**
+ * THE ROW WITHOUT WHICH THE WHOLE CHAIN ENDS AT AN APOLOGY.
+ *
+ * Eighteen slices registered Generala on both composition roots, seeded the
+ * dev tenant entitled to it and gave it a lobby button. Without this entry
+ * `enterMatch` resolves nothing and falls through to `renderUnsupportedGame`
+ * — "Este juego todavía no está disponible en esta versión." — which is the
+ * one failure mode that looks deliberate.
+ */
+describe("createGameUiRegistry — the dice game reaches its own renderer", () => {
+  it("resolves the registered id to an entry rather than to the unsupported-game fallback", () => {
+    expect(createGameUiRegistry().get("generala" as GameId)).toBeDefined();
+  });
+
+  it("resolves that entry to its own family, so screen two wears the right name", () => {
+    expect(createGameUiRegistry().family("generala" as GameId)?.heroTitle).toBe("Generala");
+  });
+});
+
+/**
  * THE THIRD FAMILY, and the first that is not a deck of Spanish cards.
  *
  * `familyUiFor` rather than `createGameUiRegistry`, for the reason escoba's
