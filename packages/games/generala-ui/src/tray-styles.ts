@@ -91,6 +91,11 @@ export function buildTrayStylesheet(): string {
      with a busier felt may want more separation between the mark and the
      face it marks. */
   --generala-held-air: 6px;
+  /* The ink the waiting slot is outlined in. Declared here for the same
+     namespace reason the two above are, and a real knob: it is the one mark
+     on this surface that must read as ABSENCE, so a board with a lighter
+     ground needs a different value rather than a different rule. */
+  --generala-slot-outline: rgba(255, 255, 255, 0.18);
   /* THE CONTAINER \`dice-ui\` CANNOT DECLARE FOR ITSELF. Safe here and not
      there because this is a BLOCK-LEVEL flex row: \`contain: inline-size\`
      makes an element's inline size ignore its contents, which is fatal to a
@@ -162,6 +167,42 @@ export function buildTrayStylesheet(): string {
 
 .hexdev-generala-die--empty {
   cursor: default;
+}
+
+/* THE SLOT A DIE IS ABOUT TO LAND IN, DRAWN — and it was invisible until
+   somebody rendered a fresh match and looked at it.
+
+   \`createEmptySlot\` builds a box that reserves the row's width so the held
+   dice do not jump sideways mid-throw, and it painted nothing at all. That is
+   correct for the ordinary case, where two or three gaps sit between dice
+   that ARE showing; it is wrong for the one state every match opens in and
+   every turn passes through, where all five slots are empty. Rendered, that
+   screen is roughly 170px of blank surface above a card of dashes: the first
+   thing a player sees on sitting down says nothing is happening, on the
+   350ms-per-turn window (\`systemActionPauseMs\`) plus the whole of every
+   rival's thinking time.
+
+   DRAWN ON THE SCENE BOX AT THE DIE'S OWN RESTING FOOTPRINT, by reading
+   \`--dice-rest-size\` exactly as the held ring above does — so the outline is
+   the size of the die that will land in it at every rung of the ladder and
+   this package still names no pixel. Dashed, faint, and \`aria-hidden\` along
+   with the slot that carries it: "the dice are in the cup" is the announcer's
+   sentence to say, and five outlines must not be read out as five anythings.
+
+   AN \`::after\` AND NOT A BORDER, the same choice the held ring makes: a
+   border would change the box's size, and the box's size is the one thing
+   this element exists to hold still. */
+.hexdev-generala-die--empty.hexdev-dice-scene-box {
+  position: relative;
+}
+
+.hexdev-generala-die--empty.hexdev-dice-scene-box::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  inset: calc((100% - var(--dice-rest-size, 100%)) / 2);
+  border: 2px dashed var(--generala-slot-outline, rgba(255, 255, 255, 0.18));
+  border-radius: 10px;
 }
 
 /* THE CONTROL THAT COMMITS. It is the only text on this surface, so it is the

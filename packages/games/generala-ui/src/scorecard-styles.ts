@@ -126,10 +126,19 @@ export function buildScorecardStylesheet(): string {
    out-shout the handful of numbers a player is actually reading; dimming it
    is what makes the card scan. MEASURED rather than assumed: against
    \`#f4efe2\` on the \`#14231d\` felt the scene renders on, the blended mark
-   computes to 4.62:1 — above the 4.5:1 AA floor for text this size, with
-   very little room under it. The SHIPPED background belongs to the board
-   that mounts this planilla and does not exist yet, so that ratio is a
-   measurement on a stand-in and not a guarantee this package can make. */
+   computed to 4.62:1 — above the 4.5:1 AA floor for text this size, with
+   very little room under it — and that was a measurement on a STAND-IN,
+   because the shipped background belonged to a board that did not exist.
+
+   RE-MEASURED ON THE SHIPPED BOARD, which does exist now:
+   \`board-styles.ts\` paints \`--gx-color-surface\` and its default is the same
+   \`#14231d\`, so the stand-in was the real value all along. Sampled off the
+   rendered board rather than computed — the darkest cell background reads
+   \`rgb(20, 35, 29)\` and the brightest pixel of the blended dash reads
+   \`rgb(131, 139, 136)\` — the mark computes to 4.67:1, against 14.57:1 for a
+   written number in the same column. The floor holds, and the margin is
+   still thin enough that a tenant darkening this token past its default is
+   the one change that would break it. */
 .hexdev-generala-scorecard-cell[data-state="open"]:empty::after {
   content: "—";
   opacity: 0.5;
