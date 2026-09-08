@@ -8,10 +8,10 @@ y adopta los colores de identidad del sitio.
 
 ## Estado
 
-En desarrollo, y jugable de punta a punta. Hay **tres juegos** —Truco Argentino, Escoba de
-15 y Mahjong Solitario—, cada uno con su motor de reglas completo, y sobre ellos el contrato
-genérico de juegos, el transporte con autenticación por tenant, los dos roles de servidor,
-el lobby con emparejamiento, los bots y el widget embebible.
+En desarrollo, y jugable de punta a punta. Hay **cuatro juegos** —Truco Argentino, Escoba de
+15, Mahjong Solitario y Generala—, cada uno con su motor de reglas completo, y sobre ellos el
+contrato genérico de juegos, el transporte con autenticación por tenant, los dos roles de
+servidor, el lobby con emparejamiento, los bots y el widget embebible.
 
 Se juega mano a mano y también **2 contra 2**. La suite e2e levanta la topología real
 —los dos roles detrás de un mismo origen— y juega partidas completas contra ella.
@@ -79,12 +79,31 @@ turno y no tiene a quién entregarle un asiento abandonado: el puerto declara `c
 opcional y el transporte deriva esas tres conductas de su ausencia, en vez de pedir tres
 banderas de registro más que alguien tendría que mantener en sincronía.
 
-## La Generala, todavía no
+## Generala
 
-`dice-ui` trae los dados y el cubilete como piezas —forma, pose de reposo, cómo se resuelve
-una tirada a una cara—, pero el motor, el adaptador y las reglas **no existen en la rama
-principal**: el propio paquete lo deja escrito para que nadie lo confunda con el juego.
-Cuando la Generala exista va a pararse sobre esas piezas, no a reemplazarlas.
+Cinco dados, tres tiradas por turno y once casilleros que se llenan de a uno por turno,
+obligatoriamente, posiblemente en cero. Mano a mano, contra otra persona o contra bots en tres
+niveles, igual que los demás.
+
+Las fuentes se contradicen de verdad sobre este juego, así que las tres decisiones que hacían falta
+están tomadas y escritas junto al código, no elegidas al pasar:
+
+- **La generala servida gana la partida en el acto** —cinco iguales en la primera tirada del
+  turno—, aunque la casilla de ese número ya esté llena.
+- **La generala doble** es siempre un destino legal, se puede tachar en cero como en la mesa real, y
+  paga 100 sólo si la casilla de generala tiene una generala de verdad: tachar no es anotar. La
+  lectura contraria —casilla bloqueada hasta anotar generala— produce partidas que no terminan
+  nunca, y eso es un defecto, no una variante.
+- **La escalera al as** (3-4-5-6-1) no cuenta. El set popular la lista como "a convenir de
+  antemano", y convenir es lo que se hace para agregarla.
+
+Es el primer juego de la plataforma que puede **empatar**, y empatar se reporta como lo que es:
+todos los que llegan al total más alto salen ganadores, en vez de que decida el orden de asiento.
+
+Los dados y el cubilete siguen viviendo en `dice-ui`, afuera del juego, igual que el mazo español
+está afuera del truco. El azar entra por una sola puerta: **tira el servidor**, y el motor sólo
+recibe caras ya decididas. Un jugador sentado no puede tirarse sus propios dados, y hay un test de
+integración que lo intenta para probarlo.
 
 ## Arquitectura
 
@@ -235,13 +254,14 @@ la topología está probada y no solamente descrita.
 | `platform-core` | Registro de juegos, autenticación de tenants, presencia y emparejamiento |
 | `spanish-deck-ui` | El mazo español. Fuera del truco, porque la escoba usa el mismo |
 | `mahjong-tile-ui` | Las 42 fichas como obra: las caras, su cuerpo y el crédito que la licencia exige |
-| `dice-ui` | Los dados y el cubilete como piezas. No sabe que existe una Generala |
+| `dice-ui` | Los dados y el cubilete como piezas. No sabe que la Generala existe, y una regla de dependencias lo garantiza |
 | `games/truco-engine` | Reglas del truco. Puro, sin entrada ni salida |
 | `games/truco-module` | Adaptador que implementa el puerto sobre el motor, mano a mano y en parejas |
 | `games/truco-ui` | La mesa: cartas, cantos, señas y el tablero |
 | `games/truco-bot` | Los tres niveles de bot |
 | `games/escoba-*` | Escoba de 15, con la misma división: motor, adaptador, mesa y bot |
 | `games/mahjong-solitaire-*` | El solitario: motor, adaptador y tablero. Sin bot, porque no hay rival |
+| `games/generala-*` | La generala: motor, adaptador, mesa y bot. Los dados están afuera, en `dice-ui` |
 | `transport-colyseus` | Sala de partida genérica y sala de presencia |
 | `transport-colyseus-client` | El lado cliente del mismo transporte |
 | `widget-sdk`, `widget-protocol`, `widget-frontdoor` | Superficie de embebido para el tenant |

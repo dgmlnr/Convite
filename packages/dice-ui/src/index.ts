@@ -1,16 +1,15 @@
 /**
- * The dice and the cup a game like Generala would use, AS PIECES — no game
- * in it.
+ * The dice and the cup a game like Generala uses, AS PIECES — no game in it.
  *
  * NO GENERALA ENGINE, MODULE, OR RULE LIVES HERE. That is a claim about
  * THIS PACKAGE, and it used to be a claim about the whole repository too:
  * when `dice-ui` shipped, `packages/games/generala*` did not exist at all
  * (`sdd/generala-props/explore`, verified against source before this package
- * existed). It does now — `generala-engine` holds the rules, `generala-module`
- * owns the only door entropy comes through, `generala-bot` plays. The one
- * that still does not exist is `generala-ui`, THE BOARD: the L1 consumer that
- * will compose the pieces below into a table, and the referent of every "no
- * board exists yet" note in this package.
+ * existed). THE WHOLE GAME EXISTS NOW — `generala-engine` holds the rules,
+ * `generala-module` owns the only door entropy comes through, `generala-bot`
+ * plays, and `generala-ui` is the L1 consumer that composes the pieces below
+ * into a tray and a planilla, which `apps/widget-app` mounts as a board. Not
+ * one line of this package changed for any of it.
  *
  * The split the sentence was written to name is unchanged, and the fence is
  * what keeps it rather than the absence of a game. This package answers the
@@ -23,8 +22,8 @@
  *
  * L0, by rule as well as by intention (`l0-dice-ui-no-workspace-deps` in
  * `.dependency-cruiser.cjs`): it imports no workspace package at all, so it
- * cannot learn what a legal Generala move is, and a future game cannot
- * smuggle a rule in through the props.
+ * cannot learn what a legal Generala move is, and no game — the one that now
+ * exists included — can smuggle a rule in through the props.
  *
  * `assets/` AND `LICENSE` NOW EXIST, WHERE THEY ONCE DELIBERATELY DID NOT.
  * The original release drew a die's pips and a cup's silhouette as flat

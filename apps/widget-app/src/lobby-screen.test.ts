@@ -9,6 +9,21 @@ const family = (id: string, ...ids: string[]): GameFamily => ({ id, entries: ids
 const TRUCO = family("truco", "truco-argentino", "truco-argentino-2v2");
 const ESCOBA = family("escoba", "escoba-de-15");
 
+/**
+ * A family id NOTHING registers and no tenant can be entitled to — the point
+ * of the two tests that use it is that the screen was handed a list this id
+ * is not in.
+ *
+ * IT USED TO SAY `"generala"`, which was true of the repository when it was
+ * written and became a contradiction the day Generala shipped with its own
+ * shelf, its own renderer and its own entry on both composition roots. The
+ * assertions do not change and cannot: `createLobbyScreen` is built from the
+ * families it is HANDED and never consults a registry, so an id absent from
+ * that argument is absent whether or not a game answers to it elsewhere. The
+ * repoint is about the sentence being true, not about the behaviour moving.
+ */
+const ABSENT_FAMILY = "fixture-absent-family";
+
 describe("createLobbyScreen — which of the two screens is open", () => {
   /* THE SINGLE-GAME BYPASS, and it is today's live case: the only configured
    * tenant is entitled to both truco entries, which is ONE family. So this
@@ -67,14 +82,14 @@ describe("createLobbyScreen — which of the two screens is open", () => {
     const screen = createLobbyScreen([TRUCO, ESCOBA]);
     screen.open("truco");
 
-    screen.open("generala");
+    screen.open(ABSENT_FAMILY);
 
     expect(screen.current(), "still on truco, not thrown back to the list").toEqual({ kind: "game", family: TRUCO });
   });
 
   it("and from the list, an unknown id simply leaves the list up", () => {
     const screen = createLobbyScreen([TRUCO, ESCOBA]);
-    screen.open("generala");
+    screen.open(ABSENT_FAMILY);
     expect(screen.current().kind).toBe("families");
   });
 
