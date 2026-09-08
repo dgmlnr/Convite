@@ -264,6 +264,64 @@ describe("generala scorecard: there is a column per seat, in seat order, named f
   });
 });
 
+describe("generala scorecard: every seat's whole card is visible to every seat", () => {
+  it("shows filled boxes, boxes crossed at zero and open boxes, and never reads two of them the same", () => {
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+
+    // Seat 0's own column.
+    expect(planilla.cell("sixes", 0).textContent?.trim()).toBe("18");
+    expect(planilla.cell("sixes", 0).dataset.state).toBe("filled");
+    expect(planilla.cell("escalera", 0).textContent?.trim()).toBe("25");
+    expect(planilla.cell("escalera", 0).dataset.state).toBe("filled");
+
+    // The rival's, which is the half that makes blocking play possible.
+    expect(planilla.cell("full", 1).textContent?.trim()).toBe("35");
+    expect(planilla.cell("full", 1).dataset.state).toBe("filled");
+    expect(planilla.cell("fives", 1).textContent?.trim()).toBe("0");
+    expect(planilla.cell("fives", 1).dataset.state).toBe("crossed");
+
+    // An OPEN box and a box CROSSED AT ZERO are different facts and must not
+    // look like each other: one is still worth playing for, the other is gone
+    // for good. `null` versus `0` is the engine's own distinction and this is
+    // where it reaches a player's eye.
+    expect(planilla.cell("fives", 0).dataset.state).toBe("open");
+    expect(planilla.cell("fives", 0).textContent?.trim()).toBe("");
+    expect(planilla.cell("fives", 1).dataset.state).not.toBe(planilla.cell("fives", 0).dataset.state);
+  });
+
+  it("draws the same eleven-by-two grid for the rival as it draws for this seat", () => {
+    const mine = seatPlanilla(SEAT);
+    const theirs = seatPlanilla(RIVAL);
+    playedOut(mine);
+    playedOut(theirs);
+
+    // Spec B: the cards are public, and "public" is exactly this — the two
+    // seats' renders agree cell for cell, state included. A redaction, or a
+    // planilla that drew only the seat it belongs to, breaks this and nothing
+    // else would notice. The columns already agree (above); this is the half
+    // that says what is IN them agrees too.
+    for (const category of CATEGORY_IDS) {
+      for (const seat of [0, 1]) {
+        const a = mine.cell(category, seat);
+        const b = theirs.cell(category, seat);
+        expect(b.textContent, `${category} at seat ${String(seat)}`).toBe(a.textContent);
+        expect(b.dataset.state, `${category} at seat ${String(seat)}`).toBe(a.dataset.state);
+      }
+    }
+  });
+
+  it("still knows what each box is after a re-render, so a broadcast never forgets a crossing", () => {
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+    planilla.redraw();
+
+    expect(planilla.cell("fives", 1).dataset.state).toBe("crossed");
+    expect(planilla.cell("sixes", 0).dataset.state).toBe("filled");
+    expect(planilla.cell("threes", 0).dataset.state).toBe("open");
+  });
+});
+
 describe("generala scorecard: the sheet it needs is in the document, and it is there once", () => {
   it("injects the stylesheet, and the boxes really are ruled by it", () => {
     const planilla = seatPlanilla();
@@ -279,6 +337,12 @@ describe("generala scorecard: the sheet it needs is in the document, and it is t
     const ruled = getComputedStyle(planilla.cell("ones", 0));
     expect(ruled.borderTopStyle).toBe("solid");
     expect(ruled.borderTopWidth).toBe("1px");
+
+    // AND THE MARK ON AN OPEN BOX IS DRAWN BY CSS AND BY NOTHING ELSE. Its
+    // cell is deliberately empty in the markup — a screen reader reading a
+    // blank cell is telling the truth — so the notation a sighted player
+    // reads the card by exists only if this sheet is live.
+    expect(getComputedStyle(planilla.cell("ones", 0), "::after").content).toBe('"—"');
   });
 
   it("does not stack a second <style> on every render", () => {
