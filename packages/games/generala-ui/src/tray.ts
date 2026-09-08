@@ -1,19 +1,26 @@
 import { ensureDiceStyles } from "@hexdev/dice-ui";
+import { DICE_COUNT } from "@hexdev/generala-engine";
 import type { DieFace, GeneralaAction, HoldAction, Turn } from "@hexdev/generala-engine";
 
 import { createDieSlot } from "./die-button.js";
 import type { DieSlot } from "./die-button.js";
 import { ensureTrayStyles } from "./tray-styles.js";
 
-/** Where the tray draws itself. One element the caller mounts and keeps,
- * never one this renderer creates — the same contract `escoba-ui`'s
- * `MarkThenPlayElements` states, so the board decides the layout and this
- * file decides only what goes in it. */
+/** Where the tray draws itself: the row of dice, and the control that throws
+ * them. Two elements the caller mounts and keeps, never ones this renderer
+ * creates — the same contract `escoba-ui`'s `MarkThenPlayElements` states, so
+ * the board decides the layout and this file decides only what goes in it. */
 export interface GeneralaTrayElements {
   readonly diceEl: HTMLElement;
+  readonly rollEl: HTMLElement;
 }
 
-export type GeneralaTrayRender = (elements: GeneralaTrayElements, turn: Turn, legalActions: readonly GeneralaAction[]) => void;
+export type GeneralaTrayRender = (
+  elements: GeneralaTrayElements,
+  turn: Turn,
+  legalActions: readonly GeneralaAction[],
+  onHold: (action: HoldAction) => void,
+) => void;
 
 /**
  * The five faces this turn is showing, or the gaps where dice are still in
@@ -40,6 +47,25 @@ function holdsIn(legalActions: readonly GeneralaAction[]): readonly HoldAction[]
   return legalActions.filter((action): action is HoldAction => action.type === "hold");
 }
 
+/** The offer whose `keep` is exactly this selection — the ONE action a press
+ * may commit. Written the way `escoba-ui`'s `matchingAction` is and for the
+ * identical reason: a selection matching no offer commits nothing, so this UI
+ * cannot dispatch an action the engine would refuse. */
+function matchingHold(holds: readonly HoldAction[], held: ReadonlySet<number>): HoldAction | undefined {
+  return holds.find((hold) => hold.keep.length === held.size && hold.keep.every((index) => held.has(index)));
+}
+
+/** Keeping all five asks to re-roll nothing: it burns a throw and changes no
+ * die, which is not a move at a real table either. The engine does not offer
+ * it (`KEEP_SETS` is 31 and never 32), so the control says why instead of
+ * offering a "Tirar 0 dados" nobody meant. */
+const KEEPING_ALL_FIVE = "Guardar los cinco no es una tirada";
+
+function rollLabel(throwing: number): string {
+  if (throwing === DICE_COUNT) return `Tirar los ${String(DICE_COUNT)} dados`;
+  return throwing === 1 ? "Tirar 1 dado" : `Tirar ${String(throwing)} dados`;
+}
+
 /**
  * THE TRAY, AND THE ONE THING IT REFUSES TO DO.
  *
@@ -58,12 +84,16 @@ function holdsIn(legalActions: readonly GeneralaAction[]): readonly HoldAction[]
  * be a second source of truth about the same fact, and the drift would only
  * ever show up as a die that flickered.
  *
- * PRESSES ACCUMULATE HERE. A per-die press toggles a pending selection and
- * nothing else; nothing is dispatched, because the action union leaves no
- * room for it to be — there is exactly one `hold` per roll and applying it
- * transitions the phase, so five presses cannot be five actions. What turns a
- * selection into that one action is the roll control, and it arrives with the
- * slice that can commit it.
+ * PRESSES ACCUMULATE HERE; EXACTLY ONE ACTION LEAVES. A per-die press toggles
+ * a pending selection and dispatches nothing. The action union forces that
+ * rather than a preference doing it: there is exactly one `hold` per roll and
+ * applying it TRANSITIONS THE PHASE, so five presses cannot be five actions.
+ * The "Tirar" control is what commits, and it commits the engine's own offer
+ * OBJECT — never a `keep` array this file assembled. Since PR #257 the room
+ * admits an action only if `sameAction` matches one the game offered, and it
+ * walks arrays BY INDEX (`match-room.ts:220-232`): `[1, 0]` is not `[0, 1]`.
+ * Dispatching the offer makes the canonical ascending order a fact instead of
+ * a convention this file would have to remember.
  *
  * THE TRAY READS THE OFFER LIST AND NEVER THE RULES. Whether a die may be
  * held at all is answered by one question — does this list contain any
@@ -81,17 +111,33 @@ export function createGeneralaTray(): GeneralaTrayRender {
    * CURRENT turn instead of the one that happened to build its element. A
    * held die survives re-renders, so a listener closing over its own render's
    * arguments would go stale exactly on the dice the player is keeping. */
-  let current: { elements: GeneralaTrayElements; turn: Turn; legalActions: readonly GeneralaAction[] } | null = null;
+  let roller: HTMLButtonElement | null = null;
+  let current: { elements: GeneralaTrayElements; turn: Turn; legalActions: readonly GeneralaAction[]; onHold: (action: HoldAction) => void } | null = null;
 
-  const toggle = (index: number): void => {
-    if (current === null) return;
-    if (held.has(index)) held.delete(index);
-    else held.add(index);
-    render(current.elements, current.turn, current.legalActions);
+  const redraw = (): void => {
+    if (current !== null) render(current.elements, current.turn, current.legalActions, current.onHold);
   };
 
-  const render: GeneralaTrayRender = (elements, turn, legalActions) => {
-    current = { elements, turn, legalActions };
+  const toggle = (index: number): void => {
+    if (held.has(index)) held.delete(index);
+    else held.add(index);
+    redraw();
+  };
+
+  const throwThem = (): void => {
+    if (current === null) return;
+    const offer = matchingHold(holdsIn(current.legalActions), held);
+    if (offer === undefined) return;
+    // Cleared BEFORE the round trip, exactly as `mark-then-play.ts` clears its
+    // marks: the dice the player just gave up must stop looking held the
+    // instant they press, not whenever the server's next broadcast lands.
+    held.clear();
+    redraw();
+    current.onHold(offer);
+  };
+
+  const render: GeneralaTrayRender = (elements, turn, legalActions, onHold) => {
+    current = { elements, turn, legalActions, onHold };
     const doc = elements.diceEl.ownerDocument;
     ensureDiceStyles(doc);
     ensureTrayStyles(doc);
@@ -127,12 +173,38 @@ export function createGeneralaTray(): GeneralaTrayRender {
       if (anyChanged) held.clear();
     }
 
-    const canHold = holdsIn(legalActions).length > 0;
+    const holds = holdsIn(legalActions);
     for (const [index, slot] of slots.entries()) {
       if (slot.button === null) continue;
-      slot.button.disabled = !canHold;
+      slot.button.disabled = holds.length === 0;
       slot.button.setAttribute("aria-pressed", String(held.has(index)));
     }
+
+    if (holds.length === 0) {
+      // ABSENT, not disabled, and the asymmetry with the all-five case below
+      // is the point. There the player is one press away from making it a
+      // move again, so a greyed control is the truth. Here there is no throw
+      // left to ask for at all, and an affordance for a move that does not
+      // exist is worse than no affordance.
+      elements.rollEl.replaceChildren();
+      roller = null;
+      return;
+    }
+
+    if (roller === null || roller.parentElement !== elements.rollEl) {
+      roller = doc.createElement("button");
+      roller.type = "button";
+      roller.className = "hexdev-generala-roll";
+      roller.addEventListener("click", throwThem);
+      elements.rollEl.replaceChildren(roller);
+    }
+    const offer = matchingHold(holds, held);
+    // Updated in place rather than rebuilt: a player who tabbed to this
+    // control and then pressed a die would otherwise be dropped back onto the
+    // body by the re-render their own press caused (WCAG 2.1.1/2.4.3, the
+    // same defect `truco-ui`'s table renderer fences for by name).
+    roller.disabled = offer === undefined;
+    roller.textContent = offer === undefined ? KEEPING_ALL_FIVE : rollLabel(DICE_COUNT - held.size);
   };
 
   return render;

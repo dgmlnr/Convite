@@ -78,6 +78,31 @@ export function buildTrayStylesheet(): string {
   cursor: default;
 }
 
+/* THE CONTROL THAT COMMITS. It is the only text on this surface, so it is the
+   only place a missing font-family would actually be visible -- the same
+   argument \`escoba-ui\`'s own \`.hexdev-escoba-sum\` makes for itself. */
+.hexdev-generala-roll {
+  appearance: none;
+  font: inherit;
+  font-family: var(--gx-font-family, system-ui, sans-serif);
+  padding: 8px 16px;
+  border: 2px solid var(--gx-color-accent, var(--hx-gold, #e8c877));
+  border-radius: var(--gx-radius, 12px);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.hexdev-generala-roll:focus-visible {
+  outline: 3px solid var(--generala-focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+.hexdev-generala-roll:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hexdev-generala-die[aria-pressed="true"] {
     transform: none;
