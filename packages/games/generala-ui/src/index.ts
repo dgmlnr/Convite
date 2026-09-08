@@ -15,10 +15,13 @@
  * here even by accident — the only legality this package can read is an offer
  * list somebody hands it.
  *
- * PARTIAL, AND SAYING SO. What exists today is one die drawn as a control and
- * the sheet the tray is laid out by. `createDieSlot` is deliberately NOT
+ * PARTIAL, AND SAYING SO. The tray and the dice it holds are here; the
+ * control that commits a hold, the scorecard, the announcer and the
+ * match-over surface are not yet. `createDieSlot` is deliberately NOT
  * exported: nothing outside this package composes a single die, and a public
  * export with zero consumers is the shape `escoba-ui`'s own barrel comment
- * argues against. Its consumer is the tray, one slice away.
+ * argues against.
  */
+export { createGeneralaTray } from "./tray.js";
+export type { GeneralaTrayElements, GeneralaTrayRender } from "./tray.js";
 export { ensureTrayStyles, TRAY_STYLE_ID } from "./tray-styles.js";
