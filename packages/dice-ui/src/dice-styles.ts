@@ -205,19 +205,36 @@ export function buildDiceStylesheet(): string {
    dice get to be": unscaled, five ${String(DIE_SCENE_SIZE)}px boxes stack FIVE rows deep on a
    390px screen, taller than the viewport that has to show them.
 
-   \`@media\`, not \`@container\` — the newer convention \`truco-ui\` and
-   \`escoba-ui\` both switched to, and it does not transfer here. A container
-   query needs a container, and the only element this package always owns
-   above a die is \`.hexdev-dice-root\`, which is deliberately \`inline-flex\`
-   and shrink-wraps to its own content (its own comment above says why).
+   \`@media\` HERE AND \`@container\` IN A BOARD, WHICH IS ONE DECISION AND NOT
+   TWO. \`truco-ui\` and \`escoba-ui\` switch shape on \`@container\` and assert
+   of their own stylesheets that they never switch on the viewport; this
+   package ships width tiers. The rule that produces both: THE PACKAGE THAT
+   OWNS THE ROW ESTABLISHES THE CONTAINER AND QUERIES IT, AND A PACKAGE THAT
+   OWNS ONLY A DIE KEEPS THE VIEWPORT LADDER AS ITS FLOOR.
+
+   This package cannot be the first kind, and both halves of that were
+   MEASURED rather than argued. A container query needs a container, and the
+   only element this package always owns above a die is
+   \`.hexdev-dice-root\`, which is deliberately \`inline-flex\` and shrink-wraps
+   to its own content (its own comment above says why).
    \`container-type: inline-size\` implies \`contain: inline-size\`, which makes
-   an element's inline size ignore its contents — it would collapse the very
-   shrink-wrap that rule exists for. The alternative is asking the BOARD to
-   establish the container, which puts this package's geometry back in a
-   consumer that is supposed to stay free of it. Inside the widget the
-   viewport IS the embed's own box (\`widget-sdk/mount.ts\` sizes the iframe at
-   \`width: 100%\` of the tenant's container), so the viewport axis is not the
-   wrong measurement here the way it was for a board inside a shell. */
+   an element's inline size ignore its contents: applying it to that root took
+   it from **1218px to 24px**. And this ladder cannot simply move onto the
+   container axis either — a \`@container\` query with NO ancestor container
+   does not match at all, measured with a probe styled only inside one, so
+   every consumer that establishes no container would silently go unscaled,
+   starting with the cup above and \`dice.scene.test.ts\`'s own gallery.
+
+   So these two tiers are the FLOOR, not a competing convention. Inside the
+   widget the viewport IS the embed's own box (\`widget-sdk/mount.ts\` sizes the
+   iframe at \`width: 100%\` of the tenant's container), which is what makes the
+   floor correct rather than merely safe. A board that wants better does what
+   \`generala-ui/tray-styles.ts\` does: it establishes
+   \`container-name: hexdev-generala-tray\` on the row it owns and re-declares
+   THESE SAME two tiers on its own box — measured at a 1280px viewport with a
+   600px board, where the viewport ladder leaves five dice at full size across
+   three rows and 638px of height, and the container ladder gives two rows and
+   256px. */
 @media (max-width: 700px) {
   .hexdev-dice-scene-box {
     --dice-scene-scale: 0.6;
