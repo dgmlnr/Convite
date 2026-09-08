@@ -36,6 +36,8 @@ import {
   windowTicker,
 } from "@hexdev/mahjong-solitaire-ui";
 import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
+import { getCupArtUrl, getDieFaceArtUrl } from "@hexdev/dice-ui";
+import type { DieFace } from "@hexdev/dice-ui";
 import { STRINGS } from "./i18n.js";
 
 /** The wire shape `MatchRoom.viewMessageFor` now sends alongside every
@@ -312,7 +314,19 @@ const CARTAS_SECTION: SectionUi = { id: "cartas", title: STRINGS.sectionCartas }
  */
 const FICHAS_SECTION: SectionUi = { id: "fichas", title: STRINGS.sectionFichas };
 
-const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION, FICHAS_SECTION];
+/**
+ * THE THIRD SHELF, and it arrives with its referent exactly as the second one
+ * did — `generalaModule.metadata.section` is `"dados"`, so the row has a game
+ * under it the day it lands.
+ *
+ * The vocabulary is now three words long and it is one vocabulary: a shelf is
+ * named after what its games are PLAYED WITH. That is what keeps "Dados" and
+ * not "Generala" here, and it is the difference between a row a second dice
+ * game joins and a row that would have to be renamed the day it did.
+ */
+const DADOS_SECTION: SectionUi = { id: "dados", title: STRINGS.sectionDados };
+
+const SECTIONS: readonly SectionUi[] = [CARTAS_SECTION, FICHAS_SECTION, DADOS_SECTION];
 
 /**
  * A shelf's own name, by section id — the exact mirror of `familyUiFor`
@@ -500,7 +514,72 @@ const MAHJONG_FAMILY: GameFamilyUi = {
   credits: [{ ...TILE_ATTRIBUTION, subject: STRINGS.creditSubjectTiles }],
 };
 
-const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY];
+/**
+ * THE CUBILETE BETWEEN TWO DICE — and the first arrangement was three dice,
+ * which was rejected by looking at it.
+ *
+ * WHAT THE FIRST ONE DID. `cardArt` lays its faces out as a fan built for
+ * CARDS: `.hexdev-game-card-face` is `width: clamp(46px, 5.5cqw, 62px)` with
+ * `height: auto` and a horizontal margin of −12 % of that width. A card at
+ * 46px wide is ~72px tall, so a 12 % overlap still leaves most of each one
+ * showing. A die face is SQUARE — 297×297 — so at 46px wide it is 46px tall,
+ * and three of them overlapped by 12 % and rotated ±6° merge into a single
+ * ivory bar carrying fifteen dots. Rendered at 1024px and looked at, it does
+ * not read as three dice: it reads as a DOMINO, on a shelf headed "Dados".
+ * Art that names the wrong game is worse than no art, and no assertion in
+ * this repository can see it.
+ *
+ * WHY THE CUP FIXES IT. `cup.webp` is 228×269, a portrait ratio close enough
+ * to a card's that the fan's geometry was built for it, and it is the object
+ * this game is played WITH — the one silhouette nobody confuses with a
+ * domino. ORDER IS THE LAYOUT, the rule truco's `hero-cards.ts` states and
+ * escoba's three-cards-that-sum-to-fifteen follows: the centre item is the
+ * one nothing overlaps, and `z-index: calc(10 - offset²)` puts it on top of
+ * both neighbours, so the cup stands clear and the two dice tuck behind it.
+ * `align-items: flex-end` sits all three on the same line, which is a cup and
+ * two dice on a table.
+ *
+ * FIVES, AND NOT SIXES OR ONES. At the card's own size the pip pattern is the
+ * whole picture: a 1 is nearly blank and reads as a die that failed to load,
+ * a 6 packs two columns of three and turns to texture, and a 5's quincunx
+ * survives every width in the clamp. Both dice show the same face because
+ * equal dice is what this game is named after.
+ */
+const GENERALA_FLANKING_FACE: DieFace = 5;
+
+const GENERALA_ART: readonly string[] = [
+  getDieFaceArtUrl(GENERALA_FLANKING_FACE).href,
+  getCupArtUrl().href,
+  getDieFaceArtUrl(GENERALA_FLANKING_FACE).href,
+];
+
+/**
+ * THE FOURTH FAMILY, AND THE FIRST THAT OWES NOTHING TO ANYBODY.
+ *
+ * NO `credits`, and that is a finding rather than an omission. `dice-ui`'s
+ * `assets/LICENSE` records that the die's ivory is fully procedural — no
+ * third-party input at all — and the cup's leather is a CC0 Poly Haven scan,
+ * recorded for traceability and carrying no attribution obligation. A credit
+ * here would be a licence term invented for a screen that already prints two
+ * real ones, which devalues both.
+ *
+ * STILL NO `hero`, for the reason `MAHJONG_FAMILY` states: screen two's
+ * header fan is a format-picker's row (`game-screen.ts`: "cards under a hero
+ * are formats of the game it names"), and a game with one `configOptions`-less
+ * modality has no format to fan. `cardArt` IS declared, and that too is
+ * measured rather than tasteful — the mahjong record above has the whole
+ * argument: `chrome-styles.ts`'s min-height reservation is scoped to
+ * `:has(.hexdev-game-card-art)`, so an art-less card comes out at roughly half
+ * its neighbours' height and reads as a broken image. Generala has real
+ * artwork; declaring none would be choosing that.
+ */
+const GENERALA_FAMILY: GameFamilyUi = {
+  id: "generala",
+  heroTitle: "Generala",
+  cardArt: GENERALA_ART,
+};
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY, GENERALA_FAMILY];
 
 /**
  * The family whose face the front door wears — or none.
