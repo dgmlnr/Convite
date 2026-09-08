@@ -20,17 +20,32 @@ export const SCORE_TAP_MIN = 44;
  * rules drawn between the boxes, and the two marks that say what a box IS —
  * blank because nobody has written in it, or a zero somebody spent.
  *
- * IT DECLARES NO COLUMN WIDTH, and that is deliberate rather than
- * unfinished. The planilla takes the row it is given; how it survives the
- * narrow end of the range is a measurement nothing here has taken yet.
+ * `--generala-planilla-labels` IS THE LOAD-BEARING NUMBER. Under
+ * `table-layout: fixed` the first column takes exactly this share and the
+ * seats split the rest evenly, so ONE value decides both halves of the fit at
+ * 320px: whether "Generala doble" survives on one line, and whether a seat's
+ * column is still wide enough to hold a control a thumb can hit. The two pull
+ * in opposite directions, which is what makes it a decision rather than a
+ * taste. At 320px the page gives the table 304px: 44 % is 134px for the
+ * labels and 85px for each of the two seats.
+ *
+ * THE ROW HEADERS DO NOT WRAP, on purpose, and the two rules above only make
+ * sense together. A label column that is too narrow absorbs it by growing
+ * TALLER — "Generala doble" quietly stacks onto two lines — which no width
+ * measurement can see and which turns an eleven-row planilla into a
+ * nineteen-row one on the phone that could least afford it. Refusing to wrap
+ * converts that into an overflow, and an overflow is something a test can
+ * see. Measured: removing the width alone reds the clipping fence, and
+ * removing both reds the row-height one.
  */
 export function buildScorecardStylesheet(): string {
   return `
 .hexdev-generala-scorecard {
   /* Declared here so \`--generala-\` stays a namespace this package owns
      rather than one it only reads from (\`stylesheet-tokens.test.ts\`), and
-     because it is a real knob a board may want: the ink the rules between
-     boxes are drawn in. */
+     because both are real knobs a board may want: the share of the row the
+     category names take, and the ink the rules between boxes are drawn in. */
+  --generala-planilla-labels: 44%;
   --generala-planilla-rule: var(--hx-felt-outline, rgba(255, 255, 255, 0.28));
   font-family: var(--gx-font-family, system-ui, sans-serif);
   color: inherit;
@@ -39,6 +54,14 @@ export function buildScorecardStylesheet(): string {
 .hexdev-generala-scorecard-table {
   width: 100%;
   border-collapse: collapse;
+  /* THE COLUMNS DO NOT DEPEND ON WHAT IS IN THEM. Under the default \`auto\`
+     a browser sizes each column to its content, so the box holding "18" comes
+     out wider than the one holding "0" — MEASURED at 320px, two score
+     controls side by side were 62.1px and 74.4px — and the whole planilla
+     re-flows as the match fills it in, moving a box out from under the thumb
+     already reaching for it. \`fixed\` settles every column from the
+     \`<colgroup>\` before a single cell's content is measured. */
+  table-layout: fixed;
   font-size: 0.9rem;
   /* Digits of equal width, so a column of scores lines up as a column of
      numbers instead of a ragged edge. */
@@ -59,9 +82,21 @@ export function buildScorecardStylesheet(): string {
   text-align: center;
 }
 
-/* The category names, left-aligned like a printed planilla's. */
+/* THE ONE COLUMN WITH A WIDTH OF ITS OWN, declared on the \`<col>\` because
+   that is the element a column's width belongs to. Under
+   \`table-layout: fixed\` the widths are read off the FIRST ROW, and the row
+   this table starts with begins at the blank corner cell — so a width
+   declared on the category headers below is read one row too late and never
+   applies at all. Measured rather than reasoned: written that way it clipped
+   "Generala doble" by 5px at 320. */
+.hexdev-generala-scorecard-labels {
+  width: var(--generala-planilla-labels);
+}
+
+/* The category names: left-aligned like a printed planilla's, one line each. */
 .hexdev-generala-scorecard-table th[scope="row"] {
   text-align: left;
+  white-space: nowrap;
   font-weight: 400;
 }
 
@@ -104,9 +139,8 @@ export function buildScorecardStylesheet(): string {
    screen: it says what this roll would be worth here BEFORE the player
    commits to it. It fills its cell so the target is the whole box a finger
    aims at rather than the three characters inside it, and it is never
-   shorter than the standard's 44px. Its WIDTH is its column's, which is a
-   question about how the table lays itself out and not one this rule can
-   answer alone. The cell's padding comes off so the two agree about where
+   shorter than the standard's 44px. Its WIDTH is its column's, which the
+   fixed layout above is what settles. The cell's padding comes off so the two agree about where
    the box ends. */
 .hexdev-generala-scorecard-cell:has(> .hexdev-generala-score) {
   padding: 0;

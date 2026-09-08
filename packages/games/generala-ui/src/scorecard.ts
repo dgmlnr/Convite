@@ -184,6 +184,24 @@ export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view
   caption.textContent = "Planilla";
   table.appendChild(caption);
 
+  // ONE `<col>`, FOR THE ONE COLUMN THAT HAS A WIDTH. A column's width
+  // belongs to the element that IS the column: under `table-layout: fixed`
+  // the widths are read off the first ROW, which here starts at the blank
+  // corner cell, so a width declared on the category headers is read one row
+  // too late and never applies at all.
+  //
+  // No `<col>` for the seats, and that was measured rather than assumed. A
+  // `<colgroup>` shorter than the table is legal, and the columns it does not
+  // name split whatever is left over evenly — which is exactly the behaviour
+  // wanted, and is what the seats already got when one `<col>` per seat was
+  // declared alongside. Adding them back moved nothing, so they were a hook
+  // for a caller that does not exist rather than a mechanism.
+  const columns = doc.createElement("colgroup");
+  const labelColumn = doc.createElement("col");
+  labelColumn.className = "hexdev-generala-scorecard-labels";
+  columns.appendChild(labelColumn);
+  table.appendChild(columns);
+
   const head = doc.createElement("thead");
   const headRow = doc.createElement("tr");
   // The top-left cell heads neither a row nor a column. A `<th>` there would
