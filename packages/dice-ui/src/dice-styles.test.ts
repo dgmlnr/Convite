@@ -444,11 +444,18 @@ describe("dice-styles: the cup stays over for as long as dice are still leaving 
 });
 
 describe("dice-styles: the cubilete is a piece, not a second control", () => {
-  it("sizes it at the exported box and never borrows the button's tap floor or its pointer cursor", () => {
+  it("sizes it at the exported box, through the knob that shrinks it, and never borrows the button's tap floor or its pointer cursor", () => {
     const css = declarationsOnly(buildDiceStylesheet());
     const rule = ruleFor(css, ".hexdev-dice-cup-piece");
-    expect(rule).toContain(`width: ${String(CUP_PIECE_WIDTH)}px`);
-    expect(rule).toContain(`height: ${String(CUP_PIECE_HEIGHT)}px`);
+    // THE LAYOUT BOX AND THE LADDER IN ONE DECLARATION, which is the whole
+    // difference from how a die shrinks: a cup is one flat image under
+    // `object-fit: contain` and can be RESIZED, where a die's facelets are
+    // held at their shared edges by a fixed `translateZ` and can only be
+    // drawn smaller. A bare `width: 124px` here would be a cup that never
+    // makes room for anything.
+    expect(rule).toContain(`width: calc(${String(CUP_PIECE_WIDTH)}px * var(--dice-cup-scale, 1))`);
+    expect(rule).toContain(`height: calc(${String(CUP_PIECE_HEIGHT)}px * var(--dice-cup-scale, 1))`);
+    expect(rule, "the box IS the ladder here — a transform would reflow nothing").not.toMatch(/transform:\s*scale/);
     expect(rule, "scenery must not offer a cursor nothing can act on").not.toMatch(/cursor:/);
     expect(rule).not.toMatch(/min-width:/);
   });
@@ -505,5 +512,50 @@ describe("dice-styles: the cubilete is a piece, not a second control", () => {
     const rule = /\.hexdev-dice-cup-piece\[data-cup-gesture\]\s*\{[^}]*\}/.exec(joined);
     expect(rule, "expected the cup piece's gestures to be disabled under reduced motion").not.toBeNull();
     expect(rule![0]).toMatch(/animation:\s*none/);
+  });
+});
+
+describe("dice-styles: the cubilete shrinks on the same ladder the dice do", () => {
+  /** Every `@media (max-width: N) { <selector> { <property>: <value>; }` in
+   * the built stylesheet, as `N -> value`. Written against the exact literal
+   * shape this file emits, the same licence `extractTurnOffset` at the top
+   * takes for the toss keyframe: this is the one file allowed to know it. */
+  function tiersOf(css: string, className: string, property: string): Map<number, number> {
+    const pattern = new RegExp(String.raw`@media \(max-width:\s*(\d+)px\)\s*\{\s*\.${className}\s*\{\s*${property}:\s*([\d.]+);`, "g");
+    return new Map([...css.matchAll(pattern)].map((m) => [Number(m[1]), Number(m[2])] as const));
+  }
+
+  /**
+   * ONE LADDER READ TWICE, not two that happen to share numbers — the same
+   * claim `tray-styles.ts` makes about the container axis, checked here for
+   * the viewport one: whatever widths the dice step at, the cup steps at
+   * exactly those and no others.
+   */
+  it("steps at exactly the widths the dice step at", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const dice = [...tiersOf(css, "hexdev-dice-scene-box", "--dice-scene-scale").keys()].sort((a, b) => a - b);
+    const cup = [...tiersOf(css, "hexdev-dice-cup-piece", "--dice-cup-scale").keys()].sort((a, b) => a - b);
+    expect(dice.length, "expected the dice's own width tiers").toBeGreaterThanOrEqual(2);
+    expect(cup).toEqual(dice);
+  });
+
+  /**
+   * AND IT GIVES UP LESS ROOM THAN THEY DO, at every rung. A cubilete is a
+   * bigger object than a die and has to keep reading as one; at the dice's
+   * own scales it would come out smaller than the dice it just poured, which
+   * is the one thing a cubilete cannot look like. Written as a comparison
+   * rather than as two literals so it stays true through a re-tuning of
+   * either ladder.
+   */
+  it("keeps a gentler scale than the dice at every rung", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const dice = tiersOf(css, "hexdev-dice-scene-box", "--dice-scene-scale");
+    const cup = tiersOf(css, "hexdev-dice-cup-piece", "--dice-cup-scale");
+    expect(cup.size).toBe(dice.size);
+    expect(cup.size).toBeGreaterThanOrEqual(2);
+    for (const [width, cupScale] of cup) {
+      expect(cupScale, `at ${String(width)}px`).toBeGreaterThan(dice.get(width)!);
+      expect(cupScale).toBeLessThan(1);
+    }
   });
 });

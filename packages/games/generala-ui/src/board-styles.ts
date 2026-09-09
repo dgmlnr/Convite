@@ -156,10 +156,99 @@ export function buildBoardStylesheet(): string {
    \`tray-fit.browser.test.ts\` measures the row against the narrowest phone
    this product supports rather than leaving that to hope. */
 .${BOARD_CLASS}-roll {
+  /* THE CONTAINER THIS ROW ESTABLISHES AND QUERIES, which is the repository's
+     own rule applied a third time: THE PACKAGE THAT OWNS THE ROW ESTABLISHES
+     THE CONTAINER AND QUERIES IT, AND A PACKAGE THAT OWNS ONLY A PIECE KEEPS
+     THE VIEWPORT LADDER AS ITS FLOOR. \`dice-ui\` owns a cubilete and ships
+     two width \`@media\` tiers for it; this file owns the row the cubilete
+     stands in, so it re-declares the same tiers on the box that actually
+     decides — the case a viewport cannot see is a narrow board on a wide
+     window, which is exactly the shape a tray beside a planilla takes.
+
+     SAFE HERE AND NOT THERE, for the reason \`tray-styles.ts\` records:
+     \`container-type: inline-size\` implies \`contain: inline-size\`, which is
+     fatal to a shrink-wrapping \`inline-flex\` root and a no-op for a
+     block-level row that was always going to fill the box the board gave it. */
+  container-type: inline-size;
+  container-name: hexdev-generala-roll;
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 8px;
+}
+
+/* THE SOUND CONTROL, WHICH IS FURNITURE AND IS DRAWN AS FURNITURE. It sits in
+   the same row as the throw because that is where the noise comes from, and it
+   must not compete with it: no border, no accent, the board's own ink at
+   reduced strength until it is hovered or focused. The throw is the primary
+   action of this screen and there is exactly one of those.
+
+   A 44x44 BOX ON A 24px GLYPH, which is WCAG 2.5.5's floor and the same one
+   \`dice-ui\`'s cup button declares as its own two literal properties. An
+   icon-only control is precisely where that floor gets forgotten, because the
+   icon looks like the whole thing. */
+.${BOARD_CLASS}-roll .hexdev-generala-mute {
+  appearance: none;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.${BOARD_CLASS}-roll .hexdev-generala-mute svg {
+  width: 24px;
+  height: 24px;
+}
+
+.${BOARD_CLASS}-roll .hexdev-generala-mute:hover {
+  opacity: 1;
+}
+
+.${BOARD_CLASS}-roll .hexdev-generala-mute:focus-visible {
+  opacity: 1;
+  outline: 3px solid var(--generala-focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+/* THIS ROW'S OWN TIERS, AND THEY ARE NOT \`dice-ui\`'S — which is the first
+   time a ladder in this repository has legitimately diverged rather than been
+   one decision read on two axes, so it is worth saying why.
+
+   \`dice-ui\`'s tiers describe a cubilete standing ALONE: it shrinks when the
+   screen does, and 700/375 is the same ladder its dice keep. This row holds
+   THREE things — the cubilete, a throw control with a label that must not
+   wrap, and a 44px sound toggle — so what decides the cup's size here is not
+   the width of the screen but how much of this row the other two have already
+   spent. Copying the dice's breakpoints would be copying an answer to a
+   different question.
+
+   THE NUMBERS ARE ARITHMETIC, not taste. The throw control and the sound
+   control and their gaps come to about 223px whatever happens; a cubilete at
+   scale s asks for 124s of layout and paints 145s of it, because it rests at
+   \`rotate(9deg)\` and a rotation spills paint without moving layout. Fitting
+   BOTH inside a row of W needs W >= 145s + 223, which puts full size at 368px
+   of row, 0.8 at 339 and 0.62 at 313. The breakpoints below sit just above
+   each of those, and \`tray-fit.browser.test.ts\` sweeps the boundaries rather
+   than trusting this paragraph. */
+@container hexdev-generala-roll (max-width: 375px) {
+  .${BOARD_CLASS}-roll .hexdev-dice-cup-piece {
+    --dice-cup-scale: 0.8;
+  }
+}
+
+@container hexdev-generala-roll (max-width: 340px) {
+  .${BOARD_CLASS}-roll .hexdev-dice-cup-piece {
+    --dice-cup-scale: 0.62;
+  }
 }
 
 /* FULLSCREEN IS THE ONE MODE WITH A FIXED BOX, so it is the one mode with

@@ -204,6 +204,35 @@ function rollRowInBox(width: number, state: MatchState): { readonly rollEl: HTML
 const NARROWEST = LADDER[0]!.width;
 
 describe("generala tray: the cubilete and the control that commits share one row", () => {
+  /**
+   * THE WIDTHS EITHER SIDE OF EVERY BREAKPOINT, which is where a ladder tuned
+   * by arithmetic actually fails. `board-styles.ts` derives its two container
+   * tiers from `W >= 145s + 223` — the cubilete's PAINTED width at scale s,
+   * which is wider than its layout box because it rests at `rotate(9deg)`,
+   * plus the throw control and the sound toggle. A breakpoint one pixel on
+   * the wrong side of that inequality puts four pixels of leather outside the
+   * board and nothing anywhere would say so.
+   *
+   * 341 IS THE CASE THAT CAUGHT IT. The first draft of those tiers reused the
+   * dice's own 375/330 breakpoints, and at 331px of board the cup jumped to
+   * 0.8 while the arithmetic wanted 339 — measured here, not reasoned.
+   */
+  const BOUNDARIES: readonly number[] = [320, 336, 340, 341, 360, 375, 376, 392, 414];
+
+  it.each(BOUNDARIES)("at %spx of row — either side of every container breakpoint — the cubilete stays inside the board", async (width) => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const { rollEl, cup } = rollRowInBox(width, rolled);
+    const row = rollEl.getBoundingClientRect();
+    const painted = cup.getBoundingClientRect();
+
+    expect(painted.left, `${String(width)}px: leather off the left edge`).toBeGreaterThanOrEqual(row.left - 0.5);
+    expect(painted.right, `${String(width)}px: leather off the right edge`).toBeLessThanOrEqual(row.right + 0.5);
+    // And the control it shares the row with still holds its own line.
+    const button = rollEl.querySelector<HTMLElement>(".hexdev-generala-roll")!;
+    expect(button.getBoundingClientRect().height, `${String(width)}px: the throw label wrapped`).toBeLessThan(50);
+  });
+
   it.each(LADDER)("in a $width px box nothing in the pair is painted outside the row", async ({ width }) => {
     await page.viewport(WIDE_VIEWPORT, 900);
     const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));

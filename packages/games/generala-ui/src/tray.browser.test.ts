@@ -1,5 +1,5 @@
-import { page } from "vitest/browser";
-import { afterEach, describe, expect, it } from "vitest";
+import { page, userEvent } from "vitest/browser";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
 import type { ApplyResult, CategoryId, DieFace, GeneralaAction, HoldAction, MatchState, PlayerId } from "@hexdev/generala-engine";
@@ -46,8 +46,26 @@ const SEATS: readonly PlayerId[] = [SEAT, RIVAL];
 const OPENING: readonly DieFace[] = [3, 5, 1, 2, 6];
 
 const mounted: HTMLElement[] = [];
+
+/**
+ * THE SOUND PREFERENCE IS REAL `localStorage`, AND IT LEAKED BETWEEN TESTS —
+ * found by two assertions below going red for a reason neither of them was
+ * about. Every test in this file shares one browser iframe, so the moment one
+ * of them pressed the mute control, every test after it built a tray that was
+ * already muted and quietly took the "nothing to do" branch of everything.
+ *
+ * Worth saying plainly rather than just fixing: that leak is the persistence
+ * WORKING. `sound-preference.ts` promises a mute survives a reload, and a
+ * shared iframe is a stronger version of the same thing. What is wrong is the
+ * fixture, not the behaviour, so the fixture is what resets.
+ */
+beforeEach(() => {
+  window.localStorage.removeItem("convite:dice-muted");
+});
+
 afterEach(async () => {
   while (mounted.length > 0) mounted.pop()!.remove();
+  window.localStorage.removeItem("convite:dice-muted");
   await page.viewport(414, 896);
 });
 
@@ -126,7 +144,11 @@ function seatTable(): Table {
       state = accept(applyPlayerAction(state, dispatched[dispatched.length - 1]!));
       draw();
     },
-    roller: () => rollEl.querySelector<HTMLButtonElement>("button"),
+    // NAMED, NOT "THE FIRST BUTTON IN THE ROW". It was the first button until
+    // the sound control moved in beside the cubilete, at which point a
+    // positional query started answering "yes, there is a throw control" with
+    // the mute toggle. The class is what this actually means.
+    roller: () => rollEl.querySelector<HTMLButtonElement>(".hexdev-generala-roll"),
     cup: () => rollEl.querySelector<HTMLElement>(".hexdev-dice-cup-piece"),
     nodes: () => [...diceEl.children] as HTMLElement[],
     dice: () => [...diceEl.querySelectorAll<HTMLButtonElement>("button")],
@@ -619,11 +641,244 @@ describe("generala tray: the cubilete on the table", () => {
 
   /** The cubilete is scenery, so the row it sits in must still contain
    * exactly one thing a keyboard can land on. */
-  it("adds nothing to the tab order", () => {
+  it("adds nothing to the tab order — the row's only stops are the throw and the sound control", () => {
     const table = seatTable();
     table.roll([3, 5, 5, 2, 6]);
-    const focusable = table.elements.rollEl.querySelectorAll("button, a, input, [tabindex]");
-    expect(focusable.length).toBe(1);
-    expect(focusable[0]).toBe(table.roller());
+    const focusable = [...table.elements.rollEl.querySelectorAll("button, a, input, [tabindex]")];
+    expect(focusable).toEqual([table.roller(), table.elements.rollEl.querySelector(".hexdev-generala-mute")]);
+  });
+});
+
+/**
+ * THE SOUND CONTROL, AND THE THREE CLAIMS THE PRODUCT DECISION RESTS ON.
+ *
+ * `dice-ui` owns what a rattle is made of and fences that for itself;
+ * `sound-preference.ts` owns what survives a reload and fences that. What is
+ * here is the part that is neither: the control exists, it is a real toggle
+ * rather than a swapping label, and — the load-bearing one — nothing on this
+ * board can make a noise until a player has pressed something on it.
+ */
+describe("generala tray: the control that stops the noise", () => {
+  const mute = (table: Table): HTMLButtonElement => {
+    const button = table.elements.rollEl.querySelector<HTMLButtonElement>(".hexdev-generala-mute");
+    if (button === null) throw new Error("expected a sound control in the roll row");
+    return button;
+  };
+
+  it("is on the board from the first render, beside the cubilete making the noise", () => {
+    const table = seatTable();
+    expect(mute(table).parentElement).toBe(table.elements.rollEl);
+  });
+
+  /**
+   * A STABLE NAME PLUS `aria-pressed`, never a label that swaps between
+   * "Silenciar" and "Activar". Both spellings get announced; the swapping one
+   * is the one that lies, because a screen reader reading the new label after
+   * a press says the OPPOSITE of what just happened.
+   */
+  it("is a real toggle: one name, and the state on aria-pressed", () => {
+    const table = seatTable();
+    const button = mute(table);
+    const name = button.getAttribute("aria-label");
+    expect(name).not.toBeNull();
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+
+    button.click();
+    expect(button.getAttribute("aria-pressed"), "pressed means muted").toBe("true");
+    expect(button.getAttribute("aria-label"), "and the name does not move under it").toBe(name);
+
+    button.click();
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  /** An icon-only control gives a sighted player nothing to read, so the
+   * `title` is the one place the phrasing is an ACTION rather than a state —
+   * it is read before the press, where `aria-pressed` is read after it. */
+  it("says what pressing it will do, and changes that when the state changes", () => {
+    const table = seatTable();
+    const button = mute(table);
+    const before = button.title;
+    expect(before.length).toBeGreaterThan(0);
+    button.click();
+    expect(button.title).not.toBe(before);
+  });
+
+  it("draws a different glyph for each state rather than only a different colour (WCAG 1.4.1)", () => {
+    const table = seatTable();
+    const button = mute(table);
+    const shape = (): string | null => button.querySelectorAll("path")[1]?.getAttribute("d") ?? null;
+    const sounding = shape();
+    expect(sounding).not.toBeNull();
+    button.click();
+    expect(shape()).not.toBe(sounding);
+  });
+
+  it("survives a throw, exactly as the cubilete beside it does", () => {
+    const table = seatTable();
+    const button = mute(table);
+    button.click();
+    table.roll([3, 5, 5, 2, 6]);
+    expect(mute(table)).toBe(button);
+    expect(button.getAttribute("aria-pressed"), "and the choice is not redrawn away").toBe("true");
+  });
+
+  /**
+   * THE CLAIM THE WHOLE «DEFAULT ON» DECISION RESTS ON, and the only place it
+   * can be measured: this widget is embedded in somebody else's page, and a
+   * page that makes a noise at a visitor who merely loaded it is the most
+   * disliked thing on the web.
+   *
+   * It cannot happen here, and not because a preference says so — because
+   * `dice-sound.ts` builds an `AudioContext` ONLY inside `unlock()`, and this
+   * tray calls `unlock()` from exactly two places, both of them handlers for
+   * a real press on this widget's own surface. So a board can render a whole
+   * rival turn, with the cup shaking and the dice landing, and still never
+   * have constructed the object a sound would have to travel through.
+   *
+   * MEASURED THROUGH `AudioContext` ITSELF rather than through a spy on this
+   * package: what has to be true is that no audio context comes into
+   * existence, and counting constructions is the only assertion that says
+   * that rather than restating the code.
+   */
+  it("constructs no audio context at all until a player presses something", () => {
+    const RealAudioContext = window.AudioContext;
+    let built = 0;
+    class Counting extends RealAudioContext {
+      constructor() {
+        super();
+        built++;
+      }
+    }
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = Counting;
+    try {
+      const table = seatTable();
+      // A whole throw's worth of renders, with nobody touching anything.
+      table.roll([3, 5, 5, 2, 6]);
+      table.redraw();
+      expect(built, "a board nobody has pressed has nothing to sound through").toBe(0);
+
+      // And the moment a player does touch it, there is one.
+      table.dice()[0]!.click();
+      expect(built).toBe(1);
+
+      // Still one: the context is built once and kept, never per press.
+      table.dice()[1]!.click();
+      table.roller()?.click();
+      expect(built).toBe(1);
+    } finally {
+      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
+    }
+  });
+
+  /**
+   * THE THROW CONTROL IS THE OTHER GESTURE, and it needed its own case. The
+   * one above presses a die first, so it stayed green with `throwThem`'s own
+   * `unlock()` deleted — a player who holds nothing and simply throws is the
+   * commonest path of all, and it was the one nothing covered.
+   */
+  it("takes the throw press as a gesture too, for a player who holds no dice at all", () => {
+    const RealAudioContext = window.AudioContext;
+    let built = 0;
+    class Counting extends RealAudioContext {
+      constructor() {
+        super();
+        built++;
+      }
+    }
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = Counting;
+    try {
+      const table = seatTable();
+      table.roll([3, 5, 5, 2, 6]);
+      expect(built).toBe(0);
+      table.roller()!.click();
+      expect(built, "throwing without holding anything is still a press").toBe(1);
+    } finally {
+      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
+    }
+  });
+
+  /**
+   * ON THE TRANSITION, NEVER ON THE RENDER — and this is the assertion that
+   * says so. A board redraws on every broadcast AND on every die a player
+   * presses, so a rattle keyed on "the phase is awaiting-roll" would restart
+   * several times a throw: each restart cuts the burst before it and starts a
+   * new one, which is audibly a stutter rather than a cup being shaken.
+   *
+   * MEASURED THROUGH `createBufferSource`, because there is nothing else to
+   * measure: every voice this schedules goes through that one call, so
+   * counting it is the difference between "the sound played once" and "the
+   * sound played once per render" — which no assertion on this package's own
+   * surface could tell apart.
+   */
+  it("plays a throw's sounds once, however many times the board redraws around it", async () => {
+    const RealAudioContext = window.AudioContext;
+    let voices = 0;
+    class Counting extends RealAudioContext {
+      override createBufferSource(): AudioBufferSourceNode {
+        voices++;
+        return super.createBufferSource();
+      }
+    }
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = Counting;
+    try {
+      const table = seatTable();
+      table.roll([3, 5, 5, 2, 6]);
+      // A real, trusted press is the only thing that starts a context in this
+      // browser — `dice-sound.browser.test.ts` measures that directly.
+      await userEvent.click(table.dice()[0]!);
+      const afterFirstPress = voices;
+      // Four more renders of the same phase: three die presses and a plain
+      // redraw. Not one of them is a new throw.
+      table.dice()[1]!.click();
+      table.dice()[2]!.click();
+      table.dice()[1]!.click();
+      table.redraw();
+      expect(voices, "the same phase must not re-trigger a sound").toBe(afterFirstPress);
+    } finally {
+      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
+    }
+  });
+
+  /**
+   * THE WIRING, WHICH IS A DIFFERENT CLAIM FROM THE MODULE.
+   * `sound-preference.test.ts` proves the reader and the writer agree with
+   * each other; neither of them proves this tray ever calls them. Both halves
+   * stayed green with the write deleted and with the read replaced by a
+   * literal `false` — so this is the case that says a mute survives the
+   * player closing the tab.
+   */
+  it("remembers a mute across a whole new board, not just across a re-render", () => {
+    const first = seatTable();
+    first.elements.rollEl.querySelector<HTMLButtonElement>(".hexdev-generala-mute")!.click();
+    expect(window.localStorage.getItem("convite:dice-muted"), "the choice must reach storage").toBe("1");
+
+    // A second tray, built from nothing — the shape of a reload.
+    const second = seatTable();
+    expect(second.elements.rollEl.querySelector(".hexdev-generala-mute")!.getAttribute("aria-pressed"), "a fresh board must come back muted").toBe("true");
+  });
+
+  /** A player who mutes before ever throwing must not have an audio context
+   * built for them either — muting is a request for less, not a reason to go
+   * and construct the machinery. */
+  it("constructs none when the first thing a player presses is the mute", () => {
+    const RealAudioContext = window.AudioContext;
+    let built = 0;
+    class Counting extends RealAudioContext {
+      constructor() {
+        super();
+        built++;
+      }
+    }
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = Counting;
+    try {
+      const table = seatTable();
+      mute(table).click();
+      expect(mute(table).getAttribute("aria-pressed")).toBe("true");
+      table.roll([3, 5, 5, 2, 6]);
+      table.dice()[0]!.click();
+      expect(built, "muted, so nothing to build").toBe(0);
+    } finally {
+      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
+    }
   });
 });
