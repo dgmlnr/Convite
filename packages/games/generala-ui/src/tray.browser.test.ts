@@ -1,8 +1,8 @@
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { applyPlayerAction, applyRoll, createMatch, getLegalActions } from "@hexdev/generala-engine";
-import type { ApplyResult, DieFace, GeneralaAction, HoldAction, MatchState, PlayerId } from "@hexdev/generala-engine";
+import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
+import type { ApplyResult, CategoryId, DieFace, GeneralaAction, HoldAction, MatchState, PlayerId } from "@hexdev/generala-engine";
 
 import { createGeneralaTray } from "./tray.js";
 import type { GeneralaTrayElements } from "./tray.js";
@@ -78,6 +78,12 @@ interface Table {
   readonly dice: () => readonly HTMLButtonElement[];
   readonly redraw: () => void;
   readonly drawInto: (other: HTMLElement) => void;
+  /** The row the dice are drawn into, which is the element the tray marks
+   * with whose turn it is. */
+  readonly diceEl: HTMLElement;
+  /** Write the box named for whoever is on turn, which is the only move that
+   * passes the turn to the next seat. */
+  readonly score: (category: CategoryId) => void;
 }
 
 function seatTable(): Table {
@@ -95,7 +101,7 @@ function seatTable(): Table {
   let offers: readonly GeneralaAction[] = [];
   const draw = (): void => {
     offers = getLegalActions(state, SEAT);
-    render(elements, state.turn, offers, (action) => dispatched.push(action));
+    render(elements, getViewFor(state, SEAT), offers, (action) => dispatched.push(action));
   };
   draw();
 
@@ -121,7 +127,17 @@ function seatTable(): Table {
     nodes: () => [...diceEl.children] as HTMLElement[],
     dice: () => [...diceEl.querySelectorAll<HTMLButtonElement>("button")],
     redraw: draw,
-    drawInto: (other) => render({ diceEl: other, rollEl }, state.turn, offers, (action) => dispatched.push(action)),
+    drawInto: (other) => render({ diceEl: other, rollEl }, getViewFor(state, SEAT), offers, (action) => dispatched.push(action)),
+    diceEl,
+    score: (category) => {
+      const turn = state.turn;
+      if (turn.phase !== "deciding") throw new Error(`a score needs a deciding turn, and this one is ${turn.phase}`);
+      const actor = state.players[turn.seat]!;
+      const offer = getLegalActions(state, actor).find((action) => action.type === "score" && action.category === category);
+      if (offer === undefined) throw new Error(`the engine did not offer ${category} to seat ${String(turn.seat)}`);
+      state = accept(applyPlayerAction(state, offer));
+      draw();
+    },
   };
 }
 
@@ -436,5 +452,75 @@ describe("the tray still fits the narrow phones now that each die is a button", 
       expect(box.right).toBeLessThanOrEqual(tray.right + 0.5);
     }
     expect(document.documentElement.scrollWidth, "a tray that clipped instead of wrapping pushes the page sideways").toBeLessThanOrEqual(width);
+  });
+});
+
+/**
+ * THE OTHER HALF OF "WHOSE TURN IS IT", AND WHY THERE ARE TWO HALVES.
+ *
+ * The planilla says WHO — one column shaded, its heading in the accent. This
+ * says NOT NOW, and neither of them is enough alone. A shaded column is
+ * discreet by design and can be missed at the exact moment it matters; a
+ * dimmed tray on its own is ambiguous, because "off" is also what a control
+ * disabled for some other reason looks like. Together one names the seat and
+ * the other says the table is not waiting on you.
+ *
+ * IT IS THE TABLE THAT DECIDES, NEVER `dice-ui`. A turn is a rule, and the
+ * package that draws a die has no idea what one is — this tray reads
+ * `view.turn.seat` against `view.self.seat`, both of them facts the engine's
+ * own projection states, and hands `dice-ui` a die exactly as before.
+ *
+ * WHICH IS WHY THE RENDER TAKES THE VIEW AND NOT THE TURN. `Turn` carries the
+ * seat that is playing and nothing about who is reading, so the two cannot be
+ * compared from it; `PlayerView` is the one object that holds both, and it is
+ * what the planilla and the announcer beside this tray were already given.
+ */
+describe("the tray goes quiet when the table is not waiting on this seat", () => {
+  it("marks itself with whose turn it is, and the mark follows the SEAT rather than the reader", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+    expect(table.diceEl.dataset.turn, "seat 0 opens, and seat 0 is reading").toBe("self");
+
+    // One box written is the only move that passes the turn.
+    table.score("ones");
+    expect(table.diceEl.dataset.turn, "the turn passed to the rival, and this seat is still reading").toBe("rival");
+  });
+
+  it("dims the rival's dice while they are on the table, and leaves this seat's own at full strength", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+    const mine = getComputedStyle(table.dice()[0]!).opacity;
+
+    table.score("ones");
+    table.roll(OPENING);
+    const theirs = getComputedStyle(table.dice()[0]!).opacity;
+
+    // MEASURED THROUGH THE CASCADE, not read back off the declaration: a
+    // selector that never matches leaves the same "1" a rule that was never
+    // written does, and only the computed value tells the two apart.
+    expect(mine, "my own dice are never dimmed").toBe("1");
+    expect(Number(theirs), "the rival's dice are dimmed").toBeLessThan(1);
+    expect(Number(theirs), "and never so far that the faces stop being readable").toBeGreaterThanOrEqual(0.5);
+  });
+
+  it("leaves the waiting slots at full strength even on the rival's turn, because they are the only thing saying the cup is shaking", () => {
+    // The dimming is scoped to dice that are SHOWING. `tray-styles.ts` records
+    // why the empty slot is drawn at all: five blank boxes over a card of
+    // dashes is the state every turn passes through, and it said nothing at
+    // all until the outline was added. Dimming that outline would trade the
+    // cue this change is adding for the cue that one added.
+    const table = seatTable();
+    table.roll(OPENING);
+    table.score("ones");
+
+    expect(table.diceEl.dataset.turn).toBe("rival");
+    // AND THE OTHER HALF OF THE SKETCH HAS NOTHING TO ACT ON, measured here
+    // rather than argued: "dimmed and without its border" needs a border, and
+    // on the rival's turn the throw control — the only element in this tray
+    // that carries one — is not rendered at all.
+    expect(table.roller(), "no hold is offered, so there is no throw control to take a border away from").toBeNull();
+    const slots = [...table.diceEl.querySelectorAll<HTMLElement>(".hexdev-generala-die--empty")];
+    expect(slots, "the rival has not thrown yet, so all five slots are waiting").toHaveLength(5);
+    for (const slot of slots) expect(getComputedStyle(slot).opacity, "a waiting slot is never dimmed").toBe("1");
   });
 });

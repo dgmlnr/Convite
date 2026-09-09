@@ -712,3 +712,137 @@ describe("a card's name reads the same at whichever level the outline puts it", 
     expect(headed, "the name lost its type treatment the moment its level stepped — chrome-styles.ts styles it by TAG").toEqual(flat);
   });
 });
+
+/**
+ * THE SHADOW THAT WAS CAST BY A BOX NOBODY CAN SEE.
+ *
+ * `box-shadow` is a statement about the BORDER BOX: it paints as though the
+ * element were an opaque rounded rectangle, whatever is actually inside it.
+ * That is exactly right for the deck this fan was built for — a Spanish card
+ * IS a rectangle, and its art is 0.1 % transparent, all of it in the rounded
+ * corners. It is wrong the moment a shelf of dice arrives. `cup.webp` is
+ * 67.6 % transparent, and the cup itself sits in the lower two thirds of its
+ * file: the rest of that box is empty, and the fan overlaps its neighbours by
+ * 12 %, so what a player sees is a rectangle drawn in shadow around, above
+ * and THROUGH artwork that is not a rectangle. Found by looking at the front
+ * door; nothing in this repository could have measured it, because a shadow
+ * has no geometry an assertion can reach.
+ *
+ * `drop-shadow()` is the same effect stated about the ALPHA CHANNEL instead,
+ * which is the shape a player is actually looking at. It takes the identical
+ * `--hx-lift-*` tokens — they are offset/blur/colour triples with no spread,
+ * which is exactly the filter's grammar — so this is a change of mechanism
+ * and not of design: the same two shadows, cast by the die instead of by the
+ * box it was delivered in.
+ *
+ * WHAT THIS FILE CAN AND CANNOT SAY. The premise is measurable to the byte
+ * and is measured below, off the very `<img>` the lobby renders. The
+ * mechanism is measurable through the cascade. What no assertion here reaches
+ * is whether the result LOOKS right — that is `generala.scene.test.ts`'s
+ * front-door pair, and it is a person's job.
+ */
+describe("a lobby card's shadow follows the art, because a die is not a rectangle", () => {
+  const generalaEntry = (id: string): CatalogEntry => ({ id: id as GameId, gameFamily: "generala", section: "dados", displayNameKey: "games.generala.name", seatCount: 2, configOptions: [] });
+  const GENERALA: GameFamily = { id: "generala", entries: [generalaEntry("generala")] };
+
+  function facesOfTheDiceCard(): readonly HTMLImageElement[] {
+    const el = fresh();
+    renderGameList(el, oneSection([GENERALA]), { onOpenGame: noop });
+    const faces = [...el.querySelectorAll<HTMLImageElement>('.hexdev-game-card[data-family="generala"] img.hexdev-game-card-face')];
+    expect(faces, "fixture: the dice shelf fans two dice around a cup").toHaveLength(3);
+    return faces;
+  }
+
+  it("the art it fans really is transparent where its box is not — measured off the bytes the lobby loads", async () => {
+    const faces = facesOfTheDiceCard();
+    // The middle face is the cubilete, which is the worst case and the one
+    // that made this visible: `getCupArtUrl`'s file is a portrait box with
+    // the cup in the lower two thirds of it.
+    const cup = faces[1]!;
+    await cup.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = cup.naturalWidth;
+    canvas.height = cup.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("fence setup: no 2d context");
+    context.drawImage(cup, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const alphaAt = (x: number, y: number): number => pixels[(y * canvas.width + x) * 4 + 3]!;
+
+    const [right, bottom] = [canvas.width - 1, canvas.height - 1];
+    for (const [x, y] of [
+      [0, 0],
+      [right, 0],
+      [0, bottom],
+      [right, bottom],
+    ]) {
+      expect(alphaAt(x!, y!), `the cup's art at ${String(x)},${String(y)}`).toBe(0);
+    }
+
+    // Not just the corners: a shadow drawn around this box is drawn around
+    // mostly nothing, which is why rounding the box off would not have been
+    // a fix either.
+    let clear = 0;
+    for (let index = 3; index < pixels.length; index += 4) if (pixels[index] === 0) clear += 1;
+    expect(clear / (canvas.width * canvas.height), "the share of the cup's box that is empty").toBeGreaterThan(0.5);
+  });
+
+  it("so a face casts its shadow through its alpha and never through its box", () => {
+    const face = facesOfTheDiceCard()[0]!;
+    const painted = getComputedStyle(face);
+
+    // MEASURED THROUGH THE CASCADE, not read off the source: a rule deleted
+    // and a rule that never matched leave the same "none" behind, and only
+    // the pair of these says which happened.
+    expect(painted.boxShadow, "a box-shadow would trace the file's rectangle, not the die in it").toBe("none");
+    expect(painted.filter, "the same two --hx-lift-* shadows, cast by the artwork").toContain("drop-shadow");
+    expect(painted.filter.match(/drop-shadow/g), "both of them: the contact shadow and the ambient one").toHaveLength(2);
+  });
+
+  /**
+   * THE CONTROL, AND IT IS NOT A FORMALITY — it is the half of this change
+   * that was found by looking at the result of the other half.
+   *
+   * The first fix put the filter on every face. It fixed the cup and made the
+   * three rectangular decks WORSE: `box-shadow` is what draws the separation
+   * between one card and the card it overlaps, and without it a fan reads as
+   * a stack of images rather than as a hand. Measured on the rendered lobby
+   * at 4-5 % of the pixels of every screen that has one, and obvious side by
+   * side. So the mechanism follows the ART, and these two cases are the two
+   * mechanisms — asserted together, because either one alone passes on a
+   * selector that matches everything.
+   */
+  it("and a deck, whose art really is the rectangle a box-shadow assumes, keeps casting one", () => {
+    const el = fresh();
+    renderGameList(el, oneSection([TRUCO]), { onOpenGame: noop });
+    const face = el.querySelector<HTMLImageElement>('.hexdev-game-card[data-family="truco"] img.hexdev-game-card-face');
+    expect(face, "fixture: the truco card fans its own three cards").not.toBeNull();
+    const painted = getComputedStyle(face!);
+
+    expect(painted.boxShadow, "a deck is lifted by its box, which is what it is").not.toBe("none");
+    expect(painted.filter, "and it is not filtered, so its fan keeps its card-to-card depth").toBe("none");
+  });
+
+  it("the deck's own art is opaque, which is why the rectangle was the right assumption for it all along", async () => {
+    const el = fresh();
+    renderGameList(el, oneSection([TRUCO]), { onOpenGame: noop });
+    const card = el.querySelector<HTMLImageElement>('.hexdev-game-card[data-family="truco"] img.hexdev-game-card-face')!;
+    await card.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = card.naturalWidth;
+    canvas.height = card.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("fence setup: no 2d context");
+    context.drawImage(card, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    let solid = 0;
+    for (let index = 3; index < pixels.length; index += 4) if (pixels[index] === 255) solid += 1;
+    // The premise the two mechanisms are split on, measured from both sides:
+    // the cup's box is more than half empty, and a card's is not empty at all
+    // beyond the corners this fan already rounds.
+    expect(solid / (canvas.width * canvas.height), "the share of a card's box that is actually painted").toBeGreaterThan(0.99);
+  });
+});

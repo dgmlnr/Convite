@@ -75,7 +75,7 @@ function trayInBox(width: number): { readonly diceEl: HTMLElement; readonly boxe
   mounted.push(box);
 
   const state = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
-  createGeneralaTray()({ diceEl, rollEl }, getViewFor(state, SEAT).turn, getLegalActions(state, SEAT), () => {});
+  createGeneralaTray()({ diceEl, rollEl }, getViewFor(state, SEAT), getLegalActions(state, SEAT), () => {});
 
   return { diceEl, boxes: () => [...diceEl.querySelectorAll<HTMLElement>(".hexdev-dice-scene-box")] };
 }

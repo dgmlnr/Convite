@@ -5,6 +5,9 @@ import { renderGameSelection } from "./game-screen.js";
 import type { GameId } from "@hexdev/platform-contract";
 import type { CatalogEntry } from "./bootstrap-data.js";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
+import { createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
+import type { PlayerId } from "@hexdev/generala-engine";
+import { BOARD_CLASS, ensureBoardStyles, renderGeneralaScorecard } from "@hexdev/generala-ui";
 
 /**
  * Text legibility on the chrome's own coloured surfaces.
@@ -286,5 +289,93 @@ describe("the lobby's secondary copy stays legible however quiet the design want
     // text. The marker is 11.2px, the caption 12px, the tagline 14.4px, and
     // 1.4.3 puts the large-text line at 18.66px bold or 24px.
     expect(ratioFor(target!), `${selector} is dimmed past legibility`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+});
+
+/**
+ * THE PLANILLA'S OPEN-BOX DASH, WHICH HAD A NUMBER AND NO FENCE.
+ *
+ * `scorecard-styles.ts` records the whole measurement in prose: the "—" a
+ * blank box is drawn with is the board's ink at `opacity: 0.5`, it computes
+ * to 4.67:1 on the shipped surface against 14.57:1 for a written number, and
+ * "the margin is still thin enough that a tenant darkening this token past
+ * its default is the one change that would break it". Nothing watched it.
+ * Twenty-two of a fresh card's twenty-two boxes carry that mark.
+ *
+ * IT NEARLY BROKE THE MOMENT SOMETHING WAS ASKED OF THAT BACKGROUND. Marking
+ * the column of the seat on turn wants a tint, the reflex tint on a dark card
+ * is white at a few per cent, and computed over the real `#14231d` every
+ * white value visible at all takes this mark under the AA floor — 4.47:1 at
+ * 3 %, 4.27:1 at 6 %, 3.98:1 at 10 %. The tint went the other way for that
+ * reason, and this is the fence that makes the reason checkable instead of
+ * remembered: it measures the dash in BOTH columns, so a highlight that
+ * lightens the card fails here rather than in somebody's eyes.
+ *
+ * ON THE BOARD'S OWN GROUND, never a bare container. The dash's contrast is a
+ * statement about a pairing, and half of that pairing is
+ * `board-styles.ts`'s surface — measured against the test page's white, the
+ * numbers would be someone else's.
+ */
+describe("the planilla's open-box dash keeps its contrast in every column, marked or not (WCAG 2.1 AA, 1.4.3)", () => {
+  const SEATS = ["contrast-self" as PlayerId, "contrast-rival" as PlayerId];
+
+  /** A fresh match on the real board: nobody has thrown, so all twenty-two
+   * boxes are open and every one of them draws the dash. */
+  function freshPlanilla(): HTMLElement {
+    const board = freshContainer();
+    ensureBoardStyles(document);
+    board.className = BOARD_CLASS;
+    const card = document.createElement("div");
+    board.appendChild(card);
+    const state = createMatch(SEATS);
+    renderGeneralaScorecard(card, getViewFor(state, SEATS[0]!), getLegalActions(state, SEATS[0]!), () => undefined);
+    return board;
+  }
+
+  /** The mark a player actually sees: the cell's `::after` ink at its own
+   * opacity, composited onto whatever that cell ended up painted with. */
+  function dashRatio(cell: HTMLElement): number {
+    const mark = getComputedStyle(cell, "::after");
+    const backdrop = paintedBackgroundOf(cell);
+    const ink = parseColour(mark.color);
+    return contrastRatio(composite([ink[0], ink[1], ink[2], ink[3] * Number(mark.opacity)], backdrop), backdrop);
+  }
+
+  it.each([
+    ["the column on turn, which is the one this change tints", 0],
+    ["the column that is not, which is the control the tint is measured against", 1],
+  ])("the dash reads in %s", (_label, seat) => {
+    const board = freshPlanilla();
+    const cells = [...board.querySelectorAll<HTMLElement>(`tbody td[data-seat="${String(seat)}"][data-state="open"]`)];
+    expect(cells, "fence setup: a fresh card has eleven open boxes per seat").toHaveLength(11);
+    // The premise: seat 0 really is the marked column and seat 1 really is
+    // not, so the two rows of this table measure two different backgrounds.
+    expect(cells[0]!.dataset.turn, "fence setup: the marked column is seat 0's").toBe(seat === 0 ? "active" : undefined);
+
+    for (const cell of cells) expect(dashRatio(cell), `an open box in column ${String(seat)}`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it("is measuring two DIFFERENT backgrounds, which is the only thing that makes the pair above a comparison", () => {
+    // THE FENCE ABOVE PASSES ON A TINT THAT NEVER APPLIED. Both rows would
+    // then measure the same untinted felt, both would clear 4.5:1, and the
+    // whole point — that the highlight was chosen to protect this mark —
+    // would be asserted by nothing. Found by rendering the board and sampling
+    // it: the first run of that fence was green while the column was still
+    // painting at `rgb(20, 35, 29)`, exactly the felt.
+    const board = freshPlanilla();
+    const marked = paintedBackgroundOf(board.querySelector<HTMLElement>('tbody td[data-seat="0"][data-state="open"]')!);
+    const plain = paintedBackgroundOf(board.querySelector<HTMLElement>('tbody td[data-seat="1"][data-state="open"]')!);
+
+    expect(marked, "the marked column paints a background of its own").not.toEqual(plain);
+    // AND IT IS DARKER, never lighter, which is the direction the dash's
+    // 4.5:1 floor forces (`scorecard-styles.ts` carries the arithmetic).
+    expect(relativeLuminance(marked), "the column on turn is darkened, not lightened").toBeLessThan(relativeLuminance(plain));
+  });
+
+  it("the heading of the column on turn reads too, in the accent it is drawn in", () => {
+    const board = freshPlanilla();
+    const heading = board.querySelector<HTMLElement>('thead th[data-seat="0"]');
+    expect(heading?.dataset.turn, "fence setup: seat 0's heading carries the mark").toBe("active");
+    expect(ratioFor(heading!), "the accent heading vs the column it sits on").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
   });
 });

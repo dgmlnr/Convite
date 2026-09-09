@@ -37,6 +37,38 @@ export const SCORE_TAP_MIN = 44;
  * converts that into an overflow, and an overflow is something a test can
  * see. Measured: removing the width alone reds the clipping fence, and
  * removing both reds the row-height one.
+ *
+ * THE COLUMN ON TURN IS DARKENED, AND THE DIRECTION IS A MEASUREMENT RATHER
+ * THAN A TASTE.
+ *
+ * The reflex tint for "picked out" on a dark card is white at a few per cent,
+ * and it is the one value that cell may not take: the open-box dash is
+ * `--generala-board-ink` at 0.5 over the same background and measures 4.67:1
+ * on the shipped board, which leaves nothing to spend. Computed over the real
+ * `#14231d`, every white tint that is visible at all takes it under the AA
+ * floor — 4.53:1 at 2 %, 4.47 at 3 %, 4.27 at 6 %, 3.98 at 10 % — so a
+ * highlight anybody could SEE would have been paid for with the legibility of
+ * twenty-two boxes.
+ *
+ * Darkening runs the other way: at 30 % black the same dash measures 4.82:1
+ * and a written number 16.12:1, so the column a player is being told to look
+ * at becomes the most legible one on the card instead of the least. Fenced in
+ * `chrome-contrast.browser.test.ts`, on the board's own ground, because a
+ * number nobody measures is a number that drifts.
+ *
+ * THE HEADING TAKES THE ACCENT AND NOT A HEAVIER WEIGHT, checked rather than
+ * assumed: every `thead th` here is already `font-weight: 700`, and the fonts
+ * this widget resolves `system-ui` to ship one bold face, so 700 and 800
+ * render identically. A weight step would have been a declaration that
+ * measured true and showed nothing. The accent is this design's own "live"
+ * ink — the held ring, the throw control, the rematch button — and computes
+ * to 11.14:1 on the darkened column.
+ *
+ * THE ARGUMENT LIVES OUT HERE AND NOT IN THE SHEET, which is a byte decision
+ * as well as a reading one: everything between the backticks below is a
+ * string this widget ships to every player, and `check:bundle` measures it.
+ * The first draft of this change wrote these paragraphs inside the CSS and
+ * cost the bundle 7.1 KB across the three sheets it touched.
  */
 export function buildScorecardStylesheet(): string {
   return `
@@ -47,6 +79,9 @@ export function buildScorecardStylesheet(): string {
      category names take, and the ink the rules between boxes are drawn in. */
   --generala-planilla-labels: 44%;
   --generala-planilla-rule: var(--hx-felt-outline, rgba(255, 255, 255, 0.28));
+  /* The column on turn. DARKER, and that direction is a measurement rather
+     than a taste — see this file's header for the arithmetic. */
+  --generala-planilla-turn: rgba(0, 0, 0, 0.3);
   font-family: var(--gx-font-family, system-ui, sans-serif);
   color: inherit;
 }
@@ -104,6 +139,17 @@ export function buildScorecardStylesheet(): string {
 .hexdev-generala-scorecard-table tfoot th,
 .hexdev-generala-scorecard-table tfoot td {
   font-weight: 700;
+}
+
+/* WHOSE TURN IT IS, on the surface every seat is already reading: the
+   column darkens and its heading takes the accent. This file's header has
+   the whole argument, including why the heading is not simply bolder. */
+.hexdev-generala-scorecard-table [data-turn="active"] {
+  background: var(--generala-planilla-turn);
+}
+
+.hexdev-generala-scorecard-table thead th[data-turn="active"] {
+  color: var(--gx-color-accent, var(--hx-gold, #e8c877));
 }
 
 /* The corner: it heads neither a row nor a column, so it is drawn as the

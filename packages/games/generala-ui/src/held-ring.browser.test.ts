@@ -53,7 +53,7 @@ function heldTray(width: number): { readonly buttons: readonly HTMLButtonElement
   mounted.push(box);
 
   const state = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
-  createGeneralaTray()({ diceEl, rollEl }, getViewFor(state, SEAT).turn, getLegalActions(state, SEAT), () => {});
+  createGeneralaTray()({ diceEl, rollEl }, getViewFor(state, SEAT), getLegalActions(state, SEAT), () => {});
 
   const buttons = [...diceEl.querySelectorAll<HTMLButtonElement>(".hexdev-generala-die")];
   buttons[1]?.click();
