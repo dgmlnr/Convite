@@ -1,4 +1,4 @@
-import { page, userEvent } from "vitest/browser";
+import { userEvent } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDiceSound, fillDeterministicNoise, RATTLE_CYCLE, rattleTicks, TUMBLE_TICKS } from "./dice-sound.js";
 import type { DiceSoundWindow } from "./dice-sound.js";
@@ -52,7 +52,11 @@ function spyingWindow(): { readonly windowLike: DiceSoundWindow; readonly contex
   class Counting extends window.AudioContext {
     constructor() {
       super();
-      built = this;
+      // The widened annotation is what `no-this-alias` accepts here; it is
+      // the same object either way, and a subclass instance is trivially its
+      // own base type. Recording it is the only way a test can ask the
+      // context this module built what state it is in.
+      built = this as AudioContext;
     }
     override createBufferSource(): AudioBufferSourceNode {
       const node = super.createBufferSource();
@@ -209,6 +213,45 @@ describe("dice sound: every call is allowed to do nothing, and none of them thro
     expect(await running(pressed.context()), "a real press is what starts it").toBe(true);
     loud.rattle();
     expect(pressed.created(), "and now it schedules a voice per tick").toBe(rattleTicks().length);
+  });
+
+  /**
+   * WHAT `resume()` IS ACTUALLY FOR, and it took a mutation to find out.
+   *
+   * Deleting the `resume()` call left every assertion green, which looked
+   * like an unfenced line and turned out to be a fact about browsers: a
+   * context CONSTRUCTED during user activation starts `running` on its own.
+   * Since `unlock()` is the only thing that ever builds one, and it is only
+   * ever called from a press, the first `resume()` in a session is genuinely
+   * a no-op.
+   *
+   * It is not a no-op later. A browser suspends a running context on its own
+   * — a backgrounded tab, an OS audio change — and the player who comes back
+   * and presses "Tirar" is on exactly the path this fences: the context
+   * already exists, so nothing constructs a fresh running one, and
+   * `resume()` is the whole of what brings it back. Without it, a player who
+   * switched tabs once would get a silent game for the rest of the match and
+   * nothing anywhere would say why.
+   */
+  it("brings a context back after the browser has suspended it", async () => {
+    const spy = spyingWindow();
+    const sound = createDiceSound(spy.windowLike, false);
+    await pressToUnlock(sound);
+    const context = spy.context();
+    closing.push(context!);
+    expect(await running(context), "a press starts it").toBe(true);
+
+    // What a backgrounded tab does to it.
+    await context!.suspend();
+    expect(context!.state).toBe("suspended");
+    sound.rattle();
+    expect(spy.created(), "a suspended context schedules nothing").toBe(0);
+
+    // And the next press is what has to bring it back.
+    await pressToUnlock(sound);
+    expect(await running(context), "the next press must resume it").toBe(true);
+    sound.rattle();
+    expect(spy.created()).toBe(rattleTicks().length);
   });
 });
 
