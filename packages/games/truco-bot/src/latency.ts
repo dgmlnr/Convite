@@ -1,4 +1,5 @@
-import type { BotStrategy } from "@hexdev/platform-contract";
+export { withThinkingDelay } from "@hexdev/platform-core";
+export type { Sleep } from "@hexdev/platform-core";
 
 /**
  * The pause before a bot acts (spec: "Tunable Bot Move Latency") — an
@@ -65,52 +66,3 @@ export const DEFAULT_THINKING_DELAY_MS = 2400;
  * not turn into a minute of waiting to buy calmness the cards never needed.
  */
 export const SPOKEN_MOVE_DELAY_MS = 3600;
-
-export type Sleep = (ms: number) => Promise<void>;
-
-const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Wraps ANY `BotStrategy` with a deliberate pause — SEPARATE from the
- * strategy itself (design §9 / spec: "lives in the controller wrapper, not
- * the strategy, so strategy unit tests stay instant"). `sleep` is injected
- * (default: a real `setTimeout`) purely so this wrapper's own tests never
- * need to wait in real time, mirroring this project's established
- * Clock-injection discipline (`createRateLimiter`, `createPresenceSweeper`).
- * Runs the strategy and the delay CONCURRENTLY (`Promise.all`), so total
- * latency is `max(strategyTime, delayMs)`, not their sum — a slow hard-tier
- * search never stacks extra wait time on top of the presentation pause.
- */
-export function withThinkingDelay<TView, TAction>(
-  strategy: BotStrategy<TView, TAction>,
-  delayMs: number = DEFAULT_THINKING_DELAY_MS,
-  sleep: Sleep = realSleep,
-  /**
-   * The TOTAL pause for a specific chosen action, when this kind of move
-   * deserves more room than the default. `delayMs` is the floor: a smaller
-   * number here is ignored rather than honoured, so this can only ever slow
-   * a move down, never sneak one through faster than the base pause.
-   *
-   * Optional because it is game knowledge: this module has no opinion about
-   * which of a game's moves are spoken and which are played. `truco-module`
-   * supplies that when it builds its bot.
-   */
-  delayForAction?: (action: TAction) => number,
-): BotStrategy<TView, TAction> {
-  return {
-    async chooseAction(view, legalActions, budgetMs, answer) {
-      // The base pause still runs CONCURRENTLY with the strategy, which is
-      // the whole point of the original shape: total latency is
-      // max(strategyTime, delayMs), never their sum. Only the top-up below
-      // has to wait, because until the strategy answers there is no action
-      // to classify.
-      const [action] = await Promise.all([
-        Promise.resolve(strategy.chooseAction(view, legalActions, budgetMs, answer)),
-        sleep(delayMs),
-      ]);
-      const total = delayForAction?.(action) ?? delayMs;
-      if (total > delayMs) await sleep(total - delayMs);
-      return action;
-    },
-  };
-}

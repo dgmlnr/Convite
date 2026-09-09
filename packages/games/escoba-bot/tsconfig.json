@@ -13,6 +13,9 @@
       "path": "../../platform-contract"
     },
     {
+      "path": "../../platform-core"
+    },
+    {
       "path": "../escoba-engine"
     }
   ]
