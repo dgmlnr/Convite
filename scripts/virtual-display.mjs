@@ -40,6 +40,36 @@ export function socketPathFor(display) {
 }
 
 /**
+ * Whether a display is actually SERVED — not merely socket-shaped.
+ *
+ * THE DISTINCTION IS NOT PEDANTRY, IT IS THE BUG. An `Xvfb` that dies leaves
+ * its socket behind: `/tmp/.X11-unix/X99` stays on disk with nothing
+ * listening. A check that asks only whether the file exists answers "the
+ * display is up", the run is pointed at it, and Chromium then spends sixty
+ * seconds failing to connect before the whole suite hangs — observed five
+ * times in one session, twice on a clean tree, looking exactly like a flaky
+ * browser test.
+ *
+ * `socketPathFor`'s own comment predicted this in writing: "probe the wrong
+ * path and the shim either spawns a duplicate server every run or TRUSTS A
+ * DISPLAY THAT IS NOT THERE." It was right, and nothing asserted it.
+ *
+ * Composed of two injected checks rather than probing here, for the reason
+ * this module exists: the decision stays callable with the case you want.
+ * `serverHoldsDisplay` is the half that separates a live server from a
+ * tombstone.
+ *
+ * @param {object} probes
+ * @param {(display: string) => boolean} probes.socketExists - is the socket file there?
+ * @param {(display: string) => boolean} probes.serverHoldsDisplay - is a process actually serving it?
+ * @param {string} display
+ * @returns {boolean}
+ */
+export function displayIsServed({ socketExists, serverHoldsDisplay }, display) {
+  return socketExists(display) && serverHoldsDisplay(display);
+}
+
+/**
  * Vitest's own notion of "running under CI", which is std-env's: `CI` set to
  * anything except `""` or `"false"`. Matching it exactly matters in one
  * direction — a value std-env rejects means Vitest runs HEADED, and calling
@@ -68,24 +98,29 @@ function isCI(env) {
  * `spawn` — no socket yet: the caller must start `Xvfb` first, then apply
  * the same environment.
  *
- * `socketExists` is passed in rather than probed here so the caller owns the
- * one impure step and this stays a function you can call with the case you
- * want to check — the same shape as `resolveRunner`'s `hasXvfb`.
+ * `displayAnswers` is passed in rather than probed here so the caller owns
+ * the one impure step and this stays a function you can call with the case
+ * you want to check — the same shape as `resolveRunner`'s `hasXvfb`.
+ *
+ * IT IS NOT `socketExists`, AND THE RENAME IS THE FIX. This asked whether a
+ * SOCKET FILE existed, and the caller answered with `existsSync` — so a dead
+ * `Xvfb`'s leftover socket read as a live display and every run after it
+ * hung. See `displayIsServed` above.
  *
  * @param {object} options
  * @param {NodeJS.Platform | string} options.platform - `process.platform`.
  * @param {Record<string, string | undefined>} options.env - the process environment; never mutated.
- * @param {(display: string) => boolean} options.socketExists - whether a display's X11 socket is present.
+ * @param {(display: string) => boolean} options.displayAnswers - whether the display is actually served.
  * @returns {{ action: "none" } | { action: "use" | "spawn", display: string, env: Record<string, string | undefined> }}
  */
-export function resolveDisplayRedirect({ platform, env, socketExists }) {
+export function resolveDisplayRedirect({ platform, env, displayAnswers }) {
   if (platform !== "linux") return { action: "none" };
   if (isCI(env)) return { action: "none" };
   if (env[DISPLAY_REDIRECT_MARKER] !== undefined) return { action: "none" };
 
   const sanitized = { ...x11OnlyEnv(env), DISPLAY: PERSISTENT_DISPLAY };
   return {
-    action: socketExists(PERSISTENT_DISPLAY) ? "use" : "spawn",
+    action: displayAnswers(PERSISTENT_DISPLAY) ? "use" : "spawn",
     display: PERSISTENT_DISPLAY,
     env: sanitized,
   };
