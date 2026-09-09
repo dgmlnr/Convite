@@ -1,4 +1,4 @@
-import { KEEP_SETS } from "./legal-actions.js";
+import { CROSSING_ORDER, KEEP_SETS, mayWrite } from "./legal-actions.js";
 import type { GeneralaAction } from "./legal-actions.js";
 import { scoreFor } from "./scoring.js";
 import { ROLLS_PER_TURN } from "./state.js";
@@ -86,6 +86,13 @@ export function applyHold(state: MatchState, action: HoldAction): ApplyResult {
  * aimed at a box `scoreFor` values at nothing, and forced crossing falls out of
  * the same rule rather than needing one of its own.
  *
+ * WHICH box a zero may go in is the one thing that is not the player's, and it
+ * is refused HERE and not only omitted from the offer list. The room gates
+ * every submitted action against `getLegalActions`, so the omission is already
+ * enough for a client — but the offer list is guidance and this reducer is the
+ * authority, which is the shape every other guard in this engine has. Both read
+ * `mayWrite`, so there is one rule rather than two that agree today.
+ *
  * The value comes from `scoreFor` and is not recomputed here. It is handed the
  * turn's own `rollsUsed`, which is what makes "servida" a reading of the
  * counter at scoring time rather than a memory of what the dice once showed —
@@ -96,8 +103,9 @@ export function applyHold(state: MatchState, action: HoldAction): ApplyResult {
  *
  * A BOX ONCE WRITTEN IS NEVER WRITTEN AGAIN, zero included: `null` is open and
  * a number is filled, so a crossed-out box refuses exactly like a scored one.
- * That is the same condition `getLegalActions` filters on, read off the same
- * card, so the offer list and this refusal cannot drift apart.
+ * It keeps its own code rather than folding into the crossing refusal below,
+ * because "gone for good" and "not yet" are two facts a caller may want to tell
+ * apart without reading English out of `message`.
  *
  * The next turn is built from NOTHING rather than from what is left of this
  * one — seat `(seat + 1) % players.length`, counter back to zero, five empty
@@ -123,6 +131,11 @@ export function applyScore(state: MatchState, action: ScoreAction): ApplyResult 
   const card = state.cards[turn.seat]!;
   if (card[action.category] !== null) {
     return reject("box-not-open", `${action.category} is already filled and a filled box never reopens`);
+  }
+
+  if (!mayWrite(action.category, card, turn.dice, turn.rollsUsed)) {
+    const highest = CROSSING_ORDER.find((box) => card[box] === null);
+    return reject("cross-out-of-order", `${action.category} is worth nothing on these dice, and a zero only goes in the highest-paying open box, which is ${String(highest)}`);
   }
 
   const filled: Scorecard = { ...card, [action.category]: scoreFor(action.category, turn.dice, turn.rollsUsed, card) };

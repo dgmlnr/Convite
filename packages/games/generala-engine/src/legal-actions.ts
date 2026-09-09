@@ -1,7 +1,9 @@
+import type { Dice } from "./dice.js";
 import { DICE_COUNT } from "./dice.js";
 import type { PlayerId } from "./ids.js";
+import { scoreFor } from "./scoring.js";
 import { CATEGORY_IDS, ROLLS_PER_TURN } from "./state.js";
-import type { CategoryId, MatchState } from "./state.js";
+import type { CategoryId, MatchState, Scorecard } from "./state.js";
 
 /**
  * What a PLAYER may do. Rolling is not on this list and never will be: the cup
@@ -58,6 +60,77 @@ function enumerateKeepSets(): readonly (readonly number[])[] {
 }
 
 /**
+ * The eleven boxes ordered BY WHAT THEY PAY, richest first — ruleset §Orden
+ * obligatorio de tachado, the house rule added on 2026-09-09.
+ *
+ * A zero may only be written in the first box on this ladder that is still
+ * open. Writing a value greater than zero is untouched by it: any open box,
+ * whenever the seat wants. So WHEN to cross is still the player's choice and
+ * WHICH box is not, which is what makes sacrificing hurt — the first crossing
+ * is nearly free (`generala-doble` may never have paid anyway) and the second
+ * costs the whole generala, while the cheap boxes can only be dumped once
+ * everything above them is already burned.
+ *
+ * NOT `generala-bot`'s `SACRIFICE_ORDER`, AND THE DIVERGENCE IS DELIBERATE.
+ * That ladder orders by what a box COSTS TO GIVE UP and this one by what a box
+ * PAYS; for two boxes the two readings are opposite. `generala-doble` is the
+ * dearest box on the card (100) and simultaneously the cheapest to lose — its
+ * 100 needs five of a kind AND a generala already written above zero, so it is
+ * the one box that can be worth nothing all match whatever the dice do.
+ * `sixes` is the reverse: the smallest of the juegos it sits below, and the box
+ * a seat minds losing most, because it is the likeliest to pay something on any
+ * throw. The two ladders agree on the first rung and on nothing after it, and
+ * the bot still owns WHETHER to cross rather than score small.
+ *
+ * EVERY BOX IS ON IT, and that is a termination requirement rather than
+ * tidiness: a box missing here could never be the crossable one, so a card
+ * whose every other box was spent would offer no zero at all and the turn could
+ * not be ended. `legal-actions.test.ts` asserts the ladder against
+ * `CATEGORY_IDS`, so a twelfth box left off reds a test instead of stranding a
+ * match.
+ */
+export const CROSSING_ORDER: readonly CategoryId[] = [
+  "generala-doble",
+  "generala",
+  "poker",
+  "full",
+  "escalera",
+  "sixes",
+  "fives",
+  "fours",
+  "threes",
+  "twos",
+  "ones",
+];
+
+/**
+ * Whether this box may be written right now — THE ONE ANSWER, read by the offer
+ * list below and by `applyScore`.
+ *
+ * Shared exactly as `KEEP_SETS` is shared with the hold reducer, and for the
+ * identical reason: "everything the engine accepts is something the engine
+ * offered" is then true by construction rather than by a test that happens to
+ * find two descriptions equal today. The offer list is guidance the room gates
+ * on; the reducer is the authority, and a rule living in only one of them is a
+ * rule the other would break.
+ *
+ * The three clauses are three different facts. A filled box never reopens, zero
+ * included (`state.ts`). A box worth something may always be taken, wherever it
+ * sits on the ladder. Everything else is a crossing, and a crossing goes at the
+ * top of the ladder or nowhere.
+ *
+ * WHAT IT COSTS IS ONE `scoreFor` PER BOX, and the valuation is asked of
+ * `scoring.ts` rather than re-derived here: "worth nothing" is the same
+ * question the preview and the bot ask, and answering it twice is how the two
+ * answers come to disagree.
+ */
+export function mayWrite(category: CategoryId, card: Scorecard, dice: Dice, rollsUsed: number): boolean {
+  if (card[category] !== null) return false;
+  if (scoreFor(category, dice, rollsUsed, card) > 0) return true;
+  return category === CROSSING_ORDER.find((box) => card[box] === null);
+}
+
+/**
  * Everything this seat may do right now — PARTIAL, and declared partial for the
  * same reason `index.ts` declares itself a partial barrel.
  *
@@ -74,23 +147,24 @@ function enumerateKeepSets(): readonly (readonly number[])[] {
  * box. The list therefore shrinks from 42 actions to at most 11 rather than
  * emptying, which is what keeps the seat able to end its own turn.
  *
- * WHAT IS NOT HERE YET is the `score` reducer, so a `score` offered below is an
- * offer nothing accepts until the next slice. That asymmetry with the holds is
- * deliberate and it is about `keep` being an ARRAY: the room compares actions
- * by walking arrays by index, so an offered `keep` order the reducer had not
- * yet agreed to would be inventing that agreement. A `score` has one possible
- * shape and no order to get wrong.
+ * NEITHER LIST IS RESTATED FOR THE REDUCER: the holds come from `KEEP_SETS` and
+ * the boxes from `mayWrite`, and `play.ts` accepts by consulting those same
+ * two. "Everything the engine accepts is something it offered" is therefore
+ * true by construction rather than by a test that finds two descriptions equal
+ * today, which matters because the room admits a submitted action only if it
+ * matches an offered one index by index.
  *
  * The `score` list is the invariant the transport depends on:
  * `deciding` always offers at least one action, because a seat only reaches
- * `deciding` with an open box, and every open box is a legal target evaluating
- * to whatever its own rule yields — zero included. That is what keeps the
- * advance loop from spinning, and it is pinned in the ENGINE rather than left
- * for the bot to discover the hard way.
+ * `deciding` with an open box and the HIGHEST-PAYING open box is always a legal
+ * target — for whatever its own rule yields if that is something, and for a
+ * zero if it is not (ruleset §Orden obligatorio de tachado). That is what keeps
+ * the advance loop from spinning, and it is pinned in the ENGINE rather than
+ * left for the bot to discover the hard way.
  *
  * The offer names the box, never its value. What a box would pay is a valuation
- * `scoreFor` already owns, and answering it in two places is how the two come
- * to disagree.
+ * `scoreFor` already owns, and `mayWrite` asks it rather than answering it a
+ * second time — answering it in two places is how the two come to disagree.
  */
 export function getLegalActions(state: MatchState, playerId: PlayerId): readonly GeneralaAction[] {
   const turn = state.turn;
@@ -101,7 +175,7 @@ export function getLegalActions(state: MatchState, playerId: PlayerId): readonly
   if (state.players[turn.seat] !== playerId) return [];
 
   const card = state.cards[turn.seat]!;
-  const scores = CATEGORY_IDS.filter((category) => card[category] === null).map((category) => ({ type: "score", playerId, category }) as const);
+  const scores = CATEGORY_IDS.filter((category) => mayWrite(category, card, turn.dice, turn.rollsUsed)).map((category) => ({ type: "score", playerId, category }) as const);
   if (turn.rollsUsed >= ROLLS_PER_TURN) return scores;
 
   const holds = KEEP_SETS.map((keep) => ({ type: "hold", playerId, keep }) as const);

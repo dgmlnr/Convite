@@ -197,8 +197,37 @@ export function buildScorecardStylesheet(): string {
    shorter than the standard's 44px. Its WIDTH is its column's, which the
    fixed layout above is what settles. The cell's padding comes off so the two agree about where
    the box ends. */
-.hexdev-generala-scorecard-cell:has(> .hexdev-generala-score) {
+.hexdev-generala-scorecard-cell:has(> .hexdev-generala-score),
+.hexdev-generala-scorecard-cell:has(> .hexdev-generala-score-locked) {
   padding: 0;
+}
+
+/* AN OPEN BOX THE CROSSING LADDER HAS NOT REACHED. A zero goes only in the
+   highest-paying open box (ruleset §Orden obligatorio de tachado), so most of
+   a seat's open boxes are worth nothing AND unwritable — and the number is
+   still what the player is planning with, so it stays.
+
+   THE 0.5 IS THE OPEN-BOX DASH'S OWN VALUE, deliberately, and it is the whole
+   of the distinction. That mark is already the notation for "nothing here yet"
+   and was measured at 4.67:1 on the shipped board, so a preview drawn at the
+   same weight reads as the same fact — an open box, worth nothing — while the
+   box a seat MAY write keeps full contrast and a lightness tint that says it
+   can be pressed. Two states, one number each, told apart by weight rather
+   than by hue (WCAG 1.4.1) and never by the presence of a number alone.
+
+   IT KEEPS THE CONTROL'S BOX AND ITS HEIGHT. Boxes move in and out of the
+   offer list every throw, and a row that shrank when its box stopped being
+   writable would make the whole planilla jump on every roll. */
+.hexdev-generala-score-locked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: ${String(SCORE_TAP_MIN)}px;
+  box-sizing: border-box;
+  padding: 4px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.5;
 }
 
 .hexdev-generala-score {

@@ -170,12 +170,15 @@ describe("termination is bounded, not hoped for", () => {
     // five of a kind, so nobody ever unlocked the 100, and the box still had to
     // be closable.
     expect(trace.state.cards.every((card) => card["generala-doble"] === 0 && card.generala === 0)).toBe(true);
-    // And the turn where the doble is the ONLY box left is the turn an
+    // And the turn where the doble is the ONLY box offered is the turn an
     // untargetable doble cannot answer. Asserted to have happened rather than
-    // assumed: with the first open box taken every turn, each seat's eleventh
-    // turn is offered that box and nothing else.
-    expect(trace.openBoxesSeen).toContainEqual(["generala-doble"]);
-    expect(trace.openBoxesSeen.filter((open) => open.length === 1)).toHaveLength(3);
+    // assumed — once per seat, on its fourth turn: `[6,6,6,2,1]` pays in three
+    // boxes, and once those are written every box left is worth nothing, so the
+    // crossing ladder is the entire offer list from there on.
+    expect(trace.openBoxesSeen.filter((open) => open.length === 1 && open[0] === "generala-doble")).toHaveLength(3);
+    // Eight of each seat's eleven turns are a forced crossing, which is what
+    // the ladder costs a seat that rolls nothing: 3 seats x 8.
+    expect(trace.openBoxesSeen.filter((open) => open.length === 1)).toHaveLength(24);
   });
 });
 
@@ -193,10 +196,29 @@ describe("the engine already plays more seats than are registered", () => {
     // advance, the offer list, the outcome — makes one of these diverge.
     //
     // The eleven offer lists are the sharpest of them. Every seat, at every
-    // table size, is offered the same shrinking sequence of open boxes, which
-    // is only true if the offer list reads the ACTING seat's card by index
-    // rather than a seat this engine named.
-    const offersEverySeatShouldSee = CATEGORY_IDS.map((_, filled) => CATEGORY_IDS.slice(filled));
+    // table size, is offered the same shrinking sequence of boxes, which is
+    // only true if the offer list reads the ACTING seat's card by index rather
+    // than a seat this engine named.
+    //
+    // WRITTEN OUT RATHER THAN DERIVED FROM `CATEGORY_IDS`, because since the
+    // crossing ladder landed the offer list is not "every open box". Under
+    // `[6,6,6,2,1]` exactly three boxes are ever worth anything, and the policy
+    // takes them first; from the fourth turn on every box left is worth nothing
+    // and the ladder IS the offer list, one rung a turn (ruleset §Orden
+    // obligatorio de tachado).
+    const offersEverySeatShouldSee: readonly (readonly CategoryId[])[] = [
+      ["ones", "twos", "sixes", "generala-doble"],
+      ["twos", "sixes", "generala-doble"],
+      ["sixes", "generala-doble"],
+      ["generala-doble"],
+      ["generala"],
+      ["poker"],
+      ["full"],
+      ["escalera"],
+      ["fives"],
+      ["fours"],
+      ["threes"],
+    ];
 
     for (const seatCount of [2, 3, 4]) {
       const seats = seatsOf(seatCount);

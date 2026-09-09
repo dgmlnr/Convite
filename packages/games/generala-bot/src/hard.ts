@@ -103,14 +103,28 @@ function valueOf(view: PlayerView, action: GeneralaAction): number {
  * "a hand-tuned category-preference order for ties and scarce boxes" and the
  * ladder already is one.
  *
- * A HOLD RANKS BELOW EVERY BOX, so a score wins an exact tie. That case is
- * reachable: a position where every open box is worth 0 for every outcome of
- * every re-roll — the doble alone, with the generala box crossed at zero —
- * values holds and scores alike at 0, and writing the box ends the turn while
- * holding spends a throw to arrive at the same place. Ties BETWEEN holds fall
- * to the first the engine offered, which is honest: two holds with the same
- * expected value are equally good by the only measure this tier has, and
- * `KEEP_SETS` is a canonical order rather than an arbitrary one.
+ * A HOLD RANKS BELOW EVERY BOX, so a score wins an exact tie. THAT CASE IS NO
+ * LONGER REACHABLE and the clause stays anyway, which is worth stating plainly
+ * rather than leaving as an unmeasured branch. It used to be the doble alone
+ * with the generala box crossed at zero: every open box worth 0 for every
+ * outcome of every re-roll, so holds and scores tied at 0 and writing the box
+ * ended the turn. The crossing ladder (ruleset §Orden obligatorio de tachado)
+ * removed it — a zero goes only in the highest-paying open box, so crossing the
+ * generala costs the doble first, and an open doble therefore always sits above
+ * a generala box that is open or real. `hard.test.ts` asserts the consequence
+ * instead: with the doble alone the tier holds, chasing a hundred.
+ *
+ * DECLARED UNCOVERED, then, in the sense `normal.ts` uses the phrase for its
+ * own `sameIndices`: the clause still defines what happens at an exact tie and
+ * no fixture can now produce one. A hold's value is a sixth or a thirty-sixth
+ * of a sum of box values and a box's is an integer, so a tie needs an
+ * arithmetic coincidence rather than a position anyone can describe. It stays
+ * because removing it would leave a hold with no rank at all, not because
+ * something measures it.
+ *
+ * Ties BETWEEN holds fall to the first the engine offered, which is honest: two
+ * holds with the same expected value are equally good by the only measure this
+ * tier has, and `KEEP_SETS` is a canonical order rather than an arbitrary one.
  */
 function rankOf(action: GeneralaAction): number {
   return action.type === "score" ? sacrificeRank(action.category) : CATEGORY_IDS.length;

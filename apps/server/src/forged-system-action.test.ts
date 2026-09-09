@@ -453,9 +453,12 @@ describe("MatchRoom.handleAction — the legality gate admits ordinary play, it 
     // the claim is precisely that the seat sees the throw the injected source
     // produced — a roll the seat cannot see is a roll the seat cannot play.
     expect(turn).toEqual({ phase: "deciding", seat: 0, rollsUsed: 1, dice: [1, 2, 3, 4, 5] });
-    // 31 holds plus 11 open boxes, and not one `roll-dice` among them: the
-    // system's own action is offered to nobody, before or after it fires.
-    expect(latestView(acting).legalActions).toHaveLength(42);
+    // 31 holds plus the 7 boxes `[1,2,3,4,5]` may be written in — five upper
+    // ones, the escalera, and `generala-doble` as the one box a zero may go in
+    // (ruleset §Orden obligatorio de tachado) — and not one `roll-dice` among
+    // them: the system's own action is offered to nobody, before or after it
+    // fires. 38 is also the widest offer this game ever makes.
+    expect(latestView(acting).legalActions).toHaveLength(38);
     expect(latestView(acting).legalActions.some((action) => action.type === "roll-dice")).toBe(false);
     expect(rejections(seat0)).toEqual([]);
     expect(rejections(seat1)).toEqual([]);

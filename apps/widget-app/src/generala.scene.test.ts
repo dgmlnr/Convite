@@ -128,9 +128,11 @@ function midMatch(): MatchState {
   // Seat 0 writes a real number; seat 1 answers with one.
   state = playTurn(state, [5, 5, 5, 2, 1], "fives");
   state = playTurn(state, [3, 3, 6, 6, 6], "sixes");
-  // Seat 0 crosses out a box at zero — a throw with no ace in it, spent on
-  // "ones", which is exactly the sacrifice a real card fills up with.
-  state = playTurn(state, [4, 4, 6, 3, 2], "ones");
+  // Seat 0 crosses out a box at zero, and it is the doble because that is the
+  // only box a zero may go in on a card with nothing spent yet (ruleset §Orden
+  // obligatorio de tachado) — which makes it exactly the sacrifice a real card
+  // fills up with first.
+  state = playTurn(state, [4, 4, 6, 3, 2], "generala-doble");
   // Seat 1 takes the full.
   state = playTurn(state, [2, 2, 2, 5, 5], "full");
   return state;
@@ -196,8 +198,11 @@ describe("scene: the screen that ends the match", () => {
       [[1, 2, 3, 4, 5], "escalera"],
       [[2, 2, 2, 5, 5], "full"],
       [[3, 3, 3, 3, 6], "poker"],
-      [[4, 4, 4, 1, 2], "generala"],
+      // The doble before the generala, because both are written at zero here
+      // and a zero goes in the highest-paying open box: with only these two
+      // left the ladder reaches the doble first.
       [[5, 5, 1, 2, 3], "generala-doble"],
+      [[4, 4, 4, 1, 2], "generala"],
     ];
     // Each pair is played twice, once per seat, so both cards fill together
     // and the turn returns to seat 0 for the next category.

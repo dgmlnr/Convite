@@ -61,6 +61,10 @@ interface Planilla {
   readonly total: (seat: number) => HTMLTableCellElement;
   readonly button: (category: CategoryId, seat: number) => HTMLButtonElement | null;
   readonly buttons: () => readonly HTMLButtonElement[];
+  /** The preview of an open box the crossing ladder has not reached: the number
+   * with nothing to press. */
+  readonly locked: (category: CategoryId, seat: number) => HTMLElement | null;
+  readonly lockedAll: () => readonly HTMLElement[];
   readonly dispatched: readonly ScoreAction[];
   readonly offers: () => readonly GeneralaAction[];
   /** Roll these faces and STOP, leaving the turn in `deciding` with a seat
@@ -108,6 +112,8 @@ function seatPlanilla(seatId: PlayerId = SEAT): Planilla {
     offers: () => offers,
     button: (category, seat) => table().querySelector<HTMLButtonElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"] button`),
     buttons: () => [...table().querySelectorAll<HTMLButtonElement>("tbody button")],
+    locked: (category, seat) => table().querySelector<HTMLElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"] .hexdev-generala-score-locked`),
+    lockedAll: () => [...table().querySelectorAll<HTMLElement>("tbody .hexdev-generala-score-locked")],
     roll: (faces) => {
       state = accept(applyRoll(state, faces));
       draw();
@@ -158,10 +164,14 @@ function seatPlanilla(seatId: PlayerId = SEAT): Planilla {
  * faces open the escalera turn so "servida" is the counter and not a
  * coincidence — it is scored at `rollsUsed === 1`, which is the only thing
  * that makes it 25 rather than 20.
+ *
+ * THE CROSSED BOX IS THE DOBLE AND IT HAS TO BE. A zero goes only in the
+ * highest-paying open box (ruleset §Orden obligatorio de tachado), so on a card
+ * with nothing written that is the only box a seat may spend on nothing.
  */
 function playedOut(planilla: Planilla): void {
   planilla.playTurn([6, 6, 6, 2, 1], "sixes"); // seat 0 → 18
-  planilla.playTurn([1, 1, 2, 3, 4], "fives"); // seat 1 → 0, crossed
+  planilla.playTurn([1, 1, 2, 3, 4], "generala-doble"); // seat 1 → 0, crossed
   planilla.playTurn([1, 2, 3, 4, 5], "escalera"); // seat 0 → 25 servida
   planilla.playTurn([3, 3, 3, 2, 2], "full"); // seat 1 → 35 servida
 }
@@ -322,16 +332,16 @@ describe("generala scorecard: every seat's whole card is visible to every seat",
     // The rival's, which is the half that makes blocking play possible.
     expect(planilla.cell("full", 1).textContent?.trim()).toBe("35");
     expect(planilla.cell("full", 1).dataset.state).toBe("filled");
-    expect(planilla.cell("fives", 1).textContent?.trim()).toBe("0");
-    expect(planilla.cell("fives", 1).dataset.state).toBe("crossed");
+    expect(planilla.cell("generala-doble", 1).textContent?.trim()).toBe("0");
+    expect(planilla.cell("generala-doble", 1).dataset.state).toBe("crossed");
 
     // An OPEN box and a box CROSSED AT ZERO are different facts and must not
     // look like each other: one is still worth playing for, the other is gone
     // for good. `null` versus `0` is the engine's own distinction and this is
     // where it reaches a player's eye.
-    expect(planilla.cell("fives", 0).dataset.state).toBe("open");
-    expect(planilla.cell("fives", 0).textContent?.trim()).toBe("");
-    expect(planilla.cell("fives", 1).dataset.state).not.toBe(planilla.cell("fives", 0).dataset.state);
+    expect(planilla.cell("generala-doble", 0).dataset.state).toBe("open");
+    expect(planilla.cell("generala-doble", 0).textContent?.trim()).toBe("");
+    expect(planilla.cell("generala-doble", 1).dataset.state).not.toBe(planilla.cell("generala-doble", 0).dataset.state);
   });
 
   it("draws the same eleven-by-two grid for the rival as it draws for this seat", () => {
@@ -360,7 +370,7 @@ describe("generala scorecard: every seat's whole card is visible to every seat",
     playedOut(planilla);
     planilla.redraw();
 
-    expect(planilla.cell("fives", 1).dataset.state).toBe("crossed");
+    expect(planilla.cell("generala-doble", 1).dataset.state).toBe("crossed");
     expect(planilla.cell("sixes", 0).dataset.state).toBe("filled");
     expect(planilla.cell("threes", 0).dataset.state).toBe("open");
   });
@@ -403,12 +413,20 @@ describe("generala scorecard: an open box the acting seat may write is a control
     const planilla = seatPlanilla();
     planilla.roll([6, 6, 6, 2, 1]);
 
+    // EVERY OPEN BOX CARRIES ITS NUMBER, and only some of them carry a control.
+    // `[6,6,6,2,1]` pays in three boxes, so those three plus `generala-doble` —
+    // the one box a zero may go in — are pressable, and the other seven show
+    // what they would be worth without offering to write it.
     const card = planilla.view().cards[0]!;
+    const offered: readonly CategoryId[] = ["ones", "twos", "sixes", "generala-doble"];
     for (const category of CATEGORY_IDS) {
-      const button = planilla.button(category, 0);
-      expect(button, `${category} is open and offered, so it must be pressable`).not.toBeNull();
-      expect(button?.textContent?.trim()).toBe(String(scoreFor(category, [6, 6, 6, 2, 1], 1, card)));
+      const preview = planilla.button(category, 0) ?? planilla.locked(category, 0);
+      expect(preview, `${category} is open, so it must show what it is worth`).not.toBeNull();
+      expect(preview?.textContent?.trim()).toBe(String(scoreFor(category, [6, 6, 6, 2, 1], 1, card)));
+      expect(planilla.button(category, 0) !== null, `${category} pressable`).toBe(offered.includes(category));
     }
+    expect(planilla.buttons()).toHaveLength(offered.length);
+    expect(planilla.lockedAll()).toHaveLength(CATEGORY_IDS.length - offered.length);
     // The worked example the ruleset itself cites, written out so the loop
     // above cannot be satisfied by a UI that agrees with a wrong `scoreFor`.
     expect(planilla.button("sixes", 0)?.textContent?.trim()).toBe("18");
@@ -458,8 +476,10 @@ describe("generala scorecard: an open box the acting seat may write is a control
     planilla.roll([3, 4, 5, 6, 1]);
     // `3-4-5-6-1` is listed by the popular set as "opcional, a convenir de
     // antemano", and the decided ruleset leaves it out. A UI with its own
-    // idea of a straight shows 20 here.
-    expect(planilla.button("escalera", 0)?.textContent?.trim()).toBe("0");
+    // idea of a straight shows 20 here — and would offer a control with it,
+    // because a box worth something is always writable.
+    expect(planilla.locked("escalera", 0)?.textContent?.trim()).toBe("0");
+    expect(planilla.button("escalera", 0)).toBeNull();
   });
 
   it("dispatches the engine's own offer OBJECT, once, and only from a press", () => {
@@ -487,11 +507,15 @@ describe("generala scorecard: an open box the acting seat may write is a control
     expect(planilla.button("sixes", 0)).toBeNull();
     expect(planilla.cell("sixes", 0).textContent?.trim()).toBe("18");
 
-    // THE RIVAL'S COLUMN IS NEVER PRESSABLE. Not because this file knows
-    // whose turn it is — it reads the offers, and every `score` in that list
-    // names its own actor, so a column can only grow a control when the
-    // engine offered one FOR THAT SEAT.
-    for (const category of CATEGORY_IDS) expect(planilla.button(category, 1), `${category} at the rival's seat`).toBeNull();
+    // THE RIVAL'S COLUMN IS NEVER PRESSABLE, and it carries no preview either.
+    // Not because this file knows whose turn it is — it reads the offers, and
+    // every `score` in that list names its own actor, so a column can only grow
+    // a control, or a number for a throw it is not scoring, when the engine
+    // offered something FOR THAT SEAT.
+    for (const category of CATEGORY_IDS) {
+      expect(planilla.button(category, 1), `${category} at the rival's seat`).toBeNull();
+      expect(planilla.locked(category, 1), `${category} previewed on the rival's card`).toBeNull();
+    }
   });
 
   it("offers nothing while the cup is shaking, and nothing on another seat's turn", () => {
@@ -499,13 +523,18 @@ describe("generala scorecard: an open box the acting seat may write is a control
     expect(shaking.view().turn.phase).toBe("awaiting-roll");
     expect(shaking.buttons()).toHaveLength(0);
 
+    expect(shaking.lockedAll()).toHaveLength(0);
+
     const theirTurn = seatPlanilla();
     playedOut(theirTurn);
     theirTurn.playTurn([1, 1, 1, 2, 3], "ones");
     theirTurn.roll([2, 2, 4, 5, 6]);
-    // Seat 1 is deciding, so somebody has offers — just not this seat.
+    // Seat 1 is deciding, so somebody has offers — just not this seat, and a
+    // preview under this seat's name would be a number for somebody else's
+    // throw.
     expect(theirTurn.view().turn.phase).toBe("deciding");
     expect(theirTurn.buttons()).toHaveLength(0);
+    expect(theirTurn.lockedAll()).toHaveLength(0);
   });
   it("makes the whole box the target, corner for corner", () => {
     const planilla = seatPlanilla();
@@ -535,33 +564,45 @@ describe("generala scorecard: an open box the acting seat may write is a control
     expect(control.height).toBeGreaterThanOrEqual(SCORE_TAP_MIN);
   });
 
-  it("keeps a box you may still take from looking like one already spent", () => {
+  it("keeps a box you may still take from one you may not, and both from one already spent", () => {
     const planilla = seatPlanilla();
     playedOut(planilla);
-    planilla.playTurn([1, 1, 2, 3, 5], "fours"); // seat 0 crosses fours at 0 — not a 4 in sight
-    planilla.playTurn([2, 2, 4, 5, 6], "ones"); // seat 1 takes a turn
+    planilla.playTurn([1, 1, 2, 3, 5], "generala-doble"); // seat 0 crosses the doble at 0
+    planilla.playTurn([2, 2, 4, 5, 6], "twos"); // seat 1 takes a turn
     planilla.roll([6, 6, 6, 2, 1]); // seat 0 deciding again
 
-    // THREE BOXES, THREE MEANINGS, AND TWO OF THEM READ "0". `threes` is
-    // open and worth nothing with THIS roll; `fours` was crossed out and is
-    // gone for good; `sixes` holds a real 18 somebody wrote. On an ordinary
-    // roll most previews are 0, so a column of them sits right
-    // beside the ones already spent — and a player choosing where to spend a
-    // turn has to tell them apart at a glance.
-    const worthNothingNow = planilla.button("threes", 0);
-    const spent = planilla.cell("fours", 0);
+    // FOUR BOXES, FOUR MEANINGS, AND THREE OF THEM READ "0". `generala` is
+    // open, worth nothing, and the one box a zero may go in — so it is
+    // pressable. `threes` is open and worth nothing and may NOT be written,
+    // because the ladder has not reached it. `generala-doble` was crossed out
+    // and is gone for good. `sixes` holds a real 18 somebody wrote. On an
+    // ordinary roll most previews are 0, so a column of them sits beside the
+    // ones already spent, and a player choosing where to spend a turn has to
+    // tell all four apart at a glance — including "worth nothing" from "not
+    // allowed", which is the distinction the ladder introduced.
+    const crossable = planilla.button("generala", 0);
+    const worthNothingAndLocked = planilla.locked("threes", 0);
+    const spent = planilla.cell("generala-doble", 0);
     const written = planilla.cell("sixes", 0);
-    expect(worthNothingNow?.textContent?.trim()).toBe("0");
+    expect(crossable?.textContent?.trim()).toBe("0");
+    expect(worthNothingAndLocked?.textContent?.trim()).toBe("0");
     expect(spent.textContent?.trim()).toBe("0");
     expect(written.textContent?.trim()).toBe("18");
+    // The premise: `threes` really is open, so this is a rule and not a filled box.
+    expect(planilla.cell("threes", 0).dataset.state).toBe("open");
 
     // Struck through means spent; nothing else here is.
     expect(getComputedStyle(spent).textDecorationLine).toBe("line-through");
-    expect(getComputedStyle(worthNothingNow!).textDecorationLine).toBe("none");
+    expect(getComputedStyle(crossable!).textDecorationLine).toBe("none");
+    expect(getComputedStyle(worthNothingAndLocked!).textDecorationLine).toBe("none");
 
-    // And a box still on offer is marked as one AT REST, not only under a
-    // pointer that a phone does not have.
-    expect(getComputedStyle(worthNothingNow!).backgroundColor).not.toBe(getComputedStyle(written).backgroundColor);
+    // A box still on offer is marked as one AT REST, not only under a pointer
+    // that a phone does not have — and the box that is NOT on offer carries
+    // neither that mark nor full weight, so the two zeros beside each other
+    // cannot be read as the same thing.
+    expect(getComputedStyle(crossable!).backgroundColor).not.toBe(getComputedStyle(written).backgroundColor);
+    expect(getComputedStyle(worthNothingAndLocked!).backgroundColor).not.toBe(getComputedStyle(crossable!).backgroundColor);
+    expect(Number(getComputedStyle(worthNothingAndLocked!).opacity)).toBeLessThan(Number(getComputedStyle(crossable!).opacity));
   });
 
   it("draws no open-box dash underneath a box that carries a preview", () => {
@@ -604,16 +645,27 @@ describe("generala scorecard: it fits the narrow end of the range, measured rath
     }
   });
 
-  it.each([320, 375])("at %i px every open box is a target a thumb can hit", async (width) => {
+  it.each([320, 375])("at %i px every box on offer is a target a thumb can hit, and the rest keep its footprint", async (width) => {
     await page.viewport(width, 900);
     const planilla = seatPlanilla();
     planilla.roll([6, 6, 6, 2, 1]);
 
     const rects = planilla.buttons().map((button) => button.getBoundingClientRect());
-    expect(rects).toHaveLength(CATEGORY_IDS.length);
+    expect(rects).toHaveLength(4);
     for (const rect of rects) {
       expect(rect.width, `a score control is ${String(rect.width)}px wide at ${String(width)}px`).toBeGreaterThanOrEqual(SCORE_TAP_MIN - EPSILON);
       expect(rect.height, `a score control is ${String(rect.height)}px tall at ${String(width)}px`).toBeGreaterThanOrEqual(SCORE_TAP_MIN - EPSILON);
+    }
+
+    // AND A BOX THAT IS NOT ON OFFER TAKES EXACTLY THE SAME ROOM. Boxes move
+    // in and out of the offer list on every throw, so a preview that shrank
+    // when its box stopped being writable would make eleven rows jump around
+    // under the thumb reaching for one of them.
+    const locked = planilla.lockedAll().map((element) => element.getBoundingClientRect());
+    expect(locked).toHaveLength(CATEGORY_IDS.length - 4);
+    for (const rect of locked) {
+      expect(rect.width).toBeCloseTo(rects[0]!.width, 1);
+      expect(rect.height).toBeCloseTo(rects[0]!.height, 1);
     }
   });
 
@@ -719,8 +771,13 @@ describe("generala planilla: the column of the seat that is playing", () => {
     // any card still has room, so a finished match arrives with `turn.seat`
     // pointing at a seat that will never play — and a planilla reading the
     // turn alone would sit under the verdict overlay highlighting it.
+    // THE BOXES ARE WRITTEN IN AN ORDER THE RULES ALLOW, which is not
+    // `CATEGORY_IDS`. `[1,2,3,4,5]` pays in six boxes and nothing in the other
+    // five, and a zero goes only in the highest-paying open box — so the six
+    // that pay come first, and the five that do not follow down the ladder.
+    const playable: readonly CategoryId[] = ["ones", "twos", "threes", "fours", "fives", "escalera", "generala-doble", "generala", "poker", "full", "sixes"];
     const planilla = seatPlanilla();
-    for (const category of CATEGORY_IDS) {
+    for (const category of playable) {
       planilla.playTurn([1, 2, 3, 4, 5], category);
       planilla.playTurn([1, 2, 3, 4, 5], category);
     }

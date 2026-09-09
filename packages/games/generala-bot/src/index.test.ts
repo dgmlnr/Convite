@@ -46,11 +46,16 @@ function offeredPositions(states: readonly MatchState[]): readonly { state: Matc
 
 const positions = offeredPositions(sweep);
 
-describe("the widest offer really is the widest, so the tests below are not measuring a short list", () => {
-  it("31 holds plus 11 open boxes", () => {
-    expect(widestLegal.length).toBe(42);
+describe("the offer under test is a wide one, so the tests below are not measuring a short list", () => {
+  it("31 holds plus every box `[1,2,3,4,6]` may be written in", () => {
+    // SIX BOXES, NOT ELEVEN, since the crossing ladder landed: `[1,2,3,4,6]`
+    // pays in five upper boxes and nothing anywhere else, and of the six worth
+    // nothing only `generala-doble` may take a zero (ruleset §Orden
+    // obligatorio de tachado). 38 is the widest offer the game can make at all
+    // — a run pays a sixth box — and the sweep below reaches it.
+    expect(widestLegal.length).toBe(37);
     expect(widestLegal.filter((action) => action.type === "hold").length).toBe(31);
-    expect(widestLegal.filter((action) => action.type === "score").length).toBe(11);
+    expect(widestLegal.filter((action) => action.type === "score").length).toBe(6);
   });
 });
 
@@ -60,7 +65,7 @@ describe("easy is UNIFORM over the offered list, not a fixed pick", () => {
   });
 
   it("an rng just under 1 takes the last offered action", () => {
-    expect(createBotStrategy("easy", () => 0.999999).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS)).toBe(widestLegal[41]);
+    expect(createBotStrategy("easy", () => 0.999999).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS)).toBe(widestLegal[36]);
   });
 
   /**
@@ -70,7 +75,7 @@ describe("easy is UNIFORM over the offered list, not a fixed pick", () => {
    * a real function of the source, and it catches a `Math.round` where a
    * `Math.floor` belongs.
    */
-  it("a source walking bucket by bucket visits all 42, in order and with none repeated", () => {
+  it("a source walking bucket by bucket visits all 37, in order and with none repeated", () => {
     let step = 0;
     const midBucket = (): number => (step++ + 0.5) / widestLegal.length;
     const strategy = createBotStrategy("easy", midBucket);
@@ -149,7 +154,7 @@ describe("ONE shared empty-list guard, and the tiers have no throw of their own 
     expect(getLegalActions(servidaWinState(), ALICE)).toEqual([]);
     // A seat that is simply not on turn, while the seat that is has plenty.
     expect(getLegalActions(widest, BOB)).toEqual([]);
-    expect(getLegalActions(widest, ALICE).length).toBe(42);
+    expect(getLegalActions(widest, ALICE).length).toBe(37);
   });
 });
 
@@ -175,7 +180,10 @@ describe("all three tiers are their own now, and they answer one position three 
 
   it("normal breaks it for the highest single die, and easy takes whatever the source lands on", () => {
     expect(answerOf("normal")).toEqual({ type: "hold", playerId: ALICE, keep: [4] });
-    expect(answerOf("easy")).toEqual({ type: "hold", playerId: ALICE, keep: [1, 4] });
+    // The offer list here is 38 long — the widest the game makes — so a source
+    // sitting at 0.5 lands on index 19 rather than on the 21 it did when every
+    // open box was offered.
+    expect(answerOf("easy")).toEqual({ type: "hold", playerId: ALICE, keep: [1, 3, 4] });
   });
 
   it("and the three answers really are three, not two that happen to differ", () => {
@@ -195,7 +203,7 @@ describe("easy moves with its source and the other two do not move at all", () =
   it("easy and normal answer the same position differently", () => {
     const easy = createBotStrategy("easy", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
     const normal = createBotStrategy("normal", () => 0.5).chooseAction(widestView, widestLegal, ROOM_BUDGET_MS);
-    expect(easy).toBe(widestLegal[21]);
+    expect(easy).toBe(widestLegal[18]);
     expect(normal).not.toBe(easy);
     // Named, not merely different: five distinct faces means five groups of
     // one, and D7's tie rule takes the higher face — the 6 sitting at index 4.
@@ -263,8 +271,11 @@ describe("the sampled reachable states really span what the property claims (Spe
 
   it("the offer list spans its widest and its narrowest shape", () => {
     const sizes = new Set(positions.map((position) => position.legal.length));
-    // 31 holds + 11 open boxes at one end; the last box on the third throw at the other.
-    expect(sizes.has(42)).toBe(true);
+    // 31 holds + 7 boxes at one end, which is the widest offer the game can
+    // ever make — a run pays five upper boxes and the escalera, and the seventh
+    // is the one box the crossing ladder lets a seat take a zero in. The last
+    // box on the third throw is at the other.
+    expect(sizes.has(38)).toBe(true);
     expect(sizes.has(1)).toBe(true);
     expect(positions.length).toBeGreaterThan(60);
   });

@@ -228,9 +228,9 @@ describe("generala announcer: the box that was written, with the number in it", 
     // only one of them can still be played for. The planilla draws that
     // difference with a strike; the region has to say it, because "el rival
     // no anotó nada" would be true of a turn that never happened.
-    table.playTurn([1, 1, 2, 3, 4], "fives");
+    table.playTurn([1, 1, 2, 3, 4], "generala-doble");
 
-    expect(table.said()).toBe("Rival anotó 0 en Cincos. Es tu turno.");
+    expect(table.said()).toBe("Rival anotó 0 en Generala doble. Es tu turno.");
   });
 
   it("reads the same event from the rival's own seat, with the roles the other way round", () => {
@@ -300,9 +300,9 @@ describe("generala announcer: the turn the written box just passed", () => {
   it("says the match is now waiting on THIS seat when the rival's box is what passed it", () => {
     const table = seatTable();
     table.playTurn([6, 6, 6, 2, 1], "sixes");
-    table.playTurn([1, 1, 2, 3, 4], "fives");
+    table.playTurn([1, 1, 2, 3, 4], "generala-doble");
 
-    expect(table.said()).toBe("Rival anotó 0 en Cincos. Es tu turno.");
+    expect(table.said()).toBe("Rival anotó 0 en Generala doble. Es tu turno.");
   });
 
   it("names the seat it passed TO when that seat is not the one reading", () => {
@@ -320,12 +320,16 @@ describe("generala announcer: the turn the written box just passed", () => {
     // play by telling somebody it was their go, over a verdict overlay that
     // has already taken the board away from them.
     const table = seatTable();
-    const categories: readonly CategoryId[] = ["ones", "twos", "threes", "fours", "fives", "sixes", "escalera", "full", "poker", "generala", "generala-doble"];
+    // The order is one the rules allow, and it is not `CATEGORY_IDS`:
+    // `[1,2,3,4,5]` pays in six boxes, and a zero goes only in the
+    // highest-paying open box (ruleset §Orden obligatorio de tachado), so the
+    // five that pay nothing come last and in ladder order.
+    const categories: readonly CategoryId[] = ["ones", "twos", "threes", "fours", "fives", "escalera", "generala-doble", "generala", "poker", "full", "sixes"];
     for (const category of categories) {
       table.playTurn([1, 2, 3, 4, 5], category);
       table.playTurn([1, 2, 3, 4, 5], category);
     }
 
-    expect(table.said()).toBe("Rival anotó 0 en Generala doble.");
+    expect(table.said()).toBe("Rival anotó 0 en Seises.");
   });
 });
