@@ -45,10 +45,11 @@ const silentWindow: DiceSoundWindow = {};
  * voice goes through, so wrapping it is what turns "did it stop" from an
  * opinion into a number.
  */
-function spyingWindow(): { readonly windowLike: DiceSoundWindow; readonly context: () => AudioContext | null; readonly created: () => number; readonly stopped: () => number } {
+function spyingWindow(): { readonly windowLike: DiceSoundWindow; readonly context: () => AudioContext | null; readonly created: () => number; readonly stopped: () => number; readonly masterGain: () => number | null } {
   let created = 0;
   let stopped = 0;
   let built: AudioContext | null = null;
+  let masterGain: number | null = null;
   class Counting extends window.AudioContext {
     constructor() {
       super();
@@ -58,6 +59,18 @@ function spyingWindow(): { readonly windowLike: DiceSoundWindow; readonly contex
       // context this module built what state it is in.
       built = this as AudioContext;
     }
+    override createGain(): GainNode {
+      const node = super.createGain();
+      // The FIRST gain this module builds is its master — the one it connects
+      // straight to the destination. Every later one is a per-tick envelope.
+      if (masterGain === null) {
+        queueMicrotask(() => {
+          masterGain = node.gain.value;
+        });
+      }
+      return node;
+    }
+
     override createBufferSource(): AudioBufferSourceNode {
       const node = super.createBufferSource();
       created++;
@@ -69,7 +82,7 @@ function spyingWindow(): { readonly windowLike: DiceSoundWindow; readonly contex
       return node;
     }
   }
-  return { windowLike: { AudioContext: Counting }, context: () => built, created: () => created, stopped: () => stopped };
+  return { windowLike: { AudioContext: Counting }, context: () => built, created: () => created, stopped: () => stopped, masterGain: () => masterGain };
 }
 
 const closing: AudioContext[] = [];
@@ -252,6 +265,34 @@ describe("dice sound: every call is allowed to do nothing, and none of them thro
     expect(await running(context), "the next press must resume it").toBe(true);
     sound.rattle();
     expect(spy.created()).toBe(rattleTicks().length);
+  });
+});
+
+/**
+ * HOW LOUD THIS IS ALLOWED TO BE, read off the graph the module really
+ * builds rather than off the constant that wrote it.
+ *
+ * This is a widget inside somebody else's page. A sound effect arriving at
+ * the same level as the host's own media is an intrusion whatever a volume
+ * control says, and unity gain is one careless edit away — MEASURED as
+ * unfenced, by a mutation that set it to 1 and stayed green.
+ *
+ * The bound is deliberately loose. The exact number is taste and a fence
+ * that restated it would just be the constant typed twice; what is NOT taste
+ * is that it must sit well under unity, and that is what this holds.
+ */
+describe("dice sound: it is quieter than whatever page it is embedded in", () => {
+  it("connects its master well below unity gain", async () => {
+    const spy = spyingWindow();
+    const sound = createDiceSound(spy.windowLike, false);
+    await pressToUnlock(sound);
+    closing.push(spy.context()!);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const gain = spy.masterGain();
+    expect(gain, "expected the module to have built a master gain").not.toBeNull();
+    expect(gain!).toBeGreaterThan(0);
+    expect(gain!, "a widget must not arrive at the same level as its host's own media").toBeLessThan(0.5);
   });
 });
 
