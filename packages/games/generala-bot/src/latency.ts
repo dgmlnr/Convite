@@ -22,7 +22,8 @@ import type { BotStrategy } from "@hexdev/platform-contract";
  */
 
 /**
- * 1200 ms — HALF of escoba's and truco's 2400, and the halving is the decision.
+ * 600 ms — a QUARTER of escoba's and truco's 2400, and the number is the
+ * decision rather than a ratio: see the measurement below.
  *
  * Those two numbers were set by what a player has to READ during the pause: the
  * pause happens BEFORE a bot's own move lands, so it protects whatever the
@@ -38,11 +39,23 @@ import type { BotStrategy } from "@hexdev/platform-contract";
  * make one bot turn take upwards of ten seconds and an eleven-round match a
  * study in patience.
  *
- * IT IS PICKED, NOT MEASURED, AND THAT IS A GAP RATHER THAN A DECISION. Spec
- * open input O-3 says the Generala pause "must be MEASURED, not picked", and
- * there is nothing to measure against until `generala-ui` exists (slices 13-15).
- * Slice 19's budgeted human review pass is where this number is confirmed or
- * changed; until then it is an argued default, not a result.
+ * MEASURED, AND THEN DECIDED — spec open input O-3, closed. The `hard` tier's
+ * slowest decision over a whole self-played match is **8.87 ms**, mean 1.60 ms.
+ * So the previous 1200 was 135 times the work it was hiding, and this pause is
+ * not latency cover at all: it is entirely presentation, which is the only
+ * honest basis on which to choose it.
+ *
+ * The product owner chose 600: fast enough that a player is not waiting, slow
+ * enough that the opponent does not answer like a reflex. The arithmetic that
+ * made it a real question rather than a preference — a bot turn is up to four
+ * decisions (three holds and a score), so at 1200 one turn cost 4.8 s and an
+ * eleven-round match spent close to a minute on deliberate waiting alone. At
+ * 600 that turn is 2.4 s and the match's waiting roughly halves.
+ *
+ * NOT LOWER, deliberately. Below about 250 ms the answer starts reading as
+ * instantaneous, and an opponent that never hesitates stops feeling like an
+ * opponent. The floor here is perceptual, not technical: the decision itself
+ * has been ready for 591 of those 600 milliseconds.
  *
  * The coupling to `systemActionPauseMs` is real and cannot be expressed in code
  * from here: that value lives on the registration (`apps/server/src/registry.ts`,
@@ -52,7 +65,7 @@ import type { BotStrategy } from "@hexdev/platform-contract";
  *
  * Tunable via the wrapper's own parameter; this is only the default.
  */
-export const DEFAULT_THINKING_DELAY_MS = 1200;
+export const DEFAULT_THINKING_DELAY_MS = 600;
 
 export type Sleep = (ms: number) => Promise<void>;
 
