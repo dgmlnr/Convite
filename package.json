@@ -22,6 +22,7 @@
     "db:migrate": "node scripts/db-migrate.mjs",
     "typecheck": "tsc -b",
     "check:boundaries": "depcruise packages apps --config .dependency-cruiser.cjs",
+    "check:bundle": "pnpm --filter @hexdev/widget-app build && node scripts/bundle-budget.mjs",
     "visual:review": "node scripts/visual-review.mjs",
     "check:scripts": "tsc --noEmit -p scripts"
   },

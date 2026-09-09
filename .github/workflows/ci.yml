@@ -70,6 +70,15 @@ jobs:
       - name: Boundaries
         run: pnpm exec depcruise packages apps --config .dependency-cruiser.cjs
 
+      # The one number a real visitor pays for in time. A careless barrel
+      # import once pulled ioredis into this bundle -- 285 kB became 441 kB
+      # and the widget stopped mounting, with nothing failing and no test
+      # going red. `browser-safety.test.ts` fences that specific import; this
+      # fences the SHAPE of the failure. See scripts/bundle-budget.mjs for how
+      # the budget was measured and what to do when a real feature exceeds it.
+      - name: Bundle budget
+        run: pnpm --filter @hexdev/widget-app build && node scripts/bundle-budget.mjs
+
       # HEADLESS HERE, HEADED ON A DEVELOPER'S MACHINE, and that difference is
       # deliberate: vitest.config.ts leaves `headless` unset so it follows CI.
       # The two modes measure identically -- verified by running the whole
