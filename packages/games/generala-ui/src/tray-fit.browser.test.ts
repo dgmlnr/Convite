@@ -277,6 +277,29 @@ describe("generala tray: the cubilete and the control that commits share one row
   });
 
   /**
+   * THE CONTROL IS NOT STRETCHED TO THE CUBILETE'S HEIGHT, which is what a
+   * flex row does by default and what `board-styles.ts` now spends a
+   * paragraph refusing. It was an UNFENCED claim in that comment until a
+   * mutation ladder deleted `align-items: center` and every test stayed
+   * green: a 40px button silently becomes a 146px column of felt with a word
+   * floating in the middle of it, and nothing in this repository could see
+   * it. Reading the two heights back off the real row is what can.
+   */
+  it("leaves the throw control at its own content height rather than stretching it to the cubilete's", async () => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const { rollEl, cup } = rollRowInBox(600, rolled);
+    const button = rollEl.querySelector<HTMLElement>(".hexdev-generala-roll")!;
+
+    // The cubilete's own painted height is the ceiling `stretch` would drag
+    // the button up to; a control that is a THIRD of it is plainly still
+    // sized by its own text.
+    const cupHeight = cup.getBoundingClientRect().height;
+    expect(cupHeight).toBeGreaterThan(100);
+    expect(button.getBoundingClientRect().height).toBeLessThan(cupHeight / 2);
+  });
+
+  /**
    * THE GESTURE SWINGS OUTSIDE THE CUP'S OWN BOX and must not swing outside
    * the BOARD. `dice-styles.ts`'s pivot comment argues that turning about the
    * drawn cubilete's own middle — rather than about its base, like a cup
