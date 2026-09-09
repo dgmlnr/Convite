@@ -15,6 +15,13 @@
  * here even by accident — the only legality this package can read is an offer
  * list somebody hands it.
  *
+ * THE CLOCK IS THE SIXTH PIECE, and the only one that changes on its own: the
+ * per-turn countdown the server has been arming since before this board
+ * existed and nobody could see, one cell per seat. Its arithmetic is exported
+ * from `turn-clock.ts` for its own tests and NOT from here, for the reason
+ * this barrel already gives about `CATEGORY_LABELS` — nothing outside this
+ * package formats a Generala countdown.
+ *
  * COMPLETE, AND THE LAST PIECE IS THE TABLE ITSELF. The tray, the dice it
  * holds, the control that commits a hold, the planilla every seat reads and
  * the region that says what was thrown, what was written, what a servida
@@ -41,6 +48,9 @@ export type { GeneralaScorecardRender } from "./scorecard.js";
 export { ensureScorecardStyles, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
 export { createGeneralaAnnouncer } from "./announcer.js";
 export type { GeneralaAnnouncer } from "./announcer.js";
+export { createGeneralaTurnClock } from "./turn-clock.js";
+export type { GeneralaTurnClock, GeneralaTurnClockOptions } from "./turn-clock.js";
+export { ensureTurnClockStyles, TURN_CLOCK_STYLE_ID } from "./turn-clock-styles.js";
 export { renderServidaCallout } from "./servida.js";
 export { ensureServidaStyles, SERVIDA_STYLE_ID } from "./servida-styles.js";
 export { renderGeneralaMatchOver } from "./match-over.js";

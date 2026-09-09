@@ -122,7 +122,12 @@ async function readTable(table: FrameLocator): Promise<TableSnapshot> {
       // a written score.
       filled: body.querySelectorAll('td[data-seat][data-state="filled"], td[data-seat][data-state="crossed"]').length,
       servida: body.querySelector("p.hexdev-generala-servida") !== null,
-      announced: body.querySelector("[aria-live]")?.textContent ?? "",
+      // THE NARRATIVE REGION BY NAME, never "the live region". The board grew a
+      // second one when the turn clock landed — a coarse voice for time — and
+      // it comes FIRST in the DOM, so a bare selector reads a countdown's
+      // sentence and the servida assertion at the end of this file waits for a
+      // string that region will never say.
+      announced: body.querySelector('[aria-live][data-announces="table"]')?.textContent ?? "",
     };
   });
 }

@@ -5,9 +5,9 @@ import { renderGameSelection } from "./game-screen.js";
 import type { GameId } from "@hexdev/platform-contract";
 import type { CatalogEntry } from "./bootstrap-data.js";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
-import { createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
+import { applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
 import type { PlayerId } from "@hexdev/generala-engine";
-import { BOARD_CLASS, ensureBoardStyles, renderGeneralaScorecard } from "@hexdev/generala-ui";
+import { BOARD_CLASS, createGeneralaTurnClock, ensureBoardStyles, renderGeneralaScorecard } from "@hexdev/generala-ui";
 
 /**
  * Text legibility on the chrome's own coloured surfaces.
@@ -377,5 +377,63 @@ describe("the planilla's open-box dash keeps its contrast in every column, marke
     const heading = board.querySelector<HTMLElement>('thead th[data-seat="0"]');
     expect(heading?.dataset.turn, "fence setup: seat 0's heading carries the mark").toBe("active");
     expect(ratioFor(heading!), "the accent heading vs the column it sits on").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+});
+
+/**
+ * THE TURN CLOCK'S OWN STRIP, ON THE GROUND IT IS DRAWN ON.
+ *
+ * The strip borrows the planilla's two marks for "this seat is on turn" — the
+ * ground darkens, the name takes the accent — and the borrowing is the part
+ * worth measuring. `scorecard-styles.ts` chose that direction because on this
+ * board's `#14231d` every white tint visible at all takes the open-box dash
+ * under the AA floor; nothing on the strip is drawn at the dash's weight, so
+ * the reason does not transfer automatically and the value could have been
+ * copied wrong without anything noticing.
+ *
+ * BOTH CELLS, because the strip's whole point is that both seats are on it:
+ * the one being timed and the one waiting are two different backgrounds, and
+ * a fence that only looked at the lit one would pass on a strip that made the
+ * other unreadable.
+ */
+describe("the turn clock reads on the board it is drawn on (WCAG 2.1 AA, 1.4.3)", () => {
+  const SEATS = ["clock-self" as PlayerId, "clock-rival" as PlayerId];
+
+  function strip(): HTMLElement {
+    const board = freshContainer();
+    ensureBoardStyles(document);
+    board.className = BOARD_CLASS;
+    const rolled = applyRoll(createMatch(SEATS), [5, 5, 5, 2, 1]);
+    if (!rolled.ok) throw new Error(`fence setup: the engine refused the throw — ${rolled.violation.code}`);
+    const clock = createGeneralaTurnClock(document, { now: () => 0 });
+    board.appendChild(clock.clockEl);
+    clock.render(getViewFor(rolled.state, SEATS[0]!), 45_000);
+    clock.stop();
+    return board;
+  }
+
+  const cell = (board: HTMLElement, seat: number): HTMLElement => board.querySelector<HTMLElement>(`.hexdev-generala-turn-clock-seat[data-seat="${String(seat)}"]`)!;
+
+  it.each([
+    ["the seat being timed, whose cell this change tints", 0],
+    ["the seat waiting, which is the control the tint is measured against", 1],
+  ])("every word reads in %s", (_label, seat) => {
+    const board = strip();
+    const target = cell(board, seat);
+    // The premise: seat 0 really is the lit cell and seat 1 really is not, so
+    // the two rows of this table measure two different backgrounds.
+    expect(target.dataset.turn, "fence setup: the lit cell is seat 0's").toBe(seat === 0 ? "active" : undefined);
+    for (const word of target.querySelectorAll<HTMLElement>("span")) {
+      if ((word.textContent ?? "") === "") continue;
+      expect(ratioFor(word), `"${word.textContent ?? ""}" in cell ${String(seat)}`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    }
+  });
+
+  it("darkens the lit cell rather than lightening it, which is the direction the planilla's own dash forces", () => {
+    const board = strip();
+    const lit = paintedBackgroundOf(cell(board, 0));
+    const waiting = paintedBackgroundOf(cell(board, 1));
+    expect(lit, "the lit cell paints a background of its own").not.toEqual(waiting);
+    expect(relativeLuminance(lit), "darker, never lighter — see scorecard-styles.ts for the arithmetic").toBeLessThan(relativeLuminance(waiting));
   });
 });

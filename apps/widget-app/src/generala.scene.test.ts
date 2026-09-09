@@ -99,7 +99,7 @@ function playTurn(state: MatchState, faces: readonly DieFace[], category: Catego
  * scenes use, and the reason the picture shows a board rather than a widget
  * floating in a test page.
  */
-async function boardScreen(state: MatchState, size: readonly [number, number]): Promise<HTMLElement> {
+async function boardScreen(state: MatchState, size: readonly [number, number], turnDeadline: number | null = null): Promise<HTMLElement> {
   await page.viewport(size[0], size[1]);
   document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
   const container = document.createElement("div");
@@ -108,8 +108,13 @@ async function boardScreen(state: MatchState, size: readonly [number, number]): 
   document.body.appendChild(container);
   mounted.push(container);
 
+  // THE CLOCK IS FROZEN, WHICH IS THE ONLY WAY A COUNTDOWN CAN BE
+  // PHOTOGRAPHED. `matchRenderContextFor` carries a `now` for exactly this,
+  // and a deadline measured from that same zero renders the same string on
+  // every run — a scene that read the wall clock would produce a different
+  // image every time it was looked at.
   const render = createGameUiRegistry().get(GENERALA)!.createRenderer(matchRenderContextFor("joined", () => 0));
-  render(container, { view: getViewFor(state, SEAT), legalActions: getLegalActions(state, SEAT) }, () => {}, () => {}, () => {});
+  render(container, { view: getViewFor(state, SEAT), legalActions: getLegalActions(state, SEAT), turnDeadline }, () => {}, () => {}, () => {});
   await Promise.all([...container.querySelectorAll("img")].map((image) => image.decode()));
   return container;
 }
@@ -140,12 +145,12 @@ function midMatch(): MatchState {
 
 describe("scene: the board, which is the screen this whole change was for", () => {
   it("a phone mid-turn (375): the tray, the throw, and the planilla under it", async () => {
-    const container = await boardScreen(accept(applyRoll(midMatch(), [4, 4, 1, 6, 3])), [375, 812]);
+    const container = await boardScreen(accept(applyRoll(midMatch(), [4, 4, 1, 6, 3])), [375, 812], 47_000);
     await expect.element(container).toMatchScreenshot("generala-board-narrow");
   });
 
   it("a desktop (1280): the same table with room to lay it out", async () => {
-    const container = await boardScreen(accept(applyRoll(midMatch(), [4, 4, 1, 6, 3])), [1280, 900]);
+    const container = await boardScreen(accept(applyRoll(midMatch(), [4, 4, 1, 6, 3])), [1280, 900], 47_000);
     await expect.element(container).toMatchScreenshot("generala-board-wide");
   });
 
@@ -154,7 +159,7 @@ describe("scene: the board, which is the screen this whole change was for", () =
    * turn for a whole match, so what this picture is for is whether it reads
    * as a note or as an alarm. */
   it("a servida throw: the callout that says this one is worth more", async () => {
-    const container = await boardScreen(accept(applyRoll(midMatch(), [6, 6, 6, 6, 2])), [375, 812]);
+    const container = await boardScreen(accept(applyRoll(midMatch(), [6, 6, 6, 6, 2])), [375, 812], 58_000);
     await expect.element(container).toMatchScreenshot("generala-board-servida");
   });
 
@@ -162,7 +167,7 @@ describe("scene: the board, which is the screen this whole change was for", () =
    * empty slots where the dice will land — the emptiest this screen ever is,
    * and the state a player meets first. */
   it("the opening: an empty card and a cup that has not been shaken", async () => {
-    const container = await boardScreen(createMatch(SEATS), [375, 812]);
+    const container = await boardScreen(createMatch(SEATS), [375, 812], 60_000);
     await expect.element(container).toMatchScreenshot("generala-board-opening");
   });
 
@@ -174,10 +179,14 @@ describe("scene: the board, which is the screen this whole change was for", () =
    * carries the shading and the accent heading, the dice on the table are
    * dimmed because they are not this seat's to hold, and the throw control is
    * simply absent. What this picture is for is whether those three together
-   * read as "wait" rather than as "broken". */
-  it("the rival's turn: their dice on the table, their column lit, and nothing here to press", async () => {
+   * read as "wait" rather than as "broken" — and, since the clock landed, of
+   * whether a rival's time visibly running out reads as information about the
+   * game rather than as pressure on somebody who cannot act on it. That was
+   * the decision this scene exists to check: both clocks are shown, and this
+   * is the half of it nobody had seen. */
+  it("the rival's turn: their dice on the table, their column lit, their clock running, and nothing here to press", async () => {
     const passed = playTurn(midMatch(), [2, 2, 4, 5, 1], "twos");
-    const container = await boardScreen(accept(applyRoll(passed, [6, 6, 3, 3, 1])), [375, 812]);
+    const container = await boardScreen(accept(applyRoll(passed, [6, 6, 3, 3, 1])), [375, 812], 22_000);
     await expect.element(container).toMatchScreenshot("generala-board-rival-turn");
   });
 });
