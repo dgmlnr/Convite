@@ -15,7 +15,14 @@ import { defineConfig } from "vitest/config";
  * run; individual specs only read the resulting connection info (see
  * `e2e/support/harness-info.ts`) and open real browser contexts against it.
  *
- * AND IT IS NOT IN CI EITHER, which is a SECOND decision and was never a
+ * IT IS IN CI NOW, and this paragraph is kept because how it got there is
+ * the argument for keeping it there. `.github/workflows/ci.yml`'s `e2e` job
+ * runs this suite on every push. What follows describes the years before
+ * that job existed, and it is written in the past tense on purpose: the cost
+ * recorded below is what a suite outside CI actually charges, measured once,
+ * so nobody proposes paying it again.
+ *
+ * IT WAS NOT IN CI, which was a SECOND decision and was never a
  * deliberate one. "Not part of `pnpm test`" is argued above and is sound —
  * a TDD loop must not spawn servers. "Not part of `.github/workflows/ci.yml`"
  * is a different question with a different answer, and for a long time it had

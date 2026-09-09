@@ -25,10 +25,17 @@ const ESCOBA = family("escoba", "escoba-de-15");
 const ABSENT_FAMILY = "fixture-absent-family";
 
 describe("createLobbyScreen — which of the two screens is open", () => {
-  /* THE SINGLE-GAME BYPASS, and it is today's live case: the only configured
-   * tenant is entitled to both truco entries, which is ONE family. So this
-   * branch is what every real player currently gets, and the list screen is
-   * unreachable until a second game ships. */
+  /* THE SINGLE-GAME BYPASS. A tenant entitled to both truco entries holds ONE
+   * family, so it opens straight onto that game and never sees a list of one.
+   *
+   * IT USED TO SAY THIS WAS "today's live case" and that the list screen was
+   * "unreachable until a second game ships". Four have shipped — truco,
+   * escoba, mahjong solitario and generala — and both composition roots
+   * register them, so the list is reachable for any tenant entitled across
+   * families. The BRANCH is not obsolete and the assertion below does not
+   * change: a one-family entitlement still bypasses the list, and that is
+   * exactly what this test pins. What expired was the sentence about how many
+   * games exist, which was never what the test measured. */
   it("one family opens straight onto that game, never onto a list of one", () => {
     const screen = createLobbyScreen([TRUCO]);
     expect(screen.current()).toEqual({ kind: "game", family: TRUCO });
