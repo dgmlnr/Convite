@@ -74,6 +74,9 @@ interface Table {
   /** Apply the hold this tray last dispatched — the real path, end to end. */
   readonly commit: () => void;
   readonly roller: () => HTMLButtonElement | null;
+  /** The cubilete standing beside the throw control, or `null` if this tray
+   * never put one there. */
+  readonly cup: () => HTMLElement | null;
   readonly nodes: () => readonly HTMLElement[];
   readonly dice: () => readonly HTMLButtonElement[];
   readonly redraw: () => void;
@@ -124,6 +127,7 @@ function seatTable(): Table {
       draw();
     },
     roller: () => rollEl.querySelector<HTMLButtonElement>("button"),
+    cup: () => rollEl.querySelector<HTMLElement>(".hexdev-dice-cup-piece"),
     nodes: () => [...diceEl.children] as HTMLElement[],
     dice: () => [...diceEl.querySelectorAll<HTMLButtonElement>("button")],
     redraw: draw,
@@ -522,5 +526,104 @@ describe("the tray goes quiet when the table is not waiting on this seat", () =>
     const slots = [...table.diceEl.querySelectorAll<HTMLElement>(".hexdev-generala-die--empty")];
     expect(slots, "the rival has not thrown yet, so all five slots are waiting").toHaveLength(5);
     for (const slot of slots) expect(getComputedStyle(slot).opacity, "a waiting slot is never dimmed").toBe("1");
+  });
+});
+
+/**
+ * THE CUBILETE, AND THE THREE THINGS THIS TRAY IS ACTUALLY RESPONSIBLE FOR.
+ *
+ * `dice-ui` owns what a cup LOOKS like doing each of the three gestures and
+ * fences that for itself. What lives here is the only part that is a rule:
+ * which gesture a phase means, that the object outlives the control beside
+ * it, and that it is the same element across a throw rather than a new one
+ * per render.
+ */
+describe("generala tray: the cubilete on the table", () => {
+  const gestureOf = (table: Table): string | null => table.cup()?.getAttribute("data-cup-gesture") ?? null;
+
+  it("is standing there before anybody has thrown anything", () => {
+    const table = seatTable();
+    expect(table.cup(), "expected a cubilete from the very first render").not.toBeNull();
+  });
+
+  /**
+   * THE BEAT THIS WHOLE CHANGE EXISTS FOR. `tray-styles.ts` records that a
+   * fresh match is "roughly 170px of blank surface above a card of dashes",
+   * on every turn's `systemActionPauseMs` plus the whole of a rival's
+   * thinking time, with five dashed outlines as the only thing reporting that
+   * anything is happening. This is the second thing.
+   */
+  it("shakes while the table is waiting for a roll", () => {
+    expect(gestureOf(seatTable())).toBe("shaking");
+  });
+
+  it("tips the instant the dice arrive", () => {
+    const table = seatTable();
+    table.roll([3, 5, 5, 2, 6]);
+    expect(gestureOf(table)).toBe("tipping");
+  });
+
+  /**
+   * WHOEVER'S TURN IT IS, and the asymmetry with the dice beside it is
+   * deliberate — see `gestureFor`'s own comment. The dice go quiet on the
+   * rival's go so nobody reaches for a control that will not answer; the
+   * cubilete is `aria-hidden` scenery that cannot be reached for at all, and
+   * on this beat it is the only thing on the board saying the rival is
+   * throwing.
+   */
+  it("shakes on the rival's turn too, and the row beside it is still marked as theirs", () => {
+    const table = seatTable();
+    table.roll(OPENING);
+    table.score("ones");
+    expect(table.diceEl.dataset.turn, "expected the turn to have passed").toBe("rival");
+    expect(gestureOf(table)).toBe("shaking");
+  });
+
+  /**
+   * FIVE OF A KIND OFF THE CUP. The engine ends the match as they land and
+   * `facesOf` returns no dice at all, so this is the one throw where the row
+   * stays empty — and `gestureFor` still answers "the cup poured", because
+   * that is what happened. See its own comment for what the match-over
+   * overlay does to the view of it.
+   */
+  it("tips on a servida even though the engine leaves no dice to show", () => {
+    const table = seatTable();
+    table.roll([6, 6, 6, 6, 6]);
+    expect(table.nodes().length, "a servida-win turn carries no dice").toBe(0);
+    expect(gestureOf(table)).toBe("tipping");
+  });
+
+  /**
+   * THE ONE STRUCTURAL FENCE. The throw control is ABSENT rather than
+   * disabled whenever the engine offers no hold — which is exactly the beat
+   * the cubilete is shaking on. A cup mounted inside that button would vanish
+   * on the only beat it exists for, and this is the assertion that says so:
+   * one object, across a whole throw, while the control comes and goes.
+   */
+  it("is the same element across a full throw, while the control beside it disappears and comes back", () => {
+    const table = seatTable();
+    const first = table.cup();
+    expect(table.roller(), "no throw is on offer while the cup is shaking").toBeNull();
+
+    table.roll([3, 5, 5, 2, 6]);
+    expect(table.roller(), "the throw control is back once there is a hold to offer").not.toBeNull();
+    expect(table.cup()).toBe(first);
+
+    table.hold([0]);
+    expect(table.roller(), "and gone again while the next roll is in the air").toBeNull();
+    expect(table.cup()).toBe(first);
+
+    table.roll([1, 1, 1, 1]);
+    expect(table.cup()).toBe(first);
+  });
+
+  /** The cubilete is scenery, so the row it sits in must still contain
+   * exactly one thing a keyboard can land on. */
+  it("adds nothing to the tab order", () => {
+    const table = seatTable();
+    table.roll([3, 5, 5, 2, 6]);
+    const focusable = table.elements.rollEl.querySelectorAll("button, a, input, [tabindex]");
+    expect(focusable.length).toBe(1);
+    expect(focusable[0]).toBe(table.roller());
   });
 });

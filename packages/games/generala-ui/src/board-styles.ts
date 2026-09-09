@@ -134,17 +134,32 @@ export function buildBoardStylesheet(): string {
   gap: 12px;
 }
 
-/* THE CONTROL THAT COMMITS, UNDER THE DICE IT THROWS. Found by looking: the
-   tray centres its own row and the planilla is a full-width block, so a roll
-   button left in normal flow sat hard against the left edge with the five
-   dice centred above it — the only element on the board that belonged to
-   nothing. It is the primary action of the screen and it now sits under its
-   own subject. The tray owns the BUTTON (\`tray-styles.ts\`); the board owns
-   where the button goes, which is the same split the rest of this file
-   keeps. */
+/* THE CUBILETE AND THE CONTROL THAT COMMITS, UNDER THE DICE THEY THROW.
+   Found by looking: the tray centres its own row and the planilla is a
+   full-width block, so a roll button left in normal flow sat hard against the
+   left edge with the five dice centred above it — the only element on the
+   board that belonged to nothing. It is the primary action of the screen and
+   it now sits under its own subject. The tray owns the BUTTON and the CUP
+   (\`tray.ts\`); the board owns where they go, which is the same split the
+   rest of this file keeps.
+
+   \`align-items: center\` IS LOAD-BEARING NOW THAT THERE ARE TWO OF THEM. A
+   flex row defaults to \`stretch\`, and the cubilete beside the button is
+   nearly 150px tall — the button would have been stretched to match it,
+   turning a control into a column of felt with a word in the middle.
+
+   \`flex-wrap\` DELIBERATELY ABSENT. If the pair ever stops fitting, the right
+   answer is a narrower cup and not a cup that jumps onto its own line: the
+   whole point of putting it here is that the cubilete and the throw are one
+   gesture, and a wrap would draw them as two unrelated rows the way the cup
+   and the tray used to read before \`dice-styles.ts\` composed them.
+   \`tray-fit.browser.test.ts\` measures the row against the narrowest phone
+   this product supports rather than leaving that to hope. */
 .${BOARD_CLASS}-roll {
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 8px;
 }
 
 /* FULLSCREEN IS THE ONE MODE WITH A FIXED BOX, so it is the one mode with
