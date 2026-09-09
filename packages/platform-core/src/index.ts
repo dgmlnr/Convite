@@ -2,6 +2,12 @@ export type { AbandonedSeatActionProvider, GameModuleRegistration, GameModuleReg
 export { createGameModuleRegistry } from "./registry.js";
 export type { CatalogGrouping } from "./catalog-grouping.js";
 export { catalogGroupingOf } from "./catalog-grouping.js";
+// `Sleep`/`withThinkingDelay` (extracted from three near-identical copies in
+// truco-bot/escoba-bot/generala-bot's own `latency.ts`, once a THIRD game
+// needed the same wrapper): pure, uses nothing but `setTimeout`, so it
+// belongs on THIS public barrel, not the Node-only `node.ts`.
+export type { Sleep } from "./thinking-delay.js";
+export { withThinkingDelay } from "./thinking-delay.js";
 export type { RateLimiter, RateLimiterOptions } from "./rate-limiter.js";
 export { createRateLimiter } from "./rate-limiter.js";
 export type { RedisRateLimiterOptions } from "./redis-rate-limiter.js";

@@ -306,7 +306,7 @@ describe("generala announcer: the box that was written, with the number in it", 
  * The board grew two cues for this in the same change — the planilla's shaded
  * column and the tray going quiet — and both of them are light. A live region
  * is the whole of that information for anybody not reading the screen, and it
- * had none of it: "Rival anotó 0 en Cincos." reports what happened and leaves
+ * had none of it: "Rival anotó 0 en 5." reports what happened and leaves
  * the actionable half unsaid.
  *
  * IT IS APPENDED TO THE SCORE AND IS NOT AN EVENT OF ITS OWN, which is the

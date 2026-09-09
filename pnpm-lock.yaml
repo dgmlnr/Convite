@@ -238,6 +238,9 @@ importers:
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../platform-contract
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../../platform-core
 
   packages/games/escoba-engine: {}
 
@@ -281,6 +284,9 @@ importers:
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../platform-contract
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../../platform-core
 
   packages/games/generala-engine: {}
 
@@ -352,6 +358,9 @@ importers:
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../platform-contract
+      '@hexdev/platform-core':
+        specifier: workspace:*
+        version: link:../../platform-core
       '@hexdev/truco-engine':
         specifier: workspace:*
         version: link:../truco-engine

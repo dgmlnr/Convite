@@ -118,7 +118,7 @@ function boxWritten(before: PlayerView, after: PlayerView): WrittenBox | null {
 /**
  * What was written, where, and by whom — with the NUMBER in it.
  *
- * "Anotaste en Seises" is the sentence this is written against: it names the
+ * "Anotaste en 6" is the sentence this is written against: it names the
  * event and withholds the only thing a player needs from it. A zero is spoken
  * out loud for the same reason the planilla strikes the box through rather
  * than leaving it looking like any other number — crossing a category out is
@@ -127,7 +127,7 @@ function boxWritten(before: PlayerView, after: PlayerView): WrittenBox | null {
  * The box's name comes from `scorecard.ts` so the region and the card cannot
  * call the same row two different things. The VERB does not: "Anotaste" is
  * the second person the reading seat is addressed in everywhere else on this
- * board ("Tirar los 5 dados", "Anotar 18 en Seises"), and a rival is spoken
+ * board ("Tirar los 5 dados", "Anotar 18 en 6"), and a rival is spoken
  * about in the third.
  */
 function scoreSentence(view: PlayerView, written: WrittenBox, autoplayed: boolean): string {
@@ -147,7 +147,7 @@ function scoreSentence(view: PlayerView, written: WrittenBox, autoplayed: boolea
  * THE BOARD GREW TWO CUES FOR THIS AND THIS IS THE THIRD. A shaded column on
  * the planilla says WHO, a dimmed tray says NOT NOW, and both of them are
  * light on purpose — which leaves a player who is not looking at the screen
- * with nothing at all. "Rival anotó 0 en Cincos." reports what happened and
+ * with nothing at all. "Rival anotó 0 en 5." reports what happened and
  * withholds the only part of it anybody has to act on.
  *
  * APPENDED TO THE BOX, NEVER ANNOUNCED ON ITS OWN, and that is not the same
