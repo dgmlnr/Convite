@@ -184,7 +184,9 @@ export function createGeneralaTray(): GeneralaTrayRender {
    * awaiting-roll" would restart several times a throw. `setCupGesture` holds
    * the same idempotence for the drawing; this is its half for the audio, and
    * it is a separate variable rather than a read of the element because the
-   * element is replaced whenever the board re-mounts.
+   * element is replaced whenever the board re-mounts — and this deliberately
+   * SURVIVES that replacement. What has been heard is a fact about the match,
+   * not about the row it was drawn in; see the rebuild below.
    */
   let sounded: CupGesture | null = null;
   /**
@@ -301,9 +303,15 @@ export function createGeneralaTray(): GeneralaTrayRender {
       // The control, if there was one, went with whatever emptied this box.
       elements.rollEl.replaceChildren(cup, mute.element);
       roller = null;
-      // A REBUILT ROW HAS HEARD NOTHING. Forgetting this is what would make a
-      // reconnect land mid-throw and stay silent for the rest of it.
-      sounded = null;
+      // `sounded` IS DELIBERATELY NOT RESET HERE, and it used to be — with a
+      // comment claiming a reconnect would otherwise "stay silent for the
+      // rest of the throw", which was simply false: it would have missed one
+      // beat and caught the next transition. A mutation ladder found the
+      // clause unfenced, and looking at what it actually did found it wrong.
+      // Rebuilding this row is a fact about the DOM (`roller` above is), not
+      // about what the table is doing. Resetting would REPLAY the pour for
+      // dice that have been lying on the felt since before the reconnect,
+      // which is a noise about an event that already finished.
     }
     mute.render(sound.isMuted());
 
