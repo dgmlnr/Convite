@@ -231,7 +231,16 @@ export function createDiceSound(windowLike: DiceSoundWindow, initiallyMuted: boo
     voices = [];
   };
 
+  /**
+   * CUTS WHATEVER IS SOUNDING BEFORE IT STARTS, in here rather than at each
+   * call site. The one that matters is the pour: a rattle is scheduled about
+   * three seconds ahead and the dice land inside the first half-second of it,
+   * so without this the cup would go on being shaken over the top of dice
+   * already lying on the table. Both entry points get it because there is one
+   * rule — a burst replaces whatever came before it — and one place to break.
+   */
   const play = (ticks: readonly Tick[]): void => {
+    silence();
     const ctx = context;
     if (ctx === null || master === null || noise === null) return;
     const startAt = ctx.currentTime;
@@ -286,12 +295,10 @@ export function createDiceSound(windowLike: DiceSoundWindow, initiallyMuted: boo
     },
     rattle(): void {
       if (!canSound()) return;
-      silence();
       play(rattleTicks());
     },
     tumble(): void {
       if (!canSound()) return;
-      silence();
       play(TUMBLE_TICKS);
     },
     stop(): void {

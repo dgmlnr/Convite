@@ -25,6 +25,18 @@ function nextFrame(): Promise<void> {
   });
 }
 
+/** Waits until the element's first animation has actually advanced, and
+ * returns how far. Bounded, so a gesture that never starts fails as a zero
+ * rather than as a hung test. */
+async function progressed(element: HTMLElement): Promise<number> {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const now = Number(element.getAnimations()[0]?.currentTime ?? 0);
+    if (now > 0) return now;
+    await nextFrame();
+  }
+  return 0;
+}
+
 describe("cup: a cubilete arrives already knowing what it is doing", () => {
   /**
    * `die.ts`'s write-order contract, applied to the one element beside it.
@@ -104,10 +116,13 @@ describe("cup: the gesture is a state, and the browser really animates it", () =
   it("leaves a running gesture exactly where it was when the same state is declared again", async () => {
     const cup = mountCup();
     setCupGesture(cup, "shaking");
-    await nextFrame();
-    await nextFrame();
-    const before = cup.getAnimations()[0]?.currentTime ?? 0;
-    expect(Number(before), "expected the shake to have made progress").toBeGreaterThan(0);
+    // POLLED, NOT COUNTED IN FRAMES. Two `requestAnimationFrame`s looked like
+    // enough and are not: an animation's start time is pinned to a frame's
+    // own timeline instant, so `currentTime` can legitimately still read 0
+    // after the second one. It went red once, on an unrelated change, for
+    // exactly that — a fence that fails on a busy machine is not a fence.
+    const before = await progressed(cup);
+    expect(before, "expected the shake to have made progress").toBeGreaterThan(0);
 
     setCupGesture(cup, "shaking");
     const after = cup.getAnimations()[0]?.currentTime ?? 0;

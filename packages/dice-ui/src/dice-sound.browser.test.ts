@@ -256,14 +256,18 @@ describe("dice sound: every call is allowed to do nothing, and none of them thro
 });
 
 describe("dice sound: muted means muted", () => {
-  it("starts muted when it is told to, and never unlocks a context while it is", () => {
-    const sound = createDiceSound(realWindow, true);
+  it("starts muted when it is told to, and builds no context at all while it is", async () => {
+    const spy = spyingWindow();
+    const sound = createDiceSound(spy.windowLike, true);
     expect(sound.isMuted()).toBe(true);
-    expect(() => {
-      sound.unlock();
-      sound.rattle();
-      sound.tumble();
-    }).not.toThrow();
+    // A REAL PRESS, and still nothing. Muting is a request for less, not a
+    // reason to go and construct the machinery: a player who silenced the
+    // dice must not have an audio context built for them by their next tap.
+    await pressToUnlock(sound);
+    sound.rattle();
+    sound.tumble();
+    expect(spy.context(), "muted means the machinery is never even built").toBeNull();
+    expect(spy.created()).toBe(0);
   });
 
   /**
@@ -295,6 +299,32 @@ describe("dice sound: muted means muted", () => {
     const afterMute = spy.created();
     sound.rattle();
     expect(spy.created(), "and it schedules nothing new while muted").toBe(afterMute);
+  });
+
+  /**
+   * THE POUR CUTS THE RATTLE, which is the one place `play`'s own `silence()`
+   * is load-bearing rather than symmetric. A rattle is scheduled about three
+   * seconds ahead and the dice land inside the first half-second of it, so
+   * without this the cup would go on being shaken over the top of five dice
+   * already lying on the table.
+   */
+  it("cuts the rattle when the dice land on top of it", async () => {
+    const spy = spyingWindow();
+    const sound = createDiceSound(spy.windowLike, false);
+    await pressToUnlock(sound);
+    closing.push(spy.context()!);
+    expect(await running(spy.context())).toBe(true);
+
+    sound.rattle();
+    const rattleVoices = spy.created();
+    expect(rattleVoices).toBe(rattleTicks().length);
+    const stoppedBefore = spy.stopped();
+
+    sound.tumble();
+    // Every voice the rattle had in flight is stopped, on top of the ends the
+    // pour's own voices are scheduled with.
+    expect(spy.stopped() - stoppedBefore).toBeGreaterThanOrEqual(rattleVoices);
+    expect(spy.created()).toBe(rattleVoices + TUMBLE_TICKS.length);
   });
 
   it("comes back when it is turned on again", () => {
