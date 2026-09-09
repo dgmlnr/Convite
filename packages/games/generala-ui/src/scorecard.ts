@@ -8,10 +8,20 @@ import { ensureScorecardStyles } from "./scorecard-styles.js";
  *
  * The four juegos mayores and the doble are named exactly as the decided
  * ruleset names them (`convite/generala/reglas-decididas`): Escalera, Full,
- * Póker, Generala, Generala doble. The upper six are the Spanish plurals of
- * the numbers, which is what a printed planilla prints — the engine calls them
- * `ones`..`sixes` because those boxes ARE just the numbers, and that is an
- * identifier, not a label.
+ * Póker, Generala, Generala doble.
+ *
+ * THE UPPER SIX ARE THE DIGIT, NOT ITS PLURAL, and that is the ruleset's own
+ * correction rather than a taste: "en una planilla esas filas son el número,
+ * no su plural" (§Etiquetas de la sección superior). They shipped as "Unos,
+ * Doses, Treses, Cuatros, Cincos, Seises" — six words for six rows whose
+ * whole content is which face is being counted, on the one surface where the
+ * player is comparing eleven NUMBERS to each other. `1` is the same fact in
+ * one glyph, aligned with the column of numbers beside it, and it is what a
+ * printed planilla actually prints.
+ *
+ * THE ENGINE STILL CALLS THEM `ones`..`sixes`, and it should: those boxes ARE
+ * just the numbers, and that is an identifier, not a label. This map is the
+ * one place the two vocabularies meet.
  *
  * Keyed by `CategoryId` rather than listed in parallel, so a twelfth box fails
  * to compile here instead of rendering an empty row header.
@@ -25,12 +35,12 @@ import { ensureScorecardStyles } from "./scorecard-styles.js";
  * is the same line `SCORE_TAP_MIN` is drawn on.
  */
 export const CATEGORY_LABELS: Readonly<Record<CategoryId, string>> = {
-  ones: "Unos",
-  twos: "Doses",
-  threes: "Treses",
-  fours: "Cuatros",
-  fives: "Cincos",
-  sixes: "Seises",
+  ones: "1",
+  twos: "2",
+  threes: "3",
+  fours: "4",
+  fives: "5",
+  sixes: "6",
   escalera: "Escalera",
   full: "Full",
   poker: "Póker",
@@ -193,12 +203,107 @@ function makeLockedPreview(doc: Document, preview: number): HTMLSpanElement {
   return locked;
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * A PENCIL: this press WRITES A NUMBER.
+ *
+ * Two strokes, because two is what makes it a pencil rather than a wedge: the
+ * body, whose bottom-left corner is the point, and the short line across it
+ * that a real pencil's ferrule draws. Both stroked from one `currentColor`,
+ * so the mark takes whatever ink the control it sits in is wearing — which is
+ * what lets the hover state invert the whole button, mark included, with one
+ * declaration instead of a second palette.
+ */
+const PENCIL_STROKES: readonly string[] = ["M3 13 L3.8 10.2 L10.5 3.5 L12.5 5.5 L5.8 12.2 Z", "M9.4 4.6 L11.4 6.6"];
+
+/**
+ * A CROSS: this press SPENDS THE BOX AT ZERO.
+ *
+ * The same two diagonals somebody draws through a box on paper, which is what
+ * the ruleset's own verb means — `tachar` (§Orden obligatorio de tachado). It
+ * is red as well, and the ORDER of those two facts is the whole accessibility
+ * argument: the SHAPE is what tells the two presses apart (WCAG 1.4.1), the
+ * colour only says how much it costs. A player who cannot see red still sees
+ * an X where every other box has a pencil.
+ */
+const CROSS_STROKES: readonly string[] = ["M4.5 4.5 L11.5 11.5", "M11.5 4.5 L4.5 11.5"];
+
+/**
+ * The mark, as vector rather than as a character.
+ *
+ * NOT AN EMOJI AND NOT A FONT GLYPH. "✏️" and "❌" are colour emoji: the
+ * platform picks the artwork, the hue is not ours to measure against a
+ * background, and the two would not even be the same SIZE as each other on
+ * every phone. A path is the same drawing everywhere, takes its ink from CSS
+ * where a contrast fence can read it, and — the property this file's own
+ * assertions lean on — contributes NOTHING to `textContent`, so the button's
+ * visible text stays the preview number alone.
+ *
+ * `aria-hidden`, because the sentence is already on the button: the accessible
+ * name says "Anotar 45 en Póker" or "Tachar 0 en Póker", and a mark announced
+ * beside it would be the same fact twice with no name for it.
+ */
+function makePressMark(doc: Document, crossing: boolean): SVGElement {
+  const svg = doc.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("class", `hexdev-generala-press-mark hexdev-generala-press-mark--${crossing ? "cross" : "write"}`);
+  for (const outline of crossing ? CROSS_STROKES : PENCIL_STROKES) {
+    const stroke = doc.createElementNS(SVG_NS, "path");
+    stroke.setAttribute("d", outline);
+    svg.appendChild(stroke);
+  }
+  return svg;
+}
+
+/**
+ * ANOTAR AND TACHAR ARE TWO MOVES, AND THEY USED TO LOOK LIKE ONE.
+ *
+ * Every offered box rendered as a bare number, so the box that would SPEND a
+ * category for nothing was a `0` sitting in a column of numbers — and a `0`
+ * does not read as an option, it reads as a dead cell. Crossing out is a
+ * legitimate play and sometimes the right one (ruleset §Orden obligatorio de
+ * tachado gives it its own ladder), so it gets a mark of its own.
+ *
+ * THE TWO ARE TOLD APART BY WHAT THE PRESS WOULD WRITE, and nothing else is
+ * consulted. `preview === 0` IS crossing out — the ruleset defines the verb
+ * that way ("Escribir un CERO (tachar)") — so this file learns no rule to
+ * decide it, exactly as it learns none to decide which boxes are pressable.
+ * The ladder's own consequence falls out for free: at most one box is ever
+ * crossable, so at most one X is ever on the card, and the pencils around it
+ * are what make that one mark loud.
+ *
+ * THE NUMBER STAYS, AND IT IS STILL THE POINT. A player chooses by comparing
+ * eleven numbers to each other; the mark says which of two things a press
+ * does, it does not say what the box is worth. So the mark is added ABOVE the
+ * number rather than in place of it, and the numbers stay in one aligned
+ * column down the card.
+ *
+ * NOT A HOVER STATE. This widget opens on a phone, where there is no pointer
+ * to reveal anything with — the same argument `scorecard-styles.ts` already
+ * makes for the rest-state tint on this control.
+ *
+ * THE VERB IN THE ACCESSIBLE NAME CHANGES WITH IT. "Anotar 0 en Póker" and
+ * "Tachar 0 en Póker" are the same press described two ways, and only the
+ * second one says what it costs. One word differs, which is the distinction
+ * this change is; the number stays inside the name so it still contains the
+ * control's visible text (WCAG 2.5.3).
+ */
 function makeScoreControl(doc: Document, label: string, preview: number, onPress: () => void): HTMLButtonElement {
+  const crossing = preview === 0;
   const button = doc.createElement("button");
   button.type = "button";
   button.className = "hexdev-generala-score";
-  button.textContent = String(preview);
-  button.setAttribute("aria-label", `Anotar ${String(preview)} en ${label}`);
+  button.dataset.press = crossing ? "cross" : "write";
+  const value = doc.createElement("span");
+  value.className = "hexdev-generala-score-value";
+  value.textContent = String(preview);
+  button.append(makePressMark(doc, crossing), value);
+  button.setAttribute("aria-label", `${crossing ? "Tachar" : "Anotar"} ${String(preview)} en ${label}`);
   button.addEventListener("click", onPress);
   return button;
 }
