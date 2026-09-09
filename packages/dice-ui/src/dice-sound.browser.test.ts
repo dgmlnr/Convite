@@ -201,31 +201,44 @@ describe("dice sound: every call is allowed to do nothing, and none of them thro
   });
 
   /**
-   * THE AUTOPLAY POLICY, MEASURED IN THIS BROWSER RATHER THAN QUOTED FROM A
-   * SPEC — and it is the single fact the whole «default on» decision leans on.
-   * `unlock()` called with no gesture behind it builds a context and cannot
-   * start it; the same call inside a trusted press does. That is what makes
-   * "a widget nobody has touched is silent" a property of the platform and
-   * not a promise this code is making about itself.
+   * WHAT IS ASSERTED HERE AND WHAT DELIBERATELY IS NOT, because the line
+   * between them was found the hard way.
+   *
+   * The first version asserted the whole autoplay policy: that a context
+   * built with no gesture behind it stays `suspended`. It passed alone and
+   * FAILED IN THE FULL SUITE — because the policy is gated on STICKY
+   * ACTIVATION, which is a property of the top-level document, and this
+   * harness runs every test file in an iframe inside ONE page. So a trusted
+   * click anywhere earlier — another case in this file, another file
+   * entirely — activates the page for everything that follows, and the
+   * assertion's colour depended on test order rather than on any code.
+   *
+   * A fence whose answer depends on what ran before it is not a fence, so
+   * that half is gone. What stays is the half that is about THIS module and
+   * is true under any policy: a context that is not running schedules
+   * nothing, and a running one schedules exactly one voice per tick. That is
+   * also the half the «default on» decision actually leans on — the widget is
+   * silent because nothing built a context, and if one exists but is not
+   * running, nothing is scheduled through it either.
    */
-  it("cannot start a context outside a user gesture, and can inside one", async () => {
-    const idle = spyingWindow();
-    const quiet = createDiceSound(idle.windowLike, false);
-    quiet.unlock();
-    const built = idle.context();
-    expect(built, "the context is built either way — it is STARTING it the policy gates").not.toBeNull();
+  it("schedules nothing through a context that is not running, and a voice per tick through one that is", async () => {
+    const spy = spyingWindow();
+    const sound = createDiceSound(spy.windowLike, false);
+    await pressToUnlock(sound);
+    const built = spy.context();
+    expect(built, "unlock builds the context it is going to sound through").not.toBeNull();
     closing.push(built!);
-    expect(await running(built), "no gesture, so nothing should have started").toBe(false);
-    quiet.rattle();
-    expect(idle.created(), "and a suspended context schedules nothing at all").toBe(0);
+    expect(await running(built), "a real press starts it").toBe(true);
 
-    const pressed = spyingWindow();
-    const loud = createDiceSound(pressed.windowLike, false);
-    await pressToUnlock(loud);
-    closing.push(pressed.context()!);
-    expect(await running(pressed.context()), "a real press is what starts it").toBe(true);
-    loud.rattle();
-    expect(pressed.created(), "and now it schedules a voice per tick").toBe(rattleTicks().length);
+    // Forced rather than waited for, so this says something under any
+    // autoplay policy: a browser suspends contexts on its own too.
+    await built!.suspend();
+    sound.rattle();
+    expect(spy.created(), "a context that is not running schedules nothing at all").toBe(0);
+
+    await built!.resume();
+    sound.rattle();
+    expect(spy.created(), "and a running one schedules a voice per tick").toBe(rattleTicks().length);
   });
 
   /**
