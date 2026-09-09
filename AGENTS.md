@@ -106,8 +106,14 @@ tocar llegaron a diferir en **9 de 60** renders por jitter sub-píxel (peor caso
 determinismo primero** —dos pasadas sobre la base sin cambios— y después
 comparar **a nivel de píxel contra ese piso medido**.
 
-**`visual:review` renderiza imports entre paquetes desde `dist/` y no lo
-reconstruye.** Correr `tsc -b` antes o vas a fotografiar el código de otra rama.
+**Los imports entre paquetes se renderizan desde `dist/`, y ahora el script lo
+reconstruye solo.** `visual:review`, `test:visual` y `test:visual:host` corren
+`tsc -b` antes de renderizar y no renderizan nada si falla. Era una regla acá
+—"correr `tsc -b` antes"— y una regla que depende de que cada uno se acuerde no
+es un arreglo: se saltó dos veces, y las dos se disfrazaron de otra cosa (cinco
+escenas explotando dentro de `generala-ui/dist/tray.js`, un archivo que nadie
+había tocado; tres corridas de revisión hasheando imágenes de código que no
+estaba en el árbol). No hace falta acordarse de nada.
 
 **Si un render se mueve, mirarlo y describir qué cambió.** Todos los defectos
 visuales de este proyecto los encontró alguien mirando: un contraste de 1,07:1,

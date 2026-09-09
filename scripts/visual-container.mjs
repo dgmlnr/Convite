@@ -43,7 +43,7 @@
  * further; the answer for them is to run this script, not to re-tune the
  * tolerance.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -176,6 +176,56 @@ export function hostSpawnNeedsShell(platform) {
 }
 
 /**
+ * THE BUILD THAT HAS TO HAPPEN BEFORE ANY OF THESE PIXELS EXIST.
+ *
+ * This file's own opening claim — "what runs in the container is the code in
+ * the working tree right now, not a snapshot of it" — was HALF TRUE, and the
+ * half that was false is the expensive one. It holds for the package under
+ * test, whose sources vite compiles on the spot. It does not hold across
+ * packages: every `@hexdev/*` import resolves through the importee's
+ * `exports`, which point at its `dist/`, so a cross-package render draws
+ * whatever `tsc -b` last emitted — which, after a branch change, is another
+ * branch's code.
+ *
+ * IT HAS ALREADY COST TWICE, both times as something that did not look like
+ * staleness: five scenes blew up inside `generala-ui/dist/tray.js` (a file
+ * nobody had edited), and three review runs hashed images of code that was
+ * not in the tree. `.gitignore:70` keeps scene captures out of git, so
+ * `git diff` cannot contradict a stale render either.
+ *
+ * `AGENTS.md` carried this as a rule — "run `tsc -b` first" — and a rule that
+ * depends on everyone remembering is not a fix. This is the fix; the rule
+ * says so now.
+ *
+ * `node <typescript>/bin/tsc` rather than `pnpm exec tsc` or
+ * `node_modules/.bin/tsc`: on Windows those two are `.cmd`/`.ps1` shims that
+ * Node's spawn cannot execute at all without a shell — the identical trap
+ * `hostSpawnNeedsShell` above exists for. Handing the launcher script to the
+ * Node already running needs no shim and no shell anywhere.
+ *
+ * Pure, so `visual-container.test.ts` can pin the argv without compiling
+ * anything, same reason `resolveContainerRun` is.
+ */
+export function workspaceBuildCommand(nodeExecPath) {
+  return { command: nodeExecPath, args: ["node_modules/typescript/bin/tsc", "-b"] };
+}
+
+/**
+ * Runs it and answers ONE question: may the render proceed? A false here has
+ * to stop the run — rendering against a `dist/` that failed to compile is the
+ * very stale-photograph case this exists to close, only louder.
+ *
+ * Takes `spawnSync` as an argument so the test can prove the verdict for a
+ * failing build without a failing build.
+ */
+export function buildWorkspace(spawnSyncImpl, nodeExecPath, repoRoot) {
+  const { command, args } = workspaceBuildCommand(nodeExecPath);
+  const result = spawnSyncImpl(command, args, { cwd: repoRoot, stdio: "inherit" });
+  if (result.error !== undefined && result.error !== null) throw result.error;
+  return result.status === 0;
+}
+
+/**
  * `process.getuid`/`getgid` are POSIX-only: on Windows they are ABSENT, not
  * throwing, so calling them unconditionally crashed this script before it
  * could do anything — which is a poor showing for the one command whose
@@ -193,6 +243,13 @@ export function posixUserFor(processLike) {
 
 /* c8 ignore start — the spawn, deliberately thin; the decisions above are what is tested. */
 if (isEntryPoint(import.meta.url, process.argv[1])) {
+  // BEFORE the container, never after: the run below renders whatever every
+  // `@hexdev/*` package's `dist/` holds at the moment vite resolves it.
+  if (!buildWorkspace(spawnSync, process.execPath, process.cwd())) {
+    process.stderr.write("\n`tsc -b` failed, so every cross-package import would still resolve to the last dist/ that compiled — another branch's code, or none.\nNothing was rendered. Fix the build and run this again.\n");
+    process.exit(1);
+  }
+
   const { uid, gid } = posixUserFor(process);
   // `--config <file>` is consumed HERE rather than forwarded, so vitest never
   // sees it twice: the container run always supplies exactly one.
