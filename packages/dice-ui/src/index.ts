@@ -82,6 +82,8 @@ export {
   getDieFaceArtUrl,
 } from "./art.js";
 export { createDieSceneElement } from "./die.js";
+export type { CupGesture } from "./cup.js";
+export { CUP_GESTURE_ATTRIBUTE, createCupElement, setCupGesture } from "./cup.js";
 export { DICE_STYLE_ID, buildDiceStylesheet, ensureDiceStyles } from "./dice-styles.js";
 export { announceRoll, createDiceAnnouncer } from "./dice-announcer.js";
 export type { DiceCupHandle, DiceCupOptions } from "./dice.js";

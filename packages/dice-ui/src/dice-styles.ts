@@ -35,6 +35,125 @@ export const DICE_TOSS_EASING = "cubic-bezier(0, 0, 0.58, 1)";
 export const DICE_TOSS_STAGGER_MS = 55;
 
 /**
+ * THE CUP'S REST POSE, AS ONE STRING READ THREE TIMES — the resting rule
+ * below, and the tip keyframe's own first and last stop.
+ *
+ * This is the cup's version of the guarantee `hexdev-dice-toss`'s `from`
+ * state holds for a die: a gesture that begins and ends anywhere other than
+ * exactly where the element already sits VISIBLY SNAPS, once when it starts
+ * and once when it ends. The die anchors to `--dice-rest-x`/`-y` because a
+ * face is decided per roll; a cup's rest is the same pose every time, so one
+ * constant is enough — and `dice-styles.test.ts` reads the built stylesheet
+ * back to prove the three copies are still one number.
+ *
+ * `translate(0px, 0px)` IS NOT DEAD WEIGHT, for the same reason
+ * `.hexdev-dice-cube`'s own `translateY(0px)` is not: it makes this list the
+ * same SHAPE as every keyframe stop below. Unlike the cube's case it is not
+ * a fix for anything measured — a 2D translate-plus-rotate decomposes back
+ * to exactly itself, so a browser falling through to matrix interpolation
+ * here would still draw the same angles. It is kept identical because a
+ * reader comparing the rule to the keyframe should not have to know that.
+ *
+ * `9deg` IS THE TILT `.hexdev-dice-cup` ALREADY RESTS AT, byte for byte, so
+ * the cup a player presses on the front door and the cup standing on a board
+ * are the same object seen twice, not two drawings that nearly agree.
+ */
+export const CUP_REST_TRANSFORM = "translate(0px, 0px) rotate(9deg)";
+
+/**
+ * THE PIVOT, AND IT IS MEASURED RATHER THAN CENTRED BY EYE.
+ *
+ * `cup.webp` is 67.6% transparent: the cubilete occupies x 20.6%-78.9% and
+ * y 31.6%-98.9% of its own file, which puts the middle of the drawn object
+ * at (49.8%, 65.2%) of the box — not at the box's own centre, which is empty
+ * sky. `cup-art-bounds.browser.test.ts` decodes the real file in a real
+ * canvas and measures those bounds back, so this pair cannot drift away from
+ * the artwork it describes: re-render the cup smaller inside its frame and
+ * that test goes red instead of this pivot quietly becoming wrong.
+ *
+ * A hand turning a cubilete over pivots it about roughly its own middle, and
+ * that is what this is. The alternative — pivoting at the base, like a cup
+ * toppling — swings the mouth through about three quarters of the cup's own
+ * height horizontally, which walks it straight into whatever sits beside it
+ * on the board. `.hexdev-dice-cup` already rests at this same origin, chosen
+ * the same way and for its own 9deg tilt.
+ */
+export const CUP_PIVOT_X_PERCENT = 50;
+export const CUP_PIVOT_Y_PERCENT = 65;
+
+/**
+ * ONE CYCLE OF THE SHAKE, and the reason it is not faster.
+ *
+ * A real cubilete rattles far quicker than this. Drawn at four keyframe stops
+ * a cycle, anything much under this reads as jitter — a single blurred smear
+ * with no direction to it — because consecutive frames stop being far enough
+ * apart for an eye to track which way the cup is going. This is slow enough
+ * that each swing is legible as a swing and fast enough that the cup is
+ * plainly being worked rather than wobbling.
+ *
+ * IT LOOPS, so it does not need to match anything: the shake runs for exactly
+ * as long as the table is waiting for a roll, which is the server's own beat
+ * (`GENERALA_SYSTEM_ACTION_PAUSE_MS`, 350ms) plus however long the round trip
+ * takes. Nothing here schedules its end — a gesture ends when the state that
+ * asked for it stops being true.
+ */
+export const CUP_SHAKE_CYCLE_MS = 220;
+
+/**
+ * THE WHOLE TIP: over, held, and back upright.
+ *
+ * SIZED AGAINST THE FLIGHT IT ACCOMPANIES, not chosen round. The dice leave
+ * over a window of `DICE_TOSS_STAGGER_MS` per die — 220ms for the five a
+ * Generala tray throws — so the cup has to be over and STAY over for at least
+ * that long, or the last die is still leaving a cup that has already
+ * straightened up. `CUP_TIP_POUR_PERCENT`/`CUP_TIP_HOLD_PERCENT` below put
+ * the mouth down by ~100ms and hold it there past 250ms, which covers that
+ * window with room to spare, and leave the remaining ~310ms for the cup to
+ * come back up while the dice are still tumbling (their own 640ms plus the
+ * same stagger).
+ *
+ * WHY THE CUP FINISHES FIRST, deliberately. A cup still tipped over while
+ * five dice sit at rest on the table is a frozen prop; a cup back on its base
+ * while the last die is still turning is a throw that already happened. The
+ * second one is what a table looks like.
+ *
+ * NOT DERIVED FROM `DICE_TOSS_STAGGER_MS` IN CODE, on `art.ts`'s own
+ * argument about its pixel dimensions: an expression that recomputes its
+ * own fence's expected value stays green through any renumbering, which
+ * is exactly the drift a fence is for. The relationship is asserted in
+ * `dice-styles.test.ts` against both literals instead.
+ */
+export const CUP_TIP_DURATION_MS = 560;
+/** The instant the mouth is all the way down, as a percentage of the tip. */
+export const CUP_TIP_POUR_PERCENT = 18;
+/** The instant the cup starts coming back up. Everything between this and
+ * `CUP_TIP_POUR_PERCENT` is the cup held over, which is the window the dice
+ * actually leave through. */
+export const CUP_TIP_HOLD_PERCENT = 45;
+
+/**
+ * THE CUP AS A PIECE ON THE TABLE, sized here rather than by whoever mounts
+ * it — the same rule `DIE_SCENE_SIZE` states for a die: how big a prop is
+ * drawn is a property of the prop, not of any game's rules.
+ *
+ * SMALLER THAN THE ARTWORK, AND LESS SO THAN `.hexdev-dice-cup` IS.
+ * `cup.webp` is 228x269, rendered at ~2.7x of the 84x99 button that was the
+ * only place it was ever drawn (`art.ts` has that arithmetic). This box is
+ * 1.84x of it instead — still above 1:1 on the 2x displays most phones ship,
+ * and a deliberate trade: at the button's size a cubilete standing next to a
+ * die reads as SMALLER THAN THE DIE, which is the one thing a cubilete
+ * cannot be. The alternative was re-rendering the asset, which is a Blender
+ * job (`tools/render-props.py`) and not this change.
+ *
+ * THE ASPECT RATIO IS FENCED against the artwork's own, in
+ * `dice-styles.test.ts`. `object-fit: contain` means a mismatch letterboxes
+ * silently instead of distorting — which is the good failure mode, and also
+ * exactly the kind that nobody notices for a year.
+ */
+export const CUP_PIECE_WIDTH = 124;
+export const CUP_PIECE_HEIGHT = 146;
+
+/**
  * THE FLIGHT'S OWN BOX — bigger than `.hexdev-dice-cube`'s own 110px
  * (below) ON PURPOSE, and the two are no longer the same number the way they
  * used to be. See `.hexdev-dice-scene`'s own comment in the stylesheet for
@@ -531,15 +650,94 @@ export function buildDiceStylesheet(): string {
   transform-origin: 50% 65%;
 }
 
-.hexdev-dice-cup img {
+.hexdev-dice-cup img,
+.hexdev-dice-cup-piece img {
   width: 100%;
   height: 100%;
   display: block;
   /* \`contain\`, not \`cover\`: the rendered cup (\`art.ts\`'s CUP_ART_WIDTH/
-     -HEIGHT) and this button's own box (84x99) are close but not
-     mathematically forced to match forever, and a cropped cup reads far
-     worse than a couple of transparent px of letterboxing would. */
+     -HEIGHT) and these boxes are close but not mathematically forced to
+     match forever, and a cropped cup reads far worse than a couple of
+     transparent px of letterboxing would. */
   object-fit: contain;
+}
+
+/* THE CUBILETE AS A PIECE ON THE TABLE, not as a control.
+   \`.hexdev-dice-cup\` above is a real \`<button>\` and carries a button's
+   whole obligation — a 44x44 tap floor, a focus ring, a pressed state. This
+   is scenery: a board that already has a labelled control for throwing (
+   \`generala-ui\`'s own "Tirar N dados") needs the cup to be an OBJECT beside
+   it, not a second thing to press. Sharing the class would have meant a
+   \`cursor: pointer\` on something nothing can click, which is the kind of lie
+   that costs somebody a minute of trying.
+
+   THE GESTURE IS AN ATTRIBUTE AND NOT A CLASS, so exactly one of the three
+   can be in force at any instant. Two class names can both be present; two
+   values of one attribute cannot, and "shaking and tipping at the same time"
+   is not a state a cubilete has. */
+.hexdev-dice-cup-piece {
+  display: block;
+  flex-shrink: 0;
+  width: ${String(CUP_PIECE_WIDTH)}px;
+  height: ${String(CUP_PIECE_HEIGHT)}px;
+  transform: ${CUP_REST_TRANSFORM};
+  transform-origin: ${String(CUP_PIVOT_X_PERCENT)}% ${String(CUP_PIVOT_Y_PERCENT)}%;
+}
+
+.hexdev-dice-cup-piece[data-cup-gesture="shaking"] {
+  animation: hexdev-dice-cup-shake ${String(CUP_SHAKE_CYCLE_MS)}ms ease-in-out infinite;
+}
+
+.hexdev-dice-cup-piece[data-cup-gesture="tipping"] {
+  animation: hexdev-dice-cup-tip ${String(CUP_TIP_DURATION_MS)}ms ease-out;
+}
+
+/* WORKED, NOT WOBBLING. Both axes move together and the rotation is not
+   symmetric about the rest tilt: a hand shaking a cubilete drives it further
+   in one direction than the other and never returns it to exactly where it
+   started mid-stroke. A symmetric \`rotate(+n) / rotate(-n)\` pair reads as a
+   metronome, which is the one thing a shake is not. */
+@keyframes hexdev-dice-cup-shake {
+  0%,
+  100% {
+    transform: ${CUP_REST_TRANSFORM};
+  }
+  25% {
+    transform: translate(-9px, -6px) rotate(-8deg);
+  }
+  50% {
+    transform: translate(4px, 3px) rotate(24deg);
+  }
+  75% {
+    transform: translate(9px, -7px) rotate(2deg);
+  }
+}
+
+/* OVER FAST, HELD, THEN BACK — the three beats of a throw, and the fast one
+   is first on purpose. Everything the player is waiting for happens in the
+   opening fifth of this: by then the mouth is down and the dice are already
+   in the air. The rest of the animation is the cup finishing a movement that
+   has stopped mattering, which is exactly the shape of a real one.
+
+   NO ANTICIPATION BEAT, and its absence was a decision. Rocking back before
+   tipping is the textbook way to sell a throw, and it would have pushed the
+   pour past the moment the dice actually start moving — the dice do not wait
+   for the cup, because their flight is the state arriving from the server and
+   the cup is only ever illustrating it. A gesture that has to be right ON a
+   beat it does not control cannot afford a wind-up. */
+@keyframes hexdev-dice-cup-tip {
+  0% {
+    transform: ${CUP_REST_TRANSFORM};
+  }
+  ${String(CUP_TIP_POUR_PERCENT)}% {
+    transform: translate(14px, -10px) rotate(96deg);
+  }
+  ${String(CUP_TIP_HOLD_PERCENT)}% {
+    transform: translate(12px, -6px) rotate(88deg);
+  }
+  100% {
+    transform: ${CUP_REST_TRANSFORM};
+  }
 }
 
 .hexdev-dice-cup:active {
@@ -558,6 +756,22 @@ export function buildDiceStylesheet(): string {
 @media (prefers-reduced-motion: reduce) {
   .hexdev-dice-cup {
     transition: none;
+  }
+  /* THE SAME ANSWER THE DICE ALREADY GIVE, one rule up: the toss is turned
+     off and the cube is simply already at rest. Here the base rule above is
+     the whole rest pose, so switching the animation off leaves the cubilete
+     standing exactly where it stands between throws — no separate "already
+     landed" branch, no pose to reset, nothing left half-applied. The throw
+     stops being an event and becomes a fact, for the dice and the cup at the
+     same instant.
+
+     SOUND IS NOT COVERED BY THIS AND MUST NOT BE. This query is about
+     vestibular tolerance, not about noise; a player who suppresses motion
+     has if anything lost MORE of the throw and has more use for hearing it,
+     not less. Whatever this package ever makes audible answers to its own
+     control. */
+  .hexdev-dice-cup-piece[data-cup-gesture] {
+    animation: none;
   }
 }
 `;

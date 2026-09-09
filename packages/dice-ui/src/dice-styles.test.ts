@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { CUP_ART_HEIGHT, CUP_ART_WIDTH } from "./art.js";
 import { CUP_TAP_MIN } from "./geometry.js";
-import { buildDiceStylesheet, DIE_CUBE_SIZE, DIE_SCENE_SIZE } from "./dice-styles.js";
+import {
+  buildDiceStylesheet,
+  CUP_PIECE_HEIGHT,
+  CUP_PIECE_WIDTH,
+  CUP_PIVOT_X_PERCENT,
+  CUP_PIVOT_Y_PERCENT,
+  CUP_SHAKE_CYCLE_MS,
+  CUP_TIP_DURATION_MS,
+  CUP_TIP_HOLD_PERCENT,
+  CUP_TIP_POUR_PERCENT,
+  DICE_TOSS_DURATION_MS,
+  DICE_TOSS_STAGGER_MS,
+  DIE_CUBE_SIZE,
+  DIE_SCENE_SIZE,
+} from "./dice-styles.js";
 
 /**
  * Pulls one axis's whole-turn offset straight out of the toss keyframe's
@@ -288,5 +303,207 @@ describe("dice-styles: the cup's own tap surface meets the accessibility floor i
   it("gives the cup a visible focus state", () => {
     const css = buildDiceStylesheet();
     expect(css).toMatch(/\.hexdev-dice-cup:focus-visible\s*\{[^}]*outline:/);
+  });
+});
+
+/**
+ * Every keyframe stop of one animation, as `{ at, transform }` pairs, read
+ * out of the built stylesheet rather than out of the constants that wrote it.
+ * A selector-and-percentage parse is enough here because these two keyframes
+ * hold plain transform lists with no nested `calc()` — unlike
+ * `extractTurnOffset` at the top of this file, which needs the toss's exact
+ * literal shape precisely because `rotateX(calc(...))` defeats a generic
+ * paren capture.
+ */
+function keyframeStops(css: string, name: string): { at: string; transform: string }[] {
+  const block = new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css);
+  if (block === null) throw new Error(`no @keyframes ${name} in the stylesheet`);
+  return [...block[1]!.matchAll(/([\d%,\s]+)\{\s*transform:\s*([^;]+);/g)].map((m) => ({ at: m[1]!.trim(), transform: m[2]!.trim() }));
+}
+
+function ruleFor(css: string, selector: string): string {
+  const rule = new RegExp(`${selector.replace(/[.[\]"]/g, "\\$&")}\\s*\\{[^}]*\\}`).exec(css);
+  if (rule === null) throw new Error(`no rule for ${selector} in the stylesheet`);
+  return rule[0];
+}
+
+/**
+ * THE CUP'S VERSION OF THE ONE CONTRACT THIS PACKAGE EXISTS TO HOLD.
+ *
+ * A die's toss may not decide a face, and the mechanism that guarantees it is
+ * that the keyframe's `from` state is the rest pose plus whole turns — the
+ * same two `var()` reads, never independent numbers. A cup's gesture has the
+ * same shape of obligation for a different reason: nothing about a cup is
+ * decided, so what a stray number would break is not correctness but
+ * CONTINUITY. A tip whose first stop is not exactly where the cup already
+ * sits snaps on frame one and snaps back at the end, twice per throw, and no
+ * test that only reads the constants could see it — both halves would be read
+ * from the same constant and agree with each other while disagreeing with the
+ * shipped CSS. These read the built stylesheet back.
+ */
+describe("dice-styles: the cup's gesture begins and ends exactly where the cup already stands", () => {
+  it("anchors both ends of the tip to the very same transform the resting rule declares", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const rest = /transform:\s*([^;]+);/.exec(ruleFor(css, ".hexdev-dice-cup-piece"));
+    expect(rest, "expected a transform: declaration on .hexdev-dice-cup-piece").not.toBeNull();
+
+    const stops = keyframeStops(css, "hexdev-dice-cup-tip");
+    const first = stops.find((stop) => stop.at === "0%");
+    const last = stops.find((stop) => stop.at === "100%");
+    expect(first, "expected a 0% stop").toBeDefined();
+    expect(last, "expected a 100% stop").toBeDefined();
+    expect(first!.transform).toBe(rest![1]!.trim());
+    expect(last!.transform).toBe(rest![1]!.trim());
+  });
+
+  it("anchors the shake's own wrap-around stop to it too, so a loop never jumps at the seam", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const rest = /transform:\s*([^;]+);/.exec(ruleFor(css, ".hexdev-dice-cup-piece"))![1]!.trim();
+    const stops = keyframeStops(css, "hexdev-dice-cup-shake");
+    const wrap = stops.find((stop) => stop.at === "0%,\n  100%" || stop.at.replace(/\s+/g, "") === "0%,100%");
+    expect(wrap, "expected the shake to open and close on one shared stop").toBeDefined();
+    expect(wrap!.transform).toBe(rest);
+  });
+
+  /**
+   * The same shape-matching lesson `.hexdev-dice-cube`'s own fence above
+   * enforces, applied where it is cheap rather than where it was expensive.
+   * For the cube it is load-bearing — a mismatched list forces matrix
+   * decomposition and collapses a multi-turn spin. For a 2D translate-plus-
+   * rotate the decomposition is exact and nothing would visibly break, which
+   * is precisely why the rule needs stating: a reader comparing these two
+   * has no way to know the difference, and should not have to.
+   */
+  it("keeps every stop of both gestures the same transform-function shape as the resting rule — translate, then rotate", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const shapeOf = (transform: string): string[] => [...transform.matchAll(/(translate|rotate)\(/g)].map((m) => m[1]!);
+    const rest = /transform:\s*([^;]+);/.exec(ruleFor(css, ".hexdev-dice-cup-piece"))![1]!;
+    expect(shapeOf(rest)).toEqual(["translate", "rotate"]);
+
+    for (const name of ["hexdev-dice-cup-shake", "hexdev-dice-cup-tip"]) {
+      const stops = keyframeStops(css, name);
+      expect(stops.length, `expected ${name} to have stops`).toBeGreaterThan(2);
+      for (const stop of stops) {
+        expect(shapeOf(stop.transform), `${name} at ${stop.at}`).toEqual(["translate", "rotate"]);
+      }
+    }
+  });
+
+  /** A gesture that never leaves the rest pose would satisfy every anchoring
+   * assertion above and animate nothing at all — the same vacuity the toss's
+   * own `expect(x.constantDeg).not.toBe(0)` guards against. */
+  it("actually moves: at least one stop of each gesture differs from the rest pose", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const rest = /transform:\s*([^;]+);/.exec(ruleFor(css, ".hexdev-dice-cup-piece"))![1]!.trim();
+    for (const name of ["hexdev-dice-cup-shake", "hexdev-dice-cup-tip"]) {
+      expect(keyframeStops(css, name).some((stop) => stop.transform !== rest), name).toBe(true);
+    }
+  });
+});
+
+describe("dice-styles: the cup stays over for as long as dice are still leaving it", () => {
+  /**
+   * THE ONE PLACE THE CUP'S CLOCK AND THE DICE'S CLOCK HAVE TO AGREE, and
+   * they agree by arithmetic rather than by being the same number.
+   *
+   * `die.ts` writes `--i` as a tray index, and this file already reads that
+   * range as 0..4 one describe block up (the toss's own whole-turn fence
+   * loops over exactly those five). The last die therefore starts its flight
+   * four staggers late — and a cup that has straightened up before then is a
+   * cup a die is visibly falling out of the side of.
+   *
+   * Both sides are literals (`CUP_TIP_DURATION_MS`, `CUP_TIP_HOLD_PERCENT`,
+   * `DICE_TOSS_STAGGER_MS`), which is what makes this a fence: shorten the
+   * tip or lengthen the stagger and it goes red, where a `CUP_TIP_DURATION_MS
+   * = DICE_TOSS_STAGGER_MS * k` would have stayed green through both.
+   */
+  it("holds the mouth down past the instant the last of five dice starts its own flight", () => {
+    const lastDieLeavesAtMs = DICE_TOSS_STAGGER_MS * 4;
+    const holdEndsAtMs = (CUP_TIP_DURATION_MS * CUP_TIP_HOLD_PERCENT) / 100;
+    expect(holdEndsAtMs).toBeGreaterThan(lastDieLeavesAtMs);
+  });
+
+  it("gets the mouth all the way down well before that, so the first die does not leave a still-upright cup", () => {
+    const pourDoneAtMs = (CUP_TIP_DURATION_MS * CUP_TIP_POUR_PERCENT) / 100;
+    expect(pourDoneAtMs).toBeLessThan(DICE_TOSS_STAGGER_MS * 2);
+    expect(CUP_TIP_POUR_PERCENT).toBeLessThan(CUP_TIP_HOLD_PERCENT);
+  });
+
+  /** The cup is back on its base before the dice have finished tumbling —
+   * see `CUP_TIP_DURATION_MS`'s own comment for why that order and not the
+   * other one. */
+  it("finishes before the last die does", () => {
+    expect(CUP_TIP_DURATION_MS).toBeLessThan(DICE_TOSS_DURATION_MS + DICE_TOSS_STAGGER_MS * 4);
+  });
+
+  it("emits those two checkpoints as the tip's actual keyframe percentages, not merely as constants nothing reads", () => {
+    const stops = keyframeStops(declarationsOnly(buildDiceStylesheet()), "hexdev-dice-cup-tip").map((stop) => stop.at);
+    expect(stops).toContain(`${String(CUP_TIP_POUR_PERCENT)}%`);
+    expect(stops).toContain(`${String(CUP_TIP_HOLD_PERCENT)}%`);
+  });
+});
+
+describe("dice-styles: the cubilete is a piece, not a second control", () => {
+  it("sizes it at the exported box and never borrows the button's tap floor or its pointer cursor", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    const rule = ruleFor(css, ".hexdev-dice-cup-piece");
+    expect(rule).toContain(`width: ${String(CUP_PIECE_WIDTH)}px`);
+    expect(rule).toContain(`height: ${String(CUP_PIECE_HEIGHT)}px`);
+    expect(rule, "scenery must not offer a cursor nothing can act on").not.toMatch(/cursor:/);
+    expect(rule).not.toMatch(/min-width:/);
+  });
+
+  /**
+   * THE BOX AND THE ARTWORK ARE THE SAME SHAPE. `object-fit: contain` makes a
+   * mismatch letterboxes rather than distort, which is the good failure mode
+   * and also the invisible one: a re-rendered cup at a different aspect would
+   * simply start painting smaller inside its own box, on every board, with
+   * nothing to say so. `art.test.ts` already fences CUP_ART_WIDTH/-HEIGHT
+   * against the real file, so this closes the chain from the file to the box.
+   */
+  it("keeps the piece's box at the artwork's own aspect ratio", () => {
+    expect(CUP_PIECE_WIDTH / CUP_PIECE_HEIGHT).toBeCloseTo(CUP_ART_WIDTH / CUP_ART_HEIGHT, 2);
+  });
+
+  it("pivots both gestures about the drawn cubilete's own middle, not the box's", () => {
+    const rule = ruleFor(declarationsOnly(buildDiceStylesheet()), ".hexdev-dice-cup-piece");
+    expect(rule).toContain(`transform-origin: ${String(CUP_PIVOT_X_PERCENT)}% ${String(CUP_PIVOT_Y_PERCENT)}%`);
+    expect(CUP_PIVOT_Y_PERCENT, "the artwork's opaque middle sits well below the box's own centre").toBeGreaterThan(50);
+  });
+
+  /** One attribute, three values — so "shaking" and "tipping" cannot both be
+   * in force, which two class names could. */
+  it("selects each gesture off one data attribute rather than off classes that could stack", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    expect(css).toContain('.hexdev-dice-cup-piece[data-cup-gesture="shaking"]');
+    expect(css).toContain('.hexdev-dice-cup-piece[data-cup-gesture="tipping"]');
+    expect(css, "still is the absence of an animation, never a rule of its own").not.toContain('[data-cup-gesture="still"]');
+  });
+
+  it("loops the shake and plays the tip exactly once", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    expect(ruleFor(css, '.hexdev-dice-cup-piece[data-cup-gesture="shaking"]')).toMatch(/animation:[^;]*\binfinite\b/);
+    expect(ruleFor(css, '.hexdev-dice-cup-piece[data-cup-gesture="tipping"]')).not.toMatch(/animation:[^;]*\binfinite\b/);
+  });
+
+  it("runs each gesture at its own exported duration", () => {
+    const css = declarationsOnly(buildDiceStylesheet());
+    expect(ruleFor(css, '.hexdev-dice-cup-piece[data-cup-gesture="shaking"]')).toContain(`${String(CUP_SHAKE_CYCLE_MS)}ms`);
+    expect(ruleFor(css, '.hexdev-dice-cup-piece[data-cup-gesture="tipping"]')).toContain(`${String(CUP_TIP_DURATION_MS)}ms`);
+  });
+
+  /**
+   * The reduced-motion answer for the cup, fenced the way the cube's already
+   * is — by joining EVERY block rather than reading the first, which is the
+   * mistake `table-styles.test.ts` records paying for. The gesture rule sits
+   * in the same block as the button's `transition: none`, so a fence reading
+   * only up to the first closing brace pair would have missed it entirely.
+   */
+  it("turns every gesture off under prefers-reduced-motion, leaving the resting pose as the whole picture", () => {
+    const css = buildDiceStylesheet();
+    const joined = [...css.matchAll(/@media \(prefers-reduced-motion:\s*reduce\)\s*\{[\s\S]*?\}\s*\}/g)].map((m) => m[0]).join("\n");
+    const rule = /\.hexdev-dice-cup-piece\[data-cup-gesture\]\s*\{[^}]*\}/.exec(joined);
+    expect(rule, "expected the cup piece's gestures to be disabled under reduced motion").not.toBeNull();
+    expect(rule![0]).toMatch(/animation:\s*none/);
   });
 });
