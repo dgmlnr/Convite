@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CATEGORY_IDS, applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor, scoreFor } from "@hexdev/generala-engine";
 import type { ApplyResult, CategoryId, DieFace, GeneralaAction, MatchState, PlayerId, PlayerView, ScoreAction } from "@hexdev/generala-engine";
 
-import { renderGeneralaScorecard } from "./scorecard.js";
+// The label map, shared rather than re-typed: the verb is what these fences
+// are about, and pinning the box's NAME here as well would make them fail for
+// a reason that belongs to a different change.
+import { CATEGORY_LABELS, renderGeneralaScorecard } from "./scorecard.js";
 import { SCORE_TAP_MIN, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
 
 /**
@@ -65,6 +68,10 @@ interface Planilla {
    * with nothing to press. */
   readonly locked: (category: CategoryId, seat: number) => HTMLElement | null;
   readonly lockedAll: () => readonly HTMLElement[];
+  /** The vector mark inside an offered box — a pencil where the press writes a
+   * number, a cross where it spends the box at zero. */
+  readonly mark: (category: CategoryId, seat: number) => SVGElement | null;
+  readonly marks: () => readonly SVGElement[];
   readonly dispatched: readonly ScoreAction[];
   readonly offers: () => readonly GeneralaAction[];
   /** Roll these faces and STOP, leaving the turn in `deciding` with a seat
@@ -114,6 +121,8 @@ function seatPlanilla(seatId: PlayerId = SEAT): Planilla {
     buttons: () => [...table().querySelectorAll<HTMLButtonElement>("tbody button")],
     locked: (category, seat) => table().querySelector<HTMLElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"] .hexdev-generala-score-locked`),
     lockedAll: () => [...table().querySelectorAll<HTMLElement>("tbody .hexdev-generala-score-locked")],
+    mark: (category, seat) => table().querySelector<SVGElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"] .hexdev-generala-press-mark`),
+    marks: () => [...table().querySelectorAll<SVGElement>("tbody .hexdev-generala-press-mark")],
     roll: (faces) => {
       state = accept(applyRoll(state, faces));
       draw();
@@ -625,6 +634,142 @@ describe("generala scorecard: an open box the acting seat may write is a control
     // nothing at all, and it reads as "— 18".
     expect(getComputedStyle(planilla.cell("sixes", 0), "::after").content).toBe("none");
     expect(getComputedStyle(planilla.cell("sixes", 1), "::after").content).toBe('"—"');
+  });
+});
+
+/**
+ * ANOTAR AND TACHAR, TOLD APART BEFORE THE PRESS.
+ *
+ * The fence above ("keeps a box you may still take from one you may not")
+ * proves the four STATES a box can be in are drawn differently. It says
+ * nothing about the two MOVES, because until this change there was only one
+ * drawing for both: an offered box was a number, whether pressing it wrote 18
+ * or spent the category for nothing. A `0` in a column of numbers does not
+ * read as an option, and crossing out is a play somebody chooses (ruleset
+ * §Orden obligatorio de tachado gives it a whole ladder of its own).
+ *
+ * EVERY ASSERTION HERE IS ABOUT A BOX THE ENGINE REALLY OFFERED, in a
+ * position it really reached. The crossable box is not chosen by this file:
+ * it is whichever one the ladder has reached, which is why the fixture plays
+ * turns rather than declaring a card.
+ */
+describe("generala scorecard: a press that writes and a press that crosses out do not look the same", () => {
+  /** Seat 0 deciding, with both moves on the card at once: `fives` previews a
+   * real 15, and `generala` — the highest-paying box still open on this card
+   * — previews 0, so it is the one box a zero may go in and the one press
+   * that crosses out. Which box that is was decided by the ladder and by the
+   * two turns played below, never by this fixture naming one. */
+  function bothMovesOffered(): Planilla {
+    const planilla = seatPlanilla();
+    playedOut(planilla);
+    planilla.playTurn([1, 1, 2, 3, 5], "generala-doble"); // seat 0 spends the doble at 0
+    planilla.playTurn([2, 2, 4, 5, 6], "twos"); // seat 1 takes a turn
+    planilla.roll([5, 5, 5, 2, 1]); // seat 0 deciding again
+    return planilla;
+  }
+
+  it("marks the press that writes a number with a pencil, and the press that spends the box with a cross", () => {
+    const planilla = bothMovesOffered();
+
+    // The premise, asked of the engine rather than assumed: one of these two
+    // boxes would pay and the other would not, and BOTH are on offer.
+    expect(planilla.button("fives", 0)?.textContent?.trim()).toBe("15");
+    expect(planilla.button("generala", 0)?.textContent?.trim()).toBe("0");
+
+    expect(planilla.button("fives", 0)?.dataset.press).toBe("write");
+    expect(planilla.button("generala", 0)?.dataset.press).toBe("cross");
+    expect(planilla.mark("fives", 0)?.classList.contains("hexdev-generala-press-mark--write")).toBe(true);
+    expect(planilla.mark("generala", 0)?.classList.contains("hexdev-generala-press-mark--cross")).toBe(true);
+  });
+
+  it("puts exactly one cross on the card, because exactly one box is ever crossable", () => {
+    const planilla = bothMovesOffered();
+
+    const crosses = planilla.marks().filter((mark) => mark.classList.contains("hexdev-generala-press-mark--cross"));
+    // The ladder's own consequence, read off the render: a zero goes only in
+    // the highest-paying open box, so a card can never show two crosses. That
+    // is what makes the one it does show loud.
+    expect(crosses).toHaveLength(1);
+    // And the pencils are the rest of the offers, one each — never a mark on
+    // a box nothing is offered for.
+    expect(planilla.marks()).toHaveLength(planilla.buttons().length);
+  });
+
+  it("puts no mark on a box that cannot be pressed, nor on one already written", () => {
+    const planilla = bothMovesOffered();
+
+    // An open box the ladder has not reached carries its number and nothing
+    // else: a mark there would promise a press that does not exist.
+    expect(planilla.locked("threes", 0)?.textContent?.trim()).toBe("0");
+    expect(planilla.mark("threes", 0)).toBeNull();
+    // A box already spent is struck through, which is a different notation
+    // for a different fact, and it is not a control.
+    expect(planilla.cell("generala-doble", 0).dataset.state).toBe("crossed");
+    expect(planilla.mark("generala-doble", 0)).toBeNull();
+    expect(planilla.mark("sixes", 1)).toBeNull();
+  });
+
+  it("tells the two apart by SHAPE and not only by colour, so it survives being colour-blind (WCAG 1.4.1)", () => {
+    const planilla = bothMovesOffered();
+
+    const drawingOf = (mark: SVGElement | null): readonly string[] => [...(mark?.querySelectorAll("path") ?? [])].map((path) => path.getAttribute("d") ?? "");
+    const pencil = drawingOf(planilla.mark("fives", 0));
+    const cross = drawingOf(planilla.mark("generala", 0));
+
+    expect(pencil.length, "the pencil is drawn").toBeGreaterThan(0);
+    expect(cross.length, "the cross is drawn").toBeGreaterThan(0);
+    // THE WHOLE POINT: strip the colour and the two are still different
+    // drawings. A change that made them one shape in two hues would pass every
+    // other assertion in this file.
+    expect(cross).not.toEqual(pencil);
+    // And the weight differs too, which is the second non-colour channel.
+    expect(getComputedStyle(planilla.mark("generala", 0)!).strokeWidth).not.toBe(getComputedStyle(planilla.mark("fives", 0)!).strokeWidth);
+  });
+
+  it("says which move it is in the accessible name, and still contains the number the button shows (WCAG 2.5.3)", () => {
+    const planilla = bothMovesOffered();
+
+    expect(planilla.button("fives", 0)?.getAttribute("aria-label")).toBe(`Anotar 15 en ${CATEGORY_LABELS.fives}`);
+    expect(planilla.button("generala", 0)?.getAttribute("aria-label")).toBe(`Tachar 0 en ${CATEGORY_LABELS.generala}`);
+  });
+
+  it("keeps the mark out of the accessibility tree and out of the button's own text", () => {
+    const planilla = bothMovesOffered();
+
+    for (const mark of planilla.marks()) expect(mark.getAttribute("aria-hidden")).toBe("true");
+    // The visible text is still the preview alone — which is what the name
+    // above has to contain, and what eleven boxes are compared by.
+    expect(planilla.button("fives", 0)?.textContent).toBe("15");
+    expect(planilla.button("generala", 0)?.textContent).toBe("0");
+  });
+
+  it("costs the card no height: a row with a mark is exactly as tall as one without", () => {
+    const planilla = bothMovesOffered();
+
+    const rowOf = (category: CategoryId): DOMRect => planilla.table().querySelector<HTMLTableRowElement>(`tbody tr[data-category="${category}"]`)!.getBoundingClientRect();
+    // `fives` carries a control with a mark; `threes` carries the locked
+    // preview, which has none. Boxes move in and out of the offer list every
+    // throw, so a row that grew when its box became pressable would make the
+    // whole planilla jump on every roll.
+    expect(rowOf("fives").height).toBe(rowOf("threes").height);
+    expect(planilla.button("fives", 0)!.getBoundingClientRect().height).toBeGreaterThanOrEqual(SCORE_TAP_MIN);
+  });
+
+  it("stacks the mark above the number, so the eleven previews stay in one aligned column", () => {
+    const planilla = bothMovesOffered();
+
+    const valueOf = (category: CategoryId): DOMRect => planilla.button(category, 0)!.querySelector<HTMLElement>(".hexdev-generala-score-value")!.getBoundingClientRect();
+    const mark = planilla.mark("fives", 0)!.getBoundingClientRect();
+    const value = valueOf("fives");
+    // ABOVE, not beside: a mark inline with the number would push each preview
+    // sideways by its own width, and the column a player reads down would stop
+    // being a column.
+    expect(mark.bottom).toBeLessThanOrEqual(value.top + EPSILON);
+    // And the two previews still line up with each other across the card —
+    // including the one carrying the heavier cross, which is the mark most
+    // likely to shove its number off centre.
+    const crossed = valueOf("generala");
+    expect(Math.abs((value.left + value.right) / 2 - (crossed.left + crossed.right) / 2)).toBeLessThan(EPSILON);
   });
 });
 
