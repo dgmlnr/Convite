@@ -15,13 +15,20 @@
  * here even by accident — the only legality this package can read is an offer
  * list somebody hands it.
  *
- * THE SIXTH PIECE IS THE ONE THAT EXPLAINS A MOVE NOBODY MADE.
- * `autoplay-notice.ts` is what a player meets after the server's turn timer
- * ran out and a bot wrote a box for them. It is a PANEL and not a region on
- * purpose, and `announcer.ts` amends its own sentence for the same event: the
- * region is for the player who cannot see the card, the panel is for the one
- * who was not looking at it, and two live regions would read the same event
- * twice.
+ * THE CLOCK IS THE SIXTH PIECE, and the only one that changes on its own: the
+ * per-turn countdown the server has been arming since before this board
+ * existed and nobody could see, one cell per seat. Its arithmetic is exported
+ * from `turn-clock.ts` for its own tests and NOT from here, for the reason
+ * this barrel already gives about `CATEGORY_LABELS` — nothing outside this
+ * package formats a Generala countdown.
+ *
+ * THE SEVENTH IS THE ONE THAT EXPLAINS A MOVE NOBODY MADE, and it is the
+ * clock's other half: `autoplay-notice.ts` is what a player meets after that
+ * same countdown ran out and a bot wrote a box for them. It is a PANEL and not
+ * a region on purpose, and `announcer.ts` amends its own sentence for the same
+ * event: the region is for the player who cannot see the card, the panel is
+ * for the one who was not looking at it, and two live regions would read the
+ * same event twice.
  *
  * COMPLETE, AND THE LAST PIECE IS THE TABLE ITSELF. The tray, the dice it
  * holds, the control that commits a hold, the planilla every seat reads and
@@ -49,6 +56,9 @@ export type { GeneralaScorecardRender } from "./scorecard.js";
 export { ensureScorecardStyles, SCORECARD_STYLE_ID } from "./scorecard-styles.js";
 export { createGeneralaAnnouncer } from "./announcer.js";
 export type { GeneralaAnnouncer } from "./announcer.js";
+export { createGeneralaTurnClock } from "./turn-clock.js";
+export type { GeneralaTurnClock, GeneralaTurnClockOptions } from "./turn-clock.js";
+export { ensureTurnClockStyles, TURN_CLOCK_STYLE_ID } from "./turn-clock-styles.js";
 export { renderGeneralaAutoplayNotice } from "./autoplay-notice.js";
 export type { GeneralaAutoplay } from "./autoplay-notice.js";
 export { AUTOPLAY_NOTICE_STYLE_ID, AUTOPLAY_SLOT_CLASS, ensureAutoplayNoticeStyles } from "./autoplay-notice-styles.js";

@@ -5,9 +5,9 @@ import { renderGameSelection } from "./game-screen.js";
 import type { GameId } from "@hexdev/platform-contract";
 import type { CatalogEntry } from "./bootstrap-data.js";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
-import { createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
+import { applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
 import type { PlayerId } from "@hexdev/generala-engine";
-import { BOARD_CLASS, ensureBoardStyles, renderGeneralaAutoplayNotice, renderGeneralaScorecard } from "@hexdev/generala-ui";
+import { BOARD_CLASS, createGeneralaTurnClock, ensureBoardStyles, renderGeneralaAutoplayNotice, renderGeneralaScorecard } from "@hexdev/generala-ui";
 
 /**
  * Text legibility on the chrome's own coloured surfaces.
@@ -422,5 +422,163 @@ describe("the autoplay notice reads on the board it is drawn on (WCAG 2.1 AA)", 
     // no second value to keep in step — but a sheet that gave the mark a hue
     // of its own would land here rather than in somebody's eyes.
     expect(contrastRatio(composite([ink[0], ink[1], ink[2], ink[3] * Number(style.opacity)], backdrop), backdrop)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+  });
+});
+
+/**
+ * THE TURN CLOCK'S OWN STRIP, ON THE GROUND IT IS DRAWN ON.
+ *
+ * The strip borrows the planilla's two marks for "this seat is on turn" — the
+ * ground darkens, the name takes the accent — and the borrowing is the part
+ * worth measuring. `scorecard-styles.ts` chose that direction because on this
+ * board's `#14231d` every white tint visible at all takes the open-box dash
+ * under the AA floor; nothing on the strip is drawn at the dash's weight, so
+ * the reason does not transfer automatically and the value could have been
+ * copied wrong without anything noticing.
+ *
+ * BOTH CELLS, because the strip's whole point is that both seats are on it:
+ * the one being timed and the one waiting are two different backgrounds, and
+ * a fence that only looked at the lit one would pass on a strip that made the
+ * other unreadable.
+ */
+describe("the turn clock reads on the board it is drawn on (WCAG 2.1 AA, 1.4.3)", () => {
+  const SEATS = ["clock-self" as PlayerId, "clock-rival" as PlayerId];
+
+  function strip(): HTMLElement {
+    const board = freshContainer();
+    ensureBoardStyles(document);
+    board.className = BOARD_CLASS;
+    const rolled = applyRoll(createMatch(SEATS), [5, 5, 5, 2, 1]);
+    if (!rolled.ok) throw new Error(`fence setup: the engine refused the throw — ${rolled.violation.code}`);
+    const clock = createGeneralaTurnClock(document, { now: () => 0 });
+    board.appendChild(clock.clockEl);
+    clock.render(getViewFor(rolled.state, SEATS[0]!), 45_000);
+    clock.stop();
+    return board;
+  }
+
+  const cell = (board: HTMLElement, seat: number): HTMLElement => board.querySelector<HTMLElement>(`.hexdev-generala-turn-clock-seat[data-seat="${String(seat)}"]`)!;
+
+  it.each([
+    ["the seat being timed, whose cell this change tints", 0],
+    ["the seat waiting, which is the control the tint is measured against", 1],
+  ])("every word reads in %s", (_label, seat) => {
+    const board = strip();
+    const target = cell(board, seat);
+    // The premise: seat 0 really is the lit cell and seat 1 really is not, so
+    // the two rows of this table measure two different backgrounds.
+    expect(target.dataset.turn, "fence setup: the lit cell is seat 0's").toBe(seat === 0 ? "active" : undefined);
+    for (const word of target.querySelectorAll<HTMLElement>("span")) {
+      if ((word.textContent ?? "") === "") continue;
+      expect(ratioFor(word), `"${word.textContent ?? ""}" in cell ${String(seat)}`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    }
+  });
+
+  it("darkens the lit cell rather than lightening it, which is the direction the planilla's own dash forces", () => {
+    const board = strip();
+    const lit = paintedBackgroundOf(cell(board, 0));
+    const waiting = paintedBackgroundOf(cell(board, 1));
+    expect(lit, "the lit cell paints a background of its own").not.toEqual(waiting);
+    expect(relativeLuminance(lit), "darker, never lighter — see scorecard-styles.ts for the arithmetic").toBeLessThan(relativeLuminance(waiting));
+  });
+});
+
+/**
+ * THE TWO MARKS ON AN OFFERED BOX, AND THE ONE THE REFLEX GETS WRONG.
+ *
+ * A press that writes a number is marked with a pencil and a press that spends
+ * the category at zero with a cross, and the cross is RED because that is what
+ * "this costs you" reaches for. Red is also the colour that fails hardest on
+ * this board: its luminance sits almost entirely in one channel and the felt is
+ * dark, so `#f00` — the value the reflex actually reaches for — computes to
+ * about 3:1 against the cell a score control paints. Legible enough to see,
+ * not legible enough to keep.
+ *
+ * SO THE INK IS MEASURED HERE RATHER THAN CHOSEN THERE, on the board's own
+ * ground and inside a real control, in the ONE column such a control ever
+ * appears in: a box is offered only to the seat that is choosing, and that
+ * seat is by definition the seat on turn, whose column is darkened.
+ * `scorecard-styles.ts` carries the values this file produces.
+ *
+ * 1.4.11 puts a graphical object's floor at 3:1. Both marks are held to the
+ * TEXT floor instead, deliberately: they are drawn at the size of the digit
+ * beside them and they are the whole of the distinction between two moves.
+ */
+describe("the planilla's press marks read on the board they are drawn on (WCAG 2.1 AA)", () => {
+  const SEATS = ["mark-self" as PlayerId, "mark-rival" as PlayerId];
+
+  /** A real throw on the real board: three fives, so `fives` would pay 15 and
+   * the highest-paying open box — the doble, on a card with nothing spent —
+   * would pay nothing. One pencil to measure, and one cross. */
+  function planillaMidTurn(): HTMLElement {
+    const board = freshContainer();
+    ensureBoardStyles(document);
+    board.className = BOARD_CLASS;
+    const card = document.createElement("div");
+    board.appendChild(card);
+    const rolled = applyRoll(createMatch(SEATS), [5, 5, 5, 2, 1]);
+    if (!rolled.ok) throw new Error(`fence setup: the engine refused the throw — ${rolled.violation.code}`);
+    renderGeneralaScorecard(card, getViewFor(rolled.state, SEATS[0]!), getLegalActions(rolled.state, SEATS[0]!), () => undefined);
+    return board;
+  }
+
+  /** The stroke a player actually sees: the mark's ink at its own opacity,
+   * composited onto whatever the control it sits in ended up painted with. */
+  function markRatio(mark: SVGElement): number {
+    const style = getComputedStyle(mark);
+    const backdrop = paintedBackgroundOf(mark.parentElement as unknown as HTMLElement);
+    const ink = parseColour(style.stroke);
+    return contrastRatio(composite([ink[0], ink[1], ink[2], ink[3] * Number(style.opacity)], backdrop), backdrop);
+  }
+
+  const markIn = (board: HTMLElement, category: string): SVGElement => {
+    const found = board.querySelector<SVGElement>(`tbody tr[data-category="${category}"] td[data-seat="0"] .hexdev-generala-press-mark`);
+    if (found === null) throw new Error(`fence setup: no press mark on ${category}`);
+    return found;
+  };
+
+  it.each([
+    ["the cross, on the one box a zero may go in", "generala-doble", "hexdev-generala-press-mark--cross"],
+    ["the pencil, on a box the throw would actually pay", "fives", "hexdev-generala-press-mark--write"],
+  ])("%s", (_label, category, expectedClass) => {
+    const board = planillaMidTurn();
+    const mark = markIn(board, category);
+    // The premise: this really is the mark it is named as, so the two rows of
+    // this table measure two different inks and not the same one twice.
+    expect(mark.classList.contains(expectedClass), `fence setup: ${category} carries ${expectedClass}`).toBe(true);
+    expect(markRatio(mark), `${category} mark, against the box it is drawn in`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it("is measuring two DIFFERENT inks, which is what makes the pair above a comparison", () => {
+    const board = planillaMidTurn();
+    const cross = getComputedStyle(markIn(board, "generala-doble"));
+    const pencil = getComputedStyle(markIn(board, "fives"));
+    expect(cross.stroke, "the cross takes an ink of its own").not.toBe(pencil.stroke);
+    // AND THE COLOUR IS NEVER THE ONLY DIFFERENCE (1.4.1): the weight differs
+    // too, and the drawing under it differs entirely.
+    expect(cross.strokeWidth).not.toBe(pencil.strokeWidth);
+  });
+
+  it("keeps the cross legible when the control inverts under a pointer, where its own red would not be", () => {
+    const board = planillaMidTurn();
+    const cross = markIn(board, "generala-doble");
+    const button = cross.parentElement as unknown as HTMLElement;
+    // The hover rule cannot be produced by a synthetic event, so the two
+    // colours it pairs are RESOLVED instead — through a probe inside the very
+    // control, so the same cascade answers, and read back as `color`, which a
+    // browser always serialises as rgb() whatever was written into it.
+    const resolve = (value: string): readonly [number, number, number] => {
+      const probe = document.createElement("span");
+      probe.style.color = value;
+      button.appendChild(probe);
+      const [r, g, b] = parseColour(getComputedStyle(probe).color);
+      probe.remove();
+      return [r, g, b];
+    };
+    const accent = resolve("var(--gx-color-accent, var(--hx-gold, #e8c877))");
+    const inverted = resolve("var(--gx-color-on-primary, #14231d)");
+    const red = parseColour(getComputedStyle(cross).stroke);
+    expect(contrastRatio([red[0], red[1], red[2]], accent), "the red the mark does NOT keep on hover").toBeLessThan(3);
+    expect(contrastRatio(inverted, accent), "the ink it takes instead").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
   });
 });

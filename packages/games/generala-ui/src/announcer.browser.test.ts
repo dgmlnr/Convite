@@ -241,7 +241,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     const table = seatTable();
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
+    expect(table.said()).toBe("Anotaste 18 en 6. Juega Rival.");
   });
 
   it("names the rival who wrote a box, and says the zero out loud when they crossed one out", () => {
@@ -263,7 +263,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     const table = seatTable(RIVAL);
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Rival anotó 18 en Seises. Es tu turno.");
+    expect(table.said()).toBe("Rival anotó 18 en 6. Es tu turno.");
   });
 
   it("calls the box exactly what the planilla's own row header calls it, accent and all", () => {
@@ -296,7 +296,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     table.scoreUnseen("sixes");
     table.roll([1, 1, 2, 3, 4]);
 
-    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
+    expect(table.said()).toBe("Anotaste 18 en 6. Juega Rival.");
   });
 });
 
@@ -333,7 +333,7 @@ describe("generala announcer: the turn the written box just passed", () => {
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
     // The planilla's own column name, not a third word for the same seat.
-    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
+    expect(table.said()).toBe("Anotaste 18 en 6. Juega Rival.");
   });
 
   it("says nothing about a turn once the last box is written, because there is not another one", () => {
@@ -353,7 +353,7 @@ describe("generala announcer: the turn the written box just passed", () => {
       table.playTurn([1, 2, 3, 4, 5], category);
     }
 
-    expect(table.said()).toBe("Rival anotó 0 en Seises.");
+    expect(table.said()).toBe("Rival anotó 0 en 6.");
   });
 });
 
@@ -377,7 +377,7 @@ describe("generala announcer: a box this seat did not ask for", () => {
     const table = seatTable();
     table.botPlaysMyTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Se acabó tu tiempo: el bot anotó 18 en Seises por vos. Juega Rival.");
+    expect(table.said()).toBe("Se acabó tu tiempo: el bot anotó 18 en 6 por vos. Juega Rival.");
   });
 
   it("hands the board the box, so something can stay on screen after the region has moved on", () => {
@@ -395,7 +395,7 @@ describe("generala announcer: a box this seat did not ask for", () => {
     const table = seatTable();
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
+    expect(table.said()).toBe("Anotaste 18 en 6. Juega Rival.");
     expect(table.autoplay()).toBeNull();
   });
 
@@ -407,7 +407,7 @@ describe("generala announcer: a box this seat did not ask for", () => {
     // reports every rival move as a timeout.
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Rival anotó 18 en Seises. Es tu turno.");
+    expect(table.said()).toBe("Rival anotó 18 en 6. Es tu turno.");
     expect(table.autoplay()).toBeNull();
   });
 
@@ -423,7 +423,7 @@ describe("generala announcer: a box this seat did not ask for", () => {
     // engine, so it is asserted against a position the engine produced rather
     // than reasoned about.
     expect(table.autoplay()).toEqual({ category: "threes", value: 6 });
-    expect(table.said()).toBe("Se acabó tu tiempo: el bot anotó 6 en Treses por vos. Juega Rival.");
+    expect(table.said()).toBe("Se acabó tu tiempo: el bot anotó 6 en 3 por vos. Juega Rival.");
   });
 
   it("still reports a LATER turn the timer took after the player pressed one of their own", () => {

@@ -82,6 +82,27 @@ export function buildScorecardStylesheet(): string {
   /* The column on turn. DARKER, and that direction is a measurement rather
      than a taste — see this file's header for the arithmetic. */
   --generala-planilla-turn: rgba(0, 0, 0, 0.3);
+  /* THE INK A CROSSING-OUT IS MARKED IN, and the one value on this sheet
+     where the reflex answer fails a measurement.
+
+     A saturated red is what "this costs you something" reaches for, and it
+     is the value that loses: sampled off the rendered board, pure \`#f00\`
+     inside a score control on the column on turn measures 3.76:1 — over the
+     3:1 floor a graphic owes (WCAG 1.4.11) and under the 4.5:1 this mark is
+     held to, because it is drawn at the size of the digit beside it and it
+     is the whole of the distinction between two moves. Red's luminance sits
+     almost entirely in one channel and this ground is dark, so there is no
+     saturated red that clears it.
+
+     Lifted until it measures: this value reads 5.44:1 in the same place. The
+     column on turn is the ONLY column an offered box ever appears in — a box
+     is offered to the seat that is choosing, and that seat is by definition
+     the seat on the clock — so that is the one background there is to
+     measure. Both numbers come from \`chrome-contrast.browser.test.ts\`,
+     which samples the real board rather than computing over a stand-in. A
+     knob, because a tenant repainting the surface has to be able to move
+     it. */
+  --generala-cross-ink: #f87171;
   font-family: var(--gx-font-family, system-ui, sans-serif);
   color: inherit;
 }
@@ -232,14 +253,21 @@ export function buildScorecardStylesheet(): string {
 
 .hexdev-generala-score {
   appearance: none;
-  /* NO \`display: block\` HERE, and its absence was measured rather than
-     assumed. It is the reflex declaration for a button meant to fill
-     something, and deleting it moved nothing: \`width: 100%\` on the only
-     child of a zero-padding cell already gives the corner-for-corner box
-     \`scorecard.browser.test.ts\` asserts, and a button is not laid out as
-     ordinary inline content. Deleting \`width: 100%\` instead reds six cases,
-     which is which of the two is doing the work. A clause with nothing to
-     observe is not a free belt. */
+  /* A COLUMN: THE MARK OVER THE NUMBER.
+     \`display: block\` used to be absent here, and its absence was measured:
+     \`width: 100%\` on the only child of a zero-padding cell already gave the
+     corner-for-corner box \`scorecard.browser.test.ts\` asserts, so \`block\`
+     had nothing to observe. This is a different declaration doing a
+     different job — the control now holds TWO children, and stacking them
+     is what keeps the eleven previews in one aligned column for the
+     comparison a player actually makes. Deleting it reds the mark's own
+     placement fence, and deleting \`width: 100%\` still reds the six cases it
+     always did: the two are not substitutes. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
   min-height: ${String(SCORE_TAP_MIN)}px;
   box-sizing: border-box;
@@ -260,9 +288,61 @@ export function buildScorecardStylesheet(): string {
   cursor: pointer;
 }
 
+/* Digits of equal width, and a line box that does not depend on the font's
+   own leading: eleven of these stack down a phone, so a preview that decided
+   its own height would decide the whole card's. */
+.hexdev-generala-score-value {
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* THE MARK THAT SAYS WHICH OF THE TWO MOVES THIS PRESS IS.
+   Stroked, never filled, from \`currentColor\` — one ink, inherited, so the
+   hover rule below repaints both marks with the declaration that repaints
+   the button. */
+.hexdev-generala-press-mark {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* THE PENCIL IS QUIET, AND 0.7 IS NOT 0.5 ON PURPOSE. Ten of the eleven
+   offered boxes carry it, so a full-weight pencil on every one of them would
+   out-shout the numbers the mark exists to annotate. 0.5 is taken: that is
+   the open-box dash's own value and the locked preview's, and it already
+   means "not something you can do". Measured on the board's own ground, this
+   reads 7.33:1 — comfortably past the 3:1 an informative graphic owes
+   (WCAG 1.4.11) and past the text floor besides. */
+.hexdev-generala-press-mark--write {
+  opacity: 0.7;
+}
+
+/* THE CROSS IS LOUD, because it is at most one box on the whole card and it
+   is the press that spends a category. Heavier stroke as well as a different
+   ink, so the two marks differ by weight and shape before they differ by
+   hue. */
+.hexdev-generala-press-mark--cross {
+  color: var(--generala-cross-ink);
+  stroke-width: 2.2;
+}
+
 .hexdev-generala-score:hover {
   background: var(--gx-color-accent, var(--hx-gold, #e8c877));
   color: var(--gx-color-on-primary, #14231d);
+}
+
+/* UNDER A POINTER THE WHOLE CONTROL INVERTS, AND THE MARK GOES WITH IT.
+   The rule above paints the button the accent gold; \`--generala-cross-ink\`
+   on that gold measures 1.71:1, which is not a mark, it is a smudge. So the
+   marks drop back to the button's own inverted ink — 10.06:1 — and what
+   still tells the two presses apart under the pointer is the SHAPE, which is
+   what tells them apart everywhere else too. */
+.hexdev-generala-score:hover .hexdev-generala-press-mark {
+  color: inherit;
+  opacity: 1;
 }
 
 .hexdev-generala-score:focus-visible {

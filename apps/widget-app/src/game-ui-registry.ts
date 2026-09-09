@@ -44,6 +44,7 @@ import {
   BOARD_CLASS,
   createGeneralaAnnouncer,
   createGeneralaTray,
+  createGeneralaTurnClock,
   ensureBoardStyles,
   ensureMatchOverStyles as ensureGeneralaMatchOverStyles,
   renderGeneralaAutoplayNotice,
@@ -971,7 +972,7 @@ const mahjongEntry: GameUiEntry = { id: "mahjong-solitario" as GameId, gameFamil
  * inner one is what scrolls (`board-styles.ts` has the whole argument).
  */
 function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
-  return () => {
+  return (context) => {
     const tray = createGeneralaTray();
     let mounted: {
       readonly stackEl: HTMLElement;
@@ -986,6 +987,10 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
        * announcer is the one holding the previous view, so it is the only
        * thing that can tell that press from a box that appeared without one. */
       readonly claim: (category: GeneralaAutoplay["category"]) => void;
+      /** The clock, as the two calls a board ever makes on it: draw this
+       * broadcast, and stop outright. */
+      readonly showClock: (view: GeneralaPlayerView, deadline: number | null) => void;
+      readonly stopClock: () => void;
     } | null = null;
     // Whether the overlay has already claimed focus once this match — the
     // same transition both renderers above track, for the same reason: a
@@ -1010,6 +1015,10 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
       // element this closure holds is detached and the board draws into
       // nothing while every reference it kept still looks valid.
       if (mounted === null || mounted.stackEl.parentElement !== container) {
+        // THE OUTGOING CLOCK IS STOPPED FIRST. Its own tick guard would notice
+        // the detached node a second from now — that is the belt; this is the
+        // braces, and what a board that KNOWS it is discarding one owes it.
+        mounted?.stopClock();
         container.replaceChildren();
         container.className = BOARD_CLASS;
         const stackEl = document.createElement("div");
@@ -1022,12 +1031,31 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
         const scorecardEl = document.createElement("div");
         const matchOverEl = document.createElement("div");
         const announcer = createGeneralaAnnouncer(document);
-        stackEl.append(diceEl, rollEl, servidaEl, noticeEl, scorecardEl);
+        // THE INJECTED CLOCK, NEVER `Date.now()` INLINE — which is what
+        // `MatchRenderContext.now` is for and why it is CARRIED rather than
+        // read: a scene freezes it and an assertion names an exact string.
+        // This is the first Generala piece that needed it, and the reason this
+        // factory takes the context the other three ignore.
+        const clock = createGeneralaTurnClock(document, { now: context.now });
+        // THE CLOCK STAYS ABOVE THE PLANILLA and the notice stays under the
+        // callout, which is what each of them was placed for and what puts the
+        // notice BETWEEN them rather than either of them moving. The clock is
+        // the surface the planilla belongs beside — both read per seat, in the
+        // same seat order — and that adjacency is the load-bearing half of its
+        // placement; "below the callout" only ever said it is not a note about
+        // the throw. The notice is a note about the throw, about the one throw
+        // this seat did not make, so it belongs against the callout it must be
+        // told apart from: `autoplay-notice.ts` argues the whole difference
+        // against "the servida callout two elements up", and this order is
+        // what keeps that sentence true. Reading down: what was thrown, what
+        // that throw was worth, what the timer did with it, how long the next
+        // one has, and the card it all lands in.
+        stackEl.append(diceEl, rollEl, servidaEl, noticeEl, clock.clockEl, scorecardEl);
         // The announcer is out of the stack because it has no geometry, and
         // the overlay is out of it because it covers the whole table — both
         // for the reasons the two renderers above give for the same split.
         container.append(stackEl, announcer.announcerEl, matchOverEl);
-        mounted = { stackEl, diceEl, rollEl, servidaEl, noticeEl, scorecardEl, matchOverEl, announce: announcer.announce, claim: announcer.claim };
+        mounted = { stackEl, diceEl, rollEl, servidaEl, noticeEl, scorecardEl, matchOverEl, announce: announcer.announce, claim: announcer.claim, showClock: clock.render, stopClock: clock.stop };
       }
 
       const view = payload.view as GeneralaPlayerView;
@@ -1055,6 +1083,11 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
         dispatch(action);
       });
       renderServidaCallout(mounted.servidaEl, view);
+      // THE DEADLINE OFF THE MESSAGE, NEVER A LOCAL COUNTDOWN. `viewMessageFor`
+      // puts an ABSOLUTE, server-issued instant on every "view" packet, and
+      // `?? null` is what an older payload without the field means: an untimed
+      // table, which the clock already draws as no clock at all.
+      mounted.showClock(view, payload.turnDeadline ?? null);
       renderGeneralaScorecard(mounted.scorecardEl, view, legalActions, (action: ScoreAction) => {
         // CLAIMED AT THE PRESS, which is the only moment this is knowable: by
         // the time the box appears in a broadcast, nothing about it says who

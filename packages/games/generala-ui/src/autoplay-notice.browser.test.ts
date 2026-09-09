@@ -57,7 +57,7 @@ describe("generala autoplay notice: what it says, and what it refuses to leave o
     const el = freshContainer();
     renderGeneralaAutoplayNotice(el, { category: "sixes", value: 18 });
 
-    expect(noticeIn(el)?.textContent).toContain("18 en Seises");
+    expect(noticeIn(el)?.textContent).toContain("18 en 6");
   });
 
   it("draws nothing at all when there is nothing to explain", () => {
