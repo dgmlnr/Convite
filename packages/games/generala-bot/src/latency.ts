@@ -1,24 +1,35 @@
-import type { BotStrategy } from "@hexdev/platform-contract";
+export { withThinkingDelay } from "@hexdev/platform-core";
+export type { Sleep } from "@hexdev/platform-core";
 
 /**
- * Generala's OWN latency module, and the third copy of this file in the repo.
+ * Generala's OWN latency module — no longer a copy of the wrapper itself.
  *
- * `withThinkingDelay` already exists in `truco-bot/src/latency.ts` and again in
- * `escoba-bot/src/latency.ts`, and importing either would make `generala-bot`
- * depend on another game's bot — the same argument
- * `l0-spanish-deck-ui-no-workspace-deps`'s own comment makes for shared card
- * art. `escoba-bot` recorded the other half of the decision when it made the
- * second copy: hoisting this to `platform-core` is a shared-abstraction
- * extraction, and that was declared a non-goal until a THIRD game needed one.
- * This is that third game, so the extraction is now arguable — and it is
- * deliberately NOT done here, because it would put a change to `platform-core`
- * inside a slice whose subject is a bot. Named as an open item rather than
- * taken quietly.
+ * `withThinkingDelay` used to be duplicated three times: `truco-bot/src/
+ * latency.ts`, `escoba-bot/src/latency.ts`, and this file. `escoba-bot`
+ * recorded the other half of the decision when it made the second copy:
+ * hoisting the wrapper to `platform-core` is a shared-abstraction
+ * extraction, and that was declared a non-goal until a THIRD game needed
+ * one. This package was that third game, and named the extraction an open
+ * item rather than doing it quietly inside a bot-focused slice — this PR is
+ * that item, done on its own. `withThinkingDelay`/`Sleep` now live in
+ * `@hexdev/platform-core` (`thinking-delay.ts`), which is where the
+ * mechanism's own reasoning (concurrency via `Promise.all`/max-not-sum,
+ * throw-through) lives now; this file just re-exports it, plus generala's
+ * own constant below.
  *
- * Like escoba and unlike truco, Generala needs only ONE pause: it has no spoken
- * move. A hold moves dice into their own row and a score writes a number into a
- * box; both are self-evident the instant they land, and neither is a transient
- * claim that has to be read before it disappears.
+ * Max-not-sum matters more here than it did for escoba: slice 17's hard tier
+ * runs an exact one-ply enumeration over multisets, and stacking the
+ * presentation pause on top of a real search would show up as a bot that
+ * thinks visibly longer the better it plays. And a strategy that THROWS
+ * keeps throwing through the wrapper, which is load-bearing here too:
+ * `createBotStrategy`'s empty-list guard is the only one in the package, and
+ * a wrapper that swallowed it would undo task 8.4 one layer up without
+ * changing a line of the guard itself.
+ *
+ * Like escoba and unlike truco, Generala needs only ONE pause: it has no
+ * spoken move. A hold moves dice into their own row and a score writes a
+ * number into a box; both are self-evident the instant they land, and
+ * neither is a transient claim that has to be read before it disappears.
  */
 
 /**
@@ -66,33 +77,3 @@ import type { BotStrategy } from "@hexdev/platform-contract";
  * Tunable via the wrapper's own parameter; this is only the default.
  */
 export const DEFAULT_THINKING_DELAY_MS = 600;
-
-export type Sleep = (ms: number) => Promise<void>;
-
-const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Wraps any `BotStrategy` with a deliberate pause, run CONCURRENTLY with the
- * strategy (`Promise.all`) so total latency is `max(strategyTime, delayMs)` and
- * never their sum. That matters more here than it did for escoba: slice 17's
- * hard tier runs an exact one-ply enumeration over multisets, and stacking the
- * presentation pause on top of a real search would show up as a bot that thinks
- * visibly longer the better it plays.
- *
- * `sleep` is injected purely so this wrapper's own tests never wait in real
- * time — this project's established Clock-injection discipline, and the reason
- * `latency.test.ts` runs in milliseconds.
- *
- * A strategy that THROWS keeps throwing through this wrapper, which is
- * load-bearing: `createBotStrategy`'s empty-list guard is the only one in the
- * package, and a wrapper that swallowed it would undo task 8.4 one layer up
- * without changing a line of the guard itself.
- */
-export function withThinkingDelay<TView, TAction>(strategy: BotStrategy<TView, TAction>, delayMs: number = DEFAULT_THINKING_DELAY_MS, sleep: Sleep = realSleep): BotStrategy<TView, TAction> {
-  return {
-    async chooseAction(view, legalActions, budgetMs, answer) {
-      const [action] = await Promise.all([Promise.resolve(strategy.chooseAction(view, legalActions, budgetMs, answer)), sleep(delayMs)]);
-      return action;
-    },
-  };
-}
