@@ -190,6 +190,15 @@ export function createDiceSound(windowLike: DiceSoundWindow, initiallyMuted: boo
    * Builds the context the first time anything asks, and never again. A
    * browser with no `AudioContext` and one that refuses to construct a fifth
    * of them both land in the same place: `null`, forever, silently.
+   *
+   * THE `undefined` CHECK BELOW IS NOT FENCED, AND CANNOT BE — said here
+   * rather than left for somebody to discover. Deleting it changes nothing
+   * observable: `new undefined()` throws a `TypeError` that the very next
+   * `catch` absorbs, reaching the identical `null` by the identical path. A
+   * mutation ladder confirmed exactly that, staying green. It is kept because
+   * "this browser has no Web Audio" deserves to read as an ANSWER rather than
+   * as an exception nobody meant to raise — which is a claim about the code's
+   * legibility and not about its behaviour, and should not be dressed as one.
    */
   const ensureContext = (): AudioContext | null => {
     if (context !== null) return context;

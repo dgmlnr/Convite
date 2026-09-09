@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { page, userEvent } from "vitest/browser";
+import { afterEach, describe, expect, it } from "vitest";
 import { createDiceSound, fillDeterministicNoise, RATTLE_CYCLE, rattleTicks, TUMBLE_TICKS } from "./dice-sound.js";
 import type { DiceSoundWindow } from "./dice-sound.js";
 
@@ -9,13 +10,21 @@ import type { DiceSoundWindow } from "./dice-sound.js";
  * and a double would only ever confirm the shape of the calls this file
  * already makes.
  *
- * THE AUTOPLAY POLICY IS NOT ASSERTED, and that is on purpose rather than a
- * gap. A headless Chromium can be launched with the policy disabled, so
- * "a fresh context starts suspended" would be a test whose colour depended
- * on a browser flag rather than on this code. What IS asserted is the thing
- * that makes the policy irrelevant: every entry point does nothing at all
- * unless the context is genuinely running, so a browser that never lets it
- * run and one that always does both behave correctly.
+ * THE AUTOPLAY POLICY IS REAL IN THIS HARNESS, and that was checked rather
+ * than assumed — it is the reason half this file is shaped the way it is.
+ * The first draft asserted nothing about it, on the theory that a headless
+ * Chromium might have it disabled by a flag and the test's colour would
+ * depend on the browser rather than on this code. Then a fence that needed a
+ * RUNNING context sat at `suspended` through four hundred milliseconds of
+ * polling, which answered the question: this browser enforces it.
+ *
+ * So the policy is asserted, with a real Playwright-driven press
+ * (`userEvent.click`, which dispatches a trusted event where a synthetic
+ * `.click()` does not) — and `dice-sound.ts` still never depends on it,
+ * because every entry point checks `state === "running"` and otherwise does
+ * nothing. A browser with a stricter policy, a looser one, or none at all
+ * behaves correctly either way. What the policy buys is not a mechanism but
+ * a PROPERTY: a widget nobody has pressed is silent by construction.
  */
 
 const realWindow: DiceSoundWindow = { AudioContext: window.AudioContext };
@@ -24,6 +33,79 @@ const realWindow: DiceSoundWindow = { AudioContext: window.AudioContext };
  * render. Structural rather than mocked, which is the whole reason
  * `DiceSoundWindow` is two optional properties instead of a global read. */
 const silentWindow: DiceSoundWindow = {};
+
+/**
+ * A REAL `AudioContext` THAT COUNTS WHAT PASSES THROUGH IT — a subclass, not
+ * a mock, so everything under it is still the browser's own audio graph and
+ * only the bookkeeping is ours.
+ *
+ * It exists because the interesting promises this module makes are about
+ * things that leave no trace an assertion can reach: a rattle that stops, a
+ * gesture that schedules nothing. `createBufferSource` is the one call every
+ * voice goes through, so wrapping it is what turns "did it stop" from an
+ * opinion into a number.
+ */
+function spyingWindow(): { readonly windowLike: DiceSoundWindow; readonly context: () => AudioContext | null; readonly created: () => number; readonly stopped: () => number } {
+  let created = 0;
+  let stopped = 0;
+  let built: AudioContext | null = null;
+  class Counting extends window.AudioContext {
+    constructor() {
+      super();
+      built = this;
+    }
+    override createBufferSource(): AudioBufferSourceNode {
+      const node = super.createBufferSource();
+      created++;
+      const realStop = node.stop.bind(node);
+      node.stop = (when?: number): void => {
+        stopped++;
+        realStop(when);
+      };
+      return node;
+    }
+  }
+  return { windowLike: { AudioContext: Counting }, context: () => built, created: () => created, stopped: () => stopped };
+}
+
+const closing: AudioContext[] = [];
+afterEach(async () => {
+  // A browser caps how many audio contexts one page may hold, and this file
+  // builds one per case. Closing them keeps the last tests in the file from
+  // failing for a reason none of them is about.
+  while (closing.length > 0) await closing.pop()!.close().catch(() => undefined);
+});
+
+/**
+ * A REAL, TRUSTED PRESS — `userEvent.click` drives Playwright's own input,
+ * where a synthetic `element.click()` produces an untrusted event the
+ * autoplay policy correctly ignores. This is the only way to get a running
+ * context in this harness, and proving that is itself one of the cases below.
+ */
+async function pressToUnlock(sound: { unlock: () => void }): Promise<void> {
+  const button = document.createElement("button");
+  button.textContent = "unlock";
+  button.addEventListener("click", () => {
+    sound.unlock();
+  });
+  document.body.appendChild(button);
+  await userEvent.click(button);
+  button.remove();
+}
+
+/**
+ * Waits for a context to actually reach `running`. `resume()` is
+ * asynchronous and this harness gives no user gesture to hang it on, so
+ * "one animation frame" was not reliably enough — the first draft of the
+ * mute fence below read zero scheduled voices for exactly that reason and
+ * looked like a defect in `silence()`.
+ */
+async function running(context: AudioContext | null): Promise<boolean> {
+  for (let attempt = 0; attempt < 40 && context !== null && context.state !== "running"; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return context?.state === "running";
+}
 
 describe("dice sound: the noise it is made of is a constant, not a random number", () => {
   /**
@@ -40,6 +122,23 @@ describe("dice sound: the noise it is made of is a constant, not a random number
     fillDeterministicNoise(a);
     fillDeterministicNoise(b);
     expect(a).toEqual(b);
+  });
+
+  /**
+   * TWO DIFFERENT LENGTHS, and the first version of this fence did not have
+   * them. It filled two buffers of the SAME size and compared — which a walk
+   * seeded from `NOISE_SEED + samples.length` passes perfectly, MEASURED by
+   * planting exactly that. A device's sample rate decides how long this
+   * buffer is (`NOISE_SECONDS * ctx.sampleRate`), so a seed that drifted with
+   * length would give a 44.1kHz machine and a 48kHz one two different sounds
+   * while every assertion stayed green.
+   */
+  it("starts from the same place whatever length it is asked for", () => {
+    const short = new Float32Array(2048);
+    const long = new Float32Array(8192);
+    fillDeterministicNoise(short);
+    fillDeterministicNoise(long);
+    expect(long.slice(0, short.length)).toEqual(short);
   });
 
   /** And it is genuinely noise rather than a constant or a ramp: broadband
@@ -84,19 +183,32 @@ describe("dice sound: every call is allowed to do nothing, and none of them thro
     expect(sound.isMuted()).toBe(false);
   });
 
-  it("builds a real, running audio graph once a press unlocks it", async () => {
-    const sound = createDiceSound(realWindow, false);
-    sound.unlock();
-    // `resume()` is asynchronous; one turn of the microtask queue plus a
-    // frame is enough for a context this test just created inside a
-    // user-gesture-free harness that permits it.
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-    expect(() => {
-      sound.rattle();
-      sound.stop();
-      sound.tumble();
-      sound.stop();
-    }).not.toThrow();
+  /**
+   * THE AUTOPLAY POLICY, MEASURED IN THIS BROWSER RATHER THAN QUOTED FROM A
+   * SPEC — and it is the single fact the whole «default on» decision leans on.
+   * `unlock()` called with no gesture behind it builds a context and cannot
+   * start it; the same call inside a trusted press does. That is what makes
+   * "a widget nobody has touched is silent" a property of the platform and
+   * not a promise this code is making about itself.
+   */
+  it("cannot start a context outside a user gesture, and can inside one", async () => {
+    const idle = spyingWindow();
+    const quiet = createDiceSound(idle.windowLike, false);
+    quiet.unlock();
+    const built = idle.context();
+    expect(built, "the context is built either way — it is STARTING it the policy gates").not.toBeNull();
+    closing.push(built!);
+    expect(await running(built), "no gesture, so nothing should have started").toBe(false);
+    quiet.rattle();
+    expect(idle.created(), "and a suspended context schedules nothing at all").toBe(0);
+
+    const pressed = spyingWindow();
+    const loud = createDiceSound(pressed.windowLike, false);
+    await pressToUnlock(loud);
+    closing.push(pressed.context()!);
+    expect(await running(pressed.context()), "a real press is what starts it").toBe(true);
+    loud.rattle();
+    expect(pressed.created(), "and now it schedules a voice per tick").toBe(rattleTicks().length);
   });
 });
 
@@ -118,18 +230,28 @@ describe("dice sound: muted means muted", () => {
    * and then gives up on.
    */
   it("cuts a rattle that is already sounding", async () => {
-    const sound = createDiceSound(realWindow, false);
-    sound.unlock();
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const spy = spyingWindow();
+    const sound = createDiceSound(spy.windowLike, false);
+    await pressToUnlock(sound);
+    closing.push(spy.context()!);
+    expect(await running(spy.context()), "expected a real press to start the context").toBe(true);
     sound.rattle();
-    expect(() => {
-      sound.setMuted(true);
-    }).not.toThrow();
+    expect(spy.created(), "expected a rattle to have scheduled voices").toBeGreaterThan(0);
+
+    // A `not.toThrow()` here was the whole assertion once, and it was green
+    // with `silence()` deleted — MEASURED by deleting it. Nothing about a
+    // rattle is observable from outside this module, so the seam it is
+    // injected through is what has to do the observing: every voice this
+    // schedules is a `BufferSource`, and cutting one means calling `stop` on
+    // it a second time, now, rather than at the end it was already given.
+    const stoppedBefore = spy.stopped();
+    sound.setMuted(true);
+    expect(spy.stopped(), "muting must stop every voice already in flight").toBeGreaterThan(stoppedBefore);
     expect(sound.isMuted()).toBe(true);
-    // And it stays quiet afterwards.
-    expect(() => {
-      sound.rattle();
-    }).not.toThrow();
+
+    const afterMute = spy.created();
+    sound.rattle();
+    expect(spy.created(), "and it schedules nothing new while muted").toBe(afterMute);
   });
 
   it("comes back when it is turned on again", () => {
