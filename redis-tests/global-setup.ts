@@ -42,8 +42,9 @@ async function waitForRedisReady(containerName: string, timeoutMs: number): Prom
  * before any test file) — the apply prompt's own bar: "the honest test is
  * two server processes sharing one Redis... a test asserting 'we called
  * redis.set' proves wiring, not scaling." `--rm` means Docker itself cleans
- * the container up on stop; teardown below also stops it explicitly so a
- * crashed run does not leave it behind either way.
+ * the container up on stop, but only on stop — nothing stops it on its own,
+ * so everything from here on is wrapped in try/catch (see below) rather than
+ * relying on that alone.
  *
  * Also runs `tsc -b` here (once), matching `e2e/global-setup.ts`'s own
  * reasoning: `cross-instance.redis.test.ts` spawns real
@@ -57,18 +58,44 @@ export default async function setup(): Promise<() => Promise<void>> {
     ["run", "-d", "--rm", "--name", CONTAINER_NAME, "-p", `${String(redisPort)}:6379`, "redis:7-alpine"],
     `starting Redis container ${CONTAINER_NAME} on port ${String(redisPort)}`,
   );
-  await waitForRedisReady(CONTAINER_NAME, 20_000);
 
-  run("pnpm", ["run", "typecheck"], "tsc -b — compiling every workspace package's dist/, including apps/server/dist/index.js");
-
-  const redisUrl = `redis://127.0.0.1:${String(redisPort)}`;
-  await mkdir(path.dirname(REDIS_HARNESS_INFO_PATH), { recursive: true });
-  await writeFile(REDIS_HARNESS_INFO_PATH, JSON.stringify({ redisUrl }, null, 2), "utf8");
-
-  console.log(`[redis:setup] Redis ready at ${redisUrl}`);
-
-  return async function teardown(): Promise<void> {
+  /**
+   * FROM HERE ON, EVERY EXIT STOPS THE CONTAINER (same shape as
+   * `postgres-tests/global-setup.ts`'s own `provisionPostgres`). Before this
+   * fix, a `waitForRedisReady` timeout or a failing `typecheck` threw
+   * straight out of `setup()` and left `hexdev-redis-test-<pid>` running:
+   * `--rm` only fires when the container stops, and nothing was stopping it.
+   * The residue is not cosmetic — a stale `hexdev-redis-test-*` is one of the
+   * two containers AGENTS.md records as making a LATER run fail in an
+   * unrelated place.
+   *
+   * Cleanup only: `waitForRedisReady`'s own `docker exec ... redis-cli ping`
+   * polling strategy is unchanged on purpose. Unlike postgres's own
+   * `waitForPostgresReady` history, there is no measured race to fix in the
+   * readiness check itself here — polling from inside the container versus
+   * from the host measured a 0ms window across 3 real container boots for
+   * Redis, so nothing there needs porting over.
+   */
+  const stop = (): void => {
     spawnSync("docker", ["stop", CONTAINER_NAME]);
-    await rm(REDIS_HARNESS_INFO_PATH, { force: true });
   };
+  try {
+    await waitForRedisReady(CONTAINER_NAME, 20_000);
+
+    run("pnpm", ["run", "typecheck"], "tsc -b — compiling every workspace package's dist/, including apps/server/dist/index.js");
+
+    const redisUrl = `redis://127.0.0.1:${String(redisPort)}`;
+    await mkdir(path.dirname(REDIS_HARNESS_INFO_PATH), { recursive: true });
+    await writeFile(REDIS_HARNESS_INFO_PATH, JSON.stringify({ redisUrl }, null, 2), "utf8");
+
+    console.log(`[redis:setup] Redis ready at ${redisUrl}`);
+
+    return async function teardown(): Promise<void> {
+      stop();
+      await rm(REDIS_HARNESS_INFO_PATH, { force: true });
+    };
+  } catch (failure) {
+    stop();
+    throw failure;
+  }
 }
