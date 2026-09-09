@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { connect } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getFreePorts } from "../e2e/support/free-ports.js";
@@ -53,20 +54,105 @@ function run(command: string, args: readonly string[], description: string, envO
 }
 
 /**
- * Polls `docker exec <container> pg_isready` rather than importing `pg`
- * directly: this file lives outside every workspace package (`postgres-tests`
- * is not a pnpm workspace member — same reasoning as `redis-tests/global-
- * setup.ts` never importing `ioredis`), and `pg_isready` is already bundled
- * in the `postgres:17-alpine` image, so this needs no new dependency.
+ * THE SSLRequest, WHICH IS THE SHORTEST COMPLETE THING A POSTGRES SERVER
+ * ANSWERS: an Int32 length of 8, then the fixed request code 80877103
+ * (`1234 << 16 | 5679`). It is sent before any startup packet, so it needs no
+ * user, no database and no credentials, and the reply is exactly ONE byte.
+ *
+ * Pure and exported so `global-setup.test.ts` can pin the wire bytes without
+ * touching Docker, the same reason `containerNameFor` and `dockerRunArgs`
+ * above are.
  */
-async function waitForPostgresReady(containerName: string, timeoutMs: number): Promise<void> {
+export function sslRequestMessage(): Buffer {
+  const message = Buffer.alloc(8);
+  message.writeInt32BE(8, 0);
+  message.writeInt32BE(80877103, 4);
+  return message;
+}
+
+/**
+ * `S` (willing to negotiate TLS) or `N` (built without it — what
+ * `postgres:17-alpine` answers) are the ONLY two replies to the message
+ * above, and either one proves a real Postgres is on the other end. Anything
+ * else — no bytes at all, a reset, a proxy that accepted and hung up — is not
+ * a server, which is the whole distinction this file got wrong before.
+ */
+export function isPostgresGreeting(reply: Buffer): boolean {
+  return reply.length > 0 && (reply[0] === 0x53 || reply[0] === 0x4e);
+}
+
+/**
+ * ONE HANDSHAKE FROM THE HOST, WHICH IS WHERE EVERY LATER CONNECTION COMES
+ * FROM. Exported for `global-setup.test.ts`, which points it at plain
+ * `node:net` servers — no Docker — to prove both verdicts.
+ *
+ * A BARE TCP CONNECT IS NOT ENOUGH and that is measured, not assumed: with
+ * Docker's userland proxy the host port is bound the instant the container
+ * starts, so `connect` succeeds long before anything is listening inside.
+ * Sampling a starting container every 50ms, the host saw `connect` succeed
+ * and then the socket end with zero bytes — `end-without-data` — while the
+ * container was still initialising. Only reading a reply tells the two apart.
+ */
+export async function postgresAnswersOn(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const socket = connect({ host, port });
+    let settled = false;
+    const finish = (answered: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(answered);
+    };
+    socket.setTimeout(timeoutMs, () => {
+      finish(false);
+    });
+    socket.on("connect", () => {
+      socket.write(sslRequestMessage());
+    });
+    socket.on("data", (reply: Buffer) => {
+      finish(isPostgresGreeting(reply));
+    });
+    socket.on("error", () => {
+      finish(false);
+    });
+    socket.on("end", () => {
+      finish(false);
+    });
+    socket.on("close", () => {
+      finish(false);
+    });
+  });
+}
+
+/**
+ * POLLS FROM THE HOST, ON THE MAPPED PORT — the address `db:migrate` and every
+ * spec file will use — rather than `docker exec <container> pg_isready`, and
+ * the difference is a real race this harness lost twice in a row.
+ *
+ * MEASURED, by sampling both probes against a starting `postgres:17-alpine`
+ * every 50ms: `docker exec pg_isready` reported READY at 960ms and again at
+ * 1046ms, while the host got `ECONNRESET`/`end-without-data` at both instants
+ * and only got a real reply at 1239ms — a 279ms window in which this function
+ * used to return and hand a URL nothing was listening on yet. The cause is in
+ * the image's own entrypoint: `initdb` runs a TEMPORARY server with
+ * `listen_addresses=''`, reachable on the container's unix socket (so
+ * `pg_isready` inside says yes) and on no TCP address at all (so the host
+ * says no). At 1133ms `pg_isready` went back to saying no — that temporary
+ * server shutting down before the real one came up.
+ *
+ * STILL NO `pg` DEPENDENCY, which was the original reason for shelling out:
+ * this file lives outside every workspace package (`postgres-tests` is not a
+ * pnpm workspace member — same reasoning as `redis-tests/global-setup.ts`
+ * never importing `ioredis`). `node:net` plus the eight bytes above needs no
+ * package at all, one fewer than `docker exec` did.
+ */
+async function waitForPostgresReady(host: string, port: number, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const result = spawnSync("docker", ["exec", containerName, "pg_isready", "-U", "postgres"], { encoding: "utf8" });
-    if (result.status === 0) return;
+    if (await postgresAnswersOn(host, port, 1_000)) return;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  throw new Error(`postgres container ${containerName} never became ready within ${String(timeoutMs)}ms`);
+  throw new Error(`nothing answered the Postgres protocol on ${host}:${String(port)} within ${String(timeoutMs)}ms`);
 }
 
 export interface ProvisionedPostgres {
@@ -109,13 +195,30 @@ export async function provisionPostgres(): Promise<ProvisionedPostgres> {
   const [port] = await getFreePorts(1);
   const containerName = containerNameFor(process.pid);
   run("docker", dockerRunArgs(containerName, port), `starting Postgres container ${containerName} on port ${String(port)}`);
-  await waitForPostgresReady(containerName, 20_000);
 
-  const postgresUrl = `postgres://postgres@127.0.0.1:${String(port)}/convite`;
-  run("pnpm", ["run", "db:migrate"], "applying migrations against the fresh test database", { HEXDEV_POSTGRES_MIGRATE_URL: postgresUrl });
-  console.log(`[postgres:setup] Postgres ready at ${postgresUrl}, migrations applied`);
+  /**
+   * FROM HERE ON, EVERY EXIT STOPS THE CONTAINER. Before this, a wait that
+   * timed out or a migration that failed threw straight out of `setup()` and
+   * left `hexdev-postgres-test-<pid>` running: `--rm` only fires when the
+   * container stops, and nothing was stopping it. The residue is not
+   * cosmetic — a stale `hexdev-postgres-test-*` is one of the two containers
+   * AGENTS.md records as making a LATER run fail in an unrelated place.
+   */
+  const stop = (): void => {
+    spawnSync("docker", ["stop", containerName]);
+  };
+  try {
+    await waitForPostgresReady("127.0.0.1", port, 20_000);
 
-  return { postgresUrl, stop: () => spawnSync("docker", ["stop", containerName]) };
+    const postgresUrl = `postgres://postgres@127.0.0.1:${String(port)}/convite`;
+    run("pnpm", ["run", "db:migrate"], "applying migrations against the fresh test database", { HEXDEV_POSTGRES_MIGRATE_URL: postgresUrl });
+    console.log(`[postgres:setup] Postgres ready at ${postgresUrl}, migrations applied`);
+
+    return { postgresUrl, stop };
+  } catch (failure) {
+    stop();
+    throw failure;
+  }
 }
 
 /**
