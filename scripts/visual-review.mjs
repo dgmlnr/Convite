@@ -15,6 +15,17 @@
  *
  * What no assertion replaces is somebody's eye on a whole screen at once.
  *
+ * IT REBUILDS FIRST, and it did not always. Every `@hexdev/*` import resolves
+ * through the importee's `exports`, which point at its `dist/`, so a
+ * cross-package render draws whatever `tsc -b` last emitted — after a branch
+ * change, another branch's code. That cost twice, both times disguised as
+ * something else: five scenes exploding inside `generala-ui/dist/tray.js`, a
+ * file nobody had edited, and three review runs hashing images of code that
+ * was not in the tree. `.gitignore:70` keeps scene captures out of git, so
+ * "git diff is the review" cannot catch it either. Both passes below go
+ * through `scripts/visual-container.mjs`, which now builds before it renders
+ * — see `buildWorkspace` there.
+ *
  * HOW IT WORKS, and why there is no new mechanism: it regenerates the
  * screenshots on the host and then leaves the working tree dirty ON PURPOSE.
  * `git diff` is the review, `git checkout` is "no", a commit is "yes". The

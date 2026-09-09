@@ -13,9 +13,9 @@
  *
  * Verification runs pass straight through, `--update` does not.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
-import { hostSpawnNeedsShell, writesBaseline } from "./visual-container.mjs";
+import { buildWorkspace, hostSpawnNeedsShell, writesBaseline } from "./visual-container.mjs";
 
 /* c8 ignore start — the spawn, deliberately thin; `writesBaseline` is what is tested. */
 const args = process.argv.slice(2);
@@ -25,6 +25,14 @@ if (writesBaseline(args)) {
     "Refusing to write a baseline from the host runner: it would bake this machine's font rasterizer into the repo, which is exactly what the pinned container exists to prevent (visual/README.md).\n" +
       "Run `pnpm test:visual <file> --update` instead — same arguments, canonical renderer.\n",
   );
+  process.exit(1);
+}
+
+// The same rebuild the container runner does, for the same reason: this one
+// is the FAST local look, and a look at another branch's `dist/` is not fast,
+// it is wrong. See `buildWorkspace`'s own docstring for what it already cost.
+if (!buildWorkspace(spawnSync, process.execPath, process.cwd())) {
+  process.stderr.write("\n`tsc -b` failed, so every cross-package import would still resolve to the last dist/ that compiled. Nothing was rendered.\n");
   process.exit(1);
 }
 
