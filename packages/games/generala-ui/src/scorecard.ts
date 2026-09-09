@@ -117,6 +117,23 @@ function offerFor(scores: readonly ScoreAction[], seat: SeatView, category: Cate
 }
 
 /**
+ * Whether this seat is the one being offered boxes at all — asked of the offer
+ * list, exactly as `offerFor` is.
+ *
+ * IT IS A DIFFERENT QUESTION FROM "may this box be written", and since the
+ * crossing ladder landed the two genuinely come apart. A seat on turn is
+ * offered every box worth something plus ONE worth nothing (ruleset §Orden
+ * obligatorio de tachado), so most of its open boxes carry no offer — and a
+ * preview still belongs in every one of them, because what a box would pay is
+ * how a player decides where to spend the turn. A seat that is not choosing
+ * gets no previews at all: the dice on the table are not theirs to score, and a
+ * number under their name would be a promise about somebody else's throw.
+ */
+function isChoosing(scores: readonly ScoreAction[], seat: SeatView): boolean {
+  return scores.some((score) => score.playerId === seat.playerId);
+}
+
+/**
  * What one box reads as, and the three states are three different facts.
  *
  * `null` is OPEN: nobody has written here and it is still worth playing for.
@@ -151,6 +168,31 @@ function fillCell(cell: HTMLTableCellElement, value: number | null): void {
  * sentence anybody can act on (WCAG 2.5.3 is satisfied by the name containing
  * the visible text).
  */
+/**
+ * The open box a zero may NOT go in: the number, and nothing to press.
+ *
+ * WHAT A PLAYER MUST NEVER BE UNABLE TO TELL APART is "worth nothing" from "not
+ * allowed", and the two arrive together here — a box the ladder has not reached
+ * is exactly a box worth nothing, since anything worth something is always
+ * writable. Rendering nothing at all would take the number away and leave an
+ * open box looking like the rival's; rendering a disabled button would put a
+ * control in the tab order for a move that does not exist, which `truco-ui`'s
+ * `calls.browser.test.ts` already refuses to do for an illegal call.
+ *
+ * So the number stays and the affordance goes. NOT A `<button disabled>` and
+ * not a colour: it is a plain span at the same 0.5 the open-box dash is drawn
+ * at (`scorecard-styles.ts`, measured at 4.67:1 on the shipped board), so it
+ * reads as the notation for "open, and worth nothing" rather than as a control
+ * somebody greyed out. It keeps the control's box so eleven rows do not change
+ * height as boxes come in and out of the offer list.
+ */
+function makeLockedPreview(doc: Document, preview: number): HTMLSpanElement {
+  const locked = doc.createElement("span");
+  locked.className = "hexdev-generala-score-locked";
+  locked.textContent = String(preview);
+  return locked;
+}
+
 function makeScoreControl(doc: Document, label: string, preview: number, onPress: () => void): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
@@ -184,13 +226,15 @@ function makeScoreControl(doc: Document, label: string, preview: number, onPress
  * would be a second source of truth about the score that could disagree with
  * the first.
  *
- * IT READS THE OFFER LIST AND NEVER THE RULES. Which boxes are pressable is
- * one question — does this list contain a `score` for this seat and this
- * category? — and answering it makes the planilla correct in states it was
- * never separately taught: another seat's turn, the moment the cup is
- * shaking, a box already written, and a match that is over all offer nothing
- * and all draw the same card with nothing to press. The same argument
- * `tray.ts` makes for holds, and the reason neither file knows what a rule is.
+ * IT READS THE OFFER LIST AND NEVER THE RULES, and since the crossing ladder
+ * landed it reads TWO questions out of it instead of one. Which boxes are
+ * pressable: does this list contain a `score` for this seat and this category?
+ * And which seat is choosing at all: does it contain any `score` for this seat?
+ * Answering both off the list keeps the planilla correct in states it was never
+ * separately taught — another seat's turn, the moment the cup is shaking, a box
+ * already written, a match that is over, and now a box that is open and worth
+ * nothing and still not a legal target. The same argument `tray.ts` makes for
+ * holds, and the reason neither file knows what a rule is.
  */
 export type GeneralaScorecardRender = (
   container: HTMLElement,
@@ -271,9 +315,13 @@ export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view
       fillCell(cell, card?.[category] ?? null);
 
       const offer = offerFor(scores, seat, category);
-      const preview = card === undefined || offer === undefined ? null : previewOf(view.turn, card, category);
-      if (offer !== undefined && preview !== null) {
-        cell.appendChild(makeScoreControl(doc, CATEGORY_LABELS[category], preview, () => onScore(offer)));
+      // EVERY OPEN BOX OF THE SEAT THAT IS CHOOSING CARRIES ITS NUMBER, not
+      // only the ones it may write. Knowing a box would pay nothing is how a
+      // player plans, and the crossing ladder made most of them unwritable
+      // without making them uninteresting.
+      const preview = card === undefined || card[category] !== null || !isChoosing(scores, seat) ? null : previewOf(view.turn, card, category);
+      if (preview !== null) {
+        cell.appendChild(offer === undefined ? makeLockedPreview(doc, preview) : makeScoreControl(doc, CATEGORY_LABELS[category], preview, () => onScore(offer)));
       }
       row.appendChild(cell);
     }
