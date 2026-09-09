@@ -8,10 +8,20 @@ import { ensureScorecardStyles } from "./scorecard-styles.js";
  *
  * The four juegos mayores and the doble are named exactly as the decided
  * ruleset names them (`convite/generala/reglas-decididas`): Escalera, Full,
- * Póker, Generala, Generala doble. The upper six are the Spanish plurals of
- * the numbers, which is what a printed planilla prints — the engine calls them
- * `ones`..`sixes` because those boxes ARE just the numbers, and that is an
- * identifier, not a label.
+ * Póker, Generala, Generala doble.
+ *
+ * THE UPPER SIX ARE THE DIGIT, NOT ITS PLURAL, and that is the ruleset's own
+ * correction rather than a taste: "en una planilla esas filas son el número,
+ * no su plural" (§Etiquetas de la sección superior). They shipped as "Unos,
+ * Doses, Treses, Cuatros, Cincos, Seises" — six words for six rows whose
+ * whole content is which face is being counted, on the one surface where the
+ * player is comparing eleven NUMBERS to each other. `1` is the same fact in
+ * one glyph, aligned with the column of numbers beside it, and it is what a
+ * printed planilla actually prints.
+ *
+ * THE ENGINE STILL CALLS THEM `ones`..`sixes`, and it should: those boxes ARE
+ * just the numbers, and that is an identifier, not a label. This map is the
+ * one place the two vocabularies meet.
  *
  * Keyed by `CategoryId` rather than listed in parallel, so a twelfth box fails
  * to compile here instead of rendering an empty row header.
@@ -25,12 +35,12 @@ import { ensureScorecardStyles } from "./scorecard-styles.js";
  * is the same line `SCORE_TAP_MIN` is drawn on.
  */
 export const CATEGORY_LABELS: Readonly<Record<CategoryId, string>> = {
-  ones: "Unos",
-  twos: "Doses",
-  threes: "Treses",
-  fours: "Cuatros",
-  fives: "Cincos",
-  sixes: "Seises",
+  ones: "1",
+  twos: "2",
+  threes: "3",
+  fours: "4",
+  fives: "5",
+  sixes: "6",
   escalera: "Escalera",
   full: "Full",
   poker: "Póker",
