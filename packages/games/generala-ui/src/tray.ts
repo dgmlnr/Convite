@@ -1,10 +1,13 @@
-import { createCupElement, ensureDiceStyles, setCupGesture } from "@hexdev/dice-ui";
-import type { CupGesture } from "@hexdev/dice-ui";
+import { createCupElement, createDiceSound, ensureDiceStyles, setCupGesture } from "@hexdev/dice-ui";
+import type { CupGesture, DiceSound } from "@hexdev/dice-ui";
 import { DICE_COUNT } from "@hexdev/generala-engine";
 import type { DieFace, GeneralaAction, HoldAction, PlayerView, Turn } from "@hexdev/generala-engine";
 
 import { createDieSlot } from "./die-button.js";
 import type { DieSlot } from "./die-button.js";
+import { createMuteButton } from "./mute-button.js";
+import type { MuteButton } from "./mute-button.js";
+import { readSoundPreference, writeSoundPreference } from "./sound-preference.js";
 import { ensureTrayStyles } from "./tray-styles.js";
 
 /** Where the tray draws itself: the row of dice, and the control that throws
@@ -173,6 +176,25 @@ export function createGeneralaTray(): GeneralaTrayRender {
    * cup mounted inside that button would vanish on the only beat it exists
    * for. */
   let cup: HTMLElement | null = null;
+  let mute: MuteButton | null = null;
+  /**
+   * THE GESTURE ALREADY DECLARED, kept so a sound fires on the TRANSITION and
+   * not on the render. A board redraws on every broadcast and again on every
+   * die a player presses, so a rattle triggered by "the phase is
+   * awaiting-roll" would restart several times a throw. `setCupGesture` holds
+   * the same idempotence for the drawing; this is its half for the audio, and
+   * it is a separate variable rather than a read of the element because the
+   * element is replaced whenever the board re-mounts.
+   */
+  let sounded: CupGesture | null = null;
+  /**
+   * BUILT LAZILY, ON THE FIRST RENDER THAT HAS A DOCUMENT. This factory takes
+   * no arguments — `escoba-ui` and `truco-ui`'s renderers take none either —
+   * so the `Window` this needs arrives with the first set of elements. It is
+   * built once and kept: an `AudioContext` per render would be a resource
+   * leak with a hard browser limit behind it.
+   */
+  let sound: DiceSound | null = null;
   let current: { elements: GeneralaTrayElements; view: PlayerView; legalActions: readonly GeneralaAction[]; onHold: (action: HoldAction) => void } | null = null;
 
   const redraw = (): void => {
@@ -180,12 +202,19 @@ export function createGeneralaTray(): GeneralaTrayRender {
   };
 
   const toggle = (index: number): void => {
+    // INSIDE THE GESTURE, which is the whole autoplay story. A browser only
+    // lets a page start sounding from a handler for a real press; this is one,
+    // and so is the throw below. Everything the player actually hears is
+    // played hundreds of milliseconds later from a server broadcast, which is
+    // no gesture at all — so if these two never ran, nothing would ever sound.
+    sound?.unlock();
     if (held.has(index)) held.delete(index);
     else held.add(index);
     redraw();
   };
 
   const throwThem = (): void => {
+    sound?.unlock();
     if (current === null) return;
     const offer = matchingHold(holdsIn(current.legalActions), held);
     if (offer === undefined) return;
@@ -253,13 +282,41 @@ export function createGeneralaTray(): GeneralaTrayRender {
     // the dice row above both ask and for the same reason: a container
     // somebody emptied under this closure leaves every reference it kept
     // looking valid while pointing at a detached node.
-    if (cup === null || cup.parentElement !== elements.rollEl) {
+    sound ??= createDiceSound(doc.defaultView ?? {}, readSoundPreference(doc.defaultView));
+    // `mute === null` IS PART OF THE CONDITION rather than a separate branch,
+    // which is also what lets the compiler see that the control exists below.
+    if (cup === null || mute === null || cup.parentElement !== elements.rollEl) {
       cup = createCupElement(doc);
+      mute = createMuteButton(doc, () => {
+        const next = !(sound?.isMuted() ?? true);
+        sound?.setMuted(next);
+        // TURNING IT BACK ON IS ITSELF A PRESS, so take it: a player who
+        // muted before ever throwing and then changed their mind would
+        // otherwise have unlocked nothing, and would sit through one more
+        // silent throw waiting for a sound they just asked for.
+        if (!next) sound?.unlock();
+        writeSoundPreference(doc.defaultView, next);
+        mute?.render(next);
+      });
       // The control, if there was one, went with whatever emptied this box.
-      elements.rollEl.replaceChildren(cup);
+      elements.rollEl.replaceChildren(cup, mute.element);
       roller = null;
+      // A REBUILT ROW HAS HEARD NOTHING. Forgetting this is what would make a
+      // reconnect land mid-throw and stay silent for the rest of it.
+      sounded = null;
     }
-    setCupGesture(cup, gestureFor(turn));
+    mute.render(sound.isMuted());
+
+    const gesture = gestureFor(turn);
+    // ON THE TRANSITION, NEVER ON THE RENDER — see `sounded` above. The two
+    // gestures that make a noise are the two beats of a throw, and each of
+    // them happens once however many times the board redraws around it.
+    if (gesture !== sounded) {
+      if (gesture === "shaking") sound.rattle();
+      else sound.tumble();
+      sounded = gesture;
+    }
+    setCupGesture(cup, gesture);
 
     if (holds.length === 0) {
       // ABSENT, not disabled, and the asymmetry with the all-five case below
@@ -283,11 +340,13 @@ export function createGeneralaTray(): GeneralaTrayRender {
       roller.type = "button";
       roller.className = "hexdev-generala-roll";
       roller.addEventListener("click", throwThem);
-      // Appended beside the cubilete, never `replaceChildren` — that would
-      // take the cup out on every throw and restart its gesture from a fresh
-      // element, which is the one thing `setCupGesture`'s idempotence cannot
-      // protect against.
-      elements.rollEl.appendChild(roller);
+      // Inserted BEFORE the mute control, never `replaceChildren` — that
+      // would take the cup and the mute out on every throw and restart the
+      // cup's gesture from a fresh element, which is the one thing
+      // `setCupGesture`'s idempotence cannot protect against. Before rather
+      // than after so the row reads cubilete, throw, sound: the two things
+      // this turn is about, and then the furniture.
+      elements.rollEl.insertBefore(roller, mute?.element ?? null);
     }
     const offer = matchingHold(holds, held);
     // Updated in place rather than rebuilt: a player who tabbed to this

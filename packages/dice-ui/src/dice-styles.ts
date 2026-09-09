@@ -678,8 +678,17 @@ export function buildDiceStylesheet(): string {
 .hexdev-dice-cup-piece {
   display: block;
   flex-shrink: 0;
-  width: ${String(CUP_PIECE_WIDTH)}px;
-  height: ${String(CUP_PIECE_HEIGHT)}px;
+  /* SCALED BY A KNOB, not by a transform, and the difference is the same one
+     \`.hexdev-dice-scene-box\` spends a paragraph on: a transform is paint-time
+     and reflows nothing, so a cup merely DRAWN smaller would still ask its
+     row for every pixel of the full box. A die cannot take this treatment —
+     its facelets are held together by a fixed \`translateZ\` push that a
+     smaller box would pull apart — and a cup can, because it is one flat
+     image under \`object-fit: contain\` with no geometry to break. So the two
+     shrink by different mechanisms on purpose, and this is the simpler of
+     them precisely because there is less to get wrong. */
+  width: calc(${String(CUP_PIECE_WIDTH)}px * var(--dice-cup-scale, 1));
+  height: calc(${String(CUP_PIECE_HEIGHT)}px * var(--dice-cup-scale, 1));
   transform: ${CUP_REST_TRANSFORM};
   transform-origin: ${String(CUP_PIVOT_X_PERCENT)}% ${String(CUP_PIVOT_Y_PERCENT)}%;
 }
@@ -751,6 +760,28 @@ export function buildDiceStylesheet(): string {
   outline: 3px solid var(--dice-cup-bevel-light);
   outline-offset: 3px;
   border-radius: 6px;
+}
+
+/* THE CUP RIDES THE SAME TWO TIERS THE DICE DO, which is one ladder read
+   twice and not a second one that happens to share breakpoints — see the
+   scene box's own tiers above for the whole floor argument, which applies
+   here unchanged. Declared down HERE, after the rule they scale, rather than
+   beside those: a tier for a class the stylesheet has not introduced yet
+   reads as a rule about nothing.
+
+   THE CUP'S SCALES ARE GENTLER THAN THE DICE'S on purpose. A cubilete is a
+   bigger object than a die and has to keep reading as one; at the dice's own
+   0.45 it comes out smaller than the dice it is supposed to have poured. */
+@media (max-width: 700px) {
+  .hexdev-dice-cup-piece {
+    --dice-cup-scale: 0.8;
+  }
+}
+
+@media (max-width: 375px) {
+  .hexdev-dice-cup-piece {
+    --dice-cup-scale: 0.62;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
