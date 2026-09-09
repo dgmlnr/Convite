@@ -67,6 +67,36 @@ function winnersSentence(view: PlayerView, winners: readonly SeatView[], total: 
   return `Ganó ${seatLabel(winner, view.self, view.others.length)} con ${points}.`;
 }
 
+/**
+ * THE VERDICT, IN THE SIZE A PLAYER ACTUALLY READS.
+ *
+ * A SHARED WIN IS ITS OWN OUTCOME AND NOT A WIN WITH A FOOTNOTE. `getOutcome`
+ * returns the full argmax set, so two seats level at the top are both winners
+ * (O-2, closed) — and until this line every one of them was handed the same
+ * "¡Ganaste la partida!" a solo winner gets. It was TRUE, which is why no
+ * assertion here could ever have seen it: the sentence underneath already
+ * said "Empataron Vos y Rival con 40 puntos.", and the two lines were
+ * consistent. What was missing is that a headline is what gets read, and this
+ * one withheld the single fact that made the ending unusual. A player could
+ * take a shared victory and never learn they shared it.
+ *
+ * SO THE TIE IS IN THE HEADLINE, and both halves of it are: "Ganaste" is the
+ * win, "Victoria compartida" is the tie, and neither can be read without the
+ * other. The alternative — "¡Ganaste la partida, empatados!" — was rejected
+ * for putting a gendered adjective on the reader, which this surface has no
+ * way to know and no business guessing.
+ *
+ * THE COUNT IS ASKED INSIDE THE WIN, never beside it. A losing seat with two
+ * winners above it is already told so by `winnersSentence`, and its headline
+ * is the one it has always been; nesting is what makes "more than one winner"
+ * a question that can only be asked about a seat that IS one, instead of a
+ * clause that has to remember to also check.
+ */
+function headlineFor(won: boolean, winners: number): string {
+  if (!won) return "Perdiste la partida";
+  return winners > 1 ? "¡Ganaste! Victoria compartida" : "¡Ganaste la partida!";
+}
+
 /** The final line, drawn in seat order so it reads like the planilla's own
  * totals row. */
 function finalScoreLine(view: PlayerView): string {
@@ -153,7 +183,7 @@ export const renderGeneralaMatchOver: GeneralaMatchOverRender = (container, view
 
   const headline = doc.createElement("h2");
   headline.className = "hexdev-generala-match-over-headline";
-  headline.textContent = won ? "¡Ganaste la partida!" : "Perdiste la partida";
+  headline.textContent = headlineFor(won, winners.length);
   panel.appendChild(headline);
 
   const winnersLine = doc.createElement("p");

@@ -109,7 +109,12 @@ describe("generala match over: two seats level at the top BOTH won", () => {
     // at 25 — every one of them the engine's own arithmetic.
     expect(view.totals[0]).toBe(40);
 
-    expect(overlay.headline()).toBe("¡Ganaste la partida!");
+    // THE HEADLINE SAYS THE TIE, and it used to say only half of it. Both
+    // seats were told "¡Ganaste la partida!" — true, and indistinguishable
+    // from the solo win a line below it contradicts. A player could take a
+    // shared victory and never learn it was shared, because the only place
+    // the word appeared was a sentence they had already stopped reading.
+    expect(overlay.headline()).toBe("¡Ganaste! Victoria compartida");
     expect(overlay.winners()).toBe("Empataron Vos y Rival con 40 puntos.");
     expect(overlay.container.dataset.result).toBe("won");
     expect(overlay.container.dataset.winners).toBe("2");
@@ -128,7 +133,7 @@ describe("generala match over: two seats level at the top BOTH won", () => {
     // is looking, which is exactly what `scorecard.ts` refuses for columns.
     const overlay = overlayFor(getViewFor(playToTheEnd(null), RIVAL));
 
-    expect(overlay.headline()).toBe("¡Ganaste la partida!");
+    expect(overlay.headline()).toBe("¡Ganaste! Victoria compartida");
     expect(overlay.winners()).toBe("Empataron Rival y Vos con 40 puntos.");
     expect(overlay.container.dataset.result).toBe("won");
   });
