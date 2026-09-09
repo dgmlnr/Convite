@@ -137,7 +137,7 @@ describe("describeGameModule: the bot requirement follows the seat count", () =>
     // Anti-vacuity, first: "no assertion complained" and "no assertion ran"
     // are the same observation from the outside. Pinning the count is what
     // tells them apart, and it is why every branch below can be trusted.
-    expect(recorded, "sanity: the whole conformance suite must have been collected and run").toHaveLength(10);
+    expect(recorded, "sanity: the whole conformance suite must have been collected and run").toHaveLength(11);
 
     const failures = recorded.filter((entry) => entry.failure !== null);
     expect(failures).toHaveLength(1);
@@ -151,20 +151,20 @@ describe("describeGameModule: the bot requirement follows the seat count", () =>
   it("a game that seats one player passes, and the skip is a named test in the executed list", async () => {
     // `counterModule` IS the one-seat, bot-less module — which is why the
     // top-level `describeGameModule` call above is the live half of this
-    // scenario: those ten tests are registered with vitest for real and pass
+    // scenario: those eleven tests are registered with vitest for real and pass
     // for real. What is left for this one is the half a passing suite cannot
     // show from the inside — WHICH tests ran.
     const recorded = await recordConformance(counterModule, counterFixtures);
 
     // Not only anti-vacuity here: this count is what catches a MUTE skip.
-    // Drop the `else` branch and the one-seat path registers nine tests
-    // instead of ten, silently — measured, radius one test repo-wide.
-    expect(recorded, "sanity: the whole conformance suite must have been collected and run").toHaveLength(10);
+    // Drop the `else` branch and the one-seat path registers ten tests
+    // instead of eleven, silently — measured, radius one test repo-wide.
+    expect(recorded, "sanity: the whole conformance suite must have been collected and run").toHaveLength(11);
     expect(recorded.filter((entry) => entry.failure !== null)).toEqual([]);
     // And this catches the other half, which the count cannot see: a skip that
     // runs but does not SAY it is one. Renaming the skip test to anything that
     // does not state the reason reds exactly this line and leaves the count at
-    // ten — measured too, so the two assertions have separate discriminators.
+    // eleven — measured too, so the two assertions have separate discriminators.
     expect(recorded.map((entry) => entry.name).filter((name) => name.includes("no opponent"))).toHaveLength(1);
   });
 });

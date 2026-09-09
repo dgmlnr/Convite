@@ -102,6 +102,32 @@ export function describeGameModule<TState, TAction extends { readonly playerId: 
       expect(fixtures.legalAction.playerId).toBe(fixtures.playerId);
     });
 
+    /**
+     * EVERY OFFERED ACTION, not just the fixture's — and this became a
+     * correctness requirement rather than a nicety the day the transport
+     * started gating on it.
+     *
+     * `MatchRoom.handleAction` refuses any action whose `playerId` is not the
+     * authenticated seat's, BEFORE the module ever sees it. So an action this
+     * module offers to player A while stamping it player B is a legal move
+     * that NOBODY CAN MAKE: the player picks it, the server answers
+     * `actor-mismatch`, and the game is stuck with no test anywhere going
+     * red. The module believes it offered a move; the transport believes the
+     * client forged one; both are behaving exactly as written.
+     *
+     * The fixture's own action is checked above. That check passes on a list
+     * whose OTHER entries are all mis-stamped, which is the gap this closes —
+     * the same shape as `getLegalActions offers the fixture's legal action`
+     * passing on a list that is otherwise wrong.
+     */
+    it("every action offered to a player claims that same player", () => {
+      const legal = gameModule.getLegalActions(fixtures.reachableState, fixtures.playerId);
+      // Compared as whole lists rather than one `toBe` per entry: the injected
+      // `expect` takes no message argument, and a diff of the two arrays is
+      // what names the offending id in the failure output.
+      expect(legal.map((action) => action.playerId)).toEqual(legal.map(() => fixtures.playerId));
+    });
+
     // THE BOT REQUIREMENT, BY SEAT COUNT — and both halves are a named test
     // that RUNS. `createBot` is optional on the port (see `contract.ts`), so
     // this branch is now the only thing standing between a game with
