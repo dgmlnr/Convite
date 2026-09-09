@@ -26,9 +26,20 @@ mutaciones de 18 minutos a menos de dos.
 | `pnpm check:bundle` | si algo puede entrar al bundle del navegador |
 | `pnpm check:boundaries` | **siempre antes de un PR** — CI lo corre y falla por él |
 | `pnpm check:scripts` | **siempre antes de un PR** — idem, y `pnpm test` ya lo incluye |
+| `pnpm exec eslint . --max-warnings 0` | **siempre antes de un PR** — CI lo corre y `pnpm test` **NO** |
 
-Las dos últimas estaban ausentes de esta tabla y CI las corre igual: alguien que
-se guiara sólo por acá llegaba a CI con una violación de límites sin enterarse.
+Las tres últimas estuvieron ausentes de esta tabla y CI las corre igual: alguien
+que se guiara sólo por acá llegaba a CI con una violación de límites sin
+enterarse.
+
+**Y la de eslint se agregó después de que el mismo agujero cobrara de nuevo.**
+`pnpm test` es `tsc -b && tsc --noEmit -p scripts && vitest`: eslint no está
+adentro. En una tanda, eslint encontró un bug que **`tsc`, 3.900 tests y el e2e
+no vieron** — un `replace()` sin contador había inyectado la misma declaración en
+tres renderizadores en vez de en uno. Que esta tabla ya se hubiera corregido una
+vez por exactamente este motivo, y volviera a estar incompleta, es el argumento:
+una lista de chequeos se audita **contra el workflow de CI**, no contra la
+memoria de quien la escribió.
 
 **"Un chequeo que no corriste no es un chequeo" sigue vigente.** Lo que cambia
 es contra qué corre, no si corre. Si acotás un chequeo, **decilo y decí por
@@ -45,6 +56,12 @@ Tres personas se destruyeron su propio código así, incluido el orquestador
 script de mutación **aborte si `git status --porcelain` no está vacío**. La
 disciplina va en el script, no en la memoria — una advertencia que ya falló una
 vez no se arregla repitiéndola más fuerte.
+
+**Y el filo peor no es ése: `git checkout --` restaura desde el ÍNDICE, no desde
+`HEAD`.** Después de un `git add -A`, revierte en silencio toda edición
+posterior — incluidas las que ya verificaste, que es cuando más duele porque
+parecen a salvo. Cobró dos veces en la misma tanda. Lo que funciona es
+**`git add -A` inmediatamente antes de cada mutación**, no una vez al principio.
 
 **Pipear un chequeo obligatorio a `tail` devuelve el código de salida de
 `tail`.** Un `eslint` que fallaba se reportó como éxito. Correr sin pipe y leer
@@ -63,7 +80,13 @@ chequear antes y después, siempre.
 **Una mutación que no se aplicó vuelve en verde.** Patrones con guiones largos,
 comillas invertidas o saltos de línea fallan en silencio y el `sd` sale con
 éxito. **Confirmar cada mutación con un `git diff --stat` no vacío** antes de
-creerle al resultado.
+creerle al resultado. Un script que aborta si el patrón no aparece —o si el
+`git diff` sale vacío— cierra esto de una vez; acordarse, no.
+
+**`node scripts/run-vitest.mjs` sin `pnpm exec` sale con 127.** `vitest` no
+queda en el `PATH` adentro de `xvfb-run`, y el error (`vitest: orden no
+encontrada`) aparece en el log, no en el código de salida que uno mira primero.
+Entrar siempre por **`pnpm exec node scripts/run-vitest.mjs run <archivo>`**.
 
 ---
 
@@ -105,11 +128,53 @@ te deja desconfiado, el que miente te deja tranquilo.
 **Las capturas de `*.scene.test.ts` no se commitean** (`.gitignore:70`), así que
 `git diff` después de `visual:review` es una valla vacía.
 
-**Y comparar hashes tampoco alcanza**: dos pasadas idénticas sobre `main` sin
-tocar llegaron a diferir en **9 de 60** renders por jitter sub-píxel (peor caso
-67 px, 0,022%). Otro día el piso de ruido midió cero. Por eso: **control de
-determinismo primero** —dos pasadas sobre la base sin cambios— y después
-comparar **a nivel de píxel contra ese piso medido**.
+**`--update` NO reescribe una captura que se movió poco.**
+`vitest.visual.config.ts` fija `allowedMismatchedPixelRatio: 0.01`, así que una
+escena que cambió menos del 1% **pasa**, y lo que pasa no se regraba. Un cambio
+de etiquetas que movía 0,19% dejó cinco imágenes viejas en disco, la comparación
+dio **cero en las nueve escenas**, y una de las capturas era de **antes de que la
+tarea empezara**. Tres pasadas se perdieron así antes de que alguien lo notara.
+
+Por eso: **vaciar el directorio de capturas antes de renderizar**, como primer
+paso del script y no como algo que uno recuerda.
+
+**Y moverlas, no borrarlas.** Cuesta lo mismo —`mv "$D"/*.png "$desvan/"`— y
+conserva la evidencia: fue exactamente lo que permitió auditar después una tanda
+sin creerle nada al que la hizo, comparando el archivo viejo contra el nuevo. Un
+`rm` deja al que verifica sin nada que mirar.
+
+**El control de determinismo de dos pasadas mide el piso equivocado.** Medido:
+
+| Comparación | Renders movidos |
+| --- | --- |
+| `main`, tres pasadas, **mismo** worktree | **0 de 57** |
+| dos juegos independientes de renders de `main` | **11 de 60** |
+
+Un árbol es internamente determinista; dos corridas independientes no coinciden
+entre sí. Y la comparación que hace de verdad quien revisa una rama es
+justamente ésa. O sea: **el control de dos pasadas en el mismo árbol siempre da
+cero y no protege de nada.** El piso hay que medirlo entre las dos corridas que
+después se van a comparar.
+
+**Y contar píxeles sin mirar la magnitud del delta confunde dos hallazgos
+opuestos.** De esos 11:
+
+| Escena | Píxeles distintos | Delta máximo |
+| --- | --- | --- |
+| `escoba-lobby-two-families` | 26.044 (**17,83%**) | **1** en 26.038 de ellos |
+| `generala-front-door-wide` | 26.269 (8,25%) | 3 |
+| `escoba-table-2v2-mid-hand` | 6.928 (9,44%) | 2 |
+| `table-hand-full-piles` | 205 | 1, todos |
+
+**El 17,83% de los píxeles "cambió" y ni uno solo es visible**: son redondeos de
+decodificación de las ilustraciones. Un umbral por conteo habría gritado; uno por
+delta no dice nada. **Reportar siempre las dos cifras** —cuántos píxeles y cuánto
+se movieron— y decidir por la segunda.
+
+La única escena con delta grande fue `dice-toss-filmstrip` (máx 26), y tiene
+sentido: es la que fotografía una animación cuadro por cuadro, así que depende
+del tiempo. Una escena que depende del reloj se congela con el `now` inyectado
+(`MatchRenderContext.now`), no se tolera con un umbral.
 
 **Los imports entre paquetes se renderizan desde `dist/`, y ahora el script lo
 reconstruye solo.** `visual:review`, `test:visual` y `test:visual:host` corren
@@ -137,6 +202,41 @@ figura mergeado" y "el código está en `main`" no son la misma afirmación.**
 
 **Nunca `--delete-branch`.** En una cadena borra la rama base del hijo y GitHub
 lo cierra solo.
+
+### Mergear una tanda escrita en paralelo
+
+Cuatro PRs escritos a la vez contra el mismo `main` dan los cuatro en verde y los
+cuatro `MERGEABLE/CLEAN`. **Eso no sobrevive al primer merge**: en cuanto uno
+entra, el suelo de los otros tres se movió y ninguno de esos verdes se corrió
+sobre el árbol que ahora se va a mergear.
+
+**"El CI está verde" y "el CI está verde sobre lo que voy a mergear" no son la
+misma afirmación** — la hermana de la regla de arriba. Pasó: un PR seguía
+mostrando sus cuatro chequeos en `SUCCESS` cuando su estado real ya era
+`CONFLICTING/DIRTY`. Lo que lo detecta es preguntar por la ascendencia, no por el
+color:
+
+```
+h=$(gh pr view <n> --json headRefOid --jq .headRefOid)
+git merge-base --is-ancestor origin/main "$h" \
+  && echo "verde del arbol combinado" || echo "verde del arbol VIEJO"
+```
+
+**Y hay conflictos que git no puede ver.** Un PR renombró unas etiquetas; otro
+traía **seis aserciones contra las viejas**, en archivos que el diff del primero
+nunca tocó. Merge limpio, cero marcadores, seis tests rojos. Ninguna herramienta
+de merge encuentra eso: lo encontró **correr la suite entera sobre el árbol
+combinado**, que es lo que hay que hacer en cada eslabón de una tanda paralela.
+
+Del lado bueno, la protección de rama que exige estar al día (`MERGEABLE/BEHIND`)
+es la que obliga a que CI corra sobre el árbol combinado. **No es un estorbo: es
+el único momento en que ese árbol se prueba.**
+
+**Resolver un conflicto de tests se verifica contando, no con un verde.** Cuando
+son dos `describe` independientes en el mismo ancla, la resolución es conservar
+los dos — y la unión se comprueba con aritmética: base 11 + 3 de `main` + 2 del
+PR = 16, que fue lo que quedó. Un verde no prueba que no se haya perdido un
+bloque; **un bloque que desaparece se lleva sus aserciones y no rompe nada.**
 
 ### El presupuesto de revisión mide LÍNEAS DE PRODUCCIÓN
 
