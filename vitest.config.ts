@@ -1,11 +1,11 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
 import { defineConfig } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
 
 import { BROWSER_TEST_INCLUDE } from "./scripts/browser-test-include.mjs";
-import { resolveDisplayRedirect, socketPathFor } from "./scripts/virtual-display.mjs";
+import { displayIsServed, resolveDisplayRedirect, socketPathFor } from "./scripts/virtual-display.mjs";
 
 /**
  * Config-level display redirect — the one that covers EVERYONE.
@@ -33,13 +33,37 @@ import { resolveDisplayRedirect, socketPathFor } from "./scripts/virtual-display
 const redirect = resolveDisplayRedirect({
   platform: process.platform,
   env: process.env,
-  socketExists: (display) => existsSync(socketPathFor(display)),
+  // NOT `existsSync` alone, and the difference is a sixty-second hang. A dead
+  // `Xvfb` leaves its socket on disk, so the file's presence answered "the
+  // display is up" for a display that was not there; Chromium then failed to
+  // connect for a full minute and the suite looked flaky. Asking the process
+  // table too is what separates a live server from its tombstone.
+  displayAnswers: (display) => displayIsServed({ socketExists: (d) => existsSync(socketPathFor(d)), serverHoldsDisplay: xvfbHolds }, display),
 });
 if (redirect.action !== "none" && (redirect.action === "use" || spawnPersistentXvfb(redirect.display))) {
   for (const key of Object.keys(process.env)) {
     if (!(key in redirect.env)) delete process.env[key];
   }
   Object.assign(process.env, redirect.env);
+}
+
+/**
+ * Is a process actually serving this display?
+ *
+ * `pgrep -f` rather than a connection attempt because this runs at config
+ * load, where everything must be synchronous and Node offers no synchronous
+ * unix-socket connect. A non-zero exit — no match, or no `pgrep` — is read as
+ * "not served", which fails toward spawning a fresh server: the safe
+ * direction, since a duplicate `Xvfb` costs a few megabytes while a trusted
+ * tombstone costs the whole run.
+ */
+function xvfbHolds(display: string): boolean {
+  try {
+    execFileSync("pgrep", ["-f", `Xvfb ${display}`], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function spawnPersistentXvfb(display: string): boolean {
