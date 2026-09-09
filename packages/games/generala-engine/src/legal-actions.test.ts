@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { Dice, DieFace } from "./dice.js";
 import type { PlayerId } from "./ids.js";
-import { getLegalActions } from "./legal-actions.js";
+import { CROSSING_ORDER, getLegalActions } from "./legal-actions.js";
+import { applyScore } from "./play.js";
 import { applyRoll } from "./roll.js";
+import { scoreFor } from "./scoring.js";
 import { CATEGORY_IDS, createMatch } from "./state.js";
 import type { CategoryId, MatchState, Scorecard } from "./state.js";
 
@@ -87,7 +89,7 @@ describe("getLegalActions — nobody can act while the cup is shaking", () => {
 });
 
 describe("getLegalActions — deciding is the phase that offers something", () => {
-  it("offers the acting seat one score action per open box", () => {
+  it("offers the acting seat every box worth something, plus the one box it may cross", () => {
     // TRIANGULATION FOR THE PROPERTY ABOVE, and it is not optional: an offer
     // list that returned `[]` for everything would satisfy "awaiting-roll is
     // empty" without the production code ever deciding anything. This is the
@@ -95,12 +97,18 @@ describe("getLegalActions — deciding is the phase that offers something", () =
     //
     // The invariant this list owes the transport is that `deciding` is never
     // empty, and the score list is what guarantees it: the holds run out after
-    // the third roll and the boxes do not.
+    // the third roll and the crossable box does not.
+    //
+    // `[3,1,4,1,5]` pays in four boxes; the other seven are worth nothing and
+    // only the top of the crossing ladder is offered of them (ruleset §Orden
+    // obligatorio de tachado).
     const state = decidingAfterOpeningRoll([ALICE, BOB]);
 
     const actions = getLegalActions(state, ALICE);
 
-    expect(actions.filter((action) => action.type === "score")).toEqual(CATEGORY_IDS.map((category) => ({ type: "score", playerId: ALICE, category })));
+    expect(actions.filter((action) => action.type === "score")).toEqual(
+      (["ones", "threes", "fours", "fives", "generala-doble"] as const).map((category) => ({ type: "score", playerId: ALICE, category })),
+    );
   });
 
   it("stops offering a box once it is filled, including one crossed out at zero", () => {
@@ -110,8 +118,11 @@ describe("getLegalActions — deciding is the phase that offers something", () =
 
     const offered = getLegalActions(state, ALICE).flatMap((action) => (action.type === "score" ? [action.category] : []));
 
-    expect(offered).toEqual(CATEGORY_IDS.filter((category) => !["ones", "full", "generala"].includes(category)));
-    expect(offered).toHaveLength(8);
+    // `ones` is gone because it is filled, not because of the ladder. Of the
+    // boxes still worth nothing the ladder has moved down to `generala-doble`,
+    // which is where it already was: `full` and `generala` were below it.
+    expect(offered).toEqual(["threes", "fours", "fives", "generala-doble"]);
+    for (const category of ["ones", "full", "generala"] as const) expect(offered).not.toContain(category);
   });
 
   it("offers the seats that are not on turn nothing", () => {
@@ -119,7 +130,7 @@ describe("getLegalActions — deciding is the phase that offers something", () =
     // it is in during `awaiting-roll`: it has no move at all.
     const state = decidingAfterOpeningRoll([ALICE, BOB, CAROL]);
 
-    expect(getLegalActions(state, ALICE)).toHaveLength(HOLD_SURFACE + CATEGORY_IDS.length);
+    expect(getLegalActions(state, ALICE)).toHaveLength(HOLD_SURFACE + 5);
     expect(getLegalActions(state, BOB)).toEqual([]);
     expect(getLegalActions(state, CAROL)).toEqual([]);
   });
@@ -181,7 +192,111 @@ describe("getLegalActions — the hold surface is 31 actions, never 32", () => {
     const spent = getLegalActions(deciding([ALICE, BOB], dice, 3, 0), ALICE);
     expect(spent.filter((action) => action.type === "hold")).toEqual([]);
     // And what is left is still not empty, which is the invariant the
-    // transport's advance loop rests on.
-    expect(spent).toHaveLength(CATEGORY_IDS.length);
+    // transport's advance loop rests on. `[1,2,3,4,5]` pays in six boxes —
+    // five upper ones and the escalera — and the seventh is the one box the
+    // ladder lets a seat cross.
+    expect(spent).toHaveLength(7);
+  });
+});
+
+/**
+ * ruleset §Orden obligatorio de tachado — the house rule added on 2026-09-09:
+ * "Escribir un CERO (tachar): sólo permitido en la casilla abierta de mayor
+ * pago", down the fixed ladder `Generala doble → Generala → Póker → Full →
+ * Escalera → 6 → 5 → 4 → 3 → 2 → 1`. Writing a value GREATER than zero stays
+ * free in any open box, so exactly one thing narrows: where a seat may spend a
+ * turn on nothing. WHEN to cross is still the player's choice; WHICH box is not.
+ */
+describe("getLegalActions — a zero only goes in the highest-paying open box", () => {
+  // The LADDER itself — that it names all eleven boxes, and that it is ordered
+  // by payout rather than by what a box costs to lose — is pinned in
+  // `legal-actions.crossing.test.ts`, beside the predicate. What is here is
+  // what the OFFER LIST does with it.
+
+  /** The boxes this seat is offered, in the order the list emits them. */
+  function offeredBoxes(state: MatchState, playerId: PlayerId): readonly CategoryId[] {
+    return getLegalActions(state, playerId).flatMap((action) => (action.type === "score" ? [action.category] : []));
+  }
+
+  it("offers every box that pays something, and of the rest only the top of the ladder", () => {
+    // `[4,4,6,3,2]` pays in four boxes and nothing in the other seven. Every
+    // box worth something is offered wherever it sits; of the seven worth
+    // nothing only `generala-doble` is, because it is the highest-paying box
+    // still open.
+    const state = deciding([ALICE, BOB], [4, 4, 6, 3, 2], 2, 0);
+
+    expect(offeredBoxes(state, ALICE)).toEqual(["twos", "threes", "fours", "sixes", "generala-doble"]);
+    for (const category of ["ones", "fives", "escalera", "full", "poker", "generala"] as const) {
+      expect(scoreFor(category, [4, 4, 6, 3, 2], 2, state.cards[0]!), `${category} has to be worth nothing for this case to say anything`).toBe(0);
+    }
+  });
+
+  it("orders by WHAT A BOX PAYS and not by what a seat minds losing least — the two disagree after the first rung", () => {
+    // THE FIXTURE WHERE THE TWO READINGS COME APART, which is the only kind
+    // that proves which one is implemented. With the doble already spent, the
+    // payout ladder reaches `generala`; the bot's `SACRIFICE_ORDER` — ordered
+    // by what a box COSTS to give up — would reach `ones`, because a single
+    // ace is the cheapest thing on the card to renounce. They agree on the
+    // first rung (`generala-doble`) and on nothing after it, and the ruleset
+    // now says that divergence is deliberate.
+    const state = withFilledBoxes(deciding([ALICE, BOB], [4, 4, 6, 3, 2], 2, 0), 0, { "generala-doble": 0 });
+
+    const offered = offeredBoxes(state, ALICE);
+    expect(offered).toContain("generala");
+    expect(offered).not.toContain("ones");
+    expect(offered).toEqual(["twos", "threes", "fours", "sixes", "generala"]);
+  });
+
+  it("makes the DEAREST upper box the crossable one once the lower half is spent", () => {
+    // The ladder runs 6 → 5 → 4 → 3 → 2 → 1 through the upper section, so the
+    // box a seat gives up last is the six — the highest-paying upper box and
+    // the one most likely to pay something on any throw. The cheap boxes can
+    // only be dumped at the very end, which is the whole point of the rule.
+    const state = withFilledBoxes(deciding([ALICE, BOB], [1, 1, 2, 2, 3], 2, 0), 0, { escalera: 0, full: 0, poker: 0, generala: 0, "generala-doble": 0 });
+
+    expect(offeredBoxes(state, ALICE)).toEqual(["ones", "twos", "threes", "sixes"]);
+  });
+
+  it("always offers the highest open box, so a turn can always be ended and a match always terminates", () => {
+    // THE TERMINATION PROOF, played rather than argued. A rule that can strand
+    // a match is unshippable, and the guarantee is exactly this: the crossable
+    // box is open by construction, and an open box is always a legal target —
+    // for its own value if it has one, and for a zero if it has not.
+    //
+    // The driver writes NOTHING BUT the crossable box, which is the worst a
+    // seat can do and the only policy that walks the whole ladder. If the
+    // ladder were skippable, or if a rung could go missing, this loop would
+    // either be refused or never finish.
+    let state = createMatch([ALICE, BOB]);
+    const written: readonly CategoryId[][] = [[], []];
+
+    for (let turn = 0; turn < 22; turn += 1) {
+      const thrown = applyRoll(state, [6, 6, 6, 2, 1]);
+      if (!thrown.ok) throw new Error(`the throw was refused: ${thrown.violation.code}`);
+      const rolled = thrown.state;
+      const current = rolled.turn;
+      if (current.phase !== "deciding") throw new Error(`expected to be deciding, and the turn is ${current.phase}`);
+      const card = rolled.cards[current.seat]!;
+      const highest = CROSSING_ORDER.find((category) => card[category] === null);
+      if (highest === undefined) throw new Error("the seat on turn has no open box, so this match is already over");
+
+      // At every roll counter, not only the one the driver happens to be on.
+      for (const rollsUsed of [1, 2, 3]) {
+        const offered = offeredBoxes({ ...rolled, turn: { ...current, rollsUsed } }, rolled.players[current.seat]!);
+        expect(offered.length).toBeGreaterThanOrEqual(1);
+        expect(offered).toContain(highest);
+      }
+
+      const scored = applyScore(rolled, { type: "score", playerId: rolled.players[current.seat]!, category: highest });
+      if (!scored.ok) throw new Error(`writing the highest open box was refused: ${scored.violation.code}`);
+      written[current.seat]!.push(highest);
+      state = scored.state;
+    }
+
+    // Both cards filled top-down in ladder order, which is the ladder itself
+    // read back off a match instead of off the constant.
+    expect(written[0]).toEqual(CROSSING_ORDER);
+    expect(written[1]).toEqual(CROSSING_ORDER);
+    expect(state.cards.every((card) => CATEGORY_IDS.every((category) => card[category] !== null))).toBe(true);
   });
 });

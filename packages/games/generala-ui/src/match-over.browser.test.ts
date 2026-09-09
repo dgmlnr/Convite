@@ -1,8 +1,8 @@
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { CATEGORY_IDS, applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
-import type { ApplyResult, DieFace, MatchState, PlayerId, PlayerView } from "@hexdev/generala-engine";
+import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
+import type { ApplyResult, CategoryId, DieFace, MatchState, PlayerId, PlayerView } from "@hexdev/generala-engine";
 
 import { renderGeneralaMatchOver } from "./match-over.js";
 import { MATCH_OVER_STYLE_ID } from "./match-over-styles.js";
@@ -35,6 +35,18 @@ const LEVEL_ROLL: readonly DieFace[] = [1, 2, 3, 4, 5];
 /** Four sixes — worth 24 in the Seises box, and still not a generala. */
 const BOOST_ROLL: readonly DieFace[] = [6, 6, 6, 6, 1];
 
+/**
+ * The eleven boxes in an order `LEVEL_ROLL` can actually be written into.
+ *
+ * NOT `CATEGORY_IDS`, and the difference is the crossing ladder. `[1,2,3,4,5]`
+ * pays in six boxes and nothing in the other five, and a zero goes only in the
+ * highest-paying open box (ruleset §Orden obligatorio de tachado) — so the six
+ * that pay come first and the five that do not follow down the ladder. Seises
+ * is last, which is also where the boost roll lands: at that point it is the
+ * only box left, so both seats can write it whatever they threw.
+ */
+const PLAYABLE_ORDER: readonly CategoryId[] = ["ones", "twos", "threes", "fours", "fives", "escalera", "generala-doble", "generala", "poker", "full", "sixes"];
+
 const mounted: HTMLElement[] = [];
 afterEach(async () => {
   while (mounted.length > 0) mounted.pop()!.remove();
@@ -56,7 +68,7 @@ function accept(result: ApplyResult): MatchState {
  */
 function playToTheEnd(boostSeat: number | null): MatchState {
   let state = createMatch(SEATS);
-  for (const category of CATEGORY_IDS) {
+  for (const category of PLAYABLE_ORDER) {
     for (let round = 0; round < SEATS.length; round++) {
       const turn = state.turn;
       if (turn.phase !== "deciding" && turn.phase !== "awaiting-roll") throw new Error(`the match ended early, at ${turn.phase}`);

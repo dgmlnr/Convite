@@ -25,9 +25,15 @@ import type { MatchState } from "./state.js";
  * formed — `DieFace` and an index into five dice are both erased before a
  * single value moves — so both are the runtime half of a compile-time promise
  * this engine cannot make its callers keep.
+ *
+ * `box-not-open` and `cross-out-of-order` are the other pair, and they are two
+ * refusals rather than one because they are two different facts: the first says
+ * a box is gone for good, the second that a box is open but a zero may not go
+ * in it YET. A caller switching on the code can tell "never" from "not now"
+ * without reading English out of `message`.
  */
 export interface RuleViolation {
-  readonly code: "not-awaiting-roll" | "wrong-face-count" | "malformed-face" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold" | "box-not-open";
+  readonly code: "not-awaiting-roll" | "wrong-face-count" | "malformed-face" | "not-deciding" | "not-on-turn" | "no-rolls-left" | "malformed-hold" | "box-not-open" | "cross-out-of-order";
   readonly message: string;
 }
 

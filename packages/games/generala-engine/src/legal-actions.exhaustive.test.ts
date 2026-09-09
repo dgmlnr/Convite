@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { PlayerId } from "./ids.js";
-import { getLegalActions } from "./legal-actions.js";
+import { CROSSING_ORDER, getLegalActions } from "./legal-actions.js";
 import type { GeneralaAction } from "./legal-actions.js";
 import { applyHold, applyPlayerAction, applyScore } from "./play.js";
 import { applyRoll } from "./roll.js";
+import { scoreFor } from "./scoring.js";
 import { CATEGORY_IDS, createMatch, ROLLS_PER_TURN } from "./state.js";
 import type { MatchState } from "./state.js";
 import type { ApplyResult } from "./violation.js";
@@ -84,14 +85,22 @@ function everyActionAClientCouldSend(seats: readonly PlayerId[]): readonly Gener
   return actions;
 }
 
-/** One whole turn played through the real reducers: throw, then write a box. */
+/**
+ * One whole turn played through the real reducers: throw, then write a box.
+ *
+ * The box is the engine's OWN first offer rather than the first open one on the
+ * card. Since the crossing ladder landed those are different questions — an
+ * open box worth nothing is not writable unless it is the highest-paying one
+ * still open — and a driver that picked the second would be scripting a match
+ * the engine cannot play.
+ */
 function playOneTurn(state: MatchState): MatchState {
   const rolled = accepted(applyRoll(state, PLAIN_HAND));
   const turn = rolled.turn;
   if (turn.phase !== "deciding") throw new Error(`expected to be deciding after the throw, and the turn is ${turn.phase}`);
-  const open = CATEGORY_IDS.find((category) => rolled.cards[turn.seat]![category] === null);
-  if (open === undefined) throw new Error("the seat on turn has no open box, so this match is already over");
-  return accepted(applyScore(rolled, { type: "score", playerId: rolled.players[turn.seat]!, category: open }));
+  const offer = getLegalActions(rolled, rolled.players[turn.seat]!).find((action) => action.type === "score");
+  if (offer === undefined) throw new Error("the seat on turn was offered no box at all, so a turn cannot be ended");
+  return accepted(applyScore(rolled, offer));
 }
 
 /** Advance a `deciding` turn by one throw: hold nothing, roll all five again. */
@@ -167,10 +176,17 @@ describe("the offered set and the accepted set are the same set", () => {
     expect(seen.checked).toBe(12691);
     // And a reducer that refused everything would satisfy every assertion above
     // only if the offer list were empty too. It is not, so this is the shape of
-    // the false green that is being ruled out rather than assumed away: 42
-    // actions where a throw remains, 11 or 1 where it does not, each counted
-    // once per candidate list that names the acting seat.
-    expect(seen.accepted).toBe(340);
+    // the false green that is being ruled out rather than assumed away.
+    //
+    // WORKED OUT RATHER THAN PASTED, because the crossing ladder moved it and a
+    // number nobody can re-derive is a number nobody can argue with. On
+    // `[6,6,6,2,1]` an untouched card is offered four boxes — `ones`, `twos`
+    // and `sixes` are worth something, and of the eight worth nothing only
+    // `generala-doble` may be crossed — so 35 actions while a throw remains and
+    // 4 once they are gone. `lastBox` has one open box, which is the crossable
+    // one: 32 and 1. Each seat is named by exactly two of the candidate lists,
+    // so (35 + 35 + 4 + 35 + 32 + 1) x 2 = 284.
+    expect(seen.accepted).toBe(284);
   });
 });
 
@@ -192,14 +208,25 @@ describe("deciding is never empty, whatever the scorecard says", () => {
       const open = CATEGORY_IDS.filter((category) => card[category] === null);
       openCountsSeen.push(open.length);
 
+      // The one box a seat may always write, whatever the dice did: the
+      // highest-paying open one (ruleset §Orden obligatorio de tachado). It
+      // takes its own value if it has one and a zero if it has not, so it is
+      // never the reason a turn cannot be ended.
+      const crossable = CROSSING_ORDER.find((category) => card[category] === null)!;
+
       for (const rollsUsed of [1, 2, ROLLS_PER_TURN]) {
         const atCounter: MatchState = { ...rolled, turn: { ...current, rollsUsed } };
         const scores = getLegalActions(atCounter, ALICE === atCounter.players[current.seat] ? ALICE : BOB).filter((action) => action.type === "score");
         expect(scores.length).toBeGreaterThanOrEqual(1);
-        expect(scores).toHaveLength(open.length);
+        expect(scores.map((action) => action.category)).toContain(crossable);
+        // Every box offered is either worth something or the crossable one,
+        // which is the rule read back off the list rather than off the ladder.
+        for (const action of scores) {
+          expect(action.category === crossable || scoreFor(action.category, current.dice, rollsUsed, card) > 0, `${action.category} is offered but is neither worth anything nor the crossable box`).toBe(true);
+        }
       }
 
-      state = accepted(applyScore(rolled, { type: "score", playerId: rolled.players[current.seat]!, category: open[0]! }));
+      state = accepted(applyScore(rolled, { type: "score", playerId: rolled.players[current.seat]!, category: crossable }));
     }
 
     // A whole match, both seats, every scorecard from eleven boxes open down to
