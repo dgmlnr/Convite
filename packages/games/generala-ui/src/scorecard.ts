@@ -82,6 +82,28 @@ function previewOf(turn: Turn, card: Scorecard, category: CategoryId): number | 
 }
 
 /**
+ * WHICH COLUMN IS PLAYING, or none.
+ *
+ * `turn.seat` alone is the wrong answer and it is wrong in exactly one state:
+ * `applyScore` hands `awaiting-roll` to `(seat + 1) % players.length` whether
+ * or not any card still has room, so a FINISHED match arrives here with the
+ * turn pointing at a seat that will never play again. A planilla reading the
+ * turn alone would sit under the verdict overlay quietly telling somebody it
+ * was their go. `outcome` is the engine's own answer to "is this still a
+ * game", read rather than re-derived, exactly as the totals are.
+ */
+function seatOnTurn(view: PlayerView): number | null {
+  return view.outcome === null ? view.turn.seat : null;
+}
+
+/** The mark, written only where it belongs. A cell with no attribute is the
+ * ordinary case, so the sheet needs one selector rather than two and nothing
+ * has to be cleared between renders — the table is rebuilt whole. */
+function markTurn(cell: HTMLTableCellElement, onTurn: boolean): void {
+  if (onTurn) cell.dataset.turn = "active";
+}
+
+/**
  * The offer that writes THIS box for THIS seat, or nothing.
  *
  * Looked up by the offer's own `playerId`, not by comparing a seat to
@@ -183,6 +205,7 @@ export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view
   container.className = "hexdev-generala-scorecard";
 
   const seats = seatsInOrder(view);
+  const onTurn = seatOnTurn(view);
   const scores = legalActions.filter((action): action is ScoreAction => action.type === "score");
   const table = doc.createElement("table");
   table.className = "hexdev-generala-scorecard-table";
@@ -223,6 +246,7 @@ export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view
     column.scope = "col";
     column.dataset.seat = String(seat.seat);
     column.textContent = seatLabel(seat, view.self, view.others.length);
+    markTurn(column, seat.seat === onTurn);
     headRow.appendChild(column);
   }
   head.appendChild(headRow);
@@ -242,6 +266,7 @@ export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view
       const cell = doc.createElement("td");
       cell.className = "hexdev-generala-scorecard-cell";
       cell.dataset.seat = String(seat.seat);
+      markTurn(cell, seat.seat === onTurn);
       const card = view.cards[seat.seat];
       fillCell(cell, card?.[category] ?? null);
 
@@ -266,6 +291,7 @@ export const renderGeneralaScorecard: GeneralaScorecardRender = (container, view
     const cell = doc.createElement("td");
     cell.dataset.seat = String(seat.seat);
     cell.textContent = String(view.totals[seat.seat] ?? 0);
+    markTurn(cell, seat.seat === onTurn);
     totalRow.appendChild(cell);
   }
   foot.appendChild(totalRow);

@@ -55,6 +55,10 @@ interface Planilla {
   readonly view: () => PlayerView;
   readonly table: () => HTMLTableElement;
   readonly cell: (category: CategoryId, seat: number) => HTMLTableCellElement;
+  /** This seat's column heading, and the totals cell at the foot of it — the
+   * two cells of a column that are not one of the eleven boxes. */
+  readonly head: (seat: number) => HTMLTableCellElement;
+  readonly total: (seat: number) => HTMLTableCellElement;
   readonly button: (category: CategoryId, seat: number) => HTMLButtonElement | null;
   readonly buttons: () => readonly HTMLButtonElement[];
   readonly dispatched: readonly ScoreAction[];
@@ -120,6 +124,16 @@ function seatPlanilla(seatId: PlayerId = SEAT): Planilla {
     cell: (category, seat) => {
       const found = table().querySelector<HTMLTableCellElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"]`);
       if (found === null) throw new Error(`no cell for ${category} at seat ${String(seat)}`);
+      return found;
+    },
+    head: (seat) => {
+      const found = table().querySelector<HTMLTableCellElement>(`thead th[data-seat="${String(seat)}"]`);
+      if (found === null) throw new Error(`no column heading for seat ${String(seat)}`);
+      return found;
+    },
+    total: (seat) => {
+      const found = table().querySelector<HTMLTableCellElement>(`tfoot td[data-seat="${String(seat)}"]`);
+      if (found === null) throw new Error(`no total for seat ${String(seat)}`);
       return found;
     },
     playTurn: (faces, category) => {
@@ -636,3 +650,87 @@ describe("generala scorecard: it fits the narrow end of the range, measured rath
     const seatCells = [0, 1].map((seat) => planilla.cell("generala-doble", seat).getBoundingClientRect().width);
     expect(seatCells[0]).toBeCloseTo(seatCells[1]!, 1);
   });});
+
+/**
+ * WHOSE TURN IT IS, ON THE ONE SURFACE EVERY SEAT IS ALREADY LOOKING AT.
+ *
+ * The board had no answer to it. A player joining mid-match, or coming back
+ * to the tab, had to infer the turn from the ABSENCE of things — no throw
+ * control, no pressable box — which is a deduction rather than a cue, and one
+ * that reads identically to "this board is broken". Found by looking; no
+ * assertion could have seen it, because every element it depends on was
+ * already correct.
+ *
+ * THE MARK IS AN ATTRIBUTE ON EVERY CELL OF THE COLUMN, and that shape is the
+ * decision. A column is not an element — `<col>` cannot be given a background
+ * that paints over a cell's own — so "the column on turn" has to be said once
+ * per cell or not at all. Saying it in the DOM rather than in a class on the
+ * table is what lets the sheet stay a single selector and keeps this file's
+ * assertions about the CELL a player's eye lands on.
+ */
+describe("generala planilla: the column of the seat that is playing", () => {
+  it("marks the heading, all eleven boxes and the total of the column on turn — and nothing outside it", () => {
+    const planilla = seatPlanilla();
+    planilla.roll([6, 6, 6, 2, 1]);
+    // The premise, read off the engine: seat 0 opens, so seat 0's column is
+    // the one that should carry the mark.
+    expect(planilla.view().turn.seat).toBe(0);
+
+    expect(planilla.head(0).dataset.turn).toBe("active");
+    expect(planilla.total(0).dataset.turn).toBe("active");
+    for (const category of CATEGORY_IDS) expect(planilla.cell(category, 0).dataset.turn, category).toBe("active");
+
+    // AND THE OTHER COLUMN CARRIES NOTHING, which is the half that makes the
+    // mark mean something: an attribute on every cell of the table would
+    // satisfy every assertion above and highlight the whole planilla.
+    expect(planilla.head(1).dataset.turn).toBeUndefined();
+    expect(planilla.total(1).dataset.turn).toBeUndefined();
+    for (const category of CATEGORY_IDS) expect(planilla.cell(category, 1).dataset.turn, category).toBeUndefined();
+  });
+
+  it("follows the SEAT on turn and never the seat reading the card", () => {
+    // Read from seat 1 while seat 0 is playing. From here the marked column
+    // is the RIVAL's, which is exactly the case an implementation keyed on
+    // `view.self` gets backwards while looking right from seat 0 — the two
+    // questions are indistinguishable for as long as the reader is the seat
+    // that happens to be playing.
+    const planilla = seatPlanilla(RIVAL);
+    planilla.roll([6, 6, 6, 2, 1]);
+
+    expect(planilla.view().turn.seat).toBe(0);
+    expect(planilla.view().self.seat).toBe(1);
+    expect(planilla.head(0).dataset.turn).toBe("active");
+    expect(planilla.head(0).textContent).toBe("Rival");
+    expect(planilla.head(1).dataset.turn).toBeUndefined();
+  });
+
+  it("moves the mark to the other column when a box is written and the turn passes", () => {
+    const planilla = seatPlanilla();
+    planilla.playTurn([6, 6, 6, 2, 1], "sixes");
+
+    expect(planilla.view().turn.seat).toBe(1);
+    expect(planilla.head(1).dataset.turn).toBe("active");
+    expect(planilla.head(0).dataset.turn).toBeUndefined();
+  });
+
+  it("marks no column at all once the match is over, because nobody is on turn any more", () => {
+    // THE ENGINE KEEPS ADVANCING THE TURN PAST THE LAST BOX. `applyScore`
+    // hands `awaiting-roll` to `(seat + 1) % players.length` whether or not
+    // any card still has room, so a finished match arrives with `turn.seat`
+    // pointing at a seat that will never play — and a planilla reading the
+    // turn alone would sit under the verdict overlay highlighting it.
+    const planilla = seatPlanilla();
+    for (const category of CATEGORY_IDS) {
+      planilla.playTurn([1, 2, 3, 4, 5], category);
+      planilla.playTurn([1, 2, 3, 4, 5], category);
+    }
+
+    expect(planilla.view().outcome).not.toBeNull();
+    expect(planilla.view().turn.seat).toBe(0);
+    for (const seat of [0, 1]) {
+      expect(planilla.head(seat).dataset.turn, `heading ${String(seat)}`).toBeUndefined();
+      expect(planilla.total(seat).dataset.turn, `total ${String(seat)}`).toBeUndefined();
+      for (const category of CATEGORY_IDS) expect(planilla.cell(category, seat).dataset.turn, `${category}/${String(seat)}`).toBeUndefined();
+    }
+  });
+});
