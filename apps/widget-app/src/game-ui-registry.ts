@@ -997,7 +997,7 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
       // one the game offered — walking arrays BY INDEX, so `[1, 0]` is not
       // `[0, 1]`. Forwarding the object makes canonical ordering a fact
       // rather than a convention two files would have to remember.
-      tray({ diceEl: mounted.diceEl, rollEl: mounted.rollEl }, view.turn, legalActions, (action: HoldAction) => {
+      tray({ diceEl: mounted.diceEl, rollEl: mounted.rollEl }, view, legalActions, (action: HoldAction) => {
         dispatch(action);
       });
       renderServidaCallout(mounted.servidaEl, view);

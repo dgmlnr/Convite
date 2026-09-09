@@ -1,6 +1,6 @@
 import { ensureDiceStyles } from "@hexdev/dice-ui";
 import { DICE_COUNT } from "@hexdev/generala-engine";
-import type { DieFace, GeneralaAction, HoldAction, Turn } from "@hexdev/generala-engine";
+import type { DieFace, GeneralaAction, HoldAction, PlayerView, Turn } from "@hexdev/generala-engine";
 
 import { createDieSlot } from "./die-button.js";
 import type { DieSlot } from "./die-button.js";
@@ -15,9 +15,21 @@ export interface GeneralaTrayElements {
   readonly rollEl: HTMLElement;
 }
 
+/**
+ * THE VIEW AND NOT THE TURN, and the widening is one fact this tray could not
+ * otherwise reach.
+ *
+ * `Turn` carries the seat that is PLAYING and says nothing about the seat
+ * that is READING, so "is the table waiting on me" is unanswerable from it —
+ * and that question is the whole of the cue below. `PlayerView` is the one
+ * object holding both, and it is what the planilla and the announcer standing
+ * beside this tray were already handed. Nothing else about the tray moved:
+ * `view.turn` is the same object under a different name, and the offer list
+ * is still the only authority on what may be pressed.
+ */
 export type GeneralaTrayRender = (
   elements: GeneralaTrayElements,
-  turn: Turn,
+  view: PlayerView,
   legalActions: readonly GeneralaAction[],
   onHold: (action: HoldAction) => void,
 ) => void;
@@ -112,10 +124,10 @@ export function createGeneralaTray(): GeneralaTrayRender {
    * held die survives re-renders, so a listener closing over its own render's
    * arguments would go stale exactly on the dice the player is keeping. */
   let roller: HTMLButtonElement | null = null;
-  let current: { elements: GeneralaTrayElements; turn: Turn; legalActions: readonly GeneralaAction[]; onHold: (action: HoldAction) => void } | null = null;
+  let current: { elements: GeneralaTrayElements; view: PlayerView; legalActions: readonly GeneralaAction[]; onHold: (action: HoldAction) => void } | null = null;
 
   const redraw = (): void => {
-    if (current !== null) render(current.elements, current.turn, current.legalActions, current.onHold);
+    if (current !== null) render(current.elements, current.view, current.legalActions, current.onHold);
   };
 
   const toggle = (index: number): void => {
@@ -136,12 +148,19 @@ export function createGeneralaTray(): GeneralaTrayRender {
     current.onHold(offer);
   };
 
-  const render: GeneralaTrayRender = (elements, turn, legalActions, onHold) => {
-    current = { elements, turn, legalActions, onHold };
+  const render: GeneralaTrayRender = (elements, view, legalActions, onHold) => {
+    current = { elements, view, legalActions, onHold };
+    const turn = view.turn;
     const doc = elements.diceEl.ownerDocument;
     ensureDiceStyles(doc);
     ensureTrayStyles(doc);
     elements.diceEl.className = "hexdev-generala-tray";
+    // WHOSE TURN IT IS, SAID ONCE, ON THE ROW ITSELF. The sheet dims from
+    // here rather than from a class per die, so a tray with three dice on the
+    // table and two in the cup answers the question once instead of five
+    // times. Written on every render and never cleared, because it is
+    // total: one of the two values is always true.
+    elements.diceEl.dataset.turn = turn.seat === view.self.seat ? "self" : "rival";
 
     const faces = facesOf(turn);
     // ARE THE ELEMENTS THIS CLOSURE HOLDS STILL IN THIS CONTAINER? Asked of

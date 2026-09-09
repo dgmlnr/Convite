@@ -218,7 +218,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     const table = seatTable();
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Anotaste 18 en Seises.");
+    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
   });
 
   it("names the rival who wrote a box, and says the zero out loud when they crossed one out", () => {
@@ -230,7 +230,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     // no anotó nada" would be true of a turn that never happened.
     table.playTurn([1, 1, 2, 3, 4], "fives");
 
-    expect(table.said()).toBe("Rival anotó 0 en Cincos.");
+    expect(table.said()).toBe("Rival anotó 0 en Cincos. Es tu turno.");
   });
 
   it("reads the same event from the rival's own seat, with the roles the other way round", () => {
@@ -240,7 +240,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     const table = seatTable(RIVAL);
     table.playTurn([6, 6, 6, 2, 1], "sixes");
 
-    expect(table.said()).toBe("Rival anotó 18 en Seises.");
+    expect(table.said()).toBe("Rival anotó 18 en Seises. Es tu turno.");
   });
 
   it("calls the box exactly what the planilla's own row header calls it, accent and all", () => {
@@ -251,7 +251,7 @@ describe("generala announcer: the box that was written, with the number in it", 
     const table = seatTable();
     table.playTurn([3, 3, 3, 3, 1], "poker");
 
-    expect(table.said()).toBe("Anotaste 45 en Póker.");
+    expect(table.said()).toBe("Anotaste 45 en Póker. Juega Rival.");
   });
 
   it("announces the box and not the throw when a board draws only the render that follows a score", () => {
@@ -273,6 +273,59 @@ describe("generala announcer: the box that was written, with the number in it", 
     table.scoreUnseen("sixes");
     table.roll([1, 1, 2, 3, 4]);
 
-    expect(table.said()).toBe("Anotaste 18 en Seises.");
+    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
+  });
+});
+
+/**
+ * WHOSE TURN IT IS, FOR THE PLAYER WHO CANNOT SEE THE COLUMN THAT SAYS SO.
+ *
+ * The board grew two cues for this in the same change — the planilla's shaded
+ * column and the tray going quiet — and both of them are light. A live region
+ * is the whole of that information for anybody not reading the screen, and it
+ * had none of it: "Rival anotó 0 en Cincos." reports what happened and leaves
+ * the actionable half unsaid.
+ *
+ * IT IS APPENDED TO THE SCORE AND IS NOT AN EVENT OF ITS OWN, which is the
+ * decision this block is really about. This file already argues that two
+ * events joined into one string is a sentence nobody can follow, and that is
+ * why a throw is dropped in favour of the box beside it. A turn passing is
+ * not a second event: `applyScore` is the ONLY transition that moves the seat,
+ * so the box and the pass arrive in one broadcast, caused by one action. They
+ * are a fact and its consequence, and the consequence is the half a player has
+ * to act on. Announcing it separately is not even available — it would land in
+ * the same render and overwrite the box.
+ */
+describe("generala announcer: the turn the written box just passed", () => {
+  it("says the match is now waiting on THIS seat when the rival's box is what passed it", () => {
+    const table = seatTable();
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+    table.playTurn([1, 1, 2, 3, 4], "fives");
+
+    expect(table.said()).toBe("Rival anotó 0 en Cincos. Es tu turno.");
+  });
+
+  it("names the seat it passed TO when that seat is not the one reading", () => {
+    const table = seatTable();
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+
+    // The planilla's own column name, not a third word for the same seat.
+    expect(table.said()).toBe("Anotaste 18 en Seises. Juega Rival.");
+  });
+
+  it("says nothing about a turn once the last box is written, because there is not another one", () => {
+    // THE ENGINE ADVANCES THE SEAT PAST THE END OF THE MATCH: `applyScore`
+    // hands `awaiting-roll` to the next seat whether or not any card still
+    // has room. A region reading the turn alone would end twenty-two turns of
+    // play by telling somebody it was their go, over a verdict overlay that
+    // has already taken the board away from them.
+    const table = seatTable();
+    const categories: readonly CategoryId[] = ["ones", "twos", "threes", "fours", "fives", "sixes", "escalera", "full", "poker", "generala", "generala-doble"];
+    for (const category of categories) {
+      table.playTurn([1, 2, 3, 4, 5], category);
+      table.playTurn([1, 2, 3, 4, 5], category);
+    }
+
+    expect(table.said()).toBe("Rival anotó 0 en Generala doble.");
   });
 });

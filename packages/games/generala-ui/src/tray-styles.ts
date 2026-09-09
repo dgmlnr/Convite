@@ -76,6 +76,37 @@ export const TRAY_STYLE_ID = "hexdev-generala-tray-styles";
  * where there was a transparent one, and a lift. Colour alone would leave a
  * player who cannot see the gold with an `aria-pressed` a screen reader
  * announces and nothing a sighted colour-blind player could read at all.
+ *
+ * THE TRAY GOES QUIET WHEN THE TABLE IS NOT WAITING ON THIS SEAT, and the
+ * scope of that is the interesting part.
+ *
+ * It is keyed on the TURN and never on `:disabled`, because the rule above
+ * already says why: a die is disabled on your own third throw too, and
+ * dimming there would hide the five faces you are about to spend. "The table
+ * is not waiting on you" is a different fact, it is the one a player arriving
+ * mid-match cannot get from this screen at all, and only the board knows it —
+ * `tray.ts` reads it off the view and writes `data-turn` here.
+ *
+ * IT PAIRS WITH THE PLANILLA'S SHADED COLUMN AND DOES NOT STAND ALONE.
+ * Dimming by itself is ambiguous: "off" is also what a control disabled for
+ * some unrelated reason looks like. The column next door is what turns it
+ * from "something is unavailable" into "it is the rival's go".
+ *
+ * THE WAITING SLOTS ARE DELIBERATELY OUT OF THE SELECTOR, and that is the one
+ * place this cue is held back. `.hexdev-generala-die--empty` is the dashed
+ * outline above, added because five blank boxes over a card of dashes is the
+ * state EVERY turn passes through and it said nothing at all; it already
+ * measures about 1.8:1 against the felt, under the 3:1 floor a meaningful
+ * graphic wants, and it is the only thing on screen reporting that the
+ * rival's cup is shaking. Dimming it would have paid for this cue with that
+ * one. The other half of the original sketch — "and it loses its border" —
+ * has nothing left to act on, and that is MEASURED in
+ * `tray.browser.test.ts` rather than reasoned: on the rival's turn the throw
+ * control is not rendered at all, because the offer list carries no hold.
+ *
+ * THIS ARGUMENT LIVES OUT HERE AND NOT IN THE SHEET. Everything between the
+ * backticks below is a string this widget ships to every player and
+ * `check:bundle` measures; the prose belongs where it costs nobody anything.
  */
 export function buildTrayStylesheet(): string {
   return `
@@ -96,6 +127,9 @@ export function buildTrayStylesheet(): string {
      on this surface that must read as ABSENCE, so a board with a lighter
      ground needs a different value rather than a different rule. */
   --generala-slot-outline: rgba(255, 255, 255, 0.18);
+  /* How far down a die goes when the table is not waiting on this seat.
+     A knob, and a measured one — see this file's header. */
+  --generala-waiting-dim: 0.6;
   /* THE CONTAINER \`dice-ui\` CANNOT DECLARE FOR ITSELF. Safe here and not
      there because this is a BLOCK-LEVEL flex row: \`contain: inline-size\`
      makes an element's inline size ignore its contents, which is fatal to a
@@ -163,6 +197,12 @@ export function buildTrayStylesheet(): string {
    decision is made from. */
 .hexdev-generala-die:disabled {
   cursor: default;
+}
+
+/* NOT YOUR TURN: the dice that are SHOWING go quiet, and the waiting slots
+   deliberately do not. This file's header has both halves of why. */
+.hexdev-generala-tray[data-turn="rival"] .hexdev-generala-die:not(.hexdev-generala-die--empty) {
+  opacity: var(--generala-waiting-dim, 0.6);
 }
 
 .hexdev-generala-die--empty {

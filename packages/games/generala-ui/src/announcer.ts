@@ -116,6 +116,34 @@ function scoreSentence(view: PlayerView, written: { readonly seat: number; reado
 }
 
 /**
+ * WHO THE TABLE IS WAITING ON NOW.
+ *
+ * THE BOARD GREW TWO CUES FOR THIS AND THIS IS THE THIRD. A shaded column on
+ * the planilla says WHO, a dimmed tray says NOT NOW, and both of them are
+ * light on purpose — which leaves a player who is not looking at the screen
+ * with nothing at all. "Rival anotó 0 en Cincos." reports what happened and
+ * withholds the only part of it anybody has to act on.
+ *
+ * APPENDED TO THE BOX, NEVER ANNOUNCED ON ITS OWN, and that is not the same
+ * compromise this file refuses elsewhere. A throw and a written box are two
+ * INDEPENDENT events that a coalescing board can deliver together, which is
+ * why the box wins and the throw is dropped. A turn passing is not an event
+ * beside the box: `applyScore` is the only transition that moves the seat, so
+ * the two arrive in one broadcast, from one action, as a fact and its
+ * consequence. Announcing it separately is not even available — it would land
+ * in the same render and overwrite the sentence it belongs to.
+ *
+ * "Juega Rival", with the planilla's own column name, so the region and the
+ * card do not invent two words for one seat — the same sharing
+ * `scoreSentence` makes for a box, and the reason `seatLabel` is imported at
+ * all.
+ */
+function nowPlayingSentence(view: PlayerView): string {
+  if (view.turn.seat === view.self.seat) return "Es tu turno.";
+  return `Juega ${labelForSeat(view, view.turn.seat)}.`;
+}
+
+/**
  * A GENERALA SERVIDA IS A MATCH-ENDING EVENT AND NOT A SCORE, and the
  * sentence has to be shaped like one.
  *
@@ -159,7 +187,17 @@ function newsIn(before: PlayerView, after: PlayerView): string | null {
     return before.turn.phase === "servida-win" ? null : servidaWinSentence(after, after.turn.seat);
   }
   const written = boxWritten(before, after);
-  if (written !== null) return scoreSentence(after, written);
+  // A FINISHED MATCH IS THE ONE STATE WITH NO NEXT SEAT, and the turn does
+  // not know it: `applyScore` hands `awaiting-roll` to `(seat + 1) %
+  // players.length` whether or not any card still has room, so the last box
+  // of the match leaves the turn pointing at somebody who will never play.
+  // `outcome` is the engine's answer to "is this still a game", and asking it
+  // is what keeps the region from ending twenty-two turns of play by telling
+  // a player it is their go under a verdict overlay.
+  if (written !== null) {
+    const said = scoreSentence(after, written);
+    return after.outcome === null ? `${said} ${nowPlayingSentence(after)}` : said;
+  }
   const turn = after.turn;
   if (turn.phase !== "deciding") return null;
   if (turn.rollsUsed === throwNumberOf(before.turn)) return null;

@@ -163,6 +163,21 @@ describe("scene: the board, which is the screen this whole change was for", () =
     const container = await boardScreen(createMatch(SEATS), [375, 812]);
     await expect.element(container).toMatchScreenshot("generala-board-opening");
   });
+
+  /* THE RIVAL'S TURN, WHICH EVERY OTHER PICTURE IN THIS FILE LEAVES OUT.
+   *
+   * `midMatch` and all three scenes above land on seat 0, so half of every
+   * match this game plays had never been photographed. It is also the only
+   * state in which the two turn cues are visible at all: the rival's column
+   * carries the shading and the accent heading, the dice on the table are
+   * dimmed because they are not this seat's to hold, and the throw control is
+   * simply absent. What this picture is for is whether those three together
+   * read as "wait" rather than as "broken". */
+  it("the rival's turn: their dice on the table, their column lit, and nothing here to press", async () => {
+    const passed = playTurn(midMatch(), [2, 2, 4, 5, 1], "twos");
+    const container = await boardScreen(accept(applyRoll(passed, [6, 6, 3, 3, 1])), [375, 812]);
+    await expect.element(container).toMatchScreenshot("generala-board-rival-turn");
+  });
 });
 
 describe("scene: the screen that ends the match", () => {
