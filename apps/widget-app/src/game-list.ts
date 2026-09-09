@@ -159,12 +159,19 @@ export function renderGameList(container: HTMLElement, sections: readonly GameSe
       // A family that declares none renders a title-only card, still full size
       // and still a full activation target: a game with no art yet is a game,
       // not a hole in the list.
-      const art = familyUiFor(family.id)?.cardArt ?? [];
+      const ui = familyUiFor(family.id);
+      const art = ui?.cardArt ?? [];
       if (art.length > 0) {
         const fan = document.createElement("div");
         fan.className = "hexdev-game-card-art";
         fan.setAttribute("aria-hidden", "true");
         fan.style.setProperty("--n", String(art.length));
+        // WHAT SHAPE THIS ART IS, PASSED THROUGH AND NEVER DECIDED HERE. The
+        // shell still knows nothing about dice: it forwards one declared
+        // property so the sheet can lift a cut-out by its own silhouette
+        // instead of by the rectangle it was delivered in. A family that says
+        // nothing is a rectangle, which is what a deck is.
+        if (ui?.cardArtIsCutOut === true) fan.dataset.artShape = "cut-out";
         for (const [index, item] of art.entries()) {
           // A STRING IS STILL A URL, exactly as before this field's contract
           // widened: truco's and escoba's own arrays draw down this branch

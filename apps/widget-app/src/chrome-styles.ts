@@ -28,6 +28,47 @@ export const DEAL_STAGGER_MS = 55;
  * `--truco-*`/`--deck-*` identity tokens — a strong-branded tenant must see
  * their colors on this screen, and a future second game must never need to
  * touch this file at all.
+ *
+ * A LOBBY CARD'S SHADOW IS CAST BY THE ARTWORK, NOT BY THE FILE IT ARRIVED IN
+ * — and which of the two that is, is a fact about the art.
+ *
+ * `box-shadow` is a statement about the BORDER BOX: it paints as though the
+ * element were an opaque rounded rectangle, whatever is inside it. For the
+ * deck this fan was built for that is exactly right and measured — a Spanish
+ * card IS a rectangle, `1-espada.webp` is 99.85 % opaque, and the rest is the
+ * corners the radius already rounds. It broke the day a shelf of dice
+ * arrived: `cup.webp` is 67.6 % empty, the cubilete sits in the lower two
+ * thirds of its box, and the faces overlap their neighbours by 12 %. So the
+ * front door drew a rectangle in shadow around, above and THROUGH a drawing
+ * that is not a rectangle — clearest between the two dice, where a pale
+ * unshadowed panel stood in the air over the cup. Found by looking at a
+ * rendered screen; no assertion in this repository could have seen it,
+ * because a shadow has no geometry to measure and the colour distance is far
+ * under the visual suite's own threshold.
+ *
+ * `drop-shadow()` states the same effect about the ALPHA CHANNEL, which is
+ * the shape a player is actually looking at. The tokens are unchanged and
+ * that is the point: `--hx-lift-contact` and `--hx-lift-ambient` are
+ * offset/blur/colour triples with no spread, which is exactly the filter's
+ * grammar, so a cut-out is lit by the same two shadows as everything else on
+ * this table.
+ *
+ * SCOPED, AND THE SCOPE WAS MEASURED RATHER THAN ASSUMED. Applying the filter
+ * to every face was the first fix and it was WORSE: it fixes the cup and
+ * costs truco's, escoba's and the solitaire's fans the card-to-card
+ * separation that makes a fan read as a hand — 4-5 % of the pixels of every
+ * lobby screen, and visibly flatter card against card side by side. So the
+ * mechanism follows the art: `data-art-shape` is set from the family's own
+ * `cardArtIsCutOut`, and the shell forwards a declared fact while still
+ * knowing nothing about dice.
+ *
+ * `.hexdev-chrome-fan-card` carries the identical pair and is deliberately
+ * NOT touched: that fan draws `hero` arrays, only TRUCO_FAMILY declares one,
+ * and every card in it is a rectangle.
+ *
+ * THE ARGUMENT LIVES OUT HERE AND NOT IN THE SHEET, which is a byte decision
+ * as well as a reading one: everything between the backticks below is a
+ * string this widget ships to every player, and `check:bundle` measures it.
  */
 export function buildChromeStylesheet(): string {
   return `
@@ -803,7 +844,18 @@ transform:
   translateY(calc(var(--offset) * var(--offset) * 1.5px))
   rotate(calc(var(--offset) * 6deg));
 z-index: calc(10 - var(--offset) * var(--offset));
+/* A DECK IS A RECTANGLE, so its shadow is one -- and it is what draws the
+   card-to-card separation that makes a fan read as a HAND. See the note
+   above this file's stylesheet for the whole argument and its measurements. */
 box-shadow: var(--hx-lift-contact), var(--hx-lift-ambient);
+}
+
+/* A CUT-OUT IS NOT: it is lifted by its alpha instead, so a cubilete casts
+   a cubilete's shadow and not its file's rectangle. Scoped from the family's
+   own cardArtIsCutOut -- again, see the note above the stylesheet. */
+.hexdev-game-card-art[data-art-shape="cut-out"] .hexdev-game-card-face {
+box-shadow: none;
+filter: drop-shadow(var(--hx-lift-contact)) drop-shadow(var(--hx-lift-ambient));
 }
 
 /* PR-VDR: THE ART GROWS HERE. Screen one's game-choice row and screen two's

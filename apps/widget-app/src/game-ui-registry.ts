@@ -421,6 +421,29 @@ export interface GameFamilyUi {
    * title-only card, still full size and still a full activation target.
    */
   readonly cardArt?: readonly CardArtItem[];
+  /**
+   * Whether `cardArt` is a CUT-OUT rather than a rectangle — art whose own
+   * shape is the picture, with the rest of its box empty.
+   *
+   * A FACT ABOUT THE ASSET, DECLARED WHERE THE ASSET IS. The shell fans these
+   * faces and lifts each one off the felt with a shadow, and `box-shadow` is
+   * a statement about the BORDER BOX: it paints as though the element were an
+   * opaque rounded rectangle. For a deck that is exactly right and measured —
+   * `1-espada.webp` is 99.85 % opaque, the rest of it the corners the radius
+   * already rounds. For the dice shelf it is false: `cup.webp` is 67.6 %
+   * empty and the cup sits in the lower two thirds of its file, so the front
+   * door drew a rectangle in shadow around, above and THROUGH a drawing that
+   * is not one.
+   *
+   * SO THE MECHANISM FOLLOWS THE ART, AND THE ART IS THE FAMILY'S TO DECLARE.
+   * The alternative measured worse: switching EVERY face to `drop-shadow()`
+   * fixes the cup and costs the three rectangular decks the card-to-card
+   * separation that makes a fan read as a hand — 4-5 % of the pixels of every
+   * lobby screen, and visibly flatter side by side. The shell still learns
+   * nothing about any particular game; it reads one declared property, the
+   * same way it reads `cardArt` itself without knowing what a die is.
+   */
+  readonly cardArtIsCutOut?: boolean;
   /** What rendering this game owes. Optional: a game that draws nothing
    * licensed owes nothing, and an empty list must not become a ceremony. */
   readonly credits?: readonly AssetCredit[];
@@ -588,6 +611,11 @@ const GENERALA_FAMILY: GameFamilyUi = {
   id: "generala",
   heroTitle: "Generala",
   cardArt: GENERALA_ART,
+  // THE ONLY FAMILY THAT DECLARES THIS, and the reason is in the art rather
+  // than in the game: a die and a cubilete are objects, not cards, and their
+  // files are mostly empty around them. The three decks above are rectangles
+  // and say nothing, which is the default and stays the default.
+  cardArtIsCutOut: true,
 };
 
 const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY, GENERALA_FAMILY];
