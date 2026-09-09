@@ -212,6 +212,40 @@ describe("generala scorecard: it is a real table, and the row/column association
     expect(rows.at(-1)?.querySelector("th")?.textContent?.trim()).toBe("Generala doble");
   });
 
+  /**
+   * THE UPPER SIX ARE THE DIGIT, WHICH THE TEST ABOVE CANNOT SEE.
+   *
+   * It asks two things of a row header — that it says something, and that it
+   * is not the engine's English identifier — and "Unos" satisfies both while
+   * being exactly what the decided ruleset calls wrong: "en una planilla esas
+   * filas son el número, no su plural" (§Etiquetas de la sección superior).
+   * A general assertion about six labels cannot tell a right word from a
+   * wrong one, so this pins the six of them by name.
+   *
+   * PAIRED WITH THE FIVE THAT ARE STILL WORDS, in one table, because the rule
+   * is a SPLIT and not a blanket: the juegos mayores keep their names, and a
+   * change that turned every row into a number would pass a fence that only
+   * looked at the top half.
+   */
+  it.each([
+    ["ones" as CategoryId, "1"],
+    ["twos" as CategoryId, "2"],
+    ["threes" as CategoryId, "3"],
+    ["fours" as CategoryId, "4"],
+    ["fives" as CategoryId, "5"],
+    ["sixes" as CategoryId, "6"],
+    ["escalera" as CategoryId, "Escalera"],
+    ["full" as CategoryId, "Full"],
+    ["poker" as CategoryId, "Póker"],
+    ["generala" as CategoryId, "Generala"],
+    ["generala-doble" as CategoryId, "Generala doble"],
+  ])("heads the %s row exactly '%s', which is what the decided ruleset calls that box", (category, label) => {
+    const planilla = seatPlanilla();
+
+    const header = planilla.table().querySelector<HTMLElement>(`tbody tr[data-category="${category}"] th`);
+    expect(header?.textContent?.trim()).toBe(label);
+  });
+
   it("gives every seat a <th scope=col>, and leaves the corner cell a header of nothing", () => {
     const planilla = seatPlanilla();
 
@@ -434,7 +468,7 @@ describe("generala scorecard: an open box the acting seat may write is a control
     // the visible label because that is what is being compared across eleven
     // boxes; the accessible name has to say what pressing it DOES, and it
     // contains the visible text so the two agree (WCAG 2.5.3).
-    expect(planilla.button("sixes", 0)?.getAttribute("aria-label")).toBe("Anotar 18 en Seises");
+    expect(planilla.button("sixes", 0)?.getAttribute("aria-label")).toBe("Anotar 18 en 6");
   });
 
   it("carries the roll counter into the preview, so a servida shows the servida value", () => {
