@@ -24,6 +24,11 @@ mutaciones de 18 minutos a menos de dos.
 | `pnpm test:e2e` (~5 min) | **una vez por cadena, en la punta** — no por eslabón |
 | `pnpm visual:review` | sólo si el diff puede mover un render |
 | `pnpm check:bundle` | si algo puede entrar al bundle del navegador |
+| `pnpm check:boundaries` | **siempre antes de un PR** — CI lo corre y falla por él |
+| `pnpm check:scripts` | **siempre antes de un PR** — idem, y `pnpm test` ya lo incluye |
+
+Las dos últimas estaban ausentes de esta tabla y CI las corre igual: alguien que
+se guiara sólo por acá llegaba a CI con una violación de límites sin enterarse.
 
 **"Un chequeo que no corriste no es un chequeo" sigue vigente.** Lo que cambia
 es contra qué corre, no si corre. Si acotás un chequeo, **decilo y decí por
@@ -148,18 +153,27 @@ que las cobra igual **castiga exactamente lo que queremos que pase** — comenta
 bien y cercar bien — y así se otorgaron nueve excepciones seguidas que, con esta
 medida, no habrían hecho falta.
 
-Medirlo **antes de commitear**, que es cuando sirve — `git diff origin/main` sin
-`...HEAD` incluye lo que todavía está en el árbol de trabajo:
+Medirlo **antes de commitear**, que es cuando sirve. `git add -N .` registra los
+archivos NUEVOS sin agregar su contenido, que es lo único que hace falta para que
+`git diff` los vea:
 
 ```
-git diff --numstat origin/main | \
+git add -N . && git diff --numstat origin/main | \
   awk '{a=$1;f=$3; if (f ~ /\.test\./) t+=a; else p+=a} \
        END {printf "produccion %d  tests %d\n", p+0, t+0}'
 ```
 
-(Con `origin/main...HEAD` cuenta sólo lo ya commiteado y devuelve cero sobre
-trabajo en curso — la primera versión de esta línea tenía justo ese defecto, y lo
-encontró correrla.)
+**Esta línea se equivocó dos veces, y las dos las encontró correrla**, no leerla:
+
+- `origin/main...HEAD` cuenta sólo lo ya commiteado y devuelve **cero** sobre
+  trabajo en curso — mientras la regla de al lado dice "medí antes de commitear".
+- Sin `git add -N`, `git diff` **no ve archivos nuevos**. Un PR que introduce un
+  módulo —el paso 1 exacto de "introducir y después adoptar", acá abajo— medía
+  `produccion 58` cuando eran 234.
+
+Que un instrumento de medición se haya equivocado dos veces en el mismo párrafo
+es el argumento entero de este archivo: **una herramienta que no se midió a sí
+misma no es evidencia de nada.**
 
 **Reportar las dos cifras en el cuerpo del PR.** Un cambio genuinamente pesado en
 tests tiene que seguir siendo visible, sin quedar bloqueado por serlo.

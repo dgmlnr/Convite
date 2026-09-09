@@ -19,11 +19,19 @@
  * them here would punish art that costs nothing until it is shown.
  *
  * HOW THE BUDGET WAS CHOSEN. Measured, not guessed: the bundle was 585 953
- * bytes when this file was written, immediately after Generala shipped. The
- * budget is 660 000, leaving about 74 kB of headroom, and it was chosen
- * against the two cases it has to tell apart: the careless import that
- * motivated this added 156 kB and trips it immediately, while Generala — a
- * whole game, engine, bot, board and all — added 61 kB and does not.
+ * bytes when this file was written, immediately after Generala shipped, and
+ * the budget was 660 000.
+ *
+ * RECALIBRATED, because the ground moved under it. Stripping CSS comments out
+ * of the bundle took it from 589 750 to **302 112** — a 49% cut, none of it
+ * behaviour. A budget of 660 000 over a 302 kB bundle is not a budget: it
+ * would let the thing DOUBLE before saying a word.
+ *
+ * The new number is 380 000, chosen by the same arithmetic as the old one and
+ * against the same two cases it has to tell apart: the careless import that
+ * motivated this file added 156 kB and trips it immediately, while Generala —
+ * a whole game, engine, bot, board and all — added 61 kB and does not. That
+ * leaves about 78 kB of headroom, which is the gap between those two numbers.
  *
  * WHEN IT FIRES LEGITIMATELY. A real feature can push past the budget. The
  * answer is to RAISE THIS NUMBER IN A COMMIT THAT SAYS WHY — which is the
@@ -36,8 +44,8 @@ import { dirname, join } from "node:path";
 
 import { cssCommentBytes } from "./strip-css-comments.mjs";
 
-const BUDGET_BYTES = 660_000;
-const MEASURED_AT_WRITE = 585_953;
+const BUDGET_BYTES = 380_000;
+const MEASURED_AT_WRITE = 302_112;
 
 /**
  * A SECOND CEILING, on the one thing the first one cannot see coming back.
