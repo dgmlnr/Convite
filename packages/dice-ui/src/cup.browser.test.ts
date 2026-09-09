@@ -93,13 +93,15 @@ describe("cup: the gesture is a state, and the browser really animates it", () =
   });
 
   /**
-   * A one-shot gesture is one-shot BECAUSE the attribute changed. This is the
-   * mechanism `setCupGesture`'s own comment describes: a repeat write leaves
-   * the running animation exactly where it was, which is what makes the
-   * function safe to call from a render that fires on every keystroke of a
-   * player picking dice.
+   * THE OUTCOME, of the composed system — the function AND the browser
+   * together. Deliberately NOT labelled as a test of `setCupGesture`'s own
+   * early return, because it is not one: this stays green with that guard
+   * deleted, MEASURED by deleting it. A CSS animation restarts only when its
+   * computed `animation-name` list changes, so a redundant same-value write
+   * would not have disturbed anything either. Naming the guard here would be
+   * a fence measuring the wrong mechanism; the one below measures the guard.
    */
-  it("does not restart a running gesture when the same state is declared again", async () => {
+  it("leaves a running gesture exactly where it was when the same state is declared again", async () => {
     const cup = mountCup();
     setCupGesture(cup, "shaking");
     await nextFrame();
@@ -110,6 +112,46 @@ describe("cup: the gesture is a state, and the browser really animates it", () =
     setCupGesture(cup, "shaking");
     const after = cup.getAnimations()[0]?.currentTime ?? 0;
     expect(Number(after)).toBeGreaterThanOrEqual(Number(before));
+  });
+
+  /**
+   * THE GUARD ITSELF, and it needed a different instrument to see at all.
+   *
+   * `setCupGesture` promises that calling it with an unchanged state writes
+   * NOTHING — a promise about this function, made precisely so a caller does
+   * not have to know the browser rule the test above depends on. A
+   * `MutationObserver` on the attribute list is the one thing that can tell
+   * the two apart: it reports every `setAttribute` call, including one whose
+   * value is identical to what was already there, which is exactly the write
+   * the guard exists to skip.
+   *
+   * A board renders its tray on every broadcast and again on every die a
+   * player presses, so this is the difference between a handful of attribute
+   * writes a turn and dozens.
+   */
+  it("writes nothing at all when the declared state has not changed", async () => {
+    const cup = mountCup();
+    setCupGesture(cup, "shaking");
+    await nextFrame();
+
+    let writes = 0;
+    const observer = new MutationObserver((records) => {
+      writes += records.length;
+    });
+    observer.observe(cup, { attributes: true, attributeFilter: [CUP_GESTURE_ATTRIBUTE] });
+
+    setCupGesture(cup, "shaking");
+    setCupGesture(cup, "shaking");
+    setCupGesture(cup, "shaking");
+    await nextFrame();
+    expect(writes, "three redundant declarations must reach the DOM zero times").toBe(0);
+
+    // The anti-vacuity half: the observer really is watching, so the zero
+    // above is a measurement rather than a broken subscription.
+    setCupGesture(cup, "tipping");
+    await nextFrame();
+    observer.disconnect();
+    expect(writes).toBe(1);
   });
 
   it("swaps one gesture for the other, never runs both", async () => {
