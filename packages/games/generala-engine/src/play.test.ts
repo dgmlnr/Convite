@@ -5,6 +5,7 @@ import type { PlayerId } from "./ids.js";
 import { getLegalActions } from "./legal-actions.js";
 import { applyHold, applyPlayerAction, applyScore } from "./play.js";
 import { applyRoll } from "./roll.js";
+import { scoreFor } from "./scoring.js";
 import { CATEGORY_IDS, createMatch } from "./state.js";
 import type { CategoryId, MatchState, Scorecard } from "./state.js";
 import type { ApplyResult } from "./violation.js";
@@ -226,12 +227,17 @@ describe("applyScore — one box per turn, and the turn passes", () => {
     // "Crossing out" has no action type in this game. It is a `score` aimed at
     // a box that evaluates to nothing, and forced crossing then falls straight
     // out of "one box per turn, obligatorio".
+    //
+    // The box is `generala-doble` because on an untouched card that is the one
+    // a zero may go in (ruleset §Orden obligatorio de tachado). `fives` here
+    // would also be worth nothing and is refused for that reason alone, which
+    // is the case the refusals below cover.
     const state = openingRoll([ALICE, BOB], [1, 1, 2, 3, 4]);
 
-    const scored = score(state, ALICE, "fives");
+    const scored = score(state, ALICE, "generala-doble");
 
-    expect(scored.cards[0]!.fives).toBe(0);
-    expect(filledBoxesOf(scored.cards[0]!)).toEqual(["fives"]);
+    expect(scored.cards[0]!["generala-doble"]).toBe(0);
+    expect(filledBoxesOf(scored.cards[0]!)).toEqual(["generala-doble"]);
   });
 
   it("passes the turn to the next seat in order, and wraps at the last one", () => {
@@ -275,18 +281,20 @@ describe("applyScore — one box per turn, and the turn passes", () => {
     expect(score(armada, ALICE, "escalera").cards[0]!.escalera).toBe(20);
   });
 
-  it("lets the same five dice go into any open box, each worth whatever its own rule says", () => {
-    // [6,6,6,6,6] armada with generala, sixes and doble all open: 50, 30 and 0,
-    // and every other open box offered too. That is what makes the rulebook's
-    // "a juego mayor may go into its own box or into that number's box" free
-    // rather than a special case — and the engine must NOT second-guess the 0,
-    // because the 50 was available at the same moment and the choice was the
-    // player's.
+  it("lets the same five dice go into any box they are worth something in, each worth whatever its own rule says", () => {
+    // [6,6,6,6,6] armada with generala, sixes and doble all open: 50, 30 and 0.
+    // Four boxes pay here — five of a kind is also a full and also a póker —
+    // and every one of them is offered wherever it sits, which is what makes
+    // the rulebook's "a juego mayor may go into its own box or into that
+    // number's box" free rather than a special case. The engine must NOT
+    // second-guess the doble's 0: the 50 was available at the same moment and
+    // the choice was the player's. The seven boxes worth nothing contribute
+    // only `generala-doble`, the top of the crossing ladder.
     const armada = roll(hold(openingRoll([ALICE, BOB], [6, 6, 6, 2, 1]), ALICE, [0, 1, 2]), [6, 6]);
     expect(rollsUsedOf(armada)).toBe(2);
 
     const offered = getLegalActions(armada, ALICE).flatMap((action) => (action.type === "score" ? [action.category] : []));
-    expect(offered).toEqual(CATEGORY_IDS);
+    expect(offered).toEqual(["sixes", "full", "poker", "generala", "generala-doble"]);
 
     expect(score(armada, ALICE, "generala").cards[0]!.generala).toBe(50);
     expect(score(armada, ALICE, "sixes").cards[0]!.sixes).toBe(30);
@@ -296,15 +304,22 @@ describe("applyScore — one box per turn, and the turn passes", () => {
 
 describe("applyScore — the refusals", () => {
   it("never reopens a box, not even one crossed out at zero", () => {
-    // A full round of the table, so ALICE meets her own crossed box again on a
-    // hand that would have been worth something.
-    const crossed = score(openingRoll([ALICE, BOB], [1, 1, 2, 3, 4]), ALICE, "fives");
-    const back = roll(score(roll(crossed, [1, 1, 2, 3, 4]), BOB, "twos"), [5, 5, 5, 5, 1]);
+    // Two rounds of the table, so ALICE meets her own crossed box again on the
+    // one hand it would have been worth 50 for. The two crossings walk the
+    // ladder — `generala-doble` first, because that is where a zero goes on an
+    // untouched card, then `generala` once the doble is spent — which is also
+    // what makes the second one reachable at all.
+    const doble = score(openingRoll([ALICE, BOB], [1, 1, 2, 3, 4]), ALICE, "generala-doble");
+    const crossed = score(roll(score(roll(doble, [1, 1, 2, 3, 4]), BOB, "twos"), [1, 1, 2, 3, 4]), ALICE, "generala");
+    const opened = roll(score(roll(crossed, [1, 1, 2, 3, 4]), BOB, "threes"), [5, 5, 5, 5, 1]);
+    // Five of a kind, ARMADA: on the opening throw it would have won the match
+    // outright before any box could be chosen.
+    const back = roll(hold(opened, ALICE, [0, 1, 2, 3]), [5]);
 
     expect(back.turn.seat).toBe(0);
-    expect(back.cards[0]!.fives).toBe(0);
-    expect(getLegalActions(back, ALICE)).not.toContainEqual({ type: "score", playerId: ALICE, category: "fives" });
-    expect(refused(applyScore(back, { type: "score", playerId: ALICE, category: "fives" })).code).toBe("box-not-open");
+    expect(back.cards[0]!.generala).toBe(0);
+    expect(getLegalActions(back, ALICE)).not.toContainEqual({ type: "score", playerId: ALICE, category: "generala" });
+    expect(refused(applyScore(back, { type: "score", playerId: ALICE, category: "generala" })).code).toBe("box-not-open");
   });
 
   it("refuses a score outside deciding, and from a seat that is not on turn", () => {
@@ -348,5 +363,77 @@ describe("applyPlayerAction — the one door a seat's move comes through", () =>
 
     expect(refused(applyPlayerAction(state, { type: "hold", playerId: ALICE, keep: [1, 0] })).code).toBe("malformed-hold");
     expect(refused(applyPlayerAction(state, { type: "score", playerId: BOB, category: "sixes" })).code).toBe("not-on-turn");
+  });
+});
+
+/**
+ * ruleset §Orden obligatorio de tachado: a zero goes in the highest-paying open
+ * box and nowhere else, down `Generala doble → Generala → Póker → Full →
+ * Escalera → 6 → 5 → 4 → 3 → 2 → 1`. A value greater than zero stays free.
+ *
+ * THE REDUCER IS THE AUTHORITY AND THE OFFER LIST IS GUIDANCE, which is the
+ * shape every other refusal in this engine has. `handleAction` gates on the
+ * offer list, so an illegal cross is already unsubmittable through the room —
+ * but a direct caller is not the room, and a rule that only exists in the
+ * enumeration is a rule the reducer would happily break.
+ */
+describe("applyScore — a zero only goes in the highest-paying open box", () => {
+  /** A card with these boxes already spent, so a ladder position can be reached
+   * without playing the twenty turns it would take to walk down to it. */
+  function withFilledBoxes(state: MatchState, seat: number, filled: Partial<Record<CategoryId, number>>): MatchState {
+    return { ...state, cards: state.cards.map((card, index) => (index === seat ? ({ ...card, ...filled } as Scorecard) : card)) };
+  }
+
+  it("refuses a zero in an open box the ladder has not reached yet", () => {
+    // `[4,4,6,3,2]` has no ace in it, so `ones` is the classic sacrifice — and
+    // it is now the last box on the card a seat is allowed to spend, not the
+    // first. The box IS open: this is a different refusal from `box-not-open`,
+    // and a caller switching on the code can tell "you cannot write there yet"
+    // from "you cannot write there ever".
+    const state = openingRoll([ALICE, BOB], [4, 4, 6, 3, 2]);
+
+    const refusal = refused(applyScore(state, { type: "score", playerId: ALICE, category: "ones" }));
+    expect(refusal.code).toBe("cross-out-of-order");
+    expect(state.cards[0]!.ones).toBeNull();
+    // And it is refused for every box worth nothing except the top of the
+    // ladder, rather than for the one this case happened to name.
+    for (const category of ["fives", "escalera", "full", "poker", "generala"] as const) {
+      expect(refused(applyScore(state, { type: "score", playerId: ALICE, category })).code).toBe("cross-out-of-order");
+    }
+    expect(accepted(applyScore(state, { type: "score", playerId: ALICE, category: "generala-doble" })).cards[0]!["generala-doble"]).toBe(0);
+  });
+
+  it("accepts a value greater than zero in any open box, wherever it sits on the ladder", () => {
+    // The rule narrows crossing and NOTHING ELSE. `twos` pays 2 here while the
+    // doble is the crossable box, and a seat that wants those two points may
+    // take them — that is the choice the rule is meant to sharpen, not remove.
+    const state = openingRoll([ALICE, BOB], [4, 4, 6, 3, 2]);
+
+    expect(accepted(applyScore(state, { type: "score", playerId: ALICE, category: "twos" })).cards[0]!.twos).toBe(2);
+    expect(accepted(applyScore(state, { type: "score", playerId: ALICE, category: "sixes" })).cards[0]!.sixes).toBe(6);
+  });
+
+  it("walks the whole ladder: the same zero is refused, then accepted, once every box above it is spent", () => {
+    // THE FIXTURE THAT SEPARATES THE LADDER FROM ITS FIRST RUNG. A guard that
+    // only ever protected `generala-doble` passes the case above and fails
+    // here, and so does one that read the bot's `SACRIFICE_ORDER` — that ladder
+    // is ordered by what a box COSTS to lose and would reach `ones` second.
+    const state = openingRoll([ALICE, BOB], [4, 4, 6, 3, 2]);
+    const ladder: readonly CategoryId[] = ["generala-doble", "generala", "poker", "full", "escalera", "sixes", "fives", "fours", "threes", "twos", "ones"];
+    const spent: Partial<Record<CategoryId, number>> = {};
+
+    for (const category of ladder) {
+      const card = withFilledBoxes(state, 0, spent);
+      // Everything still below this rung is refused; this rung is written.
+      for (const lower of ladder.slice(ladder.indexOf(category) + 1)) {
+        if (scoreFor(lower, [4, 4, 6, 3, 2], 1, card.cards[0]!) > 0) continue;
+        expect(refused(applyScore(card, { type: "score", playerId: ALICE, category: lower })).code, `${lower} sits below ${category} and is worth nothing`).toBe("cross-out-of-order");
+      }
+      expect(accepted(applyScore(card, { type: "score", playerId: ALICE, category })).cards[0]![category]).not.toBeNull();
+      spent[category] = 0;
+    }
+
+    // The loop is only worth something if it walked the whole card.
+    expect(Object.keys(spent)).toHaveLength(CATEGORY_IDS.length);
   });
 });

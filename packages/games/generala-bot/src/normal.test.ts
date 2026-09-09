@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CATEGORY_IDS, getLegalActions, getViewFor, scoreFor } from "@hexdev/generala-engine";
-import type { CategoryId, DieFace, GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
+import type { CategoryId, GeneralaAction, MatchState, PlayerId } from "@hexdev/generala-engine";
 import { ALICE, BOB, driveTo, turnShowing } from "./fixtures.js";
 import type { DriveStep } from "./fixtures.js";
 import { SACRIFICE_ORDER } from "./heuristics.js";
@@ -164,22 +164,51 @@ describe("the tier is total, with no throw and no undefined on any path (D7's se
  * box is worth would be a second source of truth about the ruleset, and the two
  * would disagree the day one of them was edited.
  *
- * All three positions show the SAME five faces on the SAME throw. Only the
- * generala box on the card differs, so anything that changes is the
- * precondition changing it.
+ * All three positions show the SAME five faces on the SAME throw. What differs
+ * is the generala box on the card — and, in the crossed case, the doble above
+ * it, because the crossing ladder makes those two facts one.
+ *
+ * THE LADDER TURNED "TACHAR NO ES ANOTAR" INTO A FACT ABOUT REACHABILITY TOO.
+ * A zero goes only in the highest-paying open box, so writing 0 in the generala
+ * box requires the doble to be spent already: a card with a crossed generala
+ * and an OPEN doble cannot be reached at all any more. The valuation rule still
+ * says what it always said — `scoreFor` is asked directly below — but the
+ * position it used to be observed in is gone.
  */
 describe("normal values a box by asking the engine, so the doble precondition arrives for free", () => {
-  /** Seat 0 has already written its generala box; the faces it wrote it on are the argument. */
-  function withGeneralaWrittenOn(faces: readonly DieFace[]): MatchState {
-    return driveTo([...turnShowing(faces), { score: "generala" }, ...bobBurns("ones"), ...turnShowing([5, 5, 5, 5, 5])]);
+  /** Seat 0 scores a real generala, leaving the doble open above nothing. */
+  function withGeneralaScored(): MatchState {
+    return driveTo([...turnShowing([6, 6, 6, 6, 6]), { score: "generala" }, ...bobBurns("ones"), ...turnShowing([5, 5, 5, 5, 5])]);
+  }
+
+  /** Seat 0 crosses the doble, then the generala — the only order the ladder allows. */
+  function withGeneralaCrossed(): MatchState {
+    return driveTo([
+      ...turnShowing([1, 2, 3, 4, 6]),
+      { score: "generala-doble" },
+      ...bobBurns("ones"),
+      ...turnShowing([1, 2, 3, 4, 6]),
+      { score: "generala" },
+      ...bobBurns("twos"),
+      ...turnShowing([5, 5, 5, 5, 5]),
+    ]);
   }
 
   it("a generala SCORED at 50 unlocks the doble, and 100 beats the póker's 40", () => {
-    expect(scoredBox(withGeneralaWrittenOn([6, 6, 6, 6, 6]))).toBe("generala-doble");
+    expect(scoredBox(withGeneralaScored())).toBe("generala-doble");
   });
 
-  it("a generala CROSSED at 0 does not unlock it — the doble pays nothing and póker's 40 wins", () => {
-    expect(scoredBox(withGeneralaWrittenOn([1, 2, 3, 4, 6]))).toBe("poker");
+  it("a generala CROSSED at 0 leaves no doble to pay at all, and póker's 40 wins", () => {
+    const state = withGeneralaCrossed();
+    const turn = state.turn;
+    expect(turn.phase).toBe("deciding");
+    if (turn.phase !== "deciding") return;
+    // The valuation asked directly, because the offer list can no longer show
+    // it: crossing the generala costs the doble first, so the box that would
+    // have paid nothing is already spent.
+    expect(state.cards[0]!.generala).toBe(0);
+    expect(scoreFor("generala-doble", turn.dice, turn.rollsUsed, state.cards[0]!)).toBe(0);
+    expect(scoredBox(state)).toBe("poker");
   });
 
   it("with the generala box still open the 50 is simply the biggest number on offer", () => {
@@ -190,15 +219,15 @@ describe("normal values a box by asking the engine, so the doble precondition ar
     // Non-vacuity for the pair above: if these two positions differed in the
     // dice or the roll counter, the difference in the answer would prove
     // nothing about the precondition.
-    for (const faces of [[6, 6, 6, 6, 6], [1, 2, 3, 4, 6]] as const) {
-      const turn = withGeneralaWrittenOn(faces).turn;
+    for (const state of [withGeneralaScored(), withGeneralaCrossed()]) {
+      const turn = state.turn;
       expect(turn.phase).toBe("deciding");
       if (turn.phase !== "deciding") continue;
       expect(turn.dice).toEqual([5, 5, 5, 5, 5]);
       expect(turn.rollsUsed).toBe(2);
     }
-    expect(withGeneralaWrittenOn([6, 6, 6, 6, 6]).cards[0]!.generala).toBe(50);
-    expect(withGeneralaWrittenOn([1, 2, 3, 4, 6]).cards[0]!.generala).toBe(0);
+    expect(withGeneralaScored().cards[0]!.generala).toBe(50);
+    expect(withGeneralaCrossed().cards[0]!.generala).toBe(0);
   });
 });
 
@@ -206,33 +235,35 @@ describe("normal values a box by asking the engine, so the doble precondition ar
  * design §D7, normal: "when everything yields 0, cross by a fixed
  * `SACRIFICE_ORDER` constant."
  *
- * ONE CONSTANT DOING ONE JOB. Crossing out is not a separate rule here — it is
- * what "the highest immediate value" degenerates into when every open box is
- * worth the same nothing, and a tie above zero is the same question asked with
- * a bigger number. So `SACRIFICE_ORDER` is the tie-break at every value rather
- * than a special case at zero, which is one ladder instead of two that could
- * disagree.
+ * THE ZERO HALF OF THAT SENTENCE IS NO LONGER THE BOT'S TO ANSWER, and the
+ * first case below is what says so. Since the crossing ladder landed (ruleset
+ * §Orden obligatorio de tachado), a position where every open box is worth
+ * nothing offers exactly ONE box — the highest-paying one still open — so there
+ * is no tie left for any ladder to break. `SACRIFICE_ORDER` still decides
+ * WHETHER to cross rather than take a small number, and it still breaks ties
+ * above zero, which is the second case.
+ *
+ * THE TWO LADDERS DISAGREE AND THAT IS DELIBERATE. `SACRIFICE_ORDER` is ordered
+ * by what a box COSTS to give up; the rule's ladder by what a box PAYS. They
+ * agree on `generala-doble` and part company immediately after, and the first
+ * case below is the fixture where they do.
  */
-describe("SACRIFICE_ORDER is the tie-break, and crossing out is just its zero case", () => {
+describe("SACRIFICE_ORDER is the tie-break above zero, and the RULE decides which box a zero goes in", () => {
   /**
-   * THE DOBLE, ONES, TWOS AND THREES ARE WRITTEN FIRST FOR A MEASURED REASON,
-   * and the first version of this case did not do it.
+   * THE DOBLE, ONES, TWOS AND THREES ARE WRITTEN FIRST FOR A MEASURED REASON.
    *
-   * That version left the doble open, and the ladder gives the doble up first —
-   * but the doble is also the LAST box in `CATEGORY_IDS`. So "the ladder's
-   * choice" and "whichever tied box the loop saw last" were the same answer,
-   * and relaxing the comparison to a bare `>=` on the value left the suite
-   * green. Writing those four boxes first moves the ladder's answer to
-   * `escalera`, which is neither the first nor the last of what remains — the
-   * only shape in which all three readings disagree, and it is asserted below
-   * rather than left as a remark.
+   * With the doble spent, the two ladders name different boxes: the sacrifice
+   * ladder reaches `escalera` (cheapest of what is left to lose) and the
+   * crossing ladder reaches `generala` (dearest of what is left to win). A bot
+   * still choosing the box would answer `escalera`; the engine offers only
+   * `generala`, and the bot has nothing to choose between.
    *
    * `[1,1,2,2,3]` on the third throw with fours, fives, sixes, escalera, full,
    * póker and generala open pays nothing anywhere. That is asserted too: a
    * position where one box was still worth a point would be measuring the value
-   * policy again instead of the ladder.
+   * policy again instead of the rule.
    */
-  it("with every open box worth nothing it crosses the one the ladder names, which is neither the first nor the last on the card", () => {
+  it("with every open box worth nothing there is one box to write, and it is the RULE's ladder and not the bot's", () => {
     const state = driveTo([
       ...turnShowing([1, 1, 2, 2, 3]),
       { score: "generala-doble" },
@@ -257,13 +288,15 @@ describe("SACRIFICE_ORDER is the tie-break, and crossing out is just its zero ca
     const open = CATEGORY_IDS.filter((category) => card[category] === null);
     expect(open.map((category) => scoreFor(category, turn.dice, turn.rollsUsed, card))).toEqual(open.map(() => 0));
 
-    const byLadder = SACRIFICE_ORDER.find((category) => open.includes(category));
-    // The three readings really are three different boxes here, so the
-    // assertion below can only be satisfied by the ladder.
-    expect(byLadder).toBe("escalera");
+    // THE FIXTURE WHERE THE TWO LADDERS DISAGREE, which is the only kind that
+    // says which one is in force. Seven boxes are open and worth nothing; the
+    // bot's ladder would give up `escalera`, the rule offers `generala`, and
+    // the engine's list has exactly one entry.
+    expect(SACRIFICE_ORDER.find((category) => open.includes(category))).toBe("escalera");
     expect(open[0]).toBe("fours");
     expect(open[open.length - 1]).toBe("generala");
-    expect(scoredBox(state)).toBe(byLadder);
+    expect(getLegalActions(state, ALICE).flatMap((action) => (action.type === "score" ? [action.category] : []))).toEqual(["generala"]);
+    expect(scoredBox(state)).toBe("generala");
   });
 
   /**
@@ -281,9 +314,15 @@ describe("SACRIFICE_ORDER is the tie-break, and crossing out is just its zero ca
       ...turnShowing([4, 4, 4, 4, 1]),
       { score: "poker" },
       ...bobBurns("ones"),
+      // The doble is crossed first because the ladder gives no other order: a
+      // zero goes in the highest-paying open box, and that is the doble until
+      // it is spent.
+      ...turnShowing([1, 2, 3, 4, 6]),
+      { score: "generala-doble" },
+      ...bobBurns("twos"),
       ...turnShowing([1, 2, 3, 4, 6]),
       { score: "generala" },
-      ...bobBurns("twos"),
+      ...bobBurns("threes"),
       ...turnShowing([6, 6, 6, 6, 6]),
     ]);
     const turn = state.turn;

@@ -96,7 +96,21 @@ describe("the expected value of a hold is the exact one-ply average, and it is h
    * wrong card would play seat 1's turn with seat 0's scorecard all match.
    */
   it("asked about seat 1, it values the hold against SEAT 1's open boxes", () => {
-    const state = driveTo([{ throw: NOTHING_HAND }, { score: "generala" }, { throw: [1, 2, 3, 4, 6] }, { hold: [] }, { throw: FOUR_SIXES }]);
+    // Seat 0 spends two turns getting there: a zero goes in the highest-paying
+    // open box, so crossing the generala costs the doble first (ruleset §Orden
+    // obligatorio de tachado). Seat 1's card keeps its generala open, which is
+    // the whole difference the case is about.
+    const state = driveTo([
+      { throw: NOTHING_HAND },
+      { score: "generala-doble" },
+      { throw: NOTHING_HAND },
+      { score: "ones" },
+      { throw: NOTHING_HAND },
+      { score: "generala" },
+      { throw: [1, 2, 3, 4, 6] },
+      { hold: [] },
+      { throw: FOUR_SIXES },
+    ]);
     const { view } = asked(state);
 
     expect(view.self.seat).toBe(1);
@@ -198,78 +212,138 @@ describe("the servida bonus changes the answer, and nothing else in the position
   });
 });
 
-/**
- * Eight boxes spent, leaving `twos`, `escalera` and `generala`.
- *
- * THE THREE READINGS DISAGREE ON THIS FIXTURE, WHICH IS THE ONLY SHAPE THAT
- * MEASURES ANYTHING. The engine offers open boxes in `CATEGORY_IDS` order, so
- * the list arrives as twos, escalera, generala. `SACRIFICE_ORDER` puts escalera
- * cheapest of the three — the MIDDLE one. "Keep the first tied box" answers
- * twos, "keep the last" answers generala, and only the ladder answers escalera.
- * Slice 16's M4 found the other shape green: its ladder's answer was also the
- * last box on the printed card, so the two readings were indistinguishable.
- *
- * Both mutations this pins were GREEN when `hard.ts` shipped — dropping the
- * tie-break, and flipping the comparison to keep the last best — and both are
- * red now. Said plainly rather than smoothed over: the slicing pass moved this
- * test to a later PR than the code it measures.
- */
-const SPENT: readonly CategoryId[] = ["ones", "threes", "fours", "fives", "sixes", "full", "poker", "generala-doble"];
-
-/** One category crossed by each seat in turn, so a two-seat match really walks to the position. */
-function bothSeatsCross(categories: readonly CategoryId[]): readonly DriveStep[] {
+/** One category written by each seat in turn, so a two-seat match really walks to the position. */
+function bothSeatsWrite(categories: readonly CategoryId[]): readonly DriveStep[] {
   return categories.flatMap((category) => [{ throw: NOTHING_HAND }, { score: category }, { throw: NOTHING_HAND }, { score: category }]);
+}
+
+/** The seat that is not under test taking its turn, so the table comes back round. */
+function theOtherSeatWrites(category: CategoryId): readonly DriveStep[] {
+  return [{ throw: NOTHING_HAND }, { score: category }];
 }
 
 /** Throw, keep nothing, throw, keep nothing, throw: the turn arrives at the third roll with no hold left to offer. */
 const TO_THE_LAST_THROW: readonly DriveStep[] = [{ throw: NOTHING_HAND }, { hold: [] }, { throw: NOTHING_HAND }, { hold: [] }, { throw: NOTHING_HAND }];
 
-describe("when nothing on the table is worth anything, the ladder decides", () => {
-  it("the cheapest of the three tied boxes is written, and it is neither the first nor the last offered", () => {
-    const state = driveTo([...bothSeatsCross(SPENT), ...TO_THE_LAST_THROW]);
+/**
+ * WHAT THE CROSSING LADDER TOOK AWAY FROM THIS TIER, MEASURED RATHER THAN
+ * ASSERTED IN A COMMENT.
+ *
+ * This describe used to hand `hard` three boxes tied at zero and check that
+ * `SACRIFICE_ORDER` picked the middle one. That fixture is unreachable now: a
+ * zero may only go in the highest-paying open box, so when every open box is
+ * worth nothing the engine offers exactly ONE of them and there is no tie left
+ * to break. The tier is not wrong; the question is no longer asked of it.
+ *
+ * A THREE-WAY TIE ABOVE ZERO IS NOT CONSTRUCTIBLE EITHER, and it is worth
+ * saying why rather than leaving the coverage gap silent. Within the upper
+ * section `SACRIFICE_ORDER` rises with the face, so any tie among upper boxes
+ * is broken toward the box `CATEGORY_IDS` lists first and the two readings
+ * agree; a tie across sections needs an upper box paying 20-50, which only five
+ * of a kind reaches, and that hand pays `full` 30 and `poker` 40 rather than a
+ * third 30. So the pair below is the widest disagreement the rules allow, and
+ * it separates "no tie-break at all" from "the ladder". The remaining mutation
+ * — keeping the LAST best instead of the first — is separated by the doble case
+ * further down, where the answer would flip from a box to a hold.
+ */
+describe("the ladder still breaks a tie, but only above zero — the rule owns the zero case now", () => {
+  it("offers one box and no choice when every open box is worth nothing", () => {
+    const state = driveTo([...bothSeatsWrite(["ones", "threes", "fours", "sixes"]), ...TO_THE_LAST_THROW]);
     const { view, legal } = asked(state);
 
-    // The premise asserted rather than assumed: three boxes, all worth zero, in
-    // the order the engine offers them, and no hold on the third throw.
-    expect(legal.map((action) => (action.type === "score" ? action.category : "hold"))).toEqual(["twos", "escalera", "generala"]);
-    expect(legal.map((action) => (action.type === "score" ? immediateValue(view, action.category) : -1))).toEqual([0, 0, 0]);
+    // Seven boxes open, every one of them worth nothing on `[1,1,3,4,6]`, and
+    // the engine offers the top of the crossing ladder alone.
+    expect(legal.map((action) => (action.type === "score" ? action.category : "hold"))).toEqual(["generala-doble"]);
+    expect(immediateValue(view, "generala-doble")).toBe(0);
+    expect(decide(state).chosen).toEqual({ type: "score", playerId: ALICE, category: "generala-doble" });
+  });
 
-    expect(decide(state).chosen).toEqual({ type: "score", playerId: ALICE, category: "escalera" });
+  it("prefers `full` over `sixes` when both pay thirty, which is the ladder and not the printed order", () => {
+    // Five 6s with the doble and the generala already crossed: `sixes` pays 30
+    // and `full` pays 30 (five of a kind contains 3 + 2), the doble pays
+    // nothing because the generala box holds a zero, and the póker box is
+    // spent. `sixes` comes BEFORE `full` on the card and AFTER it on the
+    // ladder, so a tier with no tie-break answers `sixes`.
+    const state = driveTo([
+      ...turnShowing([4, 4, 4, 4, 1]),
+      { score: "poker" },
+      ...theOtherSeatWrites("ones"),
+      ...turnShowing(NOTHING_HAND),
+      { score: "generala-doble" },
+      ...theOtherSeatWrites("threes"),
+      ...turnShowing(NOTHING_HAND),
+      { score: "generala" },
+      ...theOtherSeatWrites("fours"),
+      ...turnShowing([6, 6, 6, 6, 6]),
+    ]);
+    const { view, legal } = asked(state);
+
+    expect(immediateValue(view, "sixes")).toBe(30);
+    expect(immediateValue(view, "full")).toBe(30);
+    expect(legal.flatMap((action) => (action.type === "score" ? [action.category] : []))).toEqual(["sixes", "full"]);
+    expect(decide(state).chosen).toEqual({ type: "score", playerId: ALICE, category: "full" });
   });
 });
 
 /**
- * ONE BOX LEFT AND NOTHING THAT CAN FILL IT, which is where a hold and a score
- * tie EXACTLY and the tier has to prefer one.
+ * THE DOBLE IS THE ONE BOX A SEAT CAN BE LEFT ALONE WITH, AND IT IS NEVER DEAD
+ * ANY MORE.
  *
- * Seat 0 crossed its generala at zero, so `hasScoredGenerala` is false and the
- * doble pays 100 to nobody, ever, for the rest of the match (ruleset §La
- * precondición de la doble — "tachar no es anotar"). With the doble the only
- * box left, every leaf of every re-roll is worth 0 and so is writing it now:
- * 31 holds and one score, all valued the same.
+ * This case used to be the exact hold/score tie at zero: seat 0 crossed its
+ * generala, `hasScoredGenerala` went false, and the doble paid 100 to nobody
+ * for the rest of the match. THE CROSSING LADDER MADE THAT POSITION
+ * UNREACHABLE, and the argument is short. A zero goes only in the highest
+ * paying open box, so writing 0 in the generala box requires the doble to be
+ * spent first. Therefore an open doble sits above a generala box that is either
+ * still open or holds a real generala — and if the doble is the LAST open box,
+ * the generala above it was scored. The 100 is always live.
  *
- * Writing it is the right answer, and it is a real preference rather than a
- * coincidence — giving a hold a better rank than every box left the whole suite
- * green until this fixture existed. A tier that held here would spend both
- * remaining throws to arrive at the same box with the same zero.
+ * So the tie is gone and what is asserted instead is the consequence: with one
+ * box left and two throws in hand, the tier CHASES the hundred rather than
+ * writing a zero, because every leaf that lands five of a kind is worth 100 and
+ * the box on the table is worth nothing. That is the same arithmetic the old
+ * case rested on, read the other way round.
  *
- * It also catches the other reading of "open": counting FILLED boxes as
- * available would let the leaf score a box that is gone, value the holds above
- * zero, and hold.
+ * It still catches the other reading of "open": counting FILLED boxes as
+ * available would let the leaf score a box that is gone.
  */
-describe("with nothing left to gain, it writes the box instead of spending throws", () => {
-  it("the doble alone, unreachable for the rest of the match, is written on the first throw", () => {
-    const state = driveTo([...bothSeatsCross(["ones", "twos", "threes", "fours", "fives", "sixes", "escalera", "full", "poker", "generala"]), { throw: NOTHING_HAND }]);
+describe("with the last box a hundred away, it spends the throw instead of writing a zero", () => {
+  it("the doble alone always has a real generala above it, so holding for it beats crossing it", () => {
+    // Ten boxes each, every one written for a REAL value, so no crossing
+    // happens anywhere and the ladder never comes into it. `turnShowing` takes
+    // two throws, which is what lets five of a kind appear at all: on a turn's
+    // opening throw it would win the match outright.
+    const bothSeatsWriteOn = (faces: readonly DieFace[], category: CategoryId): readonly DriveStep[] => [
+      ...turnShowing(faces),
+      { score: category },
+      ...turnShowing(faces),
+      { score: category },
+    ];
+    const state = driveTo([
+      ...bothSeatsWriteOn([6, 6, 6, 6, 6], "generala"),
+      ...bothSeatsWriteOn(NOTHING_HAND, "ones"),
+      ...bothSeatsWriteOn([2, 2, 1, 3, 4], "twos"),
+      ...bothSeatsWriteOn(NOTHING_HAND, "threes"),
+      ...bothSeatsWriteOn(NOTHING_HAND, "fours"),
+      ...bothSeatsWriteOn([5, 5, 1, 3, 4], "fives"),
+      ...bothSeatsWriteOn(NOTHING_HAND, "sixes"),
+      ...bothSeatsWriteOn([1, 2, 3, 4, 5], "escalera"),
+      ...bothSeatsWriteOn([2, 2, 2, 3, 3], "full"),
+      ...bothSeatsWriteOn([4, 4, 4, 4, 1], "poker"),
+      { throw: FOUR_SIXES },
+    ]);
     const { view, legal } = asked(state);
 
-    expect(view.cards[0]?.generala).toBe(0);
+    // The premise: one box left, the generala above it is REAL, and the box on
+    // the table is worth nothing right now.
+    expect(view.cards[0]?.generala).toBe(50);
     expect(legal.filter((action) => action.type === "score").length).toBe(1);
     expect(legal.filter((action) => action.type === "hold").length).toBe(31);
-    // Every hold really is worth nothing, so this is a tie and not a win.
-    expect(Math.max(...legal.filter((action) => action.type === "hold").map((action) => expectedValueOfHold(view, action.keep)))).toBe(0);
     expect(immediateValue(view, "generala-doble")).toBe(0);
+    // One re-roll of the odd die out of `[6,6,6,6,2]` is a sixth of a hundred.
+    expect(expectedValueOfHold(view, KEEP_THE_SIXES)).toBeCloseTo(100 / 6, 10);
 
-    expect(decide(state).chosen).toEqual({ type: "score", playerId: ALICE, category: "generala-doble" });
+    expect(decide(state).chosen).toEqual({ type: "hold", playerId: ALICE, keep: KEEP_THE_SIXES });
   });
 });
 describe("the tier is total, and its off-phase arm answers rather than throws", () => {
