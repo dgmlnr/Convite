@@ -1,4 +1,4 @@
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
@@ -768,6 +768,93 @@ describe("generala tray: the control that stops the noise", () => {
     } finally {
       (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
     }
+  });
+
+  /**
+   * THE THROW CONTROL IS THE OTHER GESTURE, and it needed its own case. The
+   * one above presses a die first, so it stayed green with `throwThem`'s own
+   * `unlock()` deleted — a player who holds nothing and simply throws is the
+   * commonest path of all, and it was the one nothing covered.
+   */
+  it("takes the throw press as a gesture too, for a player who holds no dice at all", () => {
+    const RealAudioContext = window.AudioContext;
+    let built = 0;
+    class Counting extends RealAudioContext {
+      constructor() {
+        super();
+        built++;
+      }
+    }
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = Counting;
+    try {
+      const table = seatTable();
+      table.roll([3, 5, 5, 2, 6]);
+      expect(built).toBe(0);
+      table.roller()!.click();
+      expect(built, "throwing without holding anything is still a press").toBe(1);
+    } finally {
+      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
+    }
+  });
+
+  /**
+   * ON THE TRANSITION, NEVER ON THE RENDER — and this is the assertion that
+   * says so. A board redraws on every broadcast AND on every die a player
+   * presses, so a rattle keyed on "the phase is awaiting-roll" would restart
+   * several times a throw: each restart cuts the burst before it and starts a
+   * new one, which is audibly a stutter rather than a cup being shaken.
+   *
+   * MEASURED THROUGH `createBufferSource`, because there is nothing else to
+   * measure: every voice this schedules goes through that one call, so
+   * counting it is the difference between "the sound played once" and "the
+   * sound played once per render" — which no assertion on this package's own
+   * surface could tell apart.
+   */
+  it("plays a throw's sounds once, however many times the board redraws around it", async () => {
+    const RealAudioContext = window.AudioContext;
+    let voices = 0;
+    class Counting extends RealAudioContext {
+      override createBufferSource(): AudioBufferSourceNode {
+        voices++;
+        return super.createBufferSource();
+      }
+    }
+    (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = Counting;
+    try {
+      const table = seatTable();
+      table.roll([3, 5, 5, 2, 6]);
+      // A real, trusted press is the only thing that starts a context in this
+      // browser — `dice-sound.browser.test.ts` measures that directly.
+      await userEvent.click(table.dice()[0]!);
+      const afterFirstPress = voices;
+      // Four more renders of the same phase: three die presses and a plain
+      // redraw. Not one of them is a new throw.
+      table.dice()[1]!.click();
+      table.dice()[2]!.click();
+      table.dice()[1]!.click();
+      table.redraw();
+      expect(voices, "the same phase must not re-trigger a sound").toBe(afterFirstPress);
+    } finally {
+      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext = RealAudioContext;
+    }
+  });
+
+  /**
+   * THE WIRING, WHICH IS A DIFFERENT CLAIM FROM THE MODULE.
+   * `sound-preference.test.ts` proves the reader and the writer agree with
+   * each other; neither of them proves this tray ever calls them. Both halves
+   * stayed green with the write deleted and with the read replaced by a
+   * literal `false` — so this is the case that says a mute survives the
+   * player closing the tab.
+   */
+  it("remembers a mute across a whole new board, not just across a re-render", () => {
+    const first = seatTable();
+    first.elements.rollEl.querySelector<HTMLButtonElement>(".hexdev-generala-mute")!.click();
+    expect(window.localStorage.getItem("convite:dice-muted"), "the choice must reach storage").toBe("1");
+
+    // A second tray, built from nothing — the shape of a reload.
+    const second = seatTable();
+    expect(second.elements.rollEl.querySelector(".hexdev-generala-mute")!.getAttribute("aria-pressed"), "a fresh board must come back muted").toBe("true");
   });
 
   /** A player who mutes before ever throwing must not have an audio context
