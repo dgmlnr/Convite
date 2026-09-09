@@ -22,6 +22,14 @@
  * this barrel already gives about `CATEGORY_LABELS` — nothing outside this
  * package formats a Generala countdown.
  *
+ * THE SEVENTH IS THE ONE THAT EXPLAINS A MOVE NOBODY MADE, and it is the
+ * clock's other half: `autoplay-notice.ts` is what a player meets after that
+ * same countdown ran out and a bot wrote a box for them. It is a PANEL and not
+ * a region on purpose, and `announcer.ts` amends its own sentence for the same
+ * event: the region is for the player who cannot see the card, the panel is
+ * for the one who was not looking at it, and two live regions would read the
+ * same event twice.
+ *
  * COMPLETE, AND THE LAST PIECE IS THE TABLE ITSELF. The tray, the dice it
  * holds, the control that commits a hold, the planilla every seat reads and
  * the region that says what was thrown, what was written, what a servida
@@ -51,6 +59,9 @@ export type { GeneralaAnnouncer } from "./announcer.js";
 export { createGeneralaTurnClock } from "./turn-clock.js";
 export type { GeneralaTurnClock, GeneralaTurnClockOptions } from "./turn-clock.js";
 export { ensureTurnClockStyles, TURN_CLOCK_STYLE_ID } from "./turn-clock-styles.js";
+export { renderGeneralaAutoplayNotice } from "./autoplay-notice.js";
+export type { GeneralaAutoplay } from "./autoplay-notice.js";
+export { AUTOPLAY_NOTICE_STYLE_ID, AUTOPLAY_SLOT_CLASS, ensureAutoplayNoticeStyles } from "./autoplay-notice-styles.js";
 export { renderServidaCallout } from "./servida.js";
 export { ensureServidaStyles, SERVIDA_STYLE_ID } from "./servida-styles.js";
 export { renderGeneralaMatchOver } from "./match-over.js";

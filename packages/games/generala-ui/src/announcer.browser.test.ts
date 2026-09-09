@@ -4,6 +4,7 @@ import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getViewFor 
 import type { ApplyResult, CategoryId, DieFace, MatchState, PlayerId } from "@hexdev/generala-engine";
 
 import { createGeneralaAnnouncer } from "./announcer.js";
+import type { GeneralaAutoplay } from "./autoplay-notice.js";
 
 /**
  * WHAT THE TABLE SAYS OUT LOUD, ASSERTED BY PLAIN STRING EQUALITY.
@@ -59,6 +60,13 @@ interface Table {
   /** Write the box for the seat already deciding, with the view it produces
    * NEVER handed to the region — a board that drew only the render after it. */
   readonly scoreUnseen: (category: CategoryId) => void;
+  /** The same turn, WITHOUT the reading seat ever claiming the box — which is
+   * exactly what the server's turn timer produces: a bot writes into this
+   * seat's card and no press was ever made here. */
+  readonly botPlaysMyTurn: (faces: readonly DieFace[], category: CategoryId) => void;
+  /** What the last `announce` handed back: the box the bot wrote for this
+   * seat, or nothing. */
+  readonly autoplay: () => GeneralaAutoplay | null;
 }
 
 function seatTable(seatId: PlayerId = SEAT): Table {
@@ -67,17 +75,24 @@ function seatTable(seatId: PlayerId = SEAT): Table {
   document.body.appendChild(announcer.announcerEl);
   mounted.push(announcer.announcerEl);
 
+  let lastAutoplay: GeneralaAutoplay | null = null;
   const tell = (): void => {
-    announcer.announce(getViewFor(state, seatId));
+    lastAutoplay = announcer.announce(getViewFor(state, seatId));
   };
   tell();
 
-  const applyScore = (category: CategoryId): void => {
+  /** A box written the way a BOARD writes one: the reading seat claims what it
+   * pressed, and nobody claims anything on somebody else's turn. That claim is
+   * the whole of the difference between a move and a move somebody else made
+   * for you, so a fixture that skipped it would be reporting every score in
+   * this file as a bot's. */
+  const applyScore = (category: CategoryId, claim = true): void => {
     const turn = state.turn;
     if (turn.phase !== "deciding") throw new Error(`a score needs a deciding turn, and this one is ${turn.phase}`);
     const actor = state.players[turn.seat]!;
     const offer = getLegalActions(state, actor).find((action) => action.type === "score" && action.category === category);
     if (offer === undefined) throw new Error(`the engine did not offer ${category} to seat ${String(turn.seat)}`);
+    if (claim && actor === seatId) announcer.claim(category);
     state = accept(applyPlayerAction(state, offer));
   };
 
@@ -108,7 +123,15 @@ function seatTable(seatId: PlayerId = SEAT): Table {
       applyScore(category);
       tell();
     },
-    scoreUnseen: applyScore,
+    scoreUnseen: (category) => {
+      applyScore(category);
+    },
+    botPlaysMyTurn: (faces, category) => {
+      state = accept(applyRoll(state, faces));
+      applyScore(category, false);
+      tell();
+    },
+    autoplay: () => lastAutoplay,
   };
 }
 
@@ -331,5 +354,87 @@ describe("generala announcer: the turn the written box just passed", () => {
     }
 
     expect(table.said()).toBe("Rival anotó 0 en 6.");
+  });
+});
+
+/**
+ * THE TURN SOMEBODY ELSE TOOK FOR YOU.
+ *
+ * When the server's clock runs out, `onTurnExpired` has a bot resolve ONE turn
+ * for the seat that ran out of time. Until now the only trace of that reaching
+ * the player was a box they had not chosen, under a sentence that told them
+ * they had chosen it: "Anotaste 0 en Póker." was, for the one player it
+ * mattered to, false.
+ *
+ * NOTHING NEW ON THE WIRE ANSWERS THIS. The view message says a box was
+ * written; it does not say who pressed. The client is the only place that
+ * knows, because the client is where the press happens — so the board claims
+ * what it pressed, this region holds the previous view, and the two together
+ * are the derivation.
+ */
+describe("generala announcer: a box this seat did not ask for", () => {
+  it("names the timer, not the player, when the bot writes into this seat's card", () => {
+    const table = seatTable();
+    table.botPlaysMyTurn([6, 6, 6, 2, 1], "sixes");
+
+    expect(table.said()).toBe("Se acabó tu tiempo: el bot anotó 18 en 6 por vos. Juega Rival.");
+  });
+
+  it("hands the board the box, so something can stay on screen after the region has moved on", () => {
+    const table = seatTable();
+    table.botPlaysMyTurn([1, 1, 2, 3, 5], "generala-doble");
+
+    // The region is transient — the next throw overwrites it — and the player
+    // this happened to was, by definition, not looking. The board gets the
+    // fact itself rather than having to parse a sentence back out of the
+    // region.
+    expect(table.autoplay()).toEqual({ category: "generala-doble", value: 0 });
+  });
+
+  it("says nothing of the kind about a box this seat DID press", () => {
+    const table = seatTable();
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+
+    expect(table.said()).toBe("Anotaste 18 en 6. Juega Rival.");
+    expect(table.autoplay()).toBeNull();
+  });
+
+  it("says nothing of the kind about the RIVAL's box, which this seat never presses either", () => {
+    const table = seatTable(RIVAL);
+    // Seat 0 is on turn and this table is read from seat 1, so no claim is
+    // made — and the sentence must still be the ordinary third-person one.
+    // Without the seat check this is exactly where a "nobody claimed it" rule
+    // reports every rival move as a timeout.
+    table.playTurn([6, 6, 6, 2, 1], "sixes");
+
+    expect(table.said()).toBe("Rival anotó 18 en 6. Es tu turno.");
+    expect(table.autoplay()).toBeNull();
+  });
+
+  it("judges each turn on its own, however many the player pressed before it", () => {
+    const table = seatTable();
+    table.playTurn([6, 6, 6, 2, 1], "sixes"); // this seat presses
+    table.playTurn([2, 2, 4, 5, 1], "twos"); // the rival answers
+    table.botPlaysMyTurn([3, 3, 4, 5, 1], "threes"); // and then the clock runs out
+
+    // A claim names a CATEGORY, and a filled box never reopens — which is why
+    // the claim is never cleared and never needs to be: after the box it names
+    // is written, it can match nothing again. That is a claim about this
+    // engine, so it is asserted against a position the engine produced rather
+    // than reasoned about.
+    expect(table.autoplay()).toEqual({ category: "threes", value: 6 });
+    expect(table.said()).toBe("Se acabó tu tiempo: el bot anotó 6 en 3 por vos. Juega Rival.");
+  });
+
+  it("still reports a LATER turn the timer took after the player pressed one of their own", () => {
+    const table = seatTable();
+    table.playTurn([1, 1, 2, 3, 5], "ones"); // pressed here
+    table.playTurn([2, 2, 4, 5, 1], "twos"); // the rival
+    table.botPlaysMyTurn([4, 4, 4, 6, 1], "fours"); // taken by the clock
+    expect(table.autoplay()).toEqual({ category: "fours", value: 12 });
+
+    table.playTurn([3, 3, 6, 6, 1], "threes"); // the rival again
+    table.playTurn([5, 5, 5, 2, 1], "fives"); // pressed here again
+    expect(table.autoplay(), "and a press after a timeout is still a press").toBeNull();
   });
 });

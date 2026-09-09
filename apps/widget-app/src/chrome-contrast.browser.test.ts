@@ -7,7 +7,7 @@ import type { CatalogEntry } from "./bootstrap-data.js";
 import type { LobbyDisplayEntry } from "@hexdev/platform-core";
 import { applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
 import type { PlayerId } from "@hexdev/generala-engine";
-import { BOARD_CLASS, createGeneralaTurnClock, ensureBoardStyles, renderGeneralaScorecard } from "@hexdev/generala-ui";
+import { BOARD_CLASS, createGeneralaTurnClock, ensureBoardStyles, renderGeneralaAutoplayNotice, renderGeneralaScorecard } from "@hexdev/generala-ui";
 
 /**
  * Text legibility on the chrome's own coloured surfaces.
@@ -46,6 +46,9 @@ import { BOARD_CLASS, createGeneralaTurnClock, ensureBoardStyles, renderGenerala
  */
 
 const AA_NORMAL_TEXT = 4.5;
+/** 1.4.11's floor for a graphical object — a drawn mark carrying meaning,
+ * rather than text. */
+const AA_NON_TEXT = 3;
 
 let mounted: HTMLElement[] = [];
 
@@ -377,6 +380,48 @@ describe("the planilla's open-box dash keeps its contrast in every column, marke
     const heading = board.querySelector<HTMLElement>('thead th[data-seat="0"]');
     expect(heading?.dataset.turn, "fence setup: seat 0's heading carries the mark").toBe("active");
     expect(ratioFor(heading!), "the accent heading vs the column it sits on").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+});
+
+/**
+ * THE PANEL THAT EXPLAINS A TURN THE CLOCK TOOK.
+ *
+ * It reuses the servida callout's tint deliberately — the two are told apart
+ * by structure and by a drawn clock, not by a fourth value nobody measured —
+ * and "the same as the one next door" is a claim rather than a measurement.
+ * This is the measurement, on the board's own ground, for the words and for
+ * the mark.
+ */
+describe("the autoplay notice reads on the board it is drawn on (WCAG 2.1 AA)", () => {
+  function notice(): HTMLElement {
+    const board = freshContainer();
+    ensureBoardStyles(document);
+    board.className = BOARD_CLASS;
+    const panel = document.createElement("div");
+    board.appendChild(panel);
+    renderGeneralaAutoplayNotice(panel, { category: "poker", value: 0 });
+    const found = board.querySelector<HTMLElement>(".hexdev-generala-autoplay");
+    if (found === null) throw new Error("fence setup: the notice did not render");
+    return found;
+  }
+
+  it("says what happened in text that reads (1.4.3)", () => {
+    const panel = notice();
+    const words = panel.querySelector<HTMLElement>("span");
+    expect(words?.textContent, "fence setup: the sentence is there to measure").toContain("Se acabó tu tiempo");
+    expect(ratioFor(words!), "the notice's own sentence against the panel it sits on").toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+  });
+
+  it("draws its clock in an ink that reads as a graphic (1.4.11)", () => {
+    const panel = notice();
+    const mark = panel.querySelector<SVGElement>(".hexdev-generala-autoplay-mark");
+    const style = getComputedStyle(mark!);
+    const backdrop = paintedBackgroundOf(panel);
+    const ink = parseColour(style.stroke);
+    // Stroked from `currentColor`, so this is the panel's own ink and there is
+    // no second value to keep in step — but a sheet that gave the mark a hue
+    // of its own would land here rather than in somebody's eyes.
+    expect(contrastRatio(composite([ink[0], ink[1], ink[2], ink[3] * Number(style.opacity)], backdrop), backdrop)).toBeGreaterThanOrEqual(AA_NON_TEXT);
   });
 });
 
