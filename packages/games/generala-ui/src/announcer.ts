@@ -236,6 +236,12 @@ function newsIn(before: PlayerView, after: PlayerView): string | null {
  */
 export function createGeneralaAnnouncer(doc: Document): GeneralaAnnouncer {
   const announcerEl = createDiceAnnouncer(doc);
+  // WHICH VOICE THIS IS. The board grew a second live region when the turn
+  // clock landed — a coarse one, for time — and the two say different kinds of
+  // thing at different moments. Naming them is what lets a fence ask for one
+  // rather than for "the live region", which picks whichever the DOM happens
+  // to put first.
+  announcerEl.dataset.announces = "table";
   let previous: PlayerView | null = null;
 
   return {

@@ -42,6 +42,9 @@ const SEAT = "board-seat-0" as PlayerId;
 const RIVAL = "board-seat-1" as PlayerId;
 const SEATS: readonly PlayerId[] = [SEAT, RIVAL];
 const GENERALA = "generala" as GameId;
+/** The board's own reading column, which is where every region a player looks
+ * at is mounted (`board-styles.ts`). */
+const BOARD_COLUMN = "hexdev-generala-board-column";
 
 const mounted: HTMLElement[] = [];
 afterEach(async () => {
@@ -69,24 +72,31 @@ interface Board {
   readonly table: () => HTMLTableElement | null;
   readonly rollButton: () => HTMLButtonElement | null;
   readonly scoreButton: (category: CategoryId, seat: number) => HTMLButtonElement | null;
+  /** What the strip above the planilla says for this seat, or "" when nothing
+   * is being timed for them. */
+  readonly clock: (seat: number) => string;
+  /** The next render carries this deadline, exactly as a "view" message
+   * would. `null` is an untimed table. */
+  readonly setDeadline: (deadline: number | null) => void;
 }
 
 /** A real board on a real mount, driven by the real engine and rendered by
  * the real registry entry. `onPlayAgain`/`onLeaveMatch` are recorded rather
  * than ignored so the overlay's two exits are reachable. */
-function board(seatId: PlayerId = SEAT): Board {
+function board(seatId: PlayerId = SEAT, now: () => number = () => 0): Board {
   const container = document.createElement("div");
   document.body.appendChild(container);
   mounted.push(container);
 
   let state = createMatch(SEATS);
   const dispatched: unknown[] = [];
-  const render = createGameUiRegistry().get(GENERALA)!.createRenderer(matchRenderContextFor("joined", () => 0));
+  const render = createGameUiRegistry().get(GENERALA)!.createRenderer(matchRenderContextFor("joined", now));
+  let turnDeadline: number | null = null;
 
   const draw = (): void => {
     render(
       container,
-      { view: getViewFor(state, seatId), legalActions: getLegalActions(state, seatId) },
+      { view: getViewFor(state, seatId), legalActions: getLegalActions(state, seatId), turnDeadline },
       (action) => dispatched.push(action),
       () => dispatched.push({ type: "play-again" }),
       () => dispatched.push({ type: "leave-match" }),
@@ -102,6 +112,10 @@ function board(seatId: PlayerId = SEAT): Board {
     dice: () => [...container.querySelectorAll<HTMLButtonElement>("button.hexdev-generala-die")],
     table: () => container.querySelector<HTMLTableElement>("table.hexdev-generala-scorecard-table"),
     rollButton: () => container.querySelector<HTMLButtonElement>("button.hexdev-generala-roll"),
+    clock: (seat) => container.querySelector<HTMLElement>(`.hexdev-generala-turn-clock-seat[data-seat="${String(seat)}"] .hexdev-generala-turn-clock-time`)?.textContent ?? "",
+    setDeadline: (deadline) => {
+      turnDeadline = deadline;
+    },
     scoreButton: (category, seat) => container.querySelector<HTMLButtonElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(seat)}"] button`),
     roll: (faces) => {
       state = accept(applyRoll(state, faces));
@@ -242,7 +256,13 @@ describe("the board survives being rendered again, which is every message the ma
 
     expect(el.container.querySelectorAll("table.hexdev-generala-scorecard-table"), "a second planilla under the first").toHaveLength(1);
     expect(el.dice(), "a second tray under the first").toHaveLength(5);
-    expect(el.container.querySelectorAll("[aria-live]"), "two live regions read every sentence twice").toHaveLength(1);
+    // TWO REGIONS, ONE PER JOB, AND NEVER A SECOND OF EITHER. The narrative
+    // one says what happened; the clock's says two coarse things about time.
+    // A duplicate of either reads every one of its sentences twice, which is
+    // what this count is for — and naming them is what keeps the count from
+    // passing on two copies of the same voice.
+    const regions = [...el.container.querySelectorAll<HTMLElement>("[aria-live]")];
+    expect(regions.map((region) => region.dataset.announces).sort()).toEqual(["table", "turn-clock"]);
   });
 
   /* A container somebody emptied under the renderer is the case `tray.ts`'s
@@ -319,7 +339,10 @@ describe("the board can be read to the bottom on a phone", () => {
 describe("the board says what happened", () => {
   it("announces the throw, and then the box that was written", () => {
     const el = board();
-    const live = (): string => el.container.querySelector("[aria-live]")!.textContent ?? "";
+    // THE NARRATIVE REGION BY NAME, never "the live region": the clock mounts
+    // one too, it comes first in the DOM, and a bare selector would assert
+    // about a countdown's coarse sentence instead of about the throw.
+    const live = (): string => el.container.querySelector('[aria-live][data-announces="table"]')!.textContent ?? "";
 
     el.roll([5, 5, 5, 2, 1]);
     expect(live(), "the region said nothing about a throw the player just watched").not.toBe("");
@@ -328,5 +351,59 @@ describe("the board says what happened", () => {
     el.write("fives");
     expect(live(), "the region still reads the previous sentence after a box was written").not.toBe(afterRoll);
     expect(live()).toContain("15");
+  });
+});
+
+/**
+ * THE COUNTDOWN, AT THE TIER THAT CAN LOSE IT.
+ *
+ * `turn-clock.browser.test.ts` proves the clock next door: what it draws, when
+ * it stops, and that the server's deadline is its only authority. None of that
+ * reaches a player unless THIS tier hands it the number, and that exact gap
+ * has been shipped here before — `createTrucoRenderer`'s own comment records
+ * a badge wired into a renderer's signature and never threaded from the
+ * payload, "found in Slice 4b, since nothing forwarding it meant the badge
+ * could never reach a real match even though every browser test that calls the
+ * renderer directly kept passing".
+ *
+ * So these are composition assertions and nothing else: the strip is mounted,
+ * it is where it belongs, and `payload.turnDeadline` reaches it.
+ */
+describe("the board shows the turn clock the server has been keeping all along", () => {
+  it("threads the deadline off the view message onto the strip", () => {
+    const el = board(SEAT, () => 1_000);
+    el.setDeadline(1_000 + 45_000);
+    el.roll([3, 3, 5, 2, 6]);
+
+    expect(el.clock(0), "the seat on turn counts down").toBe("0:45");
+    expect(el.clock(1), "and the seat that is not shows nothing").toBe("");
+  });
+
+  it("renders an untimed table when the payload carries no deadline at all", () => {
+    const el = board();
+    el.roll([3, 3, 5, 2, 6]);
+
+    // The board's own default, and what an older payload without the field
+    // means: a game whose module ships no bot arms no clock, and the strip
+    // draws both seats with nothing counting rather than a zero.
+    expect(el.clock(0)).toBe("");
+    expect(el.clock(1)).toBe("");
+    expect(el.container.querySelector(".hexdev-generala-turn-clock"), "the strip is still there, holding its place").not.toBeNull();
+  });
+
+  it("puts the strip between the callout and the planilla, and only one of it", () => {
+    const el = board(SEAT, () => 1_000);
+    el.setDeadline(1_000 + 60_000);
+    el.roll([3, 3, 5, 2, 6]);
+    el.draw();
+    el.draw();
+
+    const strips = el.container.querySelectorAll(".hexdev-generala-turn-clock");
+    expect(strips, "a board re-rendered three times mounts one clock").toHaveLength(1);
+    const column = [...el.container.querySelectorAll<HTMLElement>(`.${BOARD_COLUMN} > *`)];
+    const strip = column.findIndex((child) => child.classList.contains("hexdev-generala-turn-clock"));
+    const card = column.findIndex((child) => child.querySelector("table") !== null);
+    expect(strip, "the strip is in the reading column, not floating beside it").toBeGreaterThanOrEqual(0);
+    expect(strip, "and above the planilla it is read alongside").toBeLessThan(card);
   });
 });
