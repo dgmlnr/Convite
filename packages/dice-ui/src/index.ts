@@ -84,6 +84,8 @@ export {
 export { createDieSceneElement } from "./die.js";
 export type { CupGesture } from "./cup.js";
 export { CUP_GESTURE_ATTRIBUTE, createCupElement, setCupGesture } from "./cup.js";
+export type { DiceSound, DiceSoundWindow } from "./dice-sound.js";
+export { createDiceSound, fillDeterministicNoise } from "./dice-sound.js";
 export { DICE_STYLE_ID, buildDiceStylesheet, ensureDiceStyles } from "./dice-styles.js";
 export { announceRoll, createDiceAnnouncer } from "./dice-announcer.js";
 export type { DiceCupHandle, DiceCupOptions } from "./dice.js";
