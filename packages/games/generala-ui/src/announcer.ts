@@ -2,14 +2,29 @@ import { createDiceAnnouncer } from "@hexdev/dice-ui";
 import { CATEGORY_IDS } from "@hexdev/generala-engine";
 import type { CategoryId, PlayerView, SeatView, Turn } from "@hexdev/generala-engine";
 
+import type { GeneralaAutoplay } from "./autoplay-notice.js";
 import { CATEGORY_LABELS, seatLabel } from "./scorecard.js";
 
-/** The region, and the one call that keeps it truthful. Mounted once by the
- * board and mutated afterwards — never rebuilt, which is the whole reason
- * this is a factory holding a node instead of a render that makes one. */
+/** The region, and the calls that keep it truthful. Mounted once by the board
+ * and mutated afterwards — never rebuilt, which is the whole reason this is a
+ * factory holding a node instead of a render that makes one. */
 export interface GeneralaAnnouncer {
   readonly announcerEl: HTMLElement;
-  readonly announce: (view: PlayerView) => void;
+  /**
+   * THE READING SEAT JUST PRESSED THIS BOX, said by the board at the moment of
+   * the press.
+   *
+   * It is what lets `announce` tell a box this player chose from a box that
+   * appeared while they were looking away, and the question has to be answered
+   * HERE because this is the only object that holds the previous view. The
+   * board holds the presses; this holds the diff; neither can answer it alone.
+   */
+  readonly claim: (category: CategoryId) => void;
+  /**
+   * Says what is new, and hands back the one thing a live region cannot keep
+   * on screen: a box the timer's bot wrote into the reading seat's card.
+   */
+  readonly announce: (view: PlayerView) => GeneralaAutoplay | null;
 }
 
 /**
@@ -81,7 +96,13 @@ function labelForSeat(view: PlayerView, seat: number): string {
 /** The box somebody just wrote, or `null`. At most one is written per turn —
  * `applyScore` fills exactly one — so the first difference IS the event, and
  * the scan stops at it rather than pretending to collect a list. */
-function boxWritten(before: PlayerView, after: PlayerView): { readonly seat: number; readonly category: CategoryId; readonly value: number } | null {
+interface WrittenBox {
+  readonly seat: number;
+  readonly category: CategoryId;
+  readonly value: number;
+}
+
+function boxWritten(before: PlayerView, after: PlayerView): WrittenBox | null {
   for (const [seat, card] of after.cards.entries()) {
     const previous = before.cards[seat];
     if (previous === undefined) continue;
@@ -109,10 +130,15 @@ function boxWritten(before: PlayerView, after: PlayerView): { readonly seat: num
  * board ("Tirar los 5 dados", "Anotar 18 en Seises"), and a rival is spoken
  * about in the third.
  */
-function scoreSentence(view: PlayerView, written: { readonly seat: number; readonly category: CategoryId; readonly value: number }): string {
+function scoreSentence(view: PlayerView, written: WrittenBox, autoplayed: boolean): string {
   const label = CATEGORY_LABELS[written.category];
-  if (written.seat === view.self.seat) return `Anotaste ${String(written.value)} en ${label}.`;
-  return `${labelForSeat(view, written.seat)} anotó ${String(written.value)} en ${label}.`;
+  if (written.seat !== view.self.seat) return `${labelForSeat(view, written.seat)} anotó ${String(written.value)} en ${label}.`;
+  // THE SAME EVENT, AND IT IS NOT THE SAME SENTENCE. "Anotaste 0 en Póker"
+  // told a player who had looked away that they had done something they did
+  // not do, and left them with no way to find out what really happened. The
+  // cause comes first because the box is the consequence of it.
+  if (autoplayed) return `Se acabó tu tiempo: el bot anotó ${String(written.value)} en ${label} por vos.`;
+  return `Anotaste ${String(written.value)} en ${label}.`;
 }
 
 /**
@@ -182,11 +208,10 @@ function servidaWinSentence(view: PlayerView, seat: number): string {
  * first and cast afterwards, which a wrong answer above turns into
  * `undefined.join(...)` at the player rather than an error at the compiler.
  */
-function newsIn(before: PlayerView, after: PlayerView): string | null {
+function newsIn(before: PlayerView, after: PlayerView, written: WrittenBox | null, autoplayed: boolean): string | null {
   if (after.turn.phase === "servida-win") {
     return before.turn.phase === "servida-win" ? null : servidaWinSentence(after, after.turn.seat);
   }
-  const written = boxWritten(before, after);
   // A FINISHED MATCH IS THE ONE STATE WITH NO NEXT SEAT, and the turn does
   // not know it: `applyScore` hands `awaiting-roll` to `(seat + 1) %
   // players.length` whether or not any card still has room, so the last box
@@ -195,7 +220,7 @@ function newsIn(before: PlayerView, after: PlayerView): string | null {
   // is what keeps the region from ending twenty-two turns of play by telling
   // a player it is their go under a verdict overlay.
   if (written !== null) {
-    const said = scoreSentence(after, written);
+    const said = scoreSentence(after, written, autoplayed);
     return after.outcome === null ? `${said} ${nowPlayingSentence(after)}` : said;
   }
   const turn = after.turn;
@@ -237,16 +262,49 @@ function newsIn(before: PlayerView, after: PlayerView): string | null {
 export function createGeneralaAnnouncer(doc: Document): GeneralaAnnouncer {
   const announcerEl = createDiceAnnouncer(doc);
   let previous: PlayerView | null = null;
+  /** The box the reading seat asked for, until the next box lands in their
+   * card. One turn writes one box, so one claim is the whole of the memory. */
+  let claimed: CategoryId | null = null;
 
   return {
     announcerEl,
+    claim: (category) => {
+      claimed = category;
+    },
     announce: (view) => {
       const before = previous;
       previous = view;
-      if (before === null) return;
-      const message = newsIn(before, view);
-      if (message === null) return;
-      announcerEl.textContent = message;
+      if (before === null) return null;
+      const written = boxWritten(before, view);
+      const mine = written !== null && written.seat === view.self.seat;
+      // THE BOT PLAYED IT IF THE PLAYER DID NOT ASK FOR IT — the whole
+      // derivation, and it needs nothing new on the wire.
+      //
+      // IT ERRS TOWARDS SILENCE, deliberately. A press the server REJECTED
+      // still leaves its claim behind, so a bot that then wrote the SAME box
+      // is taken for the player's own doing and nothing is said. That is the
+      // direction to be wrong in: a notice that never appears costs a player
+      // an explanation, and a notice that appears when they did choose the box
+      // tells them something false about their own move. A bot writing a
+      // DIFFERENT box than the one claimed is still caught, which is the case
+      // that actually happens.
+      const autoplay = mine && written.category !== claimed ? { category: written.category, value: written.value } : null;
+      // THE CLAIM IS NOT CLEARED WHEN IT IS CONSUMED, and that absence was
+      // measured rather than chosen. `if (mine) claimed = null` was here, read
+      // as obviously right — one claim per turn — and deleting it broke
+      // nothing, because a filled box never reopens: the category a claim
+      // names can be written at most once, so after that write the claim can
+      // never match anything again. Holding it is unobservable, and a clause
+      // with nothing to observe is not a free belt (`scorecard-styles.ts`
+      // makes the same argument about a `display` it deleted).
+      //
+      // The one case that DOES leave a claim standing is a press the server
+      // rejected, and clearing here would not have touched it either — no box
+      // landed, so `mine` was never true. That case is the silence this file
+      // chooses, argued above.
+      const message = newsIn(before, view, written, autoplay !== null);
+      if (message !== null) announcerEl.textContent = message;
+      return autoplay;
     },
   };
 }

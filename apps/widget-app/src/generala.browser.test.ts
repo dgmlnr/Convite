@@ -42,6 +42,12 @@ const SEAT = "board-seat-0" as PlayerId;
 const RIVAL = "board-seat-1" as PlayerId;
 const SEATS: readonly PlayerId[] = [SEAT, RIVAL];
 const GENERALA = "generala" as GameId;
+/** The board's own reading column, which is where every region a player looks
+ * at is mounted (`board-styles.ts`). */
+const BOARD_COLUMN = "hexdev-generala-board-column";
+/** The slot the autoplay panel is mounted in, which is empty for most of a
+ * match and must cost the column nothing while it is. */
+const AUTOPLAY_SLOT = "hexdev-generala-autoplay-slot";
 
 const mounted: HTMLElement[] = [];
 afterEach(async () => {
@@ -64,7 +70,16 @@ interface Board {
   /** Apply the engine's OWN hold offer for this `keep`, exactly as the room
    * would, so the next roll lands at a higher `rollsUsed`. */
   readonly hold: (keep: readonly number[]) => void;
+  /** A box that appears in the card with NO press at this screen — which is
+   * what the server's turn timer produces, and also what a rival's move looks
+   * like from here. */
   readonly write: (category: CategoryId) => void;
+  /** The reading seat's own press, all the way through: the real control is
+   * clicked — which is where the board learns the box was asked for — and then
+   * the engine's own offer is applied exactly as the room would. */
+  readonly press: (category: CategoryId) => void;
+  /** The panel that explains a box this seat did not choose, or "". */
+  readonly notice: () => string;
   readonly dice: () => readonly HTMLButtonElement[];
   readonly table: () => HTMLTableElement | null;
   readonly rollButton: () => HTMLButtonElement | null;
@@ -82,6 +97,15 @@ function board(seatId: PlayerId = SEAT): Board {
   let state = createMatch(SEATS);
   const dispatched: unknown[] = [];
   const render = createGameUiRegistry().get(GENERALA)!.createRenderer(matchRenderContextFor("joined", () => 0));
+
+  const applyScore = (category: CategoryId): void => {
+    const turn = state.turn;
+    if (turn.phase !== "deciding") throw new Error(`a score needs a deciding turn, and this one is ${turn.phase}`);
+    const actor = state.players[turn.seat]!;
+    const offer = getLegalActions(state, actor).find((action) => action.type === "score" && action.category === category);
+    if (offer === undefined) throw new Error(`the engine did not offer ${category}`);
+    state = accept(applyPlayerAction(state, offer));
+  };
 
   const draw = (): void => {
     render(
@@ -117,14 +141,18 @@ function board(seatId: PlayerId = SEAT): Board {
       draw();
     },
     write: (category) => {
-      const turn = state.turn;
-      if (turn.phase !== "deciding") throw new Error(`a score needs a deciding turn, and this one is ${turn.phase}`);
-      const actor = state.players[turn.seat]!;
-      const offer = getLegalActions(state, actor).find((action) => action.type === "score" && action.category === category);
-      if (offer === undefined) throw new Error(`the engine did not offer ${category}`);
-      state = accept(applyPlayerAction(state, offer));
+      applyScore(category);
       draw();
     },
+    press: (category) => {
+      const turn = state.turn;
+      const button = container.querySelector<HTMLButtonElement>(`tbody tr[data-category="${category}"] td[data-seat="${String(turn.seat)}"] button`);
+      if (button === null) throw new Error(`no control to press for ${category}`);
+      button.click();
+      applyScore(category);
+      draw();
+    },
+    notice: () => container.querySelector<HTMLElement>(".hexdev-generala-autoplay")?.textContent ?? "",
   };
 }
 
@@ -325,8 +353,127 @@ describe("the board says what happened", () => {
     expect(live(), "the region said nothing about a throw the player just watched").not.toBe("");
 
     const afterRoll = live();
-    el.write("fives");
+    // PRESSED, not written behind the board's back: since the autoplay notice
+    // landed, "a box appeared and nobody here pressed anything" is a DIFFERENT
+    // event with a different sentence, and a fixture that skipped the press
+    // would be asserting about that one instead.
+    el.press("fives");
     expect(live(), "the region still reads the previous sentence after a box was written").not.toBe(afterRoll);
     expect(live()).toContain("15");
+  });
+});
+
+/**
+ * THE TURN THE CLOCK TOOK, EXPLAINED WHERE THE PLAYER CAN STILL READ IT.
+ *
+ * `announcer.browser.test.ts` proves the derivation and
+ * `autoplay-notice.browser.test.ts` proves the panel. What only this tier can
+ * get wrong is the part that makes either of them matter: the board has to
+ * CLAIM what it pressed, keep the notice up after the broadcast that produced
+ * it, and take it down when the player comes back.
+ */
+describe("the board explains a box the player did not choose", () => {
+  it("puts up the notice when a box appears in this seat's card with no press behind it", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+    expect(el.notice(), "nothing to explain yet").toBe("");
+
+    el.write("fives");
+
+    expect(el.notice()).toContain("Se acabó tu tiempo");
+    expect(el.notice()).toContain("15 en Cincos");
+  });
+
+  it("puts up nothing at all when the player pressed the box themselves", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+    el.press("fives");
+
+    // THE CLAIM IS THE WHOLE MECHANISM, and this is the assertion that says the
+    // board really makes it. Without it every move a player makes is reported
+    // back to them as the timer's.
+    expect(el.notice()).toBe("");
+  });
+
+  it("keeps the notice up across the broadcasts that follow, because the player was not looking", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+    el.write("fives");
+    const said = el.notice();
+    expect(said).not.toBe("");
+
+    // The rival takes their turn and the dice come back: two more renders, and
+    // the region has long since moved on to talking about throws.
+    el.roll([2, 2, 4, 5, 1]);
+    el.write("twos");
+    el.roll([3, 3, 6, 1, 2]);
+
+    expect(el.notice(), "a notice cleared by a render is a notice nobody reads").toBe(said);
+  });
+
+  it("takes the notice down the moment the player does something", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+    el.write("fives");
+    el.roll([2, 2, 4, 5, 1]);
+    el.write("twos");
+    el.roll([4, 4, 4, 6, 1]);
+    expect(el.notice(), "still up while the player has done nothing").not.toBe("");
+
+    el.press("fours");
+
+    expect(el.notice(), "they are back at the table and it has been read").toBe("");
+  });
+
+  it("takes it down on a HOLD too, which is a move as much as a score is", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+    el.write("fives");
+    el.roll([2, 2, 4, 5, 1]);
+    el.write("twos");
+    el.roll([6, 6, 3, 2, 1]);
+    expect(el.notice()).not.toBe("");
+
+    // Two dice held and thrown: proof of somebody at the table, which is the
+    // only thing the notice was waiting for.
+    el.dice()[0]!.click();
+    el.dice()[1]!.click();
+    el.rollButton()!.click();
+
+    expect(el.notice()).toBe("");
+  });
+
+  it("costs the board nothing at all on the boards where it never appears", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+
+    // A SLOT MOUNTED ONCE AND EMPTY FOR MOST OF A MATCH IS STILL A FLEX CHILD,
+    // and this column has a 12px gap. Found by looking: the whole card sat
+    // 12px lower than it does without this change, on every board where the
+    // timer never fired — which is nearly all of them. Nothing else in this
+    // repository can see a gap, so this is measured as a box.
+    const slot = el.container.querySelector<HTMLElement>(`.${AUTOPLAY_SLOT}`);
+    expect(slot, "fence setup: the slot really is mounted and really is empty").not.toBeNull();
+    expect(slot!.textContent).toBe("");
+    expect(slot!.getBoundingClientRect().height, "an empty slot takes no room").toBe(0);
+    expect(getComputedStyle(slot!).display).toBe("none");
+
+    // And it comes back the moment there is something to say.
+    el.write("fives");
+    expect(el.container.querySelector<HTMLElement>(`.${AUTOPLAY_SLOT}`)!.getBoundingClientRect().height).toBeGreaterThan(0);
+  });
+
+  it("mounts the panel between the callout and the planilla, and only one of it", () => {
+    const el = board();
+    el.roll([5, 5, 5, 2, 1]);
+    el.write("fives");
+    el.draw();
+
+    expect(el.container.querySelectorAll(".hexdev-generala-autoplay"), "a board re-rendered twice mounts one panel").toHaveLength(1);
+    const column = [...el.container.querySelectorAll<HTMLElement>(`.${BOARD_COLUMN} > *`)];
+    const panel = column.findIndex((child) => child.querySelector(".hexdev-generala-autoplay") !== null);
+    const card = column.findIndex((child) => child.querySelector("table") !== null);
+    expect(panel, "the panel is in the reading column, not floating beside it").toBeGreaterThanOrEqual(0);
+    expect(panel, "and above the card whose box it is about").toBeLessThan(card);
   });
 });

@@ -11,6 +11,8 @@ import type { CatalogEntry } from "./bootstrap-data.js";
 import type { GameSection } from "./game-sections.js";
 import { renderGameList } from "./game-list.js";
 import { renderGameSelection } from "./game-screen.js";
+import { BOARD_CLASS, renderGeneralaAutoplayNotice } from "@hexdev/generala-ui";
+import type { GeneralaAutoplay } from "@hexdev/generala-ui";
 import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 
 /**
@@ -99,7 +101,7 @@ function playTurn(state: MatchState, faces: readonly DieFace[], category: Catego
  * scenes use, and the reason the picture shows a board rather than a widget
  * floating in a test page.
  */
-async function boardScreen(state: MatchState, size: readonly [number, number]): Promise<HTMLElement> {
+async function boardScreen(state: MatchState, size: readonly [number, number], autoplayed: GeneralaAutoplay | null = null): Promise<HTMLElement> {
   await page.viewport(size[0], size[1]);
   document.documentElement.setAttribute(LAYOUT_ATTRIBUTE, "fullscreen");
   const container = document.createElement("div");
@@ -110,6 +112,16 @@ async function boardScreen(state: MatchState, size: readonly [number, number]): 
 
   const render = createGameUiRegistry().get(GENERALA)!.createRenderer(matchRenderContextFor("joined", () => 0));
   render(container, { view: getViewFor(state, SEAT), legalActions: getLegalActions(state, SEAT) }, () => {}, () => {}, () => {});
+  // THE PANEL IS DRAWN DIRECTLY, and it is the one thing in this file that is.
+  // Reaching it through the renderer would mean scripting a whole turn the
+  // board never saw the press for, which is a fixture about the derivation —
+  // and that is fenced in `announcer.browser.test.ts`. What a picture is for
+  // here is how the panel LOOKS beside the note it must not be mistaken for.
+  if (autoplayed !== null) {
+    const panel = container.querySelector<HTMLElement>(`.${BOARD_CLASS}-column > div:nth-child(4)`);
+    if (panel === null) throw new Error("scene fixture setup: the board mounts no slot for the notice");
+    renderGeneralaAutoplayNotice(panel, autoplayed);
+  }
   await Promise.all([...container.querySelectorAll("img")].map((image) => image.decode()));
   return container;
 }
@@ -179,6 +191,17 @@ describe("scene: the board, which is the screen this whole change was for", () =
     const passed = playTurn(midMatch(), [2, 2, 4, 5, 1], "twos");
     const container = await boardScreen(accept(applyRoll(passed, [6, 6, 3, 3, 1])), [375, 812]);
     await expect.element(container).toMatchScreenshot("generala-board-rival-turn");
+  });
+
+  /* THE TURN THE CLOCK TOOK, which is the one state on this board a player
+   * meets without having done anything to reach it. What this picture is for
+   * is whether the panel reads as an explanation rather than as an error, and
+   * whether it can be told from the servida callout that is deliberately
+   * drawn two elements above it — the two are on screen together here on
+   * purpose, which is the whole comparison. */
+  it("a turn the timer took: the panel that explains a box nobody here chose, beside the note it must not look like", async () => {
+    const container = await boardScreen(accept(applyRoll(midMatch(), [1, 2, 3, 4, 5])), [375, 812], { category: "poker", value: 0 });
+    await expect.element(container).toMatchScreenshot("generala-board-autoplayed");
   });
 });
 

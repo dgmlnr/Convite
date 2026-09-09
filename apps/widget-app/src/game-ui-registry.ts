@@ -39,12 +39,14 @@ import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
 import { getCupArtUrl, getDieFaceArtUrl } from "@hexdev/dice-ui";
 import type { DieFace } from "@hexdev/dice-ui";
 import type { GeneralaAction, HoldAction, PlayerView as GeneralaPlayerView, ScoreAction } from "@hexdev/generala-engine";
+import type { GeneralaAutoplay } from "@hexdev/generala-ui";
 import {
   BOARD_CLASS,
   createGeneralaAnnouncer,
   createGeneralaTray,
   ensureBoardStyles,
   ensureMatchOverStyles as ensureGeneralaMatchOverStyles,
+  renderGeneralaAutoplayNotice,
   renderGeneralaMatchOver,
   renderGeneralaScorecard,
   renderServidaCallout,
@@ -976,15 +978,26 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
       readonly diceEl: HTMLElement;
       readonly rollEl: HTMLElement;
       readonly servidaEl: HTMLElement;
+      readonly noticeEl: HTMLElement;
       readonly scorecardEl: HTMLElement;
       readonly matchOverEl: HTMLElement;
-      readonly announce: (view: GeneralaPlayerView) => void;
+      readonly announce: (view: GeneralaPlayerView) => GeneralaAutoplay | null;
+      /** The board tells the announcer which box this player asked for; the
+       * announcer is the one holding the previous view, so it is the only
+       * thing that can tell that press from a box that appeared without one. */
+      readonly claim: (category: GeneralaAutoplay["category"]) => void;
     } | null = null;
     // Whether the overlay has already claimed focus once this match — the
     // same transition both renderers above track, for the same reason: a
     // panel that re-focuses on every broadcast steals the keyboard from
     // somebody already reading it.
     let matchOverShown = false;
+    /** THE NOTICE OUTLIVES THE BROADCAST THAT PRODUCED IT, which is the whole
+     * point of it: the player it is for was not looking at the screen when the
+     * event happened. It is cleared by their next action and by nothing else —
+     * a render does not clear it, because a render is exactly what happens
+     * while they are still reading it. */
+    let autoplayed: GeneralaAutoplay | null = null;
 
     return (container, payload, dispatch, onPlayAgain, onLeaveMatch) => {
       ensureBoardStyles(document);
@@ -1005,15 +1018,16 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
         const rollEl = document.createElement("div");
         rollEl.className = `${BOARD_CLASS}-roll`;
         const servidaEl = document.createElement("div");
+        const noticeEl = document.createElement("div");
         const scorecardEl = document.createElement("div");
         const matchOverEl = document.createElement("div");
         const announcer = createGeneralaAnnouncer(document);
-        stackEl.append(diceEl, rollEl, servidaEl, scorecardEl);
+        stackEl.append(diceEl, rollEl, servidaEl, noticeEl, scorecardEl);
         // The announcer is out of the stack because it has no geometry, and
         // the overlay is out of it because it covers the whole table — both
         // for the reasons the two renderers above give for the same split.
         container.append(stackEl, announcer.announcerEl, matchOverEl);
-        mounted = { stackEl, diceEl, rollEl, servidaEl, scorecardEl, matchOverEl, announce: announcer.announce };
+        mounted = { stackEl, diceEl, rollEl, servidaEl, noticeEl, scorecardEl, matchOverEl, announce: announcer.announce, claim: announcer.claim };
       }
 
       const view = payload.view as GeneralaPlayerView;
@@ -1025,18 +1039,36 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
       // one the game offered — walking arrays BY INDEX, so `[1, 0]` is not
       // `[0, 1]`. Forwarding the object makes canonical ordering a fact
       // rather than a convention two files would have to remember.
+      // ANY MOVE OF THEIR OWN TAKES THE NOTICE DOWN, AND BEFORE THE ROUND TRIP
+      // RATHER THAN AFTER IT. `mark-then-play.ts` clears its marks the same
+      // way and for the same reason: what the player just did must stop being
+      // true on screen the instant they do it, not whenever the server's next
+      // broadcast happens to land. A hold is not the box the notice is about,
+      // but it is proof somebody is back at the table, which is the only thing
+      // the notice was ever waiting for.
+      const readIt = (): void => {
+        autoplayed = null;
+        if (mounted !== null) renderGeneralaAutoplayNotice(mounted.noticeEl, null);
+      };
       tray({ diceEl: mounted.diceEl, rollEl: mounted.rollEl }, view, legalActions, (action: HoldAction) => {
+        readIt();
         dispatch(action);
       });
       renderServidaCallout(mounted.servidaEl, view);
       renderGeneralaScorecard(mounted.scorecardEl, view, legalActions, (action: ScoreAction) => {
+        // CLAIMED AT THE PRESS, which is the only moment this is knowable: by
+        // the time the box appears in a broadcast, nothing about it says who
+        // asked for it.
+        mounted?.claim(action.category);
+        readIt();
         dispatch(action);
       });
 
       // AFTER the two renders above, never before: the region announces the
       // difference between the view it last saw and this one, and reading it
       // first would announce a throw the player has not been shown yet.
-      mounted.announce(view);
+      autoplayed = mounted.announce(view) ?? autoplayed;
+      renderGeneralaAutoplayNotice(mounted.noticeEl, autoplayed);
 
       // `view.outcome`, not `payload.outcome`. Generala redacts nothing (D6)
       // and its own `PlayerView` carries the outcome, so the overlay reads the
