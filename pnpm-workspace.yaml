@@ -19,6 +19,22 @@ overrides:
   # needs a newer qs is left alone instead of being silently dragged backwards
   # to whatever this line happens to say.
   qs@<6.16.0: ^6.16.0
+  # @vitest/mocker carries a path-traversal / arbitrary-file-read advisory in
+  # every version below 4.1.11 (GHSA, medium, development scope). Bumping
+  # `vitest` itself was not enough: `@vitest/browser-playwright` pins its own
+  # `@vitest/mocker`, so the vulnerable copy survived in the tree even though
+  # the lockfile also carried the patched one.
+  #
+  # An override rather than bumping browser-playwright, deliberately: that bump
+  # drags `playwright` 1.62.1 -> 1.63.0, and the visual container supplies its
+  # BROWSER from a pinned image (`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`).
+  # Moving the host library away from the image's browser is a rendering risk
+  # taken for no security gain -- the advisory is in the mocker, not in
+  # playwright.
+  #
+  # Selector-scoped, like the qs floor above: this raises a floor, it does not
+  # pin a version.
+  "@vitest/mocker@<4.1.11": "^4.1.11"
 allowBuilds:
   # msgpackr-extract is colyseus's native msgpack addon (via @colyseus/schema).
   # It has a pure-JS fallback, but the widely-used, actively maintained native
