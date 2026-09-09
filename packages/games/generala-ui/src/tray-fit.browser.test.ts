@@ -5,6 +5,7 @@ import { buildDiceStylesheet, createDieSceneElement, ensureDiceStyles } from "@h
 import { applyRoll, createMatch, getLegalActions, getViewFor } from "@hexdev/generala-engine";
 import type { ApplyResult, MatchState, PlayerId } from "@hexdev/generala-engine";
 
+import { BOARD_CLASS, ensureBoardStyles } from "./board-styles.js";
 import { createGeneralaTray } from "./tray.js";
 import { buildTrayStylesheet, ensureTrayStyles, TRAY_STYLE_ID } from "./tray-styles.js";
 
@@ -171,5 +172,162 @@ describe("generala tray: one responsive decision, read on the axis each package 
 
     await page.viewport(WIDE_VIEWPORT, 900);
     expect(bare.getBoundingClientRect().width).toBeGreaterThan(scaled);
+  });
+});
+
+/**
+ * A REAL ROLL ROW — the board's own class and its own stylesheet, not the
+ * bare `<div>` `trayInBox` above hands the tray. The row is the board's
+ * geometry (`board-styles.ts`: the tray owns the button and the cup, the
+ * board owns where they go), so measuring it through an unstyled div would
+ * measure nothing that ships.
+ */
+function rollRowInBox(width: number, state: MatchState): { readonly rollEl: HTMLElement; readonly diceEl: HTMLElement; readonly cup: HTMLElement } {
+  ensureBoardStyles(document);
+  const box = document.createElement("div");
+  box.style.width = `${String(width)}px`;
+  const diceEl = document.createElement("div");
+  const rollEl = document.createElement("div");
+  rollEl.className = `${BOARD_CLASS}-roll`;
+  box.append(diceEl, rollEl);
+  document.body.appendChild(box);
+  mounted.push(box);
+
+  createGeneralaTray()({ diceEl, rollEl }, getViewFor(state, SEAT), getLegalActions(state, SEAT), () => {});
+  const cup = rollEl.querySelector<HTMLElement>(".hexdev-dice-cup-piece");
+  if (cup === null) throw new Error("expected a cubilete in the roll row");
+  return { rollEl, diceEl, cup };
+}
+
+/** The narrowest box in the pinned ladder above, which is the narrowest phone
+ * this product draws a tray on at all. */
+const NARROWEST = LADDER[0]!.width;
+
+describe("generala tray: the cubilete and the control that commits share one row", () => {
+  it.each(LADDER)("in a $width px box nothing in the pair is painted outside the row", async ({ width }) => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const { rollEl } = rollRowInBox(width, rolled);
+
+    // MEASURED ON THE PAINTED BOX, which is not the laid-out one: the
+    // cubilete rests at `rotate(9deg)`, so its `getBoundingClientRect` is
+    // 145px wide where its layout box is 124. At the narrowest tier that
+    // leaves under two pixels of clearance on the left — real, and exactly
+    // the kind of thing a `scrollWidth` check alone would never report,
+    // since a rotation spills paint without moving layout.
+    const row = rollEl.getBoundingClientRect();
+    for (const child of [...rollEl.children]) {
+      const rect = child.getBoundingClientRect();
+      expect(rect.left, `${String(width)}px box`).toBeGreaterThanOrEqual(row.left - 0.5);
+      expect(rect.right, `${String(width)}px box`).toBeLessThanOrEqual(row.right + 0.5);
+    }
+  });
+
+  /**
+   * THE CONTROL IS NOT SQUEEZED BY THE THING THAT MOVED IN NEXT TO IT, and
+   * this assertion had to be rewritten to say that.
+   *
+   * The first version asserted `rollEl.scrollWidth <= clientWidth` and called
+   * it "the pair fits on one line". It was green — and MEASURED to be green
+   * for the wrong reason: a flex child does not overflow, it SHRINKS, so the
+   * button was quietly wrapping its label into a second line and reporting no
+   * overflow at all. The same assertion would have stayed green with the
+   * control crushed into a column of stacked letters. That is
+   * `AGENTS.md`'s "una valla que mide el mecanismo equivocado", found by
+   * probing the numbers instead of trusting the green.
+   *
+   * Height is the honest instrument: one line or two is exactly what a wrap
+   * changes, and nothing else here changes it.
+   */
+  it(`keeps the throw label on one line at ${String(NARROWEST)}px, the label every real throw carries`, async () => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const wide = rollRowInBox(960, rolled).rollEl.querySelector<HTMLElement>(".hexdev-generala-roll")!;
+    const narrow = rollRowInBox(NARROWEST, rolled).rollEl.querySelector<HTMLElement>(".hexdev-generala-roll")!;
+
+    expect(narrow.textContent).toBe(wide.textContent);
+    expect(narrow.getBoundingClientRect().height).toBe(wide.getBoundingClientRect().height);
+  });
+
+  /**
+   * THE ONE LABEL THAT DOES WRAP, BOUNDED RATHER THAN DENIED.
+   *
+   * `KEEPING_ALL_FIVE` ("Guardar los cinco no es una tirada") is far longer
+   * than the throw label, and MEASURED: with the cubilete beside it, it goes
+   * to two lines below about 450px of board. That is a real cost of this
+   * change and it is accepted rather than hidden — it is the DISABLED state
+   * of a control, shown while a player has every die marked, and a two-line
+   * sentence explaining why nothing will happen is a reasonable shape for a
+   * sentence. What must not happen is the next step down: a control ground
+   * into three or four lines because something beside it grew.
+   */
+  it(`lets the refusal label reach two lines at ${String(NARROWEST)}px, and no further`, async () => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const { rollEl, diceEl } = rollRowInBox(NARROWEST, rolled);
+    const oneLine = rollEl.querySelector<HTMLElement>(".hexdev-generala-roll")!.getBoundingClientRect().height;
+
+    for (const die of diceEl.querySelectorAll<HTMLButtonElement>(".hexdev-generala-die")) die.click();
+    const refusing = rollEl.querySelector<HTMLButtonElement>(".hexdev-generala-roll");
+    expect(refusing, "expected the control to still be rendered while all five are held").not.toBeNull();
+    expect(refusing!.textContent!.length, "expected the long refusal label, not a short one").toBeGreaterThan(20);
+
+    const lineHeight = oneLine;
+    expect(refusing!.getBoundingClientRect().height).toBeLessThanOrEqual(lineHeight * 2);
+  });
+
+  /**
+   * THE CONTROL IS NOT STRETCHED TO THE CUBILETE'S HEIGHT, which is what a
+   * flex row does by default and what `board-styles.ts` now spends a
+   * paragraph refusing. It was an UNFENCED claim in that comment until a
+   * mutation ladder deleted `align-items: center` and every test stayed
+   * green: a 40px button silently becomes a 146px column of felt with a word
+   * floating in the middle of it, and nothing in this repository could see
+   * it. Reading the two heights back off the real row is what can.
+   */
+  it("leaves the throw control at its own content height rather than stretching it to the cubilete's", async () => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const { rollEl, cup } = rollRowInBox(600, rolled);
+    const button = rollEl.querySelector<HTMLElement>(".hexdev-generala-roll")!;
+
+    // The cubilete's own painted height is the ceiling `stretch` would drag
+    // the button up to; a control that is a THIRD of it is plainly still
+    // sized by its own text.
+    const cupHeight = cup.getBoundingClientRect().height;
+    expect(cupHeight).toBeGreaterThan(100);
+    expect(button.getBoundingClientRect().height).toBeLessThan(cupHeight / 2);
+  });
+
+  /**
+   * THE GESTURE SWINGS OUTSIDE THE CUP'S OWN BOX and must not swing outside
+   * the BOARD. `dice-styles.ts`'s pivot comment argues that turning about the
+   * drawn cubilete's own middle — rather than about its base, like a cup
+   * toppling — is what keeps the swing contained; this is the measurement of
+   * that claim on the element as the board actually lays it out, at the
+   * hardest instant of the hardest gesture.
+   *
+   * The transform is applied directly rather than by waiting out an
+   * animation: the point is the geometry of the pose, and a test that slept
+   * through 100ms of a real tip would measure the same rectangle less
+   * reliably.
+   */
+  it("keeps every instant of the tip inside the board's own row", async () => {
+    await page.viewport(WIDE_VIEWPORT, 900);
+    const rolled = accept(applyRoll(createMatch(SEATS), [3, 5, 5, 2, 6]));
+    const { rollEl, cup } = rollRowInBox(NARROWEST, rolled);
+    const row = rollEl.getBoundingClientRect();
+
+    const stops = [...buildDiceStylesheet().matchAll(/@keyframes hexdev-dice-cup-tip\s*\{([\s\S]*?)\n\}/g)]
+      .flatMap((block) => [...block[1]!.matchAll(/transform:\s*([^;]+);/g)])
+      .map((m) => m[1]!.trim());
+    expect(stops.length, "expected the tip's keyframe stops to be readable").toBeGreaterThan(2);
+
+    for (const transform of stops) {
+      cup.style.transform = transform;
+      const rect = cup.getBoundingClientRect();
+      expect(rect.left, transform).toBeGreaterThanOrEqual(row.left - 0.5);
+      expect(rect.right, transform).toBeLessThanOrEqual(row.right + 0.5);
+    }
   });
 });

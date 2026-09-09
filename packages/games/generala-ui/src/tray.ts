@@ -1,4 +1,5 @@
-import { ensureDiceStyles } from "@hexdev/dice-ui";
+import { createCupElement, ensureDiceStyles, setCupGesture } from "@hexdev/dice-ui";
+import type { CupGesture } from "@hexdev/dice-ui";
 import { DICE_COUNT } from "@hexdev/generala-engine";
 import type { DieFace, GeneralaAction, HoldAction, PlayerView, Turn } from "@hexdev/generala-engine";
 
@@ -52,6 +53,47 @@ function facesOf(turn: Turn): readonly (DieFace | null)[] {
       return turn.dice;
     case "servida-win":
       return [];
+  }
+}
+
+/**
+ * WHAT THE CUBILETE IS DOING, WHICH IS THIS FILE'S JOB AND NOT `dice-ui`'S.
+ *
+ * A cup knows three poses and no rules (`CupGesture`); a phase is a rule.
+ * They meet here, in one total switch over the same union `facesOf` above
+ * already walks, so a fourth phase would stop this compiling rather than
+ * silently leave the cup wherever it was.
+ *
+ * `awaiting-roll` IS THE SHAKE, whoever's turn it is. The cup is not dimmed
+ * on the rival's go the way the dice are, and that asymmetry is the same one
+ * `tray-styles.ts` already argues for the waiting slots: dimming the one
+ * element reporting that something IS happening pays for this cue with that
+ * one. The dim exists so a player does not reach for a control that will not
+ * answer, and this is not a control at all — it is `aria-hidden` scenery.
+ *
+ * `servida-win` TIPS, and the reason is NOT that anybody gets a good look at
+ * it. Checked rather than assumed: five of a kind off the cup gives the match
+ * an outcome, `game-ui-registry.ts` reads `view.outcome !== null` in the same
+ * render, and the match-over panel is `position: absolute; inset: 0` over a
+ * `rgba(0, 0, 0, 0.45)` veil. So this gesture plays behind that veil, at a bit
+ * over half brightness, with a verdict panel across the middle of it. Half
+ * seen, not unseen — and either way not the drama it would be in the clear.
+ *
+ * It tips because the cup DID pour, and this function's whole job is to say
+ * what the cubilete is doing. Answering `still` here would be encoding "and
+ * something else is going to cover it" into a map from phase to pose — a
+ * presentation decision made on behalf of a component this file cannot see,
+ * which stops being right the day that overlay changes and fails silently
+ * when it does. `facesOf` returning no dice is the engine's own statement
+ * that the match ended as they landed, not that they never left.
+ */
+function gestureFor(turn: Turn): CupGesture {
+  switch (turn.phase) {
+    case "awaiting-roll":
+      return "shaking";
+    case "deciding":
+    case "servida-win":
+      return "tipping";
   }
 }
 
@@ -124,6 +166,13 @@ export function createGeneralaTray(): GeneralaTrayRender {
    * held die survives re-renders, so a listener closing over its own render's
    * arguments would go stale exactly on the dice the player is keeping. */
   let roller: HTMLButtonElement | null = null;
+  /** THE CUBILETE OUTLIVES THE CONTROL BESIDE IT, which is the whole reason
+   * it is a second reference and not a child of the button. The throw control
+   * is ABSENT — not disabled — whenever the engine offers no hold, and the
+   * moment it offers none is exactly the moment the cup should be shaking. A
+   * cup mounted inside that button would vanish on the only beat it exists
+   * for. */
+  let cup: HTMLElement | null = null;
   let current: { elements: GeneralaTrayElements; view: PlayerView; legalActions: readonly GeneralaAction[]; onHold: (action: HoldAction) => void } | null = null;
 
   const redraw = (): void => {
@@ -199,13 +248,32 @@ export function createGeneralaTray(): GeneralaTrayRender {
       slot.button.setAttribute("aria-pressed", String(held.has(index)));
     }
 
+    // THE CUBILETE FIRST, AND BEFORE THE EARLY RETURN BELOW. Asked of the DOM
+    // rather than of a remembered reference, the same question `board.ts` and
+    // the dice row above both ask and for the same reason: a container
+    // somebody emptied under this closure leaves every reference it kept
+    // looking valid while pointing at a detached node.
+    if (cup === null || cup.parentElement !== elements.rollEl) {
+      cup = createCupElement(doc);
+      // The control, if there was one, went with whatever emptied this box.
+      elements.rollEl.replaceChildren(cup);
+      roller = null;
+    }
+    setCupGesture(cup, gestureFor(turn));
+
     if (holds.length === 0) {
       // ABSENT, not disabled, and the asymmetry with the all-five case below
       // is the point. There the player is one press away from making it a
       // move again, so a greyed control is the truth. Here there is no throw
       // left to ask for at all, and an affordance for a move that does not
       // exist is worse than no affordance.
-      elements.rollEl.replaceChildren();
+      //
+      // THE CUP STAYS. What is gone is the offer, not the object: this is the
+      // rival's turn, or a third throw already spent, or the beat between a
+      // press and the dice landing — and in the last of those the cubilete is
+      // the only thing on the board reporting that anything is happening at
+      // all.
+      roller?.remove();
       roller = null;
       return;
     }
@@ -215,7 +283,11 @@ export function createGeneralaTray(): GeneralaTrayRender {
       roller.type = "button";
       roller.className = "hexdev-generala-roll";
       roller.addEventListener("click", throwThem);
-      elements.rollEl.replaceChildren(roller);
+      // Appended beside the cubilete, never `replaceChildren` — that would
+      // take the cup out on every throw and restart its gesture from a fresh
+      // element, which is the one thing `setCupGesture`'s idempotence cannot
+      // protect against.
+      elements.rollEl.appendChild(roller);
     }
     const offer = matchingHold(holds, held);
     // Updated in place rather than rebuilt: a player who tabbed to this
