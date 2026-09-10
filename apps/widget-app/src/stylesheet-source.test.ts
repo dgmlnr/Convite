@@ -352,6 +352,17 @@ describe("each stylesheet can be put in the red", () => {
   // deliberately: the fence's other half — that the literal was found at all
   // — is asserted just above, on the real file. Doctoring the disk would
   // prove the same thing twice and could not run in CI.
+  //
+  // AND THAT CHOICE IS ALSO WHAT MAKES THE ANCHOR HONEST, which was learned
+  // the other way round. A ladder that doctored the twenty-one files ON DISK
+  // planted at their first `{` and came back GREEN on three of them —
+  // `board-styles.ts`, `autoplay-notice-styles.ts`, `elapsed-readout.ts` —
+  // for a reason that looks like a hole and is not: those three open with
+  // `.${SOMETHING} {`, so their first `{` is the interpolation's, and the
+  // fence is RIGHT to ignore a backtick in there. A control planted where the
+  // rule does not look proves nothing about the rule. Here the interpolations
+  // are already gone by construction, so the first `{` is always real CSS.
+  // (Re-anchored on disk, all twenty-one red on both defects, by name.)
 
   it.each(STYLESHEETS)("%s reds on the exact mistake that keeps happening", (file) => {
     const css = cssOf(file);
