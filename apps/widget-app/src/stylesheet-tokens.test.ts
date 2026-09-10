@@ -38,7 +38,8 @@ import { THEME_TOKEN_NAMES } from "@hexdev/widget-protocol";
  * covered two files out of eleven. That neighbour has since been rewritten to
  * discover its own subjects the same way, and the bill it had run up by then
  * is worth keeping next to the argument: two covered out of TWENTY-ONE, with
- * nineteen of the twenty-one written after the list itself was.
+ * eighteen of them written after the list itself was — and one, `embed-shell.ts`,
+ * already unlisted on the day the list was typed.
  *
  * WHY IT LIVES IN `apps/widget-app`: this is the composition root that
  * assembles every game's UI, so it is the one place that may legitimately

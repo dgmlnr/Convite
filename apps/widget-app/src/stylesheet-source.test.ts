@@ -29,12 +29,17 @@ import { describe, expect, it } from "vitest";
  * THE STYLESHEETS ARE DISCOVERED, NEVER LISTED, and the cost of the list it
  * replaces is measured rather than argued. This file was born on 2026-08-26
  * (`72ff9a4`) naming two stylesheets by hand. Twenty-one exist today, and
- * NINETEEN OF THEM WERE WRITTEN AFTER THAT DAY — the escoba felt, the
+ * EIGHTEEN OF THEM WERE WRITTEN AFTER THAT DAY — the escoba felt, the
  * generala planilla and tray, the solitaire board, the dice cup, the turn
- * clock, the bot's notice. Not one was added to the list. So the hand-typed
- * list did not decay slowly: it covered 100% of the repository on the day it
- * was written and 9% ten working days later, and every single sheet it missed
- * was a sheet whose author had this file open in the same suite.
+ * clock, the bot's notice. Not one was added to the list.
+ *
+ * AND IT WAS NEVER COMPLETE, WHICH IS THE SHARPER HALF and was itself a
+ * miscount caught by dating the files instead of trusting the story: the
+ * first telling of this said the list covered 100% of the repository on the
+ * day it was written. It did not. `embed-shell.ts` was five days old
+ * (`9263ad9`, 2026-08-21) and already unlisted, so the list was two of three
+ * on day ONE and two of twenty-one ten working days later. A list is not a
+ * thing that decays from correct; it is a thing that was never checked.
  *
  * That is the same enumerating-config defect `stylesheet-tokens.test.ts` next
  * door names by pointing AT THIS FILE ("covered two files out of eleven"), and
