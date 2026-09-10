@@ -17,29 +17,49 @@ test**. 303 no pueden reaccionar: no importan ese código. Correr el paquete
 afectado baja esa corrida de ~36 segundos a dos o tres, y una escalera de 30
 mutaciones de 18 minutos a menos de dos.
 
+**Esta tabla NO es la fuente de verdad. La fuente es el workflow, y se lee:**
+
+```
+rg -n 'run: pnpm' .github/workflows/*.yml | sd '.*run: ' '' | sort -u
+```
+
+Corré eso antes de confiar en la lista de abajo. **Esta tabla estuvo incompleta
+tres veces** —`check:boundaries`, después `eslint`, después `test:postgres` y
+`test:visual`— y la tercera fue **después** de que este mismo párrafo dijera
+«auditar contra el workflow». Se auditó contra la memoria igual. Por eso el
+comando está acá arriba y no la recomendación: la disciplina va en el paso.
+
+Lo que ese comando lista y **no** aparece abajo son pasos de preparación, no
+chequeos: `pnpm install --frozen-lockfile` (sí está, porque puede fallar por tu
+diff), `playwright install`, `db:migrate` —que prepara la base para
+`test:postgres`, aunque una migración rota falla ahí— y `tsc -b` /
+`tsc --noEmit -p scripts` / `vitest`, que son lo que `pnpm test` ya corre por
+dentro.
+
 | Chequeo | Cuándo corre |
 | --- | --- |
 | `pnpm vitest run <paquete>` | en cada mutación y en cada ciclo rojo/verde |
 | `pnpm test` (suite entera) | **una vez por PR**, antes de commitear |
 | `pnpm test:e2e` (~5 min) | **una vez por cadena, en la punta** — no por eslabón |
-| `pnpm visual:review` | sólo si el diff puede mover un render |
+| `pnpm test:visual` | **bloquea el merge** (job `visual baselines`) si el diff puede mover un render |
+| `pnpm test:postgres` | **bloquea el merge** (job `postgres integration`) |
 | `pnpm check:bundle` | si algo puede entrar al bundle del navegador |
 | `pnpm check:boundaries` | **siempre antes de un PR** — CI lo corre y falla por él |
 | `pnpm check:scripts` | **siempre antes de un PR** — idem, y `pnpm test` ya lo incluye |
 | `pnpm exec eslint . --max-warnings 0` | **siempre antes de un PR** — CI lo corre y `pnpm test` **NO** |
+| `pnpm install --frozen-lockfile` | si tocaste dependencias — CI falla por drift del lockfile |
 
-Las tres últimas estuvieron ausentes de esta tabla y CI las corre igual: alguien
-que se guiara sólo por acá llegaba a CI con una violación de límites sin
-enterarse.
+**`pnpm visual:review` NO es un chequeo y estaba ocupando el lugar de uno.** Su
+propio docstring lo dice: *«NOT A TEST. It asserts nothing, approves nothing and
+cannot fail on a difference»*. Sirve para MIRAR renders, que es una regla aparte
+y sigue vigente. El que falla —y el que CI usa para bloquear— es `test:visual`.
+Que la tabla listara **un comando incapaz de fallar** en su lugar es el peor de
+los tres agujeros: no dejaba un chequeo afuera, ponía uno falso adentro.
 
-**Y la de eslint se agregó después de que el mismo agujero cobrara de nuevo.**
-`pnpm test` es `tsc -b && tsc --noEmit -p scripts && vitest`: eslint no está
-adentro. En una tanda, eslint encontró un bug que **`tsc`, 3.900 tests y el e2e
-no vieron** — un `replace()` sin contador había inyectado la misma declaración en
-tres renderizadores en vez de en uno. Que esta tabla ya se hubiera corregido una
-vez por exactamente este motivo, y volviera a estar incompleta, es el argumento:
-una lista de chequeos se audita **contra el workflow de CI**, no contra la
-memoria de quien la escribió.
+**`pnpm test` es `tsc -b && tsc --noEmit -p scripts && vitest`.** eslint no está
+adentro, y encontró un bug que **`tsc`, 3.900 tests y el e2e no vieron** — un
+`replace()` sin contador que inyectó la misma declaración en tres renderizadores
+en vez de en uno.
 
 **"Un chequeo que no corriste no es un chequeo" sigue vigente.** Lo que cambia
 es contra qué corre, no si corre. Si acotás un chequeo, **decilo y decí por
