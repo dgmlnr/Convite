@@ -9,6 +9,7 @@ const OTHER_ID = "escoba-de-15" as GameId;
 function fakeModule(id: GameId, gameFamily?: string, section?: string): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
   return {
     id,
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: {
       seatCount: 2,
       displayNameKey: `games.${id}.name`,

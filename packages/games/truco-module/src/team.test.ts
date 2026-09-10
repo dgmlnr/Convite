@@ -1,6 +1,8 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { describeGameModule } from "@hexdev/platform-contract";
 import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { buildDeck } from "@hexdev/truco-engine";
 import type { Card, MatchConfig, MatchState } from "@hexdev/truco-engine";
 import { SYSTEM_ACTOR_ID, trucoModule2v2 } from "./index.js";
 import type { TrucoModuleAction } from "./index.js";
@@ -64,6 +66,40 @@ function terminalFixtureState(): MatchState {
  * mano (truco-engine's `getLegalTrucoActions`). */
 const legalAction: TrucoModuleAction = { type: "call-truco", playerId: playerBId, level: "truco" };
 
+/**
+ * The 2v2 walk, and the one that reaches SEÑAS: `send-sena` is legal for any
+ * seated player at any time, so a random walk over the offered actions lands
+ * on it constantly. Same seam, same seed discipline and same reason as the
+ * 1v1 generator in `index.test.ts` — see its docblock for why the states are
+ * built through the port and why `fc.sample` rather than `fc.assert`.
+ *
+ * WHAT THIS DOES NOT COVER, said out loud: the module declares CARDS as its
+ * secret, not señas. A seña is redacted by AUDIENCE — the same claim an
+ * opponent may not learn is one a partner may make in the same hand — so
+ * "this value must appear nowhere in that view" is the wrong sentence for it.
+ * `truco-engine/src/view.test.ts` keeps that guarantee, structurally, where it
+ * can be stated.
+ */
+const walkedStates: readonly MatchState[] = fc.sample(
+  fc
+    .tuple(fc.shuffledSubarray([...buildDeck()], { minLength: 12, maxLength: 12 }), fc.array(fc.nat({ max: 9 }), { maxLength: 20 }))
+    .map(([cards, steps]) => {
+      const created = trucoModule2v2.createMatch(config, seats);
+      const deal = [cards.slice(0, 3), cards.slice(3, 6), cards.slice(6, 9), cards.slice(9, 12)];
+      const opened = trucoModule2v2.applyAction(created, { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deal });
+      let state = opened.ok ? opened.state : created;
+      const everyone = [playerAId, playerBId, playerCId, playerDId];
+      for (const step of steps) {
+        const legal = everyone.flatMap((playerId) => trucoModule2v2.getLegalActions(state, playerId));
+        if (legal.length === 0) break;
+        const applied = trucoModule2v2.applyAction(state, legal[step % legal.length]!);
+        if (applied.ok) state = applied.state;
+      }
+      return state;
+    }),
+  { numRuns: 50, seed: 20260907 },
+);
+
 describeGameModule(
   trucoModule2v2,
   {
@@ -77,6 +113,7 @@ describeGameModule(
     // is given, and only the mano has an opening call to offer.
     terminalState: terminalFixtureState(),
     botTier: "easy",
+    hiddenStateSamples: walkedStates,
   },
   { describe, it, expect },
 );

@@ -34,6 +34,7 @@ type SoloAction = { readonly type: "advance"; readonly playerId: PlayerId };
 
 const soloModule: GameModule<SoloState, SoloAction, SoloState, void> = {
   id: "fixture-solo",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.solo", assetBase: "/fixture" },
   configOptions: [],
   createMatch: (_config, seats: readonly SeatAssignment[]) => {

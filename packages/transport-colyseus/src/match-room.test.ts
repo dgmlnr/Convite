@@ -95,6 +95,13 @@ const botlessFixtureModule: GameModule<FixtureState, FixtureAction, FixtureView,
     const seat = seatOf(state, playerId);
     return { ownSecret: seat === -1 ? -1 : state.secrets[seat], turnSeat: state.turnSeat };
   },
+  // `ownSecret` is per seat, so this fixture is one of the two in the repo
+  // that cannot honestly claim to hide nothing. Inert (no conformance run
+  // reaches a transport fixture), declared correctly anyway.
+  hiddenState: {
+    kind: "hidden-per-seat",
+    secretsFor: (state, viewer) => state.secrets.filter((_, seat) => seat !== seatOf(state, viewer)),
+  },
   getOutcome: () => null,
   serialize: (state) => state as never,
   deserialize: (json) => json as unknown as FixtureState,
@@ -117,6 +124,7 @@ type SoloAction = { readonly type: "advance"; readonly playerId: PlayerId };
 
 const soloModule: GameModule<SoloState, SoloAction, SoloState, void> = {
   id: "fixture-solo",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 1, displayNameKey: "fixture.solo", assetBase: "/fixture-solo" },
   configOptions: [],
   createMatch: (_config, seats: readonly SeatAssignment[]) => ({ player: seats[0]!.playerId, steps: 0 }),
@@ -402,6 +410,7 @@ describe("MatchRoom — outcome on the wire (spec: 'a real ending' needs the mod
 
   const terminalModule: GameModule<TerminalState, TerminalAction, TerminalState, void> = {
     id: "fixture-terminal",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 2, displayNameKey: "fixture.name", assetBase: "/fixture" },
     configOptions: [],
     createMatch: (_config, seats: readonly SeatAssignment[]) => {
@@ -626,6 +635,7 @@ const SYSTEM_ACTOR = "system-actor" as PlayerId;
 
 const stuckModule: GameModule<StuckState, StuckAction, StuckState, void> = {
   id: "fixture-stuck",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.stuck", assetBase: "/fixture" },
   configOptions: [],
   createMatch: () => ({ dealt: false }),
@@ -1376,6 +1386,7 @@ describe("MatchRoom.advance() — structural serialization against overlap (clos
 
   const raceModule: GameModule<RaceState, RaceAction, RaceView, void> = {
     id: "fixture-race",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 2, displayNameKey: "fixture.race", assetBase: "/fixture" },
     configOptions: [],
     createMatch: (_config, seats: readonly SeatAssignment[]) => {
@@ -2256,6 +2267,7 @@ describe("MatchRoom — a vacated seat is a rules question, and the module answe
 
   const soloAbandonModule: GameModule<AbandonState, AbandonAction, AbandonState, void> = {
     id: "fixture-solo",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 1, displayNameKey: "fixture.solo", assetBase: "/fixture-solo" },
     configOptions: [],
     createMatch: (_config, seats: readonly SeatAssignment[]) => ({ player: seats[0]!.playerId, steps: 0, abandoned: false }),
@@ -2445,6 +2457,7 @@ type SpinAction = { readonly type: "spin"; readonly playerId: PlayerId };
  */
 const spinningModule: GameModule<SpinState, SpinAction, SpinState, void> = {
   id: "fixture-spinner",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.spinner", assetBase: "/fixture-spinner" },
   configOptions: [],
   createMatch: () => ({ spins: 0 }),

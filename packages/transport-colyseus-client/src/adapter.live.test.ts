@@ -42,6 +42,7 @@ interface FixtureViewMessage {
 
 const fixtureModule: GameModule<FixtureState, FixtureAction, FixtureState, unknown> = {
   id: GAME_ID,
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.adapter", assetBase: "/fixture" },
   configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
   createMatch: (_config, seats: readonly SeatAssignment[]) => ({ players: [...seats].sort((a, b) => a.seat - b.seat).map((s) => s.playerId), moves: 0 }),

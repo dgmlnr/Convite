@@ -248,6 +248,7 @@ describe("MATCH_GAME_IDS / buildGameRegistry — every id resolves to a module o
 describe("createGameModuleRegistry — the factory THIS root composes with admits a one-seat module in the object form", () => {
   const soloModule: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
     id: "fixture-solo",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 1, displayNameKey: "fixture.solo.name", assetBase: "/fixture-solo" },
     configOptions: [],
     createMatch: () => ({}),

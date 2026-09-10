@@ -67,6 +67,7 @@ describe("MINT_GAME_IDS / buildMintGameRegistry — every id resolves to a modul
 describe("createGameModuleRegistry — the factory THIS root composes with admits a one-seat module, registered bare", () => {
   const soloModule: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
     id: "fixture-solo",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 1, displayNameKey: "fixture.solo.name", assetBase: "/fixture-solo" },
     configOptions: [],
     createMatch: () => ({}),

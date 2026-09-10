@@ -1,7 +1,7 @@
 import { applyAction as engineApplyAction, getLegalActions as engineGetLegalActions, getMatchWinner, getViewFor, redeal, scoreHandBreakdown, settleLeftovers } from "@hexdev/escoba-engine";
 import type { MatchState, PlayCardAction, PlayerView, TeamId } from "@hexdev/escoba-engine";
 import { DEFAULT_THINKING_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/escoba-bot";
-import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotStrategy, BotTier, GameModule, HiddenState, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { SYSTEM_ACTOR_ID, requestEscobaSystemAction, startHand } from "./deal.js";
 import type { StartHandAction } from "./deal.js";
 
@@ -171,6 +171,31 @@ function createBot(tier: BotTier): BotStrategy<PlayerView, EscobaModuleAction> {
 const serialize = (state: MatchState): JsonValue => JSON.parse(JSON.stringify(state)) as JsonValue;
 const deserialize = (json: JsonValue): MatchState => json as unknown as MatchState;
 
+/**
+ * THE STOCK AND EVERY OTHER PLAYER'S HAND — the two things nobody at this
+ * table has seen.
+ *
+ * The stock is the one `escoba-engine/src/view.ts` already fences down to a
+ * bare `stockCount`; the other players' hands are the half its own test file
+ * only ever checked STRUCTURALLY (`expect(view.others[0]).not.toHaveProperty("hand")`),
+ * which passes on a view that publishes the same cards under any other name.
+ * MEASURED: publishing every other player's hand on `OtherPlayerView` under
+ * the name `held` reds NOTHING in `escoba-engine/src/view.test.ts` and reds
+ * this declaration's scan in both the 2-seat and the 4-seat registration.
+ * Declared by value, both secrets are found wherever they land.
+ *
+ * `table` and `piles` are pointedly absent: they are cards, and they are
+ * public in full — the captured piles are this game's memory, and a fence
+ * around them would red on a correct projection.
+ */
+const hiddenState: HiddenState<MatchState> = {
+  kind: "hidden-per-seat",
+  secretsFor: (state, viewer) => [
+    ...(state.hand?.stock ?? []),
+    ...state.players.filter((player) => player.id !== viewer).flatMap((player) => player.hand),
+  ],
+};
+
 export const escobaModule: GameModule<MatchState, EscobaModuleAction, PlayerView, EscobaMatchConfig> = {
   id: "escoba-de-15",
   metadata: { seatCount: 2, gameFamily: "escoba", section: "cartas", displayNameKey: "games.escoba.name", assetBase: "/games/escoba-de-15" },
@@ -179,6 +204,7 @@ export const escobaModule: GameModule<MatchState, EscobaModuleAction, PlayerView
   applyAction,
   getLegalActions,
   getViewFor,
+  hiddenState,
   getOutcome,
   serialize,
   deserialize,
@@ -196,6 +222,7 @@ export const escobaModule2v2: GameModule<MatchState, EscobaModuleAction, PlayerV
   applyAction,
   getLegalActions,
   getViewFor,
+  hiddenState,
   getOutcome,
   serialize,
   deserialize,

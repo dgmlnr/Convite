@@ -1,4 +1,5 @@
 import type { BotTier, GameModule, SeatAssignment } from "./contract.js";
+import { findLeakedSecrets, seatViewFingerprint } from "./hidden-state.js";
 import type { PlayerId } from "./ids.js";
 
 /** Structural subset of a test framework's `expect`, injected rather than
@@ -33,6 +34,25 @@ export interface GameModuleFixtures<TState, TAction, TConfig> {
   /** A state for which the match has already ended. */
   readonly terminalState: TState;
   readonly botTier: BotTier;
+  /**
+   * More reachable states for BOTH hidden-state branches — the leak scan and
+   * the cross-seat comparison — on top of `reachableState` and
+   * `terminalState`.
+   *
+   * OPTIONAL, AND THE FLOOR IS WHAT MAKES IT MANDATORY IN PRACTICE. A game
+   * whose fixtures never reach a state carrying one of its declared secrets
+   * fails the floor test below by name, so "supply enough states" is enforced
+   * by a red run rather than by a required field somebody would satisfy with
+   * `[]`.
+   *
+   * WHERE THE PROPERTY TESTS GO. `truco-engine/src/view.test.ts` already walks
+   * a fast-check generator of reachable states looking for leaks; this is the
+   * seam that lifts that walk to the platform without dragging fast-check into
+   * a package whose whole point is having no dependencies — not even a test
+   * runner (see `ConformanceExpectation`). The game generates, the platform
+   * scans.
+   */
+  readonly hiddenStateSamples?: readonly TState[];
 }
 
 /**
@@ -85,6 +105,111 @@ export function describeGameModule<TState, TAction extends { readonly playerId: 
         expect(() => gameModule.getViewFor(fixtures.reachableState, seat.playerId)).not.toThrow();
       }
     });
+
+    /**
+     * THE REDACTION GUARANTEE, AS A PLATFORM REQUIREMENT RATHER THAN A HABIT.
+     *
+     * Until now the suite's only view assertion was that `getViewFor` does not
+     * THROW. Whether it hands a seat another seat's cards was checked by each
+     * game separately, in its own engine's tests, and a module that wrote none
+     * passed conformance whole. `gameModule.hiddenState` is what closes that:
+     * the game says what is secret, and the two branches below say what it
+     * costs to claim either answer.
+     *
+     * ONE OF THESE BRANCHES IS ALWAYS A NAMED, EXECUTED TEST — never a mute
+     * `if` — for the same reason the bot requirement below is: in a green run,
+     * "this game has no secret" and "somebody forgot" have to look different.
+     */
+    const hiddenState = gameModule.hiddenState;
+    /**
+     * BOTH BRANCHES READ THE SAME STATES, and the second one needs them more
+     * than the first. Measured: adding a per-seat `peek: state.cards[seat]` to
+     * generala's view did NOT red the cross-seat comparison when only the
+     * fixture's `reachableState` was compared — a freshly opened match has
+     * every scorecard empty, so the leaked cards were identical and the
+     * comparison was right to call them the same information. On a state where
+     * the seats have diverged, the same mutation reds. A comparison that runs
+     * on one early state is a comparison that runs before there is anything to
+     * tell apart.
+     */
+    const scanned = [fixtures.reachableState, fixtures.terminalState, ...(fixtures.hiddenStateSamples ?? [])];
+    if (hiddenState.kind === "hidden-per-seat") {
+      it("no seated player's view holds a value this game declares secret from them", () => {
+        const leaks = scanned.flatMap((state) =>
+          fixtures.seats.flatMap((seat) => {
+            const leaked = findLeakedSecrets(gameModule.getViewFor(state, seat.playerId), hiddenState.secretsFor(state, seat.playerId));
+            return leaked.length === 0 ? [] : [{ leakedTo: seat.playerId, leaked }];
+          }),
+        );
+        // Asserted as a MESSAGE rather than as `toEqual([])`, the way the bot
+        // requirement below is, and for a reason this file already paid for
+        // once: vitest ELIDES a long value inside `error.message` (`expected
+        // [ …(4) ] to deeply equal []`) and prints it in full only in the
+        // Expected/Received diff. Whoever hits this needs the seat and the
+        // value in the sentence, not in a diff a harness may not carry.
+        expect(leaks.length === 0 ? null : `${gameModule.id} hands seats values it declares secret from them: ${JSON.stringify(leaks)}`).toBeNull();
+      });
+
+      /**
+       * THE FLOOR, and the assertion this whole change exists to avoid needing
+       * twice. A scan for secrets that were never declared passes on any code
+       * at all — it is the shape of guard that looks like protection and
+       * measures nothing, which is exactly how `truco-engine`'s own
+       * `cardId`-substring redaction property stayed green with the opponent's
+       * whole hand published.
+       */
+      it("declares a secret that some state its fixtures reach actually holds — a scan with nothing to find is not a fence", () => {
+        const declared = scanned.reduce(
+          (total, state) => total + fixtures.seats.reduce((seatTotal, seat) => seatTotal + hiddenState.secretsFor(state, seat.playerId).length, 0),
+          0,
+        );
+        expect(
+          declared === 0
+            ? `${gameModule.id} declares hiddenState "hidden-per-seat" and not one of the ${String(scanned.length)} state(s) its fixtures reach produces a single secret — the leak scan above passed without measuring anything. Supply a state that holds one (fixtures.hiddenStateSamples), or declare "nothing-is-hidden".`
+            : null,
+        ).toBeNull();
+      });
+    } else if (gameModule.metadata.seatCount >= 2) {
+      /**
+       * WHAT "NOTHING IS HIDDEN" IS WORTH: every seat is told the same things.
+       * `generala-engine/src/view.ts` argues this in prose — "a redacted field
+       * is by definition not equal across seats" — and its own test file
+       * asserts it for four hand-picked fields. Here it is the platform's, for
+       * the whole view, and it is what makes the cheap arm uncheap: truco's two
+       * hands differ per viewer, so a redacting game that declared this reds on
+       * its first dealt state instead of quietly opting out of the scan.
+       */
+      it("every seat is told the same things — this game declares that it hides nothing", () => {
+        expect(
+          fixtures.seats.length < 2
+            ? `${gameModule.id} declares metadata.seatCount ${String(gameModule.metadata.seatCount)} and its fixtures seat only ${String(fixtures.seats.length)} — the cross-seat comparison would have compared a view against itself`
+            : null,
+        ).toBeNull();
+        for (const state of scanned) {
+          const first = seatViewFingerprint(gameModule.getViewFor(state, fixtures.seats[0]!.playerId));
+          for (const seat of fixtures.seats.slice(1)) {
+            expect(seatViewFingerprint(gameModule.getViewFor(state, seat.playerId))).toEqual(first);
+          }
+        }
+      });
+
+      /** The floor for the branch above, the twin of the one for the other
+       * branch: two empty views are equal, and a `getViewFor` that returned
+       * `{}` would satisfy the comparison without ever telling a seat
+       * anything. */
+      it("hands each seat a view that says something — two empty views are equal for the wrong reason", () => {
+        const spoken = fixtures.seats.filter((seat) => seatViewFingerprint(gameModule.getViewFor(fixtures.reachableState, seat.playerId)).length > 0);
+        expect(spoken.length).toBe(fixtures.seats.length);
+      });
+    } else {
+      it("skips the cross-seat comparison deliberately: this game seats one player, so there is no other seat to keep a secret from", () => {
+        // The licence, executed rather than left in a comment — the same shape
+        // as the bot requirement's own skip below. ONE seat is the entire
+        // reason this guarantee does not apply: invert the branch and every
+        // shipped multi-seat game lands here and fails on its own seat count.
+        expect(gameModule.metadata.seatCount).toBe(1);
+      });
+    }
 
     it("getOutcome is null while the match has not ended", () => {
       expect(gameModule.getOutcome(fixtures.reachableState)).toBeNull();

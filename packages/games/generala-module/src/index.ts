@@ -1,7 +1,7 @@
 import { applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
 import type { GeneralaAction, MatchState, PlayerView } from "@hexdev/generala-engine";
 import { DEFAULT_THINKING_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/generala-bot";
-import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotStrategy, BotTier, GameModule, HiddenState, JsonValue, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { SYSTEM_ACTOR_ID } from "./roll.js";
 import type { RollDiceAction } from "./roll.js";
 
@@ -250,6 +250,21 @@ const deserialize = (json: JsonValue): MatchState => json as unknown as MatchSta
  * which cannot fire with a single entry and fires the day a second Generala id
  * lands without it. Declared here so the second one has something to match.
  */
+/**
+ * NOTHING, AND NOW THAT IS A CLAIM THE SUITE READS RATHER THAN A SENTENCE IN A
+ * DOCBLOCK.
+ *
+ * `generala-engine/src/view.ts` opens with "GENERALA REDACTS NOTHING": the
+ * scorecards are public (proposal Q4), `turn.dice` are the faces physically
+ * showing, and `rollsUsed` is something everybody at the table counts. Until
+ * now nothing verified that, and the file's own argument for why — "a redacted
+ * field is by definition not equal across seats" — was asserted by hand for
+ * four named fields in `view.test.ts`. Declaring it here hands that argument to
+ * `describeGameModule`, which compares the WHOLE view seat by seat and reds the
+ * day this game grows something one seat may see and another may not.
+ */
+const hiddenState: HiddenState<MatchState> = { kind: "nothing-is-hidden" };
+
 export const generalaModule: GameModule<MatchState, GeneralaModuleAction, PlayerView, GeneralaMatchConfig> = {
   id: "generala",
   metadata: { seatCount: SEAT_COUNT, gameFamily: "generala", section: "dados", displayNameKey: "games.generala.name", assetBase: "/games/generala" },
@@ -258,6 +273,7 @@ export const generalaModule: GameModule<MatchState, GeneralaModuleAction, Player
   applyAction,
   getLegalActions,
   getViewFor,
+  hiddenState,
   getOutcome,
   serialize,
   deserialize,

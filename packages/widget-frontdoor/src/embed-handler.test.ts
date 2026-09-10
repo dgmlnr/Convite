@@ -13,6 +13,7 @@ const TRUCO_ID = "truco-argentino" as GameId;
 function fakeTrucoModule(): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
   return {
     id: TRUCO_ID,
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 2, gameFamily: "truco", displayNameKey: "games.truco.name", assetBase: "/games/truco-argentino" },
     configOptions: [{ key: "pointsToWin", labelKey: "games.truco.pointsToWin", values: [15, 30], defaultValue: 15 }],
     createMatch: () => ({}),

@@ -55,6 +55,7 @@ import { createMatchServer } from "./server.js";
  */
 const isolationModuleA: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
   id: "fixture-isolation-redis-a" as GameId,
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.isolation.a", assetBase: "/fixture" },
   configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
   createMatch: (_config, seats: readonly SeatAssignment[]) => ({ seats }),

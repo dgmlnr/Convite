@@ -1,6 +1,6 @@
 import { getLegalActions as boardLegalActions, getOutcome as boardOutcome, layBoard } from "@hexdev/mahjong-solitaire-engine";
 import type { MatchState as BoardState, RemovePairAction, TileId } from "@hexdev/mahjong-solitaire-engine";
-import type { ApplyResult, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, GameModule, HiddenState, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { SYSTEM_ACTOR_ID, dealBoard } from "./deal.js";
 import type { DealBoardAction } from "./deal.js";
 
@@ -207,6 +207,22 @@ export function getAbandonedSeatAction(state: SolitaireMatchState, playerId: Pla
  * skips the bot requirement by a named, executed test that asserts
  * `seatCount === 1`, so this absence is a declaration rather than an omission.
  */
+/**
+ * NOTHING — and this is the ONE game of the four where that declaration buys
+ * no executed comparison, which is worth saying out loud rather than letting a
+ * green run imply otherwise.
+ *
+ * The board is face up in full; `getViewFor` above does not even take a viewer.
+ * But the platform guarantee is that no seat learns another seat's secret, and
+ * a solitaire has no other seat: `describeGameModule`'s cross-seat comparison
+ * would compare this view against itself, so it registers a NAMED test that
+ * asserts `metadata.seatCount === 1` instead — the same shape as the bot
+ * requirement's own skip, and for the same reason. What keeps this honest is
+ * that the skip is the seat count's licence and nothing else: a two-seat
+ * variant of this module would land in the comparison automatically.
+ */
+const hiddenState: HiddenState<SolitaireMatchState> = { kind: "nothing-is-hidden" };
+
 export const mahjongSolitaireModule: GameModule<SolitaireMatchState, MahjongSolitaireAction, SolitairePlayerView, MahjongSolitaireConfig> = {
   id: "mahjong-solitario",
   metadata: { seatCount: 1, gameFamily: "mahjong-solitario", section: "fichas", displayNameKey: "games.mahjongSolitario.name", assetBase: "/games/mahjong-solitario" },
@@ -215,6 +231,7 @@ export const mahjongSolitaireModule: GameModule<SolitaireMatchState, MahjongSoli
   applyAction,
   getLegalActions,
   getViewFor,
+  hiddenState,
   getOutcome,
   serialize,
   deserialize,

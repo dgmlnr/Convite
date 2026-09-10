@@ -34,6 +34,7 @@ type ReconnectAction =
 
 const reconnectModule: GameModule<ReconnectState, ReconnectAction, ReconnectState, void> = {
   id: "fixture-reconnect",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.reconnect", assetBase: "/fixture" },
   configOptions: [],
   createMatch: (_config, seats: readonly SeatAssignment[]) => {

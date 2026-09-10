@@ -10,7 +10,7 @@ import {
 } from "@hexdev/truco-engine";
 import type { Action as EngineAction, MatchConfig, MatchState, PlayerView } from "@hexdev/truco-engine";
 import { DEFAULT_THINKING_DELAY_MS, SPOKEN_MOVE_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/truco-bot";
-import type { ApplyResult, BotStrategy, BotTier, GameModule, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotStrategy, BotTier, GameModule, HiddenState, JsonValue, MatchOutcome, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import type { Action as EngineActionType } from "@hexdev/truco-engine";
 import { SYSTEM_ACTOR_ID, requestSystemAction, requestSystemAction2v2 } from "./deal.js";
 import type { StartHandAction } from "./deal.js";
@@ -261,6 +261,31 @@ function questionFor(state: MatchState, askerId: PlayerId, teammateId: PlayerId,
  * hard tier is the only strategy that reads it at all. */
 const CONSULT_BUDGET_MS = 1000;
 
+/**
+ * THE CARDS STILL IN SOMEBODY ELSE'S HAND, and nothing else in this game is
+ * secret in this sense.
+ *
+ * A card LEAVES this set the moment it is played: `applyAction` moves it into
+ * `hand.currentTrickPlays`, which is public by name (`view.ts`'s `HandView`),
+ * so what is left in `player.hand` is exactly what nobody but its owner has
+ * seen. Read straight off the state rather than from the deal, which is what
+ * keeps that true as a hand is played out instead of only when it is dealt.
+ *
+ * SEÑAS ARE DELIBERATELY NOT DECLARED HERE, and the reason is a limit of this
+ * mechanism rather than an oversight. A seña is redacted by AUDIENCE, not by
+ * value: the same `"asDeEspada"` an opponent may not learn is one the viewer's
+ * own partner may legitimately claim in the same hand, so "this value must
+ * appear nowhere in that view" is the wrong sentence for it and would red on a
+ * correct projection. That guarantee stays where it can be stated structurally
+ * — `OpponentView` has no seña-shaped field at all, and
+ * `truco-engine/src/view.test.ts` walks reachable 2v2 states asserting no
+ * opponent entry grows one under any name.
+ */
+const hiddenState: HiddenState<MatchState> = {
+  kind: "hidden-per-seat",
+  secretsFor: (state, viewer) => state.players.filter((player) => player.id !== viewer).flatMap((player) => player.hand),
+};
+
 export const trucoModule: GameModule<MatchState, TrucoModuleAction, PlayerView, MatchConfig> = {
   id: "truco-argentino",
   // `gameFamily: "truco"` and NOT `"truco-argentino"`: this is what a player
@@ -278,6 +303,7 @@ export const trucoModule: GameModule<MatchState, TrucoModuleAction, PlayerView, 
   applyAction,
   getLegalActions,
   getViewFor,
+  hiddenState,
   getOutcome,
   serialize: (state) => JSON.parse(JSON.stringify(state)) as JsonValue,
   deserialize: (json) => json as unknown as MatchState,
@@ -303,6 +329,10 @@ export const trucoModule2v2: GameModule<MatchState, TrucoModuleAction, PlayerVie
   applyAction,
   getLegalActions,
   getViewFor,
+  // The SAME declaration as the 1v1 entry, deliberately shared rather than
+  // copied: both ids are ways of playing one game over one engine, and two
+  // copies of a redaction rule are two places for it to drift.
+  hiddenState,
   getOutcome,
   serialize: (state) => JSON.parse(JSON.stringify(state)) as JsonValue,
   deserialize: (json) => json as unknown as MatchState,

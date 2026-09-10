@@ -1,6 +1,7 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { describeGameModule } from "@hexdev/platform-contract";
-import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import type { PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { buildDeck } from "@hexdev/escoba-engine";
 import type { Card, HandState, MatchState } from "@hexdev/escoba-engine";
 import { SYSTEM_ACTOR_ID, escobaModule, escobaModule2v2, requestEscobaSystemAction } from "./index.js";
@@ -52,9 +53,57 @@ function terminal2p(): MatchState {
 // playerB's oro-7 (value 7) captures the table's lone sota (value 8): 7+8=15.
 const legalAction2p: EscobaModuleAction = { type: "play-card", playerId: playerB, card: { suit: "oro", rank: 7 }, captured: [{ suit: "copa", rank: 10 }] };
 
+/**
+ * THE STATES THE PLATFORM'S LEAK SCAN WALKS, and the reason they are generated
+ * rather than reused: the two fixtures above hand-build a `HandState` with an
+ * EMPTY STOCK, so the half of this game's declared secret that
+ * `escoba-engine`'s own view fences most carefully — the undealt stock — is
+ * not present in either of them. These go through the real dealing seam
+ * (`requestEscobaSystemAction`, then the system's `start-hand`), so the stock
+ * is full, and then walk only actions `getLegalActions` offered.
+ *
+ * SEEDED, and built through the module's port rather than as literals, for the
+ * same two reasons `truco-module/src/index.test.ts` gives.
+ */
+const seededRng = (seed: number): RandomSource => {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+};
+
+function walkedStates(module: typeof escobaModule, seatsFor: readonly SeatAssignment[]): readonly MatchState[] {
+  return fc.sample(
+    fc.tuple(fc.nat({ max: 1_000_000 }), fc.array(fc.nat({ max: 9 }), { maxLength: 12 })).map(([seed, steps]) => {
+      const created = module.createMatch(config, seatsFor);
+      const opening = requestEscobaSystemAction(created, seededRng(seed + 1));
+      const opened = opening === null ? { ok: false as const } : module.applyAction(created, opening);
+      let state = opened.ok ? opened.state : created;
+      for (const step of steps) {
+        const legal = seatsFor.flatMap((seat) => module.getLegalActions(state, seat.playerId));
+        if (legal.length === 0) break;
+        const applied = module.applyAction(state, legal[step % legal.length]!);
+        if (applied.ok) state = applied.state;
+      }
+      return state;
+    }),
+    { numRuns: 40, seed: 20260907 },
+  );
+}
+
 describeGameModule(
   escobaModule,
-  { config, seats: seats2p, playerId: playerB, reachableState: reachable2p(), legalAction: legalAction2p, terminalState: terminal2p(), botTier: "easy" },
+  {
+    config,
+    seats: seats2p,
+    playerId: playerB,
+    reachableState: reachable2p(),
+    legalAction: legalAction2p,
+    terminalState: terminal2p(),
+    botTier: "easy",
+    hiddenStateSamples: walkedStates(escobaModule, seats2p),
+  },
   { describe, it, expect },
 );
 
@@ -89,7 +138,16 @@ const legalAction4p: EscobaModuleAction = { type: "play-card", playerId: player1
 
 describeGameModule(
   escobaModule2v2,
-  { config, seats: seats4p, playerId: player1, reachableState: reachable4p(), legalAction: legalAction4p, terminalState: terminal4p(), botTier: "easy" },
+  {
+    config,
+    seats: seats4p,
+    playerId: player1,
+    reachableState: reachable4p(),
+    legalAction: legalAction4p,
+    terminalState: terminal4p(),
+    botTier: "easy",
+    hiddenStateSamples: walkedStates(escobaModule2v2, seats4p),
+  },
   { describe, it, expect },
 );
 

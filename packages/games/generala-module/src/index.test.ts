@@ -1,3 +1,4 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { CATEGORY_IDS, applyHold, applyPlayerAction, applyRoll, createMatch, getLegalActions, getOutcome, getViewFor } from "@hexdev/generala-engine";
 import type { DieFace, MatchState, PlayerId, ScoreAction } from "@hexdev/generala-engine";
@@ -207,9 +208,67 @@ function reachable(): MatchState {
  * has something to find rather than something to echo back. */
 const LEGAL_ACTION: GeneralaModuleAction = { type: "score", playerId: ALICE, category: "escalera" };
 
+/**
+ * STATES WHERE THE TWO SEATS HAVE ACTUALLY DIVERGED, and the reason this
+ * generator exists rather than the two fixtures being enough.
+ *
+ * `generalaModule` declares `hiddenState: { kind: "nothing-is-hidden" }`, and
+ * what conformance does with that is compare every seat's whole view. MEASURED:
+ * planting a per-seat leak in `generala-engine`'s projection —
+ * `peek: state.cards[seat]`, one seat's own scorecard handed only to that seat
+ * — did NOT red on either fixture state. Both are symmetric: `reachable()` is
+ * one throw in with every box still empty, and `playedOut()` writes the same
+ * faces into the same box order for both seats, so the two scorecards come out
+ * IDENTICAL and the leak carried no information to spot. A comparison across
+ * states where the seats are the same is a comparison that cannot see a
+ * per-seat difference.
+ *
+ * These vary the faces and the box each seat takes, so the scorecards diverge,
+ * and the same plant reds. Built through the module's own port, seeded — the
+ * same discipline `truco-module/src/index.test.ts` documents.
+ */
+const walkedStates: readonly MatchState[] = fc.sample(
+  fc
+    .array(fc.tuple(fc.array(fc.integer({ min: 1, max: 6 }), { minLength: 5, maxLength: 5 }), fc.nat({ max: 20 })), { minLength: 3, maxLength: 22 })
+    .map((turns) => {
+      let state = generalaModule.createMatch({}, SEAT_ASSIGNMENTS);
+      for (const [faces, pick] of turns) {
+        if (state.turn.phase === "awaiting-roll") {
+          // Exactly as many faces as there are open slots. A re-roll after a
+          // hold throws only the dice that were let go, and a five-face throw
+          // into a one-die re-roll is refused `wrong-face-count` — which is
+          // how the first version of this generator died on its second step
+          // and produced 40 states with not one box written in any of them.
+          const needed = state.turn.slots.filter((slot) => slot === null).length;
+          const rolled = applyAction(state, { type: "roll-dice", playerId: SYSTEM_ACTOR_ID, faces: faces.slice(0, needed) as readonly DieFace[] });
+          if (!rolled.ok) break;
+          state = rolled.state;
+        }
+        const seat = SEATS[state.turn.seat];
+        if (seat === undefined) break;
+        const legal = generalaModule.getLegalActions(state, seat);
+        if (legal.length === 0) break;
+        const applied = generalaModule.applyAction(state, legal[pick % legal.length]!);
+        if (!applied.ok) break;
+        state = applied.state;
+      }
+      return state;
+    }),
+  { numRuns: 40, seed: 20260907 },
+);
+
 describeGameModule(
   generalaModule,
-  { config: {}, seats: SEAT_ASSIGNMENTS, playerId: ALICE, reachableState: reachable(), legalAction: LEGAL_ACTION, terminalState: playedOut(), botTier: "easy" },
+  {
+    config: {},
+    seats: SEAT_ASSIGNMENTS,
+    playerId: ALICE,
+    reachableState: reachable(),
+    legalAction: LEGAL_ACTION,
+    terminalState: playedOut(),
+    botTier: "easy",
+    hiddenStateSamples: walkedStates,
+  },
   { describe, it, expect },
 );
 
