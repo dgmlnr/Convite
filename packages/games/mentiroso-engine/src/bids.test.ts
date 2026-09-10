@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DieFace, Player, PlayerId } from "./state.js";
+import type { Bid, DieFace, MatchState, Phase, Player, PlayerId } from "./state.js";
 import { DIE_FACES } from "./dice.js";
 import { ceilingFor, raisesFrom, totalDice } from "./bids.js";
-import type { Bid } from "./bids.js";
 
 /**
  * A seat holding `diceCount` dice, mirroring `seating.test.ts`'s own helper —
@@ -13,24 +12,39 @@ function seatOf(seat: number, diceCount: number): Player {
   return { id: `p${String(seat)}` as PlayerId, seat, dice };
 }
 
+/**
+ * Wraps `players` into a `MatchState` (work unit 2.1 reconciliation:
+ * `totalDice`/`ceilingFor` now take `state: MatchState`, per
+ * `sdd/mentiroso/design`'s own Interfaces section, exactly as `bids.ts`'s own
+ * docblock said this unit would do). The `phase` here is a fixed, arbitrary
+ * `bidding` state with no current bid — neither function reads `phase` at
+ * all, so its exact shape is irrelevant to what these tests measure; a FIXED
+ * phase across every fixture below means it can never coincidentally track
+ * any of the seat/dice counts the tests DO vary.
+ */
+const ARBITRARY_PHASE: Phase = { kind: "bidding", turnSeat: 0, bid: null };
+function matchOf(players: readonly Player[]): MatchState {
+  return { players, phase: ARBITRARY_PHASE };
+}
+
 describe("totalDice (design D2)", () => {
   it("sums dice across every live seat at a fresh six-seat table", () => {
     const players = [seatOf(0, 5), seatOf(1, 5), seatOf(2, 5), seatOf(3, 5), seatOf(4, 5), seatOf(5, 5)];
-    expect(totalDice(players)).toBe(30);
+    expect(totalDice(matchOf(players))).toBe(30);
   });
 
   it("counts an eliminated seat's empty dice array as zero, not as absent", () => {
     // Seats 1 and 3 already hold zero dice — a mid-match state, not a fresh
     // table, so the count must not assume every seat still has dice.
     const players = [seatOf(0, 3), seatOf(1, 0), seatOf(2, 2), seatOf(3, 0)];
-    expect(totalDice(players)).toBe(5);
+    expect(totalDice(matchOf(players))).toBe(5);
   });
 });
 
 describe("ceilingFor (design D2 — the moving ceiling, derived every time, never stored)", () => {
   it("equals (30, 6) at a fresh six-seat table (six seats of five dice)", () => {
     const players = [seatOf(0, 5), seatOf(1, 5), seatOf(2, 5), seatOf(3, 5), seatOf(4, 5), seatOf(5, 5)];
-    expect(ceilingFor(players)).toEqual({ quantity: 30, face: 6 });
+    expect(ceilingFor(matchOf(players))).toEqual({ quantity: 30, face: 6 });
   });
 
   it("shrinks to (2, 6) at two seats holding one die each — the ruleset's own worked example", () => {
@@ -40,7 +54,7 @@ describe("ceilingFor (design D2 — the moving ceiling, derived every time, neve
     // dice would otherwise pass this fixture by coincidence with a plain
     // two-seat table, since 2 seats of 1 die each also happens to total 2.
     const players = [seatOf(0, 1), seatOf(1, 1), seatOf(2, 0)];
-    expect(ceilingFor(players)).toEqual({ quantity: 2, face: 6 });
+    expect(ceilingFor(matchOf(players))).toEqual({ quantity: 2, face: 6 });
   });
 
   it("tracks total dice EXACTLY as dice are surrendered, never a fixed constant", () => {
@@ -53,8 +67,9 @@ describe("ceilingFor (design D2 — the moving ceiling, derived every time, neve
       { players: [seatOf(0, 1), seatOf(1, 0)], expectedQuantity: 1 },
     ];
     for (const { players, expectedQuantity } of cases) {
-      expect(ceilingFor(players).quantity).toBe(expectedQuantity);
-      expect(ceilingFor(players).face).toBe(6);
+      const state = matchOf(players);
+      expect(ceilingFor(state).quantity).toBe(expectedQuantity);
+      expect(ceilingFor(state).face).toBe(6);
     }
   });
 });
