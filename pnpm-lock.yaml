@@ -355,6 +355,19 @@ importers:
 
   packages/games/mentiroso-engine: {}
 
+  packages/games/mentiroso-module:
+    dependencies:
+      '@hexdev/mentiroso-engine':
+        specifier: workspace:*
+        version: link:../mentiroso-engine
+      '@hexdev/platform-contract':
+        specifier: workspace:*
+        version: link:../../platform-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':
