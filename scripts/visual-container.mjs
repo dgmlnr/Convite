@@ -44,6 +44,8 @@
  * tolerance.
  */
 import { spawn, spawnSync } from "node:child_process";
+
+import { buildWorkspace } from "./workspace-build.mjs";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -173,56 +175,6 @@ export function writesBaseline(args) {
  */
 export function hostSpawnNeedsShell(platform) {
   return platform === "win32";
-}
-
-/**
- * THE BUILD THAT HAS TO HAPPEN BEFORE ANY OF THESE PIXELS EXIST.
- *
- * This file's own opening claim — "what runs in the container is the code in
- * the working tree right now, not a snapshot of it" — was HALF TRUE, and the
- * half that was false is the expensive one. It holds for the package under
- * test, whose sources vite compiles on the spot. It does not hold across
- * packages: every `@hexdev/*` import resolves through the importee's
- * `exports`, which point at its `dist/`, so a cross-package render draws
- * whatever `tsc -b` last emitted — which, after a branch change, is another
- * branch's code.
- *
- * IT HAS ALREADY COST TWICE, both times as something that did not look like
- * staleness: five scenes blew up inside `generala-ui/dist/tray.js` (a file
- * nobody had edited), and three review runs hashed images of code that was
- * not in the tree. `.gitignore:70` keeps scene captures out of git, so
- * `git diff` cannot contradict a stale render either.
- *
- * `AGENTS.md` carried this as a rule — "run `tsc -b` first" — and a rule that
- * depends on everyone remembering is not a fix. This is the fix; the rule
- * says so now.
- *
- * `node <typescript>/bin/tsc` rather than `pnpm exec tsc` or
- * `node_modules/.bin/tsc`: on Windows those two are `.cmd`/`.ps1` shims that
- * Node's spawn cannot execute at all without a shell — the identical trap
- * `hostSpawnNeedsShell` above exists for. Handing the launcher script to the
- * Node already running needs no shim and no shell anywhere.
- *
- * Pure, so `visual-container.test.ts` can pin the argv without compiling
- * anything, same reason `resolveContainerRun` is.
- */
-export function workspaceBuildCommand(nodeExecPath) {
-  return { command: nodeExecPath, args: ["node_modules/typescript/bin/tsc", "-b"] };
-}
-
-/**
- * Runs it and answers ONE question: may the render proceed? A false here has
- * to stop the run — rendering against a `dist/` that failed to compile is the
- * very stale-photograph case this exists to close, only louder.
- *
- * Takes `spawnSync` as an argument so the test can prove the verdict for a
- * failing build without a failing build.
- */
-export function buildWorkspace(spawnSyncImpl, nodeExecPath, repoRoot) {
-  const { command, args } = workspaceBuildCommand(nodeExecPath);
-  const result = spawnSyncImpl(command, args, { cwd: repoRoot, stdio: "inherit" });
-  if (result.error !== undefined && result.error !== null) throw result.error;
-  return result.status === 0;
 }
 
 /**
