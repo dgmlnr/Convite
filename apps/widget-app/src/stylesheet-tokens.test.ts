@@ -35,7 +35,11 @@ import { THEME_TOKEN_NAMES } from "@hexdev/widget-protocol";
  * list of stylesheets is exactly the enumerating-config defect this repo has
  * hit repeatedly, and it is why the fence that existed before this one
  * (`stylesheet-source.test.ts`, a different rule about a different defect)
- * covered two files out of eleven.
+ * covered two files out of eleven. That neighbour has since been rewritten to
+ * discover its own subjects the same way, and the bill it had run up by then
+ * is worth keeping next to the argument: two covered out of TWENTY-ONE, with
+ * eighteen of them written after the list itself was — and one, `embed-shell.ts`,
+ * already unlisted on the day the list was typed.
  *
  * WHY IT LIVES IN `apps/widget-app`: this is the composition root that
  * assembles every game's UI, so it is the one place that may legitimately
