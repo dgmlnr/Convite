@@ -346,6 +346,17 @@ describe("the scan reaches what it is written to reach", () => {
       Object.keys(NO_HAND_WRITTEN_LITERAL).filter((file) => !CSS_INSTALLERS.includes(file)),
       "this module is exempted from the stylesheet fence but no longer installs CSS at all — drop the entry",
     ).toEqual([]);
+    // AND THE REASON IS READ, so that "leaving costs a written reason" is a
+    // rule rather than a decoration. Nothing else in this file touches these
+    // values; without this they could be emptied and no test would notice,
+    // which is the state a comment claiming a guarantee is in when nobody
+    // measures it.
+    expect(
+      Object.entries(NO_HAND_WRITTEN_LITERAL)
+        .filter(([, reason]) => reason.trim().length < 40)
+        .map(([file]) => file),
+      "an exemption with no reason is just a shorter list — say why this module holds no hand-written literal",
+    ).toEqual([]);
   });
 
   it.each(STYLESHEETS)("%s yields a stylesheet body the rules can actually read", (file) => {
