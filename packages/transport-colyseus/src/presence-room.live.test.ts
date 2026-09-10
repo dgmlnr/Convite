@@ -27,6 +27,7 @@ import { LIVE_TEST_TIMEOUT_MS, waitForView } from "./live-wait.test-support.js";
  */
 const fixtureModule: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
   id: "fixture-lobby",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.lobby", assetBase: "/fixture" },
   configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
   createMatch: (_config, seats: readonly SeatAssignment[]) => ({ seats }),
@@ -279,6 +280,7 @@ const HANDOFF_GAME_ID = "fixture-handoff" as GameId;
 
 const handoffModule: GameModule<HandoffState, HandoffAction, HandoffState, unknown> = {
   id: HANDOFF_GAME_ID,
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.handoff", assetBase: "/fixture" },
   configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
   createMatch: (_config, seats: readonly SeatAssignment[]) => {
@@ -397,6 +399,7 @@ describe("PresenceRoom — hand-off into a MatchRoom after pairing (the unschedu
  */
 const isolationModuleA: GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> = {
   id: "fixture-isolation-a",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.isolation.a", assetBase: "/fixture" },
   configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
   createMatch: (_config, seats: readonly SeatAssignment[]) => ({ seats }),
@@ -561,6 +564,7 @@ const GROUP_GAME_ID = "fixture-group" as GameId;
 
 const groupModule: GameModule<GroupState, GroupAction, GroupState, unknown> = {
   id: GROUP_GAME_ID,
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 4, displayNameKey: "fixture.group", assetBase: "/fixture" },
   configOptions: [{ key: "roundLength", labelKey: "fixture.roundLength", values: [15, 30], defaultValue: 15 }],
   createMatch: (_config, seats: readonly SeatAssignment[]) => {

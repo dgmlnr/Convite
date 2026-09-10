@@ -5,6 +5,7 @@ import { createGameModuleRegistry } from "./registry.js";
 function fixtureModule(id: string): GameModule<unknown, { readonly playerId: PlayerId }, unknown, unknown> {
   return {
     id,
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 2, displayNameKey: "fixture.name", assetBase: "/fixture" },
     configOptions: [],
     createMatch: () => ({}),

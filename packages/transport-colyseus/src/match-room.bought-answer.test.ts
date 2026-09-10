@@ -54,6 +54,7 @@ type Handed = (JsonValue | null | undefined)[];
 function buildModule(handed: Handed, askFirst: boolean): GameModule<BoughtState, BoughtAction, BoughtState, void> {
   return {
     id: "fixture-bought",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 2, displayNameKey: "fixture.bought", assetBase: "/fixture-bought" },
     configOptions: [],
     createMatch: (_config, seats: readonly SeatAssignment[]) => {

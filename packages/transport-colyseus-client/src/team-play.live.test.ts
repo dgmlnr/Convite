@@ -66,6 +66,17 @@ function isPartner(seatA: number, seatB: number): boolean {
 
 const fixtureModule: GameModule<SignalFixtureState, SignalFixtureAction, SignalFixtureView, unknown> = {
   id: GAME_ID,
+  // What this whole file is about, now said in the module's own words: a
+  // signal belongs to its sender's TEAM. Inert here — `describeGameModule`
+  // never runs on a transport fixture — and written honestly anyway, because
+  // this is the file a new game copies when it needs per-team delivery.
+  hiddenState: {
+    kind: "hidden-per-seat",
+    secretsFor: (state, viewer) =>
+      state.seats.flatMap((otherId) =>
+        otherId === viewer || isPartner(seatOf(state, viewer), seatOf(state, otherId)) ? [] : [state.signals[otherId] ?? []],
+      ),
+  },
   metadata: { seatCount: 4, displayNameKey: "fixture.teamPlay", assetBase: "/fixture-team-play" },
   configOptions: [],
   createMatch: (_config, seats: readonly SeatAssignment[]) => ({

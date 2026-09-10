@@ -1,6 +1,8 @@
+import * as fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import { describeGameModule } from "@hexdev/platform-contract";
 import type { PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import { buildDeck } from "@hexdev/truco-engine";
 import type { Card, MatchConfig, MatchState } from "@hexdev/truco-engine";
 import { SYSTEM_ACTOR_ID, trucoModule } from "./index.js";
 import type { TrucoModuleAction } from "./index.js";
@@ -43,6 +45,45 @@ function terminalFixtureState(): MatchState {
  * (truco-engine's `getLegalTrucoActions`). */
 const legalAction: TrucoModuleAction = { type: "call-truco", playerId: playerBId, level: "truco" };
 
+
+/**
+ * THE STATES THE PLATFORM'S LEAK SCAN WALKS — a shuffled real deck and a
+ * bounded random walk of legal moves, which is exactly how
+ * `truco-engine/src/view.test.ts` has generated reachable states all along.
+ * What changes is who asserts on them: that file wrote its own property and
+ * its own scan, and the scan could not fail (`cardId` renders a card as
+ * `"12-oro"` while the view serializes `{"suit":"oro","rank":12}`). Here the
+ * generator stays and the assertion moves to `describeGameModule`, which reads
+ * the module's own `hiddenState` declaration.
+ *
+ * BUILT THROUGH THE MODULE'S PORT, never as a state literal — `createMatch`,
+ * the system's `start-hand`, then only actions `getLegalActions` offered. A
+ * state a test assembled can only read back what the test put in it.
+ *
+ * SEEDED. `fc.sample` rather than `fc.assert`: fast-check generates, the
+ * platform asserts, and a fixed seed keeps a red run reproducible instead of
+ * "it failed on somebody's machine once".
+ */
+const SAMPLE_SEED = 20260907;
+
+const walkedStates: readonly MatchState[] = fc.sample(
+  fc
+    .tuple(fc.shuffledSubarray([...buildDeck()], { minLength: 6, maxLength: 6 }), fc.array(fc.nat({ max: 9 }), { maxLength: 15 }))
+    .map(([cards, steps]) => {
+      const created = trucoModule.createMatch(config, seats);
+      const opened = trucoModule.applyAction(created, { type: "start-hand", playerId: SYSTEM_ACTOR_ID, deal: [cards.slice(0, 3), cards.slice(3, 6)] });
+      let state = opened.ok ? opened.state : created;
+      for (const step of steps) {
+        const legal = [...trucoModule.getLegalActions(state, playerAId), ...trucoModule.getLegalActions(state, playerBId)];
+        if (legal.length === 0) break;
+        const applied = trucoModule.applyAction(state, legal[step % legal.length]!);
+        if (applied.ok) state = applied.state;
+      }
+      return state;
+    }),
+  { numRuns: 50, seed: SAMPLE_SEED },
+);
+
 describeGameModule(
   trucoModule,
   {
@@ -53,6 +94,7 @@ describeGameModule(
     legalAction,
     terminalState: terminalFixtureState(),
     botTier: "easy",
+    hiddenStateSamples: walkedStates,
   },
   { describe, it, expect },
 );

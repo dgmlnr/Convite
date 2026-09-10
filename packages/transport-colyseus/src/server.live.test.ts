@@ -33,6 +33,7 @@ const SYSTEM_ACTOR = "system-actor" as PlayerId;
 
 const liveModule: GameModule<LiveState, LiveAction, LiveState, void> = {
   id: "fixture-live",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 2, displayNameKey: "fixture.live", assetBase: "/fixture" },
   configOptions: [],
   createMatch: (_config, seats: readonly SeatAssignment[]) => {

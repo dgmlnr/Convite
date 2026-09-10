@@ -35,6 +35,7 @@ function seatOf4(state: FixtureState4, playerId: PlayerId): 0 | 1 | 2 | 3 | -1 {
 
 const fixtureModule4: GameModule<FixtureState4, FixtureAction4, FixtureView4, void> = {
   id: "fixture-4seat",
+  hiddenState: { kind: "nothing-is-hidden" },
   metadata: { seatCount: 4, displayNameKey: "fixture4.name", assetBase: "/fixture4" },
   configOptions: [],
   createMatch: (_config, seats: readonly SeatAssignment[]) => {
@@ -148,6 +149,7 @@ describe("MatchRoom + bot-fill generalized to N seats (2v2 'play vs bots', obs 2
     type SignalFixtureAction = { readonly type: "advance" | "signal"; readonly playerId: PlayerId };
     const fixtureModuleWithSignal: GameModule<SignalFixtureState, SignalFixtureAction, unknown, void> = {
       id: "fixture-4seat-signal",
+      hiddenState: { kind: "nothing-is-hidden" },
       metadata: { seatCount: 4, displayNameKey: "fixture4signal.name", assetBase: "/fixture4signal" },
       configOptions: [],
       createMatch: () => ({ turnSeat: 1 }), // seat 1's real turn from the start — seats 3 and 2 (earlier in bot-fill insertion order) can only "signal"

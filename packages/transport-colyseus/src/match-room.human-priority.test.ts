@@ -74,6 +74,7 @@ function seatOf(state: PriorityState, playerId: PlayerId): number {
 function buildModule(seat3AlsoHasItsOwnMove: boolean, answeringSideCanAlsoEscalate = false, onlyThePartnerCanEscalate = false): GameModule<PriorityState, PriorityAction, PriorityState, void> {
   return {
     id: "fixture-priority",
+    hiddenState: { kind: "nothing-is-hidden" },
     metadata: { seatCount: 4, displayNameKey: "fixture.priority", assetBase: "/fixture-priority" },
     configOptions: [],
     createMatch: (_config, seats: readonly SeatAssignment[]) => {

@@ -1,5 +1,6 @@
 import type { CatalogSectionId, GameFamilyId, GameId, PlayerId } from "./ids.js";
 import type { JsonValue } from "./json.js";
+import type { HiddenState } from "./hidden-state.js";
 
 /** What a lobby/catalog UI needs to present a game. No team concept, no
  * point target: those are truco specifics that live inside `configOptions`
@@ -138,6 +139,26 @@ export interface GameModule<TState, TAction extends { readonly playerId: PlayerI
   applyAction(state: TState, action: TAction): ApplyResult<TState>;
   getLegalActions(state: TState, playerId: PlayerId): readonly TAction[];
   getViewFor(state: TState, playerId: PlayerId): TView;
+  /**
+   * WHAT `getViewFor` IS NOT ALLOWED TO HAND OUT, in this game's own terms.
+   *
+   * REQUIRED, AND THAT IS THE WHOLE POINT. The guarantee "a view never leaks
+   * another seat's hidden state" used to be a convention each game wrote by
+   * hand — `truco-engine`, `escoba-engine` and `generala-engine` each have
+   * their own redaction tests, and a module that wrote none passed conformance
+   * anyway. A member nobody can forget beats a habit somebody has to
+   * remember, so this is not optional and a game that does not declare it does
+   * not compile. `createBot` is optional right above for a reason that does
+   * not apply here: a one-seat game genuinely has no opponent, but EVERY game
+   * either has a secret or does not, and both answers are sayable.
+   *
+   * SAYING "NOTHING" COSTS SOMETHING TOO. `{ kind: "nothing-is-hidden" }` is
+   * not the cheap way out: `describeGameModule` then asserts that every seat's
+   * view carries the same information, which a redacting game fails on its
+   * first dealt state. See `hidden-state.ts` for what each arm proves and
+   * what it deliberately does not.
+   */
+  readonly hiddenState: HiddenState<TState>;
   getOutcome(state: TState): MatchOutcome | null;
   serialize(state: TState): JsonValue;
   deserialize(json: JsonValue): TState;
