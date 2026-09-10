@@ -81,11 +81,42 @@ export interface Bid {
  * `contenders` list during `showdown`) while a union arm makes that state
  * unconstructible.
  */
+/**
+ * `showdown`'s five fields, not the four `sdd/mentiroso/design`'s own
+ * Interfaces section lists (work unit B4/task 2.4 — a documented deviation,
+ * not a silent one).
+ *
+ * `winnerSeat` is the fifth: "the bidder wins" (`matched >= bid.quantity`,
+ * mentiroso-rules) tells you WHO WON, but not which SEAT that is, because
+ * `bidding` deliberately never stores which seat placed `bid` — the same
+ * no-stored-derivable-field convention this file already argues for
+ * `Player.dice.length === 0`. `doubterSeat` alone recovers the bidder's seat
+ * only while `state.players`' elimination pattern is UNCHANGED from the
+ * moment the bid was placed (via `seating.ts`'s own `previousActiveSeat`,
+ * work unit B4) — and `applyDoubt` mutates exactly that pattern one line
+ * later, by surrendering the loser's die. Re-deriving the bidder's seat AFTER
+ * that mutation is unsound whenever the loser is the doubter and the
+ * surrendered die was their last one: `previousActiveSeat`'s own codomain is
+ * the ACTIVE seat set, and an eliminated doubter has just left it, so the
+ * seat the bidder needs to reopen from is no longer reachable by that walk.
+ * Storing `winnerSeat` directly — the exact fact "showdown.ts" (work unit
+ * 2.4)'s own `resolveShowdown` needs — is what AGENTS.md calls measuring
+ * instead of assuming: the four-field shape was a comment's promise
+ * ("all four fields populate atomically", `apply.ts`'s own prior docblock),
+ * and a promise is a hypothesis until something exercises it.
+ */
 export type Phase =
   | { readonly kind: "opening-draw"; readonly contenders: readonly number[]; readonly lastFaces: readonly DieFace[] }
   | { readonly kind: "awaiting-roll"; readonly openerSeat: number }
   | { readonly kind: "bidding"; readonly turnSeat: number; readonly bid: Bid | null }
-  | { readonly kind: "showdown"; readonly bid: Bid; readonly doubterSeat: number; readonly matched: number; readonly loserSeat: number };
+  | {
+      readonly kind: "showdown";
+      readonly bid: Bid;
+      readonly doubterSeat: number;
+      readonly matched: number;
+      readonly loserSeat: number;
+      readonly winnerSeat: number;
+    };
 
 /**
  * A whole match. `players` is index-aligned with `Player.seat` exactly like

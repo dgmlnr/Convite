@@ -17,14 +17,9 @@ import type { ApplyResult } from "./violation.js";
  * despues adoptar"). "doubt" is a THIRD action `legal-actions.ts` already
  * offers (work unit B2), and this file deliberately does not implement it:
  * transitioning "bidding" into "showdown" needs the exact-face tally design
- * assigns to `showdown.ts` (work unit 2.4, not yet built) — `Phase`'s own
- * "showdown" arm has no partial shape to transition into, only a
- * fully-populated one (`bid`/`doubterSeat`/`matched`/`loserSeat` all at
- * once), so wiring "doubt" one field short of that would either fabricate a
- * tally this unit was never assigned to compute, or ship the half-guard
- * `AGENTS.md`'s own "Entrega" section already names as worse than no PR at
- * all ("nunca de una forma que embarque una guarda a medias"). Work unit 2.4
- * adopts this file by adding the "doubt" reducer once its own tally exists.
+ * assigns to `showdown.ts` — work unit 2.4's own `applyDoubt`, now built in
+ * that file rather than here, keeping the "one reducer, one job" split this
+ * docblock already argues for `applyOpeningDrawRoll`/`applyRaise` themselves.
  *
  * Neither reducer receives `rng`, and neither can materialize a roll. Every
  * random draw is charged ONE layer up, in `mentiroso-module` (work unit C1,
