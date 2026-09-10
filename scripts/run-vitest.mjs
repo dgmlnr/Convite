@@ -59,6 +59,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { constants } from "node:os";
 
 import { exitCodeFor, resolveRunner } from "./vitest-runner.mjs";
+import { buildWorkspace } from "./workspace-build.mjs";
 
 /** Long enough that a slow machine is never mistaken for a broken one, short
  * enough that a hung `Xvfb` cannot hold the suite hostage. */
@@ -103,6 +104,30 @@ function findVirtualDisplay() {
   // browser window back on someone's screen for no reason.
   if (fast.ok || !fast.answered) return fast;
   return probeVirtualDisplay(["-a"]);
+}
+
+/*
+ * THE BUILD, BEFORE ANYTHING RESOLVES A CROSS-PACKAGE IMPORT.
+ *
+ * FIRST, ahead of the display probe: a tree that does not compile has nothing
+ * to show on any screen, virtual or otherwise, and the compiler's error is the
+ * one worth reading.
+ *
+ * Unlike the probe below, a failure here MUST stop the run, and the asymmetry
+ * is the point. A missing virtual display is environmental and says nothing
+ * about the code, so the suite goes on with a visible window. A failed
+ * `tsc -b` is about the code, and every cross-package import would otherwise
+ * resolve to the last `dist/` that DID compile — which is how a mutated engine
+ * reported 34 passing tests. See `workspace-build.mjs` for that measurement.
+ *
+ * `pnpm test` already runs `tsc -b` in its own script, so this is its second
+ * call. That costs ~4s on an already-built tree and is deliberately paid: the
+ * runs that need this most are the scoped ones a mutation ladder fires, and
+ * those never go through `pnpm test` at all.
+ */
+if (!buildWorkspace(spawnSync, process.execPath, process.cwd())) {
+  console.error("run-vitest: `tsc -b` failed, so every cross-package import would still resolve to the last dist/ that compiled. Nothing was run.");
+  process.exit(1);
 }
 
 const display = findVirtualDisplay();

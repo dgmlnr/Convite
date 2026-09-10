@@ -15,7 +15,8 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 
-import { buildWorkspace, hostSpawnNeedsShell, writesBaseline } from "./visual-container.mjs";
+import { hostSpawnNeedsShell, writesBaseline } from "./visual-container.mjs";
+import { buildWorkspace } from "./workspace-build.mjs";
 
 /* c8 ignore start — the spawn, deliberately thin; `writesBaseline` is what is tested. */
 const args = process.argv.slice(2);

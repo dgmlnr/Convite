@@ -17,6 +17,21 @@ test**. 303 no pueden reaccionar: no importan ese código. Correr el paquete
 afectado baja esa corrida de ~36 segundos a dos o tres, y una escalera de 30
 mutaciones de 18 minutos a menos de dos.
 
+**Y la primera fila decía `pnpm vitest run <paquete>`, que esquiva el
+envoltorio y NO reconstruye `dist/`.** Los imports entre paquetes resuelven
+desde ahí, así que mutar un motor y correr los tests de su módulo medía código
+que no estaba en el árbol. Demostrado, no argumentado: con `mayWrite` mutado a
+`return true` en `generala-engine`, los tests de `generala-module` dieron
+**34 pasados, exit 0**. Un `tsc -b` después, la misma mutación y el mismo
+comando dieron dos archivos en rojo y exit 1.
+
+**Un control negativo que no puede ponerse rojo no es un control**, y éste no
+podía por un motivo que no tenía nada que ver con la aserción. Eso pone en duda
+todo control negativo hecho acá sin `tsc -b` de por medio. Ahora la
+reconstrucción vive adentro de `run-vitest.mjs` (`workspace-build.mjs`), como
+ya vivía en los scripts de render — y `pnpm test <paquete>` acota igual de bien
+que el comando viejo.
+
 **Esta tabla NO es la fuente de verdad. La fuente es el workflow, y se lee:**
 
 ```
@@ -38,7 +53,7 @@ dentro.
 
 | Chequeo | Cuándo corre |
 | --- | --- |
-| `pnpm vitest run <paquete>` | en cada mutación y en cada ciclo rojo/verde |
+| `pnpm test <paquete>` | en cada mutación y en cada ciclo rojo/verde — acota Y reconstruye |
 | `pnpm test` (suite entera) | **una vez por PR**, antes de commitear |
 | `pnpm test:e2e` (~5 min) | **una vez por cadena, en la punta** — no por eslabón |
 | `pnpm test:visual` | **bloquea el merge** (job `visual baselines`) si el diff puede mover un render |
