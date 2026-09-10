@@ -106,7 +106,7 @@ describe("getLegalActions — only the bidding phase offers player actions", () 
     const phases: readonly Phase[] = [
       { kind: "opening-draw", contenders: [0, 1], lastFaces: [] },
       { kind: "awaiting-roll", openerSeat: 0 },
-      { kind: "showdown", bid: { quantity: 2, face: 6 }, doubterSeat: 1, matched: 2, loserSeat: 0 },
+      { kind: "showdown", bid: { quantity: 2, face: 6 }, doubterSeat: 1, matched: 2, loserSeat: 0, winnerSeat: 1 },
     ];
     for (const phase of phases) {
       const state: MatchState = { players, phase };

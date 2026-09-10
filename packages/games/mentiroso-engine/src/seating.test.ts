@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DieFace, Player, PlayerId } from "./state.js";
-import { nextActiveSeat } from "./seating.js";
+import { nextActiveSeat, previousActiveSeat } from "./seating.js";
 
 /**
  * A seat holding `diceCount` dice. The face VALUE never matters here — only
@@ -82,5 +82,79 @@ describe("nextActiveSeat (design D1)", () => {
     // (seat 0, alive) instead, returning 2 where the correct answer is 1.
     const shuffled = [seatOf(3, 1), seatOf(2, 0), seatOf(0, 3), seatOf(1, 2)];
     expect(nextActiveSeat(shuffled, 0)).toBe(1);
+  });
+});
+
+/**
+ * `previousActiveSeat` (SDD `mentiroso`, work unit B4/task 2.4): the mirror
+ * walk `showdown.ts`'s own `applyDoubt` needs to attribute the current bid to
+ * a SEAT. `Phase.bidding` deliberately carries only `turnSeat` (whoever acts
+ * NEXT) and `bid` — never the seat that PLACED that bid — the same
+ * no-stored-derivable-field convention this package's own `ceilingFor` and
+ * `Player.dice.length === 0` already follow. The bidder's seat is therefore
+ * the unique active seat whose `nextActiveSeat` lands on `turnSeat`, and this
+ * function derives it directly rather than re-deriving that search inline in
+ * `showdown.ts` a second time.
+ *
+ * Same fixture discipline as `nextActiveSeat` above (AGENTS.md: "fixtures
+ * donde las lecturas discrepen") — every case below is built so a naive
+ * `(fromSeat - 1 + seatCount) % seatCount` and the true previous ACTIVE seat
+ * disagree.
+ */
+describe("previousActiveSeat (design D1, work unit B4)", () => {
+  it("THE FENCE: skips a single eliminated seat between fromSeat and the true previous active seat", () => {
+    // seat 2 is eliminated. A naive `(3 - 1) % 4` reads 2 — wrong.
+    const players = [seatOf(0, 3), seatOf(1, 1), seatOf(2, 0), seatOf(3, 1)];
+    const naivePreviousSeat = (3 - 1 + players.length) % players.length;
+    expect(naivePreviousSeat).toBe(2); // the naive reading, proven wrong below
+    expect(previousActiveSeat(players, 3)).toBe(1);
+  });
+
+  it("wraps past seat 0 when seat 0 is eliminated: from seat 1, the naive reading lands on 0 and is wrong", () => {
+    const players = [seatOf(0, 0), seatOf(1, 1), seatOf(2, 1), seatOf(3, 2)];
+    const naivePreviousSeat = (1 - 1 + players.length) % players.length;
+    expect(naivePreviousSeat).toBe(0); // the naive reading — seat 0 is eliminated
+    expect(previousActiveSeat(players, 1)).toBe(3);
+  });
+
+  it("fromSeat itself eliminated: still walks backward correctly, skipping itself and the seat before it too", () => {
+    const players = [seatOf(0, 0), seatOf(1, 0), seatOf(2, 3), seatOf(3, 1)];
+    expect(previousActiveSeat(players, 1)).toBe(3);
+  });
+
+  it("returns the sole live seat when invoked from any OTHER seat", () => {
+    const players = [seatOf(0, 0), seatOf(1, 0), seatOf(2, 5), seatOf(3, 0)];
+    expect(previousActiveSeat(players, 0)).toBe(2);
+    expect(previousActiveSeat(players, 1)).toBe(2);
+    expect(previousActiveSeat(players, 3)).toBe(2);
+  });
+
+  it("returns the sole live seat when invoked from ITSELF too — closed by the loop bound, not a separate check", () => {
+    const players = [seatOf(0, 0), seatOf(1, 0), seatOf(2, 5), seatOf(3, 0)];
+    expect(previousActiveSeat(players, 2)).toBe(2);
+  });
+
+  it("throws naming the invariant when every seat holds zero dice", () => {
+    const players = [seatOf(0, 0), seatOf(1, 0), seatOf(2, 0)];
+    expect(() => previousActiveSeat(players, 0)).toThrow(/no seat holds any dice/);
+  });
+
+  it("looks players up by their `.seat` field, never by array index — the array need not be seat-ordered", () => {
+    // Mirrors `nextActiveSeat`'s own trap above, reversed: at array position 1
+    // sits seat 2 (dead); the REAL seat 1 sits at position 3 (alive). An
+    // index-based read from seat 2 backward would see position 1 as "dead"
+    // and skip past it to position 0 (seat 3, alive) instead of the correct
+    // seat 1.
+    const shuffled = [seatOf(3, 1), seatOf(2, 0), seatOf(0, 3), seatOf(1, 2)];
+    expect(previousActiveSeat(shuffled, 2)).toBe(1);
+  });
+
+  it("is the true inverse of nextActiveSeat over every active seat, at a table with two eliminated seats", () => {
+    const players = [seatOf(0, 3), seatOf(1, 0), seatOf(2, 2), seatOf(3, 0), seatOf(4, 1), seatOf(5, 4)];
+    for (const player of players) {
+      if (player.dice.length === 0) continue;
+      const forward = nextActiveSeat(players, player.seat);
+      expect(previousActiveSeat(players, forward)).toBe(player.seat);
+    }
   });
 });

@@ -45,3 +45,43 @@ export function nextActiveSeat(players: readonly Player[], fromSeat: number): nu
     `nextActiveSeat: no seat holds any dice among ${String(seatCount)} seats — every seat is eliminated, which must never happen during normal play`,
   );
 }
+
+/**
+ * The mirror walk of `nextActiveSeat` above (SDD `mentiroso`, work unit
+ * B4/task 2.4): the active seat whose NEXT active seat is `fromSeat`.
+ *
+ * `showdown.ts`'s own `applyDoubt` needs this to attribute the current bid to
+ * a SEAT: `Phase.bidding` deliberately carries only `turnSeat` (whoever acts
+ * next) and `bid`, never the seat that PLACED that bid — the same
+ * no-stored-derivable-field convention this package already follows for
+ * `Player.dice.length === 0` (elimination) and `bids.ts`'s own `ceilingFor`
+ * (the moving ceiling). Since `nextActiveSeat` is a bijection over the set of
+ * currently active seats (a cyclic rotation of that set, never a partial
+ * map), the bidder's seat is the UNIQUE active seat this walk lands on.
+ *
+ * Same bounded straight-line `for` as `nextActiveSeat`, walking backward
+ * instead of forward — `step` runs from 1 through `seatCount` INCLUSIVE for
+ * the identical reason: the walk structurally cannot run away, and the last
+ * step closes the "only one seat left" case by the loop bound itself.
+ *
+ * @param players every seat at the table, in ANY order — looked up by
+ *   `.seat`, never by array index, identically to `nextActiveSeat`.
+ * @param fromSeat the seat whose previous ACTIVE seat is wanted.
+ * @returns the seat number of the previous seat still holding at least one
+ *   die. Returns `fromSeat` itself when it is the only seat left holding
+ *   dice.
+ * @throws if no seat at the table holds any dice — the identical invariant
+ *   `nextActiveSeat` guards, named explicitly here rather than looping
+ *   forever or returning an arbitrary seat.
+ */
+export function previousActiveSeat(players: readonly Player[], fromSeat: number): number {
+  const seatCount = players.length;
+  for (let step = 1; step <= seatCount; step += 1) {
+    const candidateSeat = ((fromSeat - step) % seatCount + seatCount) % seatCount;
+    const candidate = players.find((player) => player.seat === candidateSeat)!;
+    if (candidate.dice.length > 0) return candidateSeat;
+  }
+  throw new Error(
+    `previousActiveSeat: no seat holds any dice among ${String(seatCount)} seats — every seat is eliminated, which must never happen during normal play`,
+  );
+}

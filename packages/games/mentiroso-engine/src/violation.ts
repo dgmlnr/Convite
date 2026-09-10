@@ -21,7 +21,14 @@ import type { MatchState } from "./state.js";
  * on it without reading English out of `message`.
  */
 export interface RuleViolation {
-  readonly code: "not-opening-draw" | "wrong-face-count" | "malformed-face" | "not-bidding" | "illegal-raise";
+  readonly code:
+    | "not-opening-draw"
+    | "wrong-face-count"
+    | "malformed-face"
+    | "not-bidding"
+    | "illegal-raise"
+    | "illegal-doubt"
+    | "not-showdown";
   readonly message: string;
 }
 
