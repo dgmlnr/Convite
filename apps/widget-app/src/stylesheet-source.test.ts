@@ -152,7 +152,14 @@ const NO_HAND_WRITTEN_LITERAL: Readonly<Record<string, string>> = {
     "its CSS is generated, not authored: `themeTokensToCss()` builds the whole `<style>` body out of `DEFAULT_THEME_TOKENS` in widget-protocol, so there is no template literal here and nothing a backtick could end early.",
 };
 
-const CSS_INSTALLERS = productionSources().filter((file) => installsCss(stripComments(sourceOf(file))));
+/** The discovery predicate itself, named so the test below can hold THIS and
+ * not a re-typed copy of it. A first version asserted `installsCss(
+ * stripComments(prose))` directly and stayed green with `stripComments`
+ * deleted from the line underneath — a fence measuring the mechanism next to
+ * the one it names. */
+const isStylesheetModule = (source: string): boolean => installsCss(stripComments(source));
+
+const CSS_INSTALLERS = productionSources().filter((file) => isStylesheetModule(sourceOf(file)));
 const STYLESHEETS = CSS_INSTALLERS.filter((file) => !(file in NO_HAND_WRITTEN_LITERAL));
 
 /**
@@ -164,6 +171,14 @@ const STYLESHEETS = CSS_INSTALLERS.filter((file) => !(file in NO_HAND_WRITTEN_LI
  * threatens this one — a predicate that still matches the two oldest sheets
  * and quietly stops matching the nineteen newer ones is exactly the shape of
  * the bug being fixed here, and it is not zero.
+ *
+ * ITS MARGIN OVER THE NAMED ANCHORS BELOW IS MEASURED, not assumed, because
+ * three of the four guards here fire together on a predicate that matches
+ * NOTHING and the temptation is to call this one redundant. It is not: a
+ * predicate narrowed to stop seeing one whole game — escoba's seven sheets,
+ * none of which any anchor names — leaves 87 tests green and fails HERE
+ * ALONE. Whole-family blindness is the realistic way a walk decays, and this
+ * is the only line that sees it.
  *
  * GREATER-OR-EQUAL, never equal: a new stylesheet must not have to touch this
  * file, which is the entire reason the list was deleted. A DELETED stylesheet
@@ -301,6 +316,25 @@ describe("the scan reaches what it is written to reach", () => {
     expect(STYLESHEETS).toContain("packages/widget-frontdoor/src/embed-shell.ts");
     expect(STYLESHEETS).toContain("apps/widget-app/src/chrome-styles.ts");
     expect(STYLESHEETS).toContain("packages/games/truco-ui/src/table-styles.ts");
+  });
+
+  it("does not mistake prose about a <style> tag for a stylesheet", () => {
+    // MEASURED AS DOING NOTHING TODAY, AND KEPT WITH ITS OWN TEST rather than
+    // deleted, which is the honest half of "delete a clause and see what
+    // breaks": dropping `stripComments` from the discovery filter above
+    // leaves every test in this file green, because every module that writes
+    // `<style>` in a docblock today happens to be a real stylesheet anyway.
+    // It is one module away from mattering — fourteen of these sheets carry
+    // that exact sentence, and the day a NON-stylesheet neighbour quotes one
+    // it would join STYLESHEETS, hold no literal, and red. A FALSE red, which
+    // this repo has already named as the failure mode that gets a fence
+    // deleted instead of fixed.
+    const prose = "/** Injects it once — so a second board never duplicates the `<style>` tag. */\nexport function attach(): void {}";
+    expect(installsCss(prose), "fence setup: this prose must look like an installer BEFORE stripping, or the case is not the one").toBe(true);
+    expect(isStylesheetModule(prose)).toBe(false);
+    // …and stripping does not blind it to a real installer sitting next to
+    // the prose, which is the other half and the one that would matter more.
+    expect(isStylesheetModule(`${prose}\nconst element = doc.createElement("style");`)).toBe(true);
   });
 
   it("keeps no exemption for a module that no longer installs CSS", () => {
