@@ -14,5 +14,7 @@ export type {
   RuleViolation,
   SeatAssignment,
 } from "./contract.js";
+export type { HiddenState } from "./hidden-state.js";
+export { findLeakedSecrets, seatViewFingerprint } from "./hidden-state.js";
 export type { ConformanceExpectation, ConformanceHarness, GameModuleFixtures } from "./conformance.js";
 export { describeGameModule } from "./conformance.js";
