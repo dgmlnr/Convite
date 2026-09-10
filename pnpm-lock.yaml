@@ -353,6 +353,8 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0))(vitest@4.1.11(@types/node@26.1.2)(@vitest/browser-playwright@4.1.10(playwright@1.62.1)(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0))(vitest@4.1.11))(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0)))
 
+  packages/games/mentiroso-engine: {}
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':
