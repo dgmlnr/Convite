@@ -11,6 +11,7 @@
     { "path": "packages/games/escoba-engine" },
     { "path": "packages/games/mahjong-solitaire-engine" },
     { "path": "packages/games/generala-engine" },
+    { "path": "packages/games/mentiroso-engine" },
     { "path": "packages/games/truco-bot" },
     { "path": "packages/games/truco-ui" },
     { "path": "packages/games/escoba-ui" },
