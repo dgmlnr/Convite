@@ -13,6 +13,7 @@
     { "path": "packages/games/generala-engine" },
     { "path": "packages/games/mentiroso-engine" },
     { "path": "packages/games/mentiroso-module" },
+    { "path": "packages/games/mentiroso-bot" },
     { "path": "packages/games/truco-bot" },
     { "path": "packages/games/truco-ui" },
     { "path": "packages/games/escoba-ui" },
