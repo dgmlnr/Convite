@@ -224,15 +224,69 @@ describe("the requester fails closed", () => {
     expect(requestMentirosoSystemAction(bidding, forbidden("bidding must draw nothing from the system"))).toBeNull();
   });
 
-  it("declines during showdown without drawing anything — it resolves deterministically, with no entropy", () => {
+  it("declines once the match already has a winner, even while still sitting in showdown", () => {
+    // A showdown state whose own die surrender already ended the match (this
+    // is the 2-seat structural fact work unit C3 declared: eliminating the
+    // sole rival IS the match ending). `getOutcome` is checked before the
+    // phase, so this must decline like every other phase does once the match
+    // is over — proven the same way, with a forbidden rng.
+    const showdownButMatchOver: MatchState = {
+      players: [
+        { id: SEAT_0, seat: 0, dice: [4, 4] },
+        { id: SEAT_1, seat: 1, dice: [] },
+      ],
+      phase: { kind: "showdown", bid: { quantity: 2, face: 4 }, doubterSeat: 1, matched: 2, loserSeat: 1, winnerSeat: 0 },
+    };
+    expect(getOutcome(showdownButMatchOver)).not.toBeNull();
+
+    expect(requestMentirosoSystemAction(showdownButMatchOver, forbidden("a finished match must draw nothing"))).toBeNull();
+  });
+});
+
+describe("the showdown resolution shape (task 3.5 — the blocking gap)", () => {
+  /**
+   * `showdown` used to fall through to `return null` here, the same as
+   * `bidding` — which was correct reasoning for `bidding` (a seated player has
+   * the move) but WRONG for `showdown`: nothing else in this whole chain ever
+   * adopts `mentiroso-engine`'s own `resolveShowdown` (`showdown.ts`, work
+   * unit B4), so a `null` answer here left a live match stuck in `showdown`
+   * forever — task 3.5's own discovered, declared gap.
+   *
+   * THE FIX IS HERE, NOT IN `applyAction`, per design D6: the showdown must
+   * stay ON SCREEN for `systemActionPauseMs` before resolving — that pause is
+   * `MatchRoom.runAdvanceOnce`'s own pause BEFORE it applies whatever system
+   * action it just requested, so the resolution has to arrive as its own,
+   * separate system action, requested and applied on a LATER driving-loop
+   * tick, never chained inside the SAME call that applied the doubt.
+   */
+  it("answers the showdown phase with a resolve action, drawing ZERO entropy — the outcome was already decided by applyDoubt", () => {
     const showdown: MatchState = {
       players: [
         { id: SEAT_0, seat: 0, dice: [4, 4] },
         { id: SEAT_1, seat: 1, dice: [2] },
+        { id: SEAT_2, seat: 2, dice: [3, 3] },
       ],
       phase: { kind: "showdown", bid: { quantity: 2, face: 4 }, doubterSeat: 1, matched: 2, loserSeat: 1, winnerSeat: 0 },
     };
 
-    expect(requestMentirosoSystemAction(showdown, forbidden("showdown must draw nothing from the system"))).toBeNull();
+    // `forbidden`, not `counting`: the claim is stronger than "zero calls
+    // measured after the fact" — the requester must never reach for `rng` at
+    // all for this phase, the same discipline this file's own `forbidden`
+    // helper already proves for the two match-over/bidding declines above.
+    const action = requestMentirosoSystemAction(showdown, forbidden("showdown resolution needs no entropy — see roll.ts's own docblock"));
+
+    expect(action).toEqual({ type: "showdown-resolve", playerId: SYSTEM_ACTOR_ID });
+  });
+
+  it("ships only type and playerId — no extra field under any name", () => {
+    const showdown: MatchState = {
+      players: [
+        { id: SEAT_0, seat: 0, dice: [5] },
+        { id: SEAT_1, seat: 1, dice: [1, 1] },
+      ],
+      phase: { kind: "showdown", bid: { quantity: 1, face: 5 }, doubterSeat: 1, matched: 1, loserSeat: 1, winnerSeat: 0 },
+    };
+    const action = requestMentirosoSystemAction(showdown, forbidden("showdown resolution needs no entropy"));
+    expect(Object.keys(action!).sort()).toEqual(["playerId", "type"]);
   });
 });

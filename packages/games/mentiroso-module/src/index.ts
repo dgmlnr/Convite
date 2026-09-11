@@ -1,5 +1,5 @@
 import type { ApplyResult, BotStrategy, BotTier, GameModule, HiddenState, JsonValue, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
-import { applyDoubt, applyOpeningDrawRoll, applyRaise, applyRoundRoll, createMatch, getLegalActions, getOutcome, getViewFor, secretsFor } from "@hexdev/mentiroso-engine";
+import { applyDoubt, applyOpeningDrawRoll, applyRaise, applyRoundRoll, createMatch, getLegalActions, getOutcome, getViewFor, resolveShowdown, secretsFor } from "@hexdev/mentiroso-engine";
 import type { MatchState, MentirosoAction, PlayerView } from "@hexdev/mentiroso-engine";
 import { SYSTEM_ACTOR_ID, requestMentirosoSystemAction } from "./roll.js";
 import type { MentirosoSystemAction, OpeningDrawRollAction, RoundRollAction } from "./roll.js";
@@ -40,8 +40,8 @@ export const mentirosoHiddenState: HiddenState<MatchState> = {
 /**
  * Everything that can be applied to a mentiroso match (SDD `mentiroso`, work
  * unit C3/task 3.3): the engine's own seated-player actions (`raise`/`doubt`,
- * `legal-actions.ts`), plus the two system-action shapes `roll.ts` (work unit
- * C1) already materializes. Mirrors `TrucoModuleAction`/`GeneralaModuleAction`'s
+ * `legal-actions.ts`), plus the three system-action shapes `roll.ts` (work
+ * units C1 and 3.5) materializes. Mirrors `TrucoModuleAction`/`GeneralaModuleAction`'s
  * own split between "the engine's own actions" and "the action the engine
  * cannot own because it carries an actor and needs externally materialized
  * randomness".
@@ -57,41 +57,53 @@ export type MentirosoModuleAction = MentirosoAction | MentirosoSystemAction;
 const MATCH_OVER: ApplyResult<MatchState> = { ok: false, violation: { code: "match-over", message: "this match has already ended" } };
 
 /**
- * The module's reducer (work unit C3/task 3.3): `roll.ts`'s own docblock
- * (work unit C1) named this file as the one that "will interpret both
- * actions, and that is also where a forged `playerId !== SYSTEM_ACTOR_ID`
- * must be refused" — the exact incident `truco-module/src/deal.ts` records
- * for a different game, closed here on day one instead.
+ * The module's reducer (work unit C3/task 3.3, extended by task 3.5):
+ * `roll.ts`'s own docblock (work unit C1) named this file as the one that
+ * "will interpret both actions, and that is also where a forged
+ * `playerId !== SYSTEM_ACTOR_ID` must be refused" — the exact incident
+ * `truco-module/src/deal.ts` records for a different game, closed here on
+ * day one instead.
  *
  * WHOSE ACTION THIS IS, ASKED BEFORE ANYTHING ELSE — mirrors
  * `generala-module`/`truco-module`/`escoba-module`'s identical guard: a
- * seated player submitting either system-action shape under their own
- * honest id must be refused, because a module is a pure reducer anyone may
- * call and "only the system rolls the dice" is a rule of the GAME, not of
- * the wire.
+ * seated player submitting any of the three system-action shapes under
+ * their own honest id must be refused, because a module is a pure reducer
+ * anyone may call and "only the system rolls the dice" is a rule of the
+ * GAME, not of the wire.
  *
  * THE MATCH-OVER GUARD, on every branch, mirrors `generala-module`'s own:
- * none of the four engine reducers this delegates to check `getOutcome`
+ * none of the five engine reducers this delegates to check `getOutcome`
  * themselves — that is a MATCH fact, not a RULE fact — so this layer is
  * where a finished match stops accepting anything at all.
  *
- * "doubt" resolves into the `showdown` phase and STOPS there.
- * `resolveShowdown` (`mentiroso-engine`, work unit B4) is deliberately NOT
- * chained in automatically here: no task in `sdd/mentiroso/tasks` assigns
- * adopting it, and `roll.ts`'s own `requestMentirosoSystemAction` (work unit
- * C1, already shipped) returns `null` for the `showdown` phase — so nothing
- * in this chain yet drives that transition automatically once a real match
- * is running. That is a genuine gap for Stage F1 (composition root) or a new
- * task to close, flagged here and in this unit's own apply-progress entry
- * rather than silently decided.
+ * "doubt" still resolves into the `showdown` phase and STOPS there, in this
+ * SAME call — that has not changed. What task 3.5 adds is a THIRD system
+ * action, `"showdown-resolve"` (`roll.ts`, this same unit), requested by
+ * `requestMentirosoSystemAction` once the table sits in `showdown` with
+ * nobody able to act, and applied HERE, delegating straight to the engine's
+ * own `resolveShowdown` (`showdown.ts`, work unit B4) — the adopter that
+ * unit's own docblock always said was missing.
+ *
+ * THIS IS DELIBERATELY NOT THE SAME THING AS CHAINING `resolveShowdown`
+ * INSIDE THE "doubt" BRANCH ABOVE. Design D6: the showdown has to sit ON
+ * SCREEN for `systemActionPauseMs` before it resolves, and that pause lives
+ * in `MatchRoom.runAdvanceOnce`, applied BEFORE it applies whatever system
+ * action it just requested. A resolution folded into the SAME call that
+ * applied "doubt" would skip that pause entirely — the showdown would never
+ * exist as a state a client actually renders. Requesting and applying the
+ * resolution as its OWN, separate system action, on a LATER driving-loop
+ * tick, is what keeps the pause in front of it. See `roll.ts`'s own top
+ * docblock for the fuller argument.
  */
 export function applyAction(state: MatchState, action: MentirosoModuleAction): ApplyResult<MatchState> {
-  if (action.type === "opening-draw-roll" || action.type === "round-roll") {
+  if (action.type === "opening-draw-roll" || action.type === "round-roll" || action.type === "showdown-resolve") {
     if (action.playerId !== SYSTEM_ACTOR_ID) {
       return { ok: false, violation: { code: "not-a-system-actor", message: "only the system rolls the dice" } };
     }
     if (getOutcome(state) !== null) return MATCH_OVER;
-    return action.type === "opening-draw-roll" ? applyOpeningDrawRoll(state, action.faces) : applyRoundRoll(state, action.diceBySeat);
+    if (action.type === "opening-draw-roll") return applyOpeningDrawRoll(state, action.faces);
+    if (action.type === "round-roll") return applyRoundRoll(state, action.diceBySeat);
+    return resolveShowdown(state);
   }
 
   if (getOutcome(state) !== null) return MATCH_OVER;
