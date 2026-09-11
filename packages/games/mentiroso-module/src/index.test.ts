@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { describeGameModule, findLeakedSecrets } from "@hexdev/platform-contract";
-import type { ApplyResult, SeatAssignment } from "@hexdev/platform-contract";
-import { applyDoubt, applyRaise, createMatch, getLegalActions, getOutcome, getViewFor, secretsFor } from "@hexdev/mentiroso-engine";
-import type { MatchState, PlayerId } from "@hexdev/mentiroso-engine";
+import type { ApplyResult, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import { applyDoubt, applyRaise, createMatch, getLegalActions, getOutcome, getViewFor, resolveShowdown, secretsFor, totalDice } from "@hexdev/mentiroso-engine";
+import type { DieFace, MatchState, PlayerId } from "@hexdev/mentiroso-engine";
 import { SYSTEM_ACTOR_ID as ROLL_SYSTEM_ACTOR_ID, requestMentirosoSystemAction as rollRequestMentirosoSystemAction } from "./roll.js";
 import { SYSTEM_ACTOR_ID, applyAction, mentirosoHiddenState, mentirosoModule, requestMentirosoSystemAction } from "./index.js";
 import type { MentirosoModuleAction } from "./index.js";
@@ -409,6 +409,47 @@ describe("mentirosoModule.applyAction — actor gating and delegation (work unit
     });
   });
 
+  it("refuses a showdown-resolve authored by a seated player, not just an outsider (task 3.5)", () => {
+    const forged: MentirosoModuleAction = { type: "showdown-resolve", playerId: TWO_SEAT_P0 };
+    expect(applyAction(twoSeatShowdownState, forged)).toEqual({
+      ok: false,
+      violation: { code: "not-a-system-actor", message: expect.any(String) },
+    });
+  });
+
+  it("applies the system's own showdown-resolve, delegating to resolveShowdown and opening awaiting-roll with the winner as opener (task 3.5)", () => {
+    const resolveAction: MentirosoModuleAction = { type: "showdown-resolve", playerId: SYSTEM_ACTOR_ID };
+    const result = ok(applyAction(twoSeatShowdownState, resolveAction));
+    // twoSeatShowdownState's own showdown phase declares winnerSeat: 0 (seat
+    // 0's bid of (3, 6) was met exactly by the table's three 6es).
+    expect(result.phase).toEqual({ kind: "awaiting-roll", openerSeat: 0 });
+    // NOT chained inline (see roll.ts's own top docblock, design D6): this is
+    // the SAME transition `resolveShowdown` alone already produces — proving
+    // `applyAction` delegates rather than re-implements it, the identical
+    // discipline this file's own raise/doubt tests already apply above.
+    expect(applyAction(twoSeatShowdownState, resolveAction)).toEqual(resolveShowdown(twoSeatShowdownState));
+  });
+
+  it("refuses the system's own showdown-resolve once the match is already over (task 3.5)", () => {
+    // Forged directly (bypassing `requestMentirosoSystemAction`, which would
+    // never offer this for an already-finished match — its own outcome guard
+    // runs before the phase check): the SAME redundant safety net every
+    // other system action already carries in this function.
+    const showdownButMatchOver: MatchState = {
+      players: [
+        { id: TWO_SEAT_P0, seat: 0, dice: [] },
+        { id: TWO_SEAT_P1, seat: 1, dice: [6, 3] },
+      ],
+      phase: { kind: "showdown", bid: { quantity: 1, face: 6 }, doubterSeat: 0, matched: 1, loserSeat: 0, winnerSeat: 1 },
+    };
+    expect(getOutcome(showdownButMatchOver)).not.toBeNull();
+    const resolveAction: MentirosoModuleAction = { type: "showdown-resolve", playerId: SYSTEM_ACTOR_ID };
+    expect(applyAction(showdownButMatchOver, resolveAction)).toEqual({
+      ok: false,
+      violation: { code: "match-over", message: expect.any(String) },
+    });
+  });
+
   it("refuses a player's raise once the match is already over", () => {
     const action: MentirosoModuleAction = { type: "raise", playerId: TWO_SEAT_P1, bid: { quantity: 1, face: 1 } };
     expect(applyAction(twoSeatTerminalState, action)).toEqual({
@@ -474,5 +515,141 @@ describe("mentirosoModule.createBot — the day-one placeholder (see index.ts's 
   it("THE FENCE: throws rather than fabricate a move when offered no legal action at all", () => {
     const bot = mentirosoModule.createBot!("easy");
     expect(() => bot.chooseAction(getViewFor(twoSeatReachableState, TWO_SEAT_P1), [], 50)).toThrow(/no legal actions/);
+  });
+});
+
+describe("the full round trip through a doubt (SDD `mentiroso`, task 3.5 — the blocking gap this unit closes)", () => {
+  /**
+   * THE WALKTHROUGH THE GAP ITSELF DEMANDS. No assertion anywhere else in
+   * this file, or in `roll.test.ts`, could have caught the original gap:
+   * `applyDoubt` on its own is a correct reducer, and
+   * `requestMentirosoSystemAction` returning `null` for `showdown` was ALSO,
+   * in isolation, a correct-LOOKING guard — it mirrors the exact shape of
+   * the two other "nothing to draw here" branches (`bidding` still returns
+   * `null` today, correctly). Only DRIVING the state machine end to end —
+   * using the SAME two doors `MatchRoom.runAdvanceOnce` itself uses,
+   * `requestMentirosoSystemAction` then `applyAction`, and nothing else —
+   * exposes that nothing ever advanced a match sitting in `showdown`.
+   *
+   * THREE SEATS, DELIBERATELY, NOT TWO. Work unit C3's own registration
+   * (`mentirosoModule`, seat count 2) already declared the trap this test
+   * has to avoid: at exactly two seats, "the showdown resolved" and "the
+   * match ended" are the SAME state, because surrendering the sole rival's
+   * only die simultaneously ends the match. A walkthrough built on a
+   * two-seat table would not be able to tell "the resolution step ran" apart
+   * from "the match just happened to end" — the exact family of false-green
+   * this whole chain has already hit three times. A third seat, holding
+   * its own dice throughout, guarantees the match is still very much alive
+   * after the showdown resolves, so reaching the NEXT round's roll is only
+   * possible if the resolution step actually ran.
+   *
+   * This does not go through `mentirosoModule` itself (registered at
+   * seatCount 2 only — task 3.4 has not shipped a 3+ seat registration yet):
+   * it drives the standalone `requestMentirosoSystemAction` and `applyAction`
+   * functions directly over a 3-seat `MatchState`, exactly the shape
+   * `MatchRoom` itself is agnostic to (it only ever calls a module's own
+   * `applyAction`/`requestSystemAction`, never assumes a seat count).
+   */
+  const THREE_SEAT_P0 = "walkthrough-seat-0" as PlayerId;
+  const THREE_SEAT_P1 = "walkthrough-seat-1" as PlayerId;
+  const THREE_SEAT_P2 = "walkthrough-seat-2" as PlayerId;
+
+  const EPS = 1e-9;
+  /** Maps a WANTED face onto the rng value that produces it — the same
+   * `(face - 1) / 6 + eps` recipe `roll.test.ts` already documents, rebuilt
+   * locally rather than imported: each test file in this package owns its
+   * own fixtures (this package's `package.json` exposes no fixtures subpath
+   * to share one across files). */
+  function faceScript(faces: readonly DieFace[]): RandomSource {
+    let next = 0;
+    return () => {
+      const face = faces[next];
+      if (face === undefined) throw new Error(`walkthrough rng ran out after ${String(faces.length)} values`);
+      next += 1;
+      return (face - 1) / 6 + EPS;
+    };
+  }
+
+  /** An rng no correct call may reach for at all — proves the showdown
+   * resolution step spends zero entropy, the same `forbidden` discipline
+   * `roll.test.ts` already uses. */
+  function forbidden(reason: string): RandomSource {
+    return () => {
+      throw new Error(reason);
+    };
+  }
+
+  /** The exact two-call shape `MatchRoom.runAdvanceOnce` itself makes when a
+   * table sits still with nobody able to act: ask for a system action, then
+   * apply it. A `null` here means the table is stuck — thrown loudly rather
+   * than silently returning `state` unchanged, so a regression fails AT the
+   * step that stalled, not several assertions later. */
+  function driveOneSystemStep(state: MatchState, rng: RandomSource): MatchState {
+    const action = requestMentirosoSystemAction(state, rng);
+    if (action === null) throw new Error("the requester declined a state that should have produced a system action — the match is stuck");
+    const result = applyAction(state, action);
+    if (!result.ok) throw new Error(`the system's own action was refused: ${result.violation.code} — ${result.violation.message}`);
+    return result.state;
+  }
+
+  it("drives a created table through the opening draw, a bid, a doubt and the showdown, into the NEXT round's roll — with no direct engine call", () => {
+    let state: MatchState = createMatch([THREE_SEAT_P0, THREE_SEAT_P1, THREE_SEAT_P2]);
+    expect(state.phase.kind).toBe("opening-draw");
+    expect(totalDice(state)).toBe(15); // 3 seats x STARTING_DICE_PER_SEAT (5)
+
+    // THE OPENING DRAW — one distinct face per seat, so a single winner
+    // emerges on the very first draw. A re-entered tie is already its own
+    // fenced path in `roll.test.ts`/`apply.test.ts`; this walkthrough is
+    // about the FULL round trip, not the draw's own tie-breaking mechanism.
+    state = driveOneSystemStep(state, faceScript([3, 6, 2]));
+    expect(state.phase).toEqual({ kind: "awaiting-roll", openerSeat: 1 });
+
+    // THE FIRST ROUND'S ROLL — every seat's own fresh dice (5 values each,
+    // in seat order), through the SAME requester/applier pair the driving
+    // loop itself uses.
+    state = driveOneSystemStep(state, faceScript([2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2]));
+    expect(state.phase).toEqual({ kind: "bidding", turnSeat: 1, bid: null });
+
+    // A BID — the opener raises. Any legal raise does: this walkthrough
+    // fences the STATE MACHINE, not a specific tally.
+    const raise = getLegalActions(state, THREE_SEAT_P1).find((action) => action.type === "raise");
+    if (raise === undefined) throw new Error("expected at least one legal raise for the opening bid");
+    const afterRaise = applyAction(state, raise);
+    if (!afterRaise.ok) throw new Error(`the opening raise was refused: ${afterRaise.violation.code}`);
+    state = afterRaise.state;
+    const biddingPhase = state.phase;
+    if (biddingPhase.kind !== "bidding") throw new Error(`expected bidding to continue, got ${biddingPhase.kind}`);
+    const nextPlayerId = state.players.find((player) => player.seat === biddingPhase.turnSeat)!.id;
+
+    // A DOUBT — legal now that a bid exists.
+    const doubt = getLegalActions(state, nextPlayerId).find((action) => action.type === "doubt");
+    if (doubt === undefined) throw new Error("expected doubt to be legal once a bid exists");
+    const afterDoubt = applyAction(state, doubt);
+    if (!afterDoubt.ok) throw new Error(`the doubt was refused: ${afterDoubt.violation.code}`);
+    state = afterDoubt.state;
+    expect(state.phase.kind).toBe("showdown");
+
+    // THE FENCE AGAINST THE TRAP FAMILY (see this describe block's own top
+    // comment): the match is NOT over. A two-seat table would make this
+    // assertion vacuous; three seats is what makes it a real check.
+    expect(getOutcome(state)).toBeNull();
+    expect(totalDice(state)).toBe(14); // 15, minus the one die just surrendered
+
+    // THE FIX ITSELF, DRIVEN THROUGH THE REAL DOORS: before task 3.5, this
+    // next call returned `null` and the walkthrough could go no further —
+    // the exact stall the tasks artifact describes. `forbidden` proves the
+    // resolution spends zero entropy while it is at it.
+    state = driveOneSystemStep(state, forbidden("showdown resolution needs no entropy — see roll.ts's own docblock"));
+    expect(state.phase.kind).toBe("awaiting-roll"); // out of showdown — the table can move again
+    expect(getOutcome(state)).toBeNull(); // still not over: three seats, one die down
+
+    // THE NEXT ROUND'S ROLL — reaching this is the whole point of the task:
+    // "a match that reaches a doubt must reach the NEXT round's roll without
+    // human intervention." A `requestMentirosoSystemAction` still returning
+    // `null` for `showdown` would have left `state` stuck two steps back,
+    // and `driveOneSystemStep` above would already have thrown.
+    state = driveOneSystemStep(state, faceScript([1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 1, 2]));
+    expect(state.phase.kind).toBe("bidding");
+    expect(totalDice(state)).toBe(14); // a roll redistributes dice, it never spends them
   });
 });
