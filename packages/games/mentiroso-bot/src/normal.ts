@@ -33,6 +33,20 @@ import type { MentirosoTier, NonEmptyActions } from "./tier.js";
  * this file COULD read to cheat even if it wanted to — the same
  * "unrepresentable at the type level" guarantee `platform-contract`'s own
  * `BotStrategy` docblock states for every bot in this repo.
+ *
+ * `chooseModulatedMentirosoAction` BELOW IS THE SHARED CORE (work unit
+ * D3/task 4.3, design D7's own title: "not three algorithms — ONE
+ * evaluation and TWO layers of modulation"). It lives in this file because
+ * `normal` built it first, not because `normal` owns it: the ceiling gate,
+ * the phase guard, and `probabilityBidHolds` itself are the ONE evaluation
+ * every tier shares, and `modulateEstimate`/`selectRaise` are exactly the
+ * two hooks a tier supplies instead of a second copy of that machinery.
+ * `chooseMentirosoAction` is now a two-line caller of it (identity estimate,
+ * uniform raise); `easy.ts` is the other caller (noise, minimal-raise bias).
+ * This refactor changes no observable behavior of `chooseMentirosoAction` or
+ * `createNormalBot` — this file's own pre-existing, UNMODIFIED test suite is
+ * the approval test that proves it (strict TDD's own "approval testing"
+ * discipline for refactoring already-shipped code).
  */
 
 /**
@@ -54,7 +68,12 @@ function probabilityBidHolds(view: PlayerView, bid: Bid, p: number): number {
   return atLeast(bid.quantity - ownMatching, unseen, p);
 }
 
-function isRaise(action: MentirosoAction): action is Extract<MentirosoAction, { type: "raise" }> {
+/** Every raise action, narrowed once so `selectRaise` hooks (`normal`'s own
+ * `chooseUniformRaise` below, `easy.ts`'s minimal-raise bias) never have to
+ * re-derive this from a wider `MentirosoAction` union. */
+export type RaiseAction = Extract<MentirosoAction, { type: "raise" }>;
+
+function isRaise(action: MentirosoAction): action is RaiseAction {
   return action.type === "raise";
 }
 
@@ -63,23 +82,49 @@ function isDoubt(action: MentirosoAction): action is Extract<MentirosoAction, { 
 }
 
 /**
- * The decision itself, with `p` as an explicit argument (see
- * `probabilityBidHolds` above for why). `createNormalBot` below is the only
- * production caller, and it always hands in the real `DIE_FACE_PROBABILITY`.
+ * `normal`'s own raise choice, extracted so `easy.ts` can fall back to the
+ * SAME default once its own minimal-raise bias does not trigger, instead of
+ * a second "pick uniformly" implementation in a sibling file. Behavior is
+ * byte-identical to this file's pre-refactor inline version.
+ */
+export function chooseUniformRaise(raises: readonly RaiseAction[], rng: RandomSource): MentirosoAction {
+  const index = Math.floor(rng() * raises.length);
+  return raises[index] ?? raises[0];
+}
+
+/**
+ * The shared decision core every tier calls (see this file's own top
+ * docblock). `p` is explicit for the same reason `probabilityBidHolds` keeps
+ * it explicit one level down (task 4.1/4.2's own p=1/6-vs-1/3 decision-level
+ * fence). `modulateEstimate` reshapes the honest `P(bid holds)` BEFORE the
+ * coin flip (identity for `normal`, additive noise for `easy` — task 4.3);
+ * `selectRaise` picks among the legal raises once continuing (uniform for
+ * `normal`, biased toward the minimal one for `easy`).
  *
  * THE CEILING IS CHECKED FIRST, AHEAD OF ANY PROBABILITY (mentiroso-rules
  * R-CEILING): when no raise is legal, `doubt` is returned outright, without
- * ever consulting `rng` or `probabilityBidHolds` — the ceiling forces this
- * regardless of how likely the bid looks, which is exactly why this branch
- * is checked BEFORE the coin flip rather than folded into it.
+ * ever consulting `rng`, `probabilityBidHolds`, or `modulateEstimate` — the
+ * ceiling forces this regardless of how likely the bid looks or how any
+ * tier modulates that likelihood, which is exactly why this branch is
+ * checked BEFORE the coin flip rather than folded into it. THIS GATE IS
+ * SHARED, not duplicated per tier — a bug in it would otherwise have to be
+ * fixed in as many places as there are tiers.
  *
- * THE COIN FLIP: `rng() < P(bid holds)` means "the draw landed inside the
+ * THE COIN FLIP: `rng() < estimate` means "the draw landed inside the
  * region judged to make the bid true" -> continue (raise); otherwise ->
  * doubt. This is the probability-PROPORTIONAL choice research C5 describes:
  * a bid judged 90% likely true is doubted only on the unlucky 10% of draws,
- * never on a fixed 50% cutoff.
+ * never on a fixed 50% cutoff — whatever `modulateEstimate` reshaped "90%
+ * likely" into.
  */
-export function chooseMentirosoAction(view: PlayerView, legalActions: NonEmptyActions, p: number, rng: RandomSource): MentirosoAction {
+export function chooseModulatedMentirosoAction(
+  view: PlayerView,
+  legalActions: NonEmptyActions,
+  p: number,
+  rng: RandomSource,
+  modulateEstimate: (honestEstimate: number, rng: RandomSource) => number,
+  selectRaise: (raises: readonly RaiseAction[], rng: RandomSource) => MentirosoAction,
+): MentirosoAction {
   const raises = legalActions.filter(isRaise);
   const doubtAction = legalActions.find(isDoubt);
 
@@ -91,11 +136,20 @@ export function chooseMentirosoAction(view: PlayerView, legalActions: NonEmptyAc
     if (view.phase.kind !== "bidding" || view.phase.bid === null) {
       throw new Error("mentiroso-bot: doubt was offered outside an active bid -- this should be unreachable through the engine's own getLegalActions");
     }
-    if (rng() >= probabilityBidHolds(view, view.phase.bid, p)) return doubtAction;
+    const estimate = modulateEstimate(probabilityBidHolds(view, view.phase.bid, p), rng);
+    if (rng() >= estimate) return doubtAction;
   }
 
-  const index = Math.floor(rng() * raises.length);
-  return raises[index] ?? raises[0];
+  return selectRaise(raises, rng);
+}
+
+/**
+ * `normal`'s own entry point: the honest estimate, unmodulated, and a
+ * uniform pick among the legal raises. `createNormalBot` below is the only
+ * production caller, and it always hands in the real `DIE_FACE_PROBABILITY`.
+ */
+export function chooseMentirosoAction(view: PlayerView, legalActions: NonEmptyActions, p: number, rng: RandomSource): MentirosoAction {
+  return chooseModulatedMentirosoAction(view, legalActions, p, rng, (honestEstimate) => honestEstimate, chooseUniformRaise);
 }
 
 /**
