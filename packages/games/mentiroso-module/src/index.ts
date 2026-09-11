@@ -217,3 +217,120 @@ export const mentirosoModule: GameModule<MatchState, MentirosoModuleAction, Play
   deserialize,
   createBot,
 };
+
+/** How many people sit at the SECOND registered table (SDD `mentiroso`, work
+ * unit C4/task 3.4) — mirrors `SEAT_COUNT` above exactly, kept as its own
+ * constant for the identical reason: this value must never drift from
+ * `mentirosoModule4.metadata.seatCount`. */
+const SEAT_COUNT_4 = 4;
+
+/**
+ * The 4-seat table's own `buildMatch` (work unit C4/task 3.4) — the SAME
+ * three refusals as `buildMatch` above (a missing seat, a malformed/extra
+ * seat, a repeated player), parametrized over `SEAT_COUNT_4` instead of
+ * `SEAT_COUNT`.
+ *
+ * A SEPARATE function, not a shared helper parametrized over seat count,
+ * mirroring `escoba-module`'s own `buildMatch`/`buildMatch2v2` and
+ * `truco-module`'s own `createMatch`/`createMatch2v2`: each additional
+ * seat-count registration in this repo owns its own table-building function,
+ * never one shared across seat counts that could hide a divergence between
+ * two supposedly-identical tables.
+ */
+function buildMatch4(seats: readonly SeatAssignment[]): MatchState {
+  const bySeat = new Map(seats.map((assignment) => [assignment.seat, assignment.playerId]));
+  const malformed = `mentiroso-4 seats ${String(SEAT_COUNT_4)} players, one at each of seats 0 to ${String(SEAT_COUNT_4 - 1)}, and got ${JSON.stringify(seats)}`;
+
+  const players: PlayerId[] = [];
+  for (let seat = 0; seat < SEAT_COUNT_4; seat += 1) {
+    const playerId = bySeat.get(seat);
+    if (playerId === undefined) throw new Error(malformed);
+    players.push(playerId);
+  }
+  if (seats.length !== players.length) throw new Error(malformed);
+
+  if (new Set(players).size !== players.length) {
+    throw new Error(`mentiroso-4 needs a distinct player at every seat, and got ${JSON.stringify(seats)}`);
+  }
+
+  return createMatch(players);
+}
+
+/**
+ * Mentiroso, seated four — the SECOND of three registrations
+ * (`sdd/mentiroso/tasks` 3.4). Every read member is the engine's own
+ * function, handed through unwrapped, for the identical reason
+ * `mentirosoModule`'s own docblock states above.
+ */
+export const mentirosoModule4: GameModule<MatchState, MentirosoModuleAction, PlayerView, MentirosoMatchConfig> = {
+  id: "mentiroso-4",
+  metadata: { seatCount: SEAT_COUNT_4, gameFamily: "mentiroso", section: "dados", displayNameKey: "games.mentiroso4.name", assetBase: "/games/mentiroso" },
+  configOptions: [],
+  createMatch: (_config, seats) => buildMatch4(seats),
+  applyAction,
+  getLegalActions,
+  getViewFor,
+  hiddenState: mentirosoHiddenState,
+  getOutcome,
+  serialize,
+  deserialize,
+  createBot,
+};
+
+/** How many people sit at the THIRD registered table — mirrors
+ * `SEAT_COUNT`/`SEAT_COUNT_4` above. */
+const SEAT_COUNT_6 = 6;
+
+/**
+ * The 6-seat table's own `buildMatch` (work unit C4/task 3.4) — same shape
+ * and same reasoning as `buildMatch4` above, at `SEAT_COUNT_6` instead.
+ *
+ * THIS is the registration `convite/mentiroso/reglas-decididas`' own
+ * six-seat worked example ("30 dados") reaches through a live port: the
+ * first table in this whole chain able to carry more than one eliminated
+ * seat while the match still continues (six seats leaves three still
+ * standing after three are eliminated, unlike `mentirosoModule`'s own two
+ * seats, where eliminating the sole rival always ends the match in the same
+ * step). `index.test.ts`'s own fixtures for this registration are built to
+ * exercise exactly that — see this unit's own apply-progress record for the
+ * turn-skip, ceiling, and interspersed-redaction fixtures this registration
+ * is uniquely positioned to reach.
+ */
+function buildMatch6(seats: readonly SeatAssignment[]): MatchState {
+  const bySeat = new Map(seats.map((assignment) => [assignment.seat, assignment.playerId]));
+  const malformed = `mentiroso-6 seats ${String(SEAT_COUNT_6)} players, one at each of seats 0 to ${String(SEAT_COUNT_6 - 1)}, and got ${JSON.stringify(seats)}`;
+
+  const players: PlayerId[] = [];
+  for (let seat = 0; seat < SEAT_COUNT_6; seat += 1) {
+    const playerId = bySeat.get(seat);
+    if (playerId === undefined) throw new Error(malformed);
+    players.push(playerId);
+  }
+  if (seats.length !== players.length) throw new Error(malformed);
+
+  if (new Set(players).size !== players.length) {
+    throw new Error(`mentiroso-6 needs a distinct player at every seat, and got ${JSON.stringify(seats)}`);
+  }
+
+  return createMatch(players);
+}
+
+/**
+ * Mentiroso, seated six — the THIRD and last of the three registrations
+ * `convite/mentiroso/reglas-decididas` calls for ("2, 4 y 6 jugadores. Tres
+ * registraciones separadas").
+ */
+export const mentirosoModule6: GameModule<MatchState, MentirosoModuleAction, PlayerView, MentirosoMatchConfig> = {
+  id: "mentiroso-6",
+  metadata: { seatCount: SEAT_COUNT_6, gameFamily: "mentiroso", section: "dados", displayNameKey: "games.mentiroso6.name", assetBase: "/games/mentiroso" },
+  configOptions: [],
+  createMatch: (_config, seats) => buildMatch6(seats),
+  applyAction,
+  getLegalActions,
+  getViewFor,
+  hiddenState: mentirosoHiddenState,
+  getOutcome,
+  serialize,
+  deserialize,
+  createBot,
+};
