@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { findLeakedSecrets } from "@hexdev/platform-contract";
-import { createMatch, getViewFor, secretsFor } from "@hexdev/mentiroso-engine";
+import { describeGameModule, findLeakedSecrets } from "@hexdev/platform-contract";
+import type { ApplyResult, SeatAssignment } from "@hexdev/platform-contract";
+import { applyDoubt, applyRaise, createMatch, getLegalActions, getOutcome, getViewFor, secretsFor } from "@hexdev/mentiroso-engine";
 import type { MatchState, PlayerId } from "@hexdev/mentiroso-engine";
 import { SYSTEM_ACTOR_ID as ROLL_SYSTEM_ACTOR_ID, requestMentirosoSystemAction as rollRequestMentirosoSystemAction } from "./roll.js";
-import { SYSTEM_ACTOR_ID, mentirosoHiddenState, requestMentirosoSystemAction } from "./index.js";
+import { SYSTEM_ACTOR_ID, applyAction, mentirosoHiddenState, mentirosoModule, requestMentirosoSystemAction } from "./index.js";
+import type { MentirosoModuleAction } from "./index.js";
 
 /**
  * `index.ts`'s own tests (SDD `mentiroso`, work unit C2/task 3.2, design D4).
@@ -222,5 +224,255 @@ describe("index.ts — the roll.ts barrel re-export (this package's first public
 
   it("re-exports requestMentirosoSystemAction unchanged", () => {
     expect(requestMentirosoSystemAction).toBe(rollRequestMentirosoSystemAction);
+  });
+});
+
+/**
+ * `mentirosoModule` — the FIRST GameModule registration (SDD `mentiroso`,
+ * work unit C3/task 3.3, seat count 2). Every fixture below is sized for
+ * exactly two seats, matching `metadata.seatCount` — unlike this file's own
+ * C2-era `PLAYER_0..PLAYER_3` fixtures above, which exist purely to prove
+ * `mentirosoHiddenState` against an arbitrary table shape.
+ */
+const TWO_SEAT_P0 = "c3-seat-0" as PlayerId;
+const TWO_SEAT_P1 = "c3-seat-1" as PlayerId;
+const TWO_SEAT_ASSIGNMENTS: readonly SeatAssignment[] = [
+  { seat: 0, playerId: TWO_SEAT_P0 },
+  { seat: 1, playerId: TWO_SEAT_P1 },
+];
+
+/** Typed against the PLATFORM's `ApplyResult`, mirroring
+ * `generala-module/src/index.test.ts`'s own `ok` helper. */
+function ok(result: ApplyResult<MatchState>): MatchState {
+  if (!result.ok) throw new Error(`a move this test needed was refused: ${result.violation.code} — ${result.violation.message}`);
+  return result.state;
+}
+
+/** A bidding-phase, two-seat match, nobody eliminated — the floor state
+ * (design D4's own fixtures note): `secretsFor` MUST produce a real secret
+ * somewhere this registration's own fixtures reach. */
+const twoSeatReachableState: MatchState = {
+  players: [
+    { id: TWO_SEAT_P0, seat: 0, dice: [2, 5, 6] },
+    { id: TWO_SEAT_P1, seat: 1, dice: [4, 1] },
+  ],
+  phase: { kind: "bidding", turnSeat: 1, bid: { quantity: 3, face: 5 } },
+};
+
+/** One of the raises `getLegalActions` offers seat 1 above (same quantity,
+ * strictly higher face) — named as a literal so the suite's `toContainEqual`
+ * has something concrete to find. */
+const TWO_SEAT_LEGAL_ACTION: MentirosoModuleAction = { type: "raise", playerId: TWO_SEAT_P1, bid: { quantity: 3, face: 6 } };
+
+/** `secretsFor` MUST return no secrets here (design D4: the opening draw is
+ * public) — built through the REGISTRATION's own `createMatch`, not a
+ * hand-built literal, since a fresh two-seat table is exactly what that
+ * function already produces. */
+const twoSeatOpeningDrawState: MatchState = mentirosoModule.createMatch({}, TWO_SEAT_ASSIGNMENTS);
+
+/** `secretsFor` MUST return no secrets here either (design D4: the reveal IS
+ * the rule) — internally consistent with `showdown.ts`'s own tally rule this
+ * state does not call: three 6s on the table (two on seat 0, one on seat 1)
+ * exactly meet a bid of (3, 6), so the bidder (seat 0) wins on "at least" and
+ * the doubter (seat 1) surrenders a die. */
+const twoSeatShowdownState: MatchState = {
+  players: [
+    { id: TWO_SEAT_P0, seat: 0, dice: [2, 6, 6] },
+    { id: TWO_SEAT_P1, seat: 1, dice: [1, 6] },
+  ],
+  phase: { kind: "showdown", bid: { quantity: 3, face: 6 }, doubterSeat: 1, matched: 3, loserSeat: 1, winnerSeat: 0 },
+};
+
+/**
+ * A finished match: seat 0 holds zero dice, seat 1 holds two.
+ *
+ * WITH EXACTLY TWO SEATS, "one seat eliminated, mid-match" AND "the match is
+ * over" are the SAME state — eliminating either lone opponent ends a
+ * two-seat match by definition (mentiroso-rules: "the sole seat left holding
+ * dice MUST win"). So this state does double duty: it is `terminalState`
+ * for the outcome assertions below, AND it is what exercises the
+ * empty-array-exclusion fence (mentiroso-hidden-dice) for THIS registration
+ * — seat 0's empty `dice` array sits alongside seat 1's real, non-empty one.
+ * A distinct "eliminated but still ongoing" sample only exists at 3+ seats,
+ * which is task 3.4's registration, not this one.
+ */
+const twoSeatTerminalState: MatchState = {
+  players: [
+    { id: TWO_SEAT_P0, seat: 0, dice: [] },
+    { id: TWO_SEAT_P1, seat: 1, dice: [6, 3] },
+  ],
+  phase: { kind: "bidding", turnSeat: 1, bid: { quantity: 1, face: 6 } },
+};
+
+/**
+ * The hand-built states above, excluding the one built through the REAL
+ * `createMatch` — mirrors this file's own `HAND_BUILT_STATES` from work unit
+ * C2: `twoSeatOpeningDrawState` legitimately gives both seats the identical
+ * placeholder dice (`createMatch`'s own docblock), a correct coincidence
+ * with nothing to hide since `secretsFor` already declares zero secrets for
+ * that phase.
+ */
+const TWO_SEAT_HAND_BUILT_STATES: readonly MatchState[] = [twoSeatReachableState, twoSeatShowdownState, twoSeatTerminalState];
+
+describe("mentirosoModule fixtures — this unit's own named risk, checked rather than assumed", () => {
+  it("no two players in the same hand-built state share an identical dice array", () => {
+    for (const state of TWO_SEAT_HAND_BUILT_STATES) {
+      for (const player of state.players) {
+        const sameArray = state.players.filter((other) => other.id !== player.id && JSON.stringify(other.dice) === JSON.stringify(player.dice));
+        expect(sameArray).toEqual([]);
+      }
+    }
+  });
+
+  it("no LIVE player's dice count equals their own seat number, in any hand-built state", () => {
+    // Excludes an eliminated seat (dice: []): its own contribution is
+    // already zero regardless of seat number, and `secretsFor` excludes it
+    // entirely — the coincidence this check guards against only matters for
+    // a seat that actually carries a secret.
+    for (const state of TWO_SEAT_HAND_BUILT_STATES) {
+      for (const player of state.players) {
+        if (player.dice.length === 0) continue;
+        expect(player.dice.length).not.toBe(player.seat);
+      }
+    }
+  });
+});
+
+describeGameModule(
+  mentirosoModule,
+  {
+    config: {},
+    seats: TWO_SEAT_ASSIGNMENTS,
+    playerId: TWO_SEAT_P1,
+    reachableState: twoSeatReachableState,
+    legalAction: TWO_SEAT_LEGAL_ACTION,
+    terminalState: twoSeatTerminalState,
+    botTier: "easy",
+    hiddenStateSamples: [twoSeatOpeningDrawState, twoSeatShowdownState],
+  },
+  { describe, it, expect },
+);
+
+describe("mentirosoModule.applyAction — actor gating and delegation (work unit C3/task 3.3)", () => {
+  it("hands a legal raise straight to the engine's own applyRaise", () => {
+    const legal = getLegalActions(twoSeatReachableState, TWO_SEAT_P1).find((action) => action.type === "raise")!;
+    expect(applyAction(twoSeatReachableState, legal)).toEqual(applyRaise(twoSeatReachableState, legal as Extract<typeof legal, { readonly type: "raise" }>));
+  });
+
+  it("hands a legal doubt straight to the engine's own applyDoubt, leaving the state in the showdown phase", () => {
+    const withBid: MatchState = { ...twoSeatReachableState, phase: { kind: "bidding", turnSeat: 1, bid: { quantity: 1, face: 1 } } };
+    const doubt = getLegalActions(withBid, TWO_SEAT_P1).find((action) => action.type === "doubt")!;
+    const result = ok(applyAction(withBid, doubt));
+    expect(result.phase.kind).toBe("showdown");
+    expect(applyAction(withBid, doubt)).toEqual(applyDoubt(withBid, doubt as Extract<typeof doubt, { readonly type: "doubt" }>));
+  });
+
+  it("refuses an opening-draw-roll authored by a seated player, not just an outsider", () => {
+    const forged: MentirosoModuleAction = { type: "opening-draw-roll", playerId: TWO_SEAT_P0, faces: [4, 4] };
+    expect(applyAction(twoSeatOpeningDrawState, forged)).toEqual({
+      ok: false,
+      violation: { code: "not-a-system-actor", message: expect.any(String) },
+    });
+  });
+
+  it("refuses a round-roll authored by an id that sits at no seat", () => {
+    const stranger = "mallory" as PlayerId;
+    const state: MatchState = { players: twoSeatReachableState.players, phase: { kind: "awaiting-roll", openerSeat: 0 } };
+    const forged: MentirosoModuleAction = { type: "round-roll", playerId: stranger, diceBySeat: [[4, 4, 4], [5, 5]] };
+    expect(applyAction(state, forged)).toEqual({
+      ok: false,
+      violation: { code: "not-a-system-actor", message: expect.any(String) },
+    });
+  });
+
+  it("applies the system's own opening-draw-roll, delegating to applyOpeningDrawRoll", () => {
+    const drawn: MentirosoModuleAction = { type: "opening-draw-roll", playerId: SYSTEM_ACTOR_ID, faces: [3, 6] };
+    const result = ok(applyAction(twoSeatOpeningDrawState, drawn));
+    expect(result.phase).toEqual({ kind: "awaiting-roll", openerSeat: 1 });
+  });
+
+  it("applies the system's own round-roll, delegating to applyRoundRoll and opening a fresh round of bidding", () => {
+    const awaitingRoll: MatchState = { players: twoSeatReachableState.players, phase: { kind: "awaiting-roll", openerSeat: 0 } };
+    const rolled: MentirosoModuleAction = { type: "round-roll", playerId: SYSTEM_ACTOR_ID, diceBySeat: [[3, 3, 3], [5, 5]] };
+    const result = ok(applyAction(awaitingRoll, rolled));
+    expect(result.phase).toEqual({ kind: "bidding", turnSeat: 0, bid: null });
+    expect(result.players.map((player) => player.dice)).toEqual([[3, 3, 3], [5, 5]]);
+  });
+
+  it("refuses the system's own round-roll once the match is already over", () => {
+    const awaitingRoll: MatchState = { players: twoSeatTerminalState.players, phase: { kind: "awaiting-roll", openerSeat: 1 } };
+    const rolled: MentirosoModuleAction = { type: "round-roll", playerId: SYSTEM_ACTOR_ID, diceBySeat: [[], [1, 2]] };
+    expect(getOutcome(awaitingRoll)).not.toBeNull();
+    expect(applyAction(awaitingRoll, rolled)).toEqual({
+      ok: false,
+      violation: { code: "match-over", message: expect.any(String) },
+    });
+  });
+
+  it("refuses a player's raise once the match is already over", () => {
+    const action: MentirosoModuleAction = { type: "raise", playerId: TWO_SEAT_P1, bid: { quantity: 1, face: 1 } };
+    expect(applyAction(twoSeatTerminalState, action)).toEqual({
+      ok: false,
+      violation: { code: "match-over", message: expect.any(String) },
+    });
+  });
+});
+
+describe("the table mentirosoModule builds", () => {
+  it("refuses to seat one player twice", () => {
+    expect(() => mentirosoModule.createMatch({}, [{ seat: 0, playerId: TWO_SEAT_P0 }, { seat: 1, playerId: TWO_SEAT_P0 }])).toThrow(/distinct player/);
+  });
+
+  it("refuses a seat list that is not one player at each of its two seats", () => {
+    expect(() => mentirosoModule.createMatch({}, [{ seat: 0, playerId: TWO_SEAT_P0 }])).toThrow(/seats 0/);
+    expect(() => mentirosoModule.createMatch({}, [...TWO_SEAT_ASSIGNMENTS, { seat: 2, playerId: "third" as PlayerId }])).toThrow(/seats 0/);
+    expect(() => mentirosoModule.createMatch({}, [{ seat: 3, playerId: TWO_SEAT_P0 }, { seat: 4, playerId: TWO_SEAT_P1 }])).toThrow(/seats 0/);
+  });
+
+  it("seats the table by the seat number, not by the order the assignments arrived in", () => {
+    const backwards = mentirosoModule.createMatch({}, [
+      { seat: 1, playerId: TWO_SEAT_P1 },
+      { seat: 0, playerId: TWO_SEAT_P0 },
+    ]);
+    expect(mentirosoModule.getViewFor(backwards, TWO_SEAT_P0).self).toEqual({ playerId: TWO_SEAT_P0, seat: 0, dice: backwards.players[0]!.dice });
+    expect(mentirosoModule.getViewFor(backwards, TWO_SEAT_P1).self).toEqual({ playerId: TWO_SEAT_P1, seat: 1, dice: backwards.players[1]!.dice });
+  });
+});
+
+describe("what mentirosoModule tells the registry", () => {
+  it("declares no config option at all, so the empty config is its only modality", () => {
+    expect(mentirosoModule.configOptions).toEqual([]);
+  });
+
+  it("declares two seats, the dados shelf and its own family", () => {
+    expect(mentirosoModule.metadata).toEqual({
+      seatCount: 2,
+      gameFamily: "mentiroso",
+      section: "dados",
+      displayNameKey: "games.mentiroso2.name",
+      assetBase: "/games/mentiroso",
+    });
+    expect(mentirosoModule.id).toBe("mentiroso-2");
+  });
+});
+
+describe("mentirosoModule — the engine's three read members are handed through unwrapped", () => {
+  it("exposes the engine's own getLegalActions, getViewFor and getOutcome, not a wrapper around them", () => {
+    expect(mentirosoModule.getLegalActions).toBe(getLegalActions);
+    expect(mentirosoModule.getViewFor).toBe(getViewFor);
+    expect(mentirosoModule.getOutcome).toBe(getOutcome);
+  });
+});
+
+describe("mentirosoModule.createBot — the day-one placeholder (see index.ts's own docblock)", () => {
+  it("always chooses the first legal action offered, never anything else", () => {
+    const legal = getLegalActions(twoSeatReachableState, TWO_SEAT_P1);
+    const bot = mentirosoModule.createBot!("hard");
+    expect(bot.chooseAction(getViewFor(twoSeatReachableState, TWO_SEAT_P1), legal, 50)).toBe(legal[0]);
+  });
+
+  it("THE FENCE: throws rather than fabricate a move when offered no legal action at all", () => {
+    const bot = mentirosoModule.createBot!("easy");
+    expect(() => bot.chooseAction(getViewFor(twoSeatReachableState, TWO_SEAT_P1), [], 50)).toThrow(/no legal actions/);
   });
 });

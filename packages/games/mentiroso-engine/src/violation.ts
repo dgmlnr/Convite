@@ -28,7 +28,10 @@ export interface RuleViolation {
     | "not-bidding"
     | "illegal-raise"
     | "illegal-doubt"
-    | "not-showdown";
+    | "not-showdown"
+    | "not-awaiting-roll"
+    | "wrong-seat-count"
+    | "wrong-dice-count";
   readonly message: string;
 }
 

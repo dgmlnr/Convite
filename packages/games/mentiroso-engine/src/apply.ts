@@ -7,25 +7,26 @@ import { reject } from "./violation.js";
 import type { ApplyResult } from "./violation.js";
 
 /**
- * mentiroso-engine's reducers (SDD `mentiroso`, work unit B3/task 2.3):
- * `applyOpeningDrawRoll` resolves one opening-draw system action (design D3),
- * and `applyRaise` resolves one seated player's "raise" (design D2).
+ * mentiroso-engine's reducers: `applyOpeningDrawRoll` resolves one
+ * opening-draw system action (design D3, work unit B3/task 2.3), `applyRaise`
+ * resolves one seated player's "raise" (design D2, same work unit), and
+ * `applyRoundRoll` resolves one per-round system roll (design D3's second
+ * entropy shape, work unit C3/task 3.3 — added later than the other two,
+ * once `mentiroso-module`'s `roll.ts` (work unit C1) named this file's
+ * missing counterpart to its own `RoundRollAction`).
  *
- * ONLY THESE TWO. Both are exported and consumed by nothing outside this
- * package's own tests yet — the same "introduce, then adopt" split this
- * chain has followed since work unit A3 (`AGENTS.md`'s own "Introducir, y
- * despues adoptar"). "doubt" is a THIRD action `legal-actions.ts` already
- * offers (work unit B2), and this file deliberately does not implement it:
- * transitioning "bidding" into "showdown" needs the exact-face tally design
- * assigns to `showdown.ts` — work unit 2.4's own `applyDoubt`, now built in
- * that file rather than here, keeping the "one reducer, one job" split this
- * docblock already argues for `applyOpeningDrawRoll`/`applyRaise` themselves.
+ * "doubt" is a FOURTH action `legal-actions.ts` already offers (work unit
+ * B2), and this file deliberately does not implement it: transitioning
+ * "bidding" into "showdown" needs the exact-face tally design assigns to
+ * `showdown.ts` — work unit 2.4's own `applyDoubt`, built in that file
+ * rather than here, keeping the "one reducer, one job" split this docblock
+ * already argues for every reducer in this file.
  *
- * Neither reducer receives `rng`, and neither can materialize a roll. Every
- * random draw is charged ONE layer up, in `mentiroso-module` (work unit C1,
- * not yet built, mirroring `generala-module/src/roll.ts`'s own
+ * NONE OF THE THREE RECEIVES `rng`, and none can materialize a roll. Every
+ * random draw is charged ONE layer up, in `mentiroso-module` (work units C1
+ * and C3, mirroring `generala-module/src/roll.ts`'s own
  * `requestGeneralaSystemAction`) — this file only INTERPRETS an
- * already-drawn `faces` array, the identical split
+ * already-drawn `faces`/`diceBySeat` array, the identical split
  * `generala-engine/src/roll.ts`'s own `applyRoll(state, faces)` already
  * demonstrates for its own re-thrown dice.
  */
@@ -138,6 +139,62 @@ function isLegalRaise(state: MatchState, action: RaiseAction): boolean {
  * here: introduced exported and unconsumed in A2, adopted in this unit, the
  * same "introduce, then adopt" split this whole chain already follows.
  */
+/**
+ * Resolve one per-round system roll (design D3's second entropy shape, work
+ * unit C3/task 3.3): every seat's freshly drawn dice replace its OWN,
+ * index-aligned with `state.players` exactly as `mentiroso-module`'s own
+ * `RoundRollAction.diceBySeat` already carries them (work unit C1,
+ * `roll.ts`) — introduced there unconsumed, and that file's own docblock
+ * names THIS unit ("the first seat-count registration") as the adopter.
+ *
+ * ONE ENTRY PER SEAT, NEVER FEWER: an eliminated seat still owns an entry —
+ * `diceBySeat[seat]` is `[]`, matching `dice.length` exactly, never omitted
+ * (`state.ts`'s own "seats never shrink" invariant, mirrored here the same
+ * way `applyOpeningDrawRoll`'s own per-contender count already is).
+ *
+ * EXACTLY AS MANY FRESH FACES AS A SEAT ALREADY HELD DICE, never a fixed
+ * count — `wrong-dice-count` fences this per seat, the identical discipline
+ * `applyOpeningDrawRoll`'s own `wrong-face-count` already applies per
+ * contender.
+ *
+ * OPENS THE NEXT ROUND OF BIDDING: `awaiting-roll.openerSeat` becomes the new
+ * `bidding.turnSeat`, with no prior bid (`bid: null`) — the identical shape
+ * `createMatch`'s own first round reaches, now reached again after every
+ * showdown resolves.
+ */
+export function applyRoundRoll(state: MatchState, diceBySeat: readonly (readonly DieFace[])[]): ApplyResult {
+  if (state.phase.kind !== "awaiting-roll") {
+    return reject("not-awaiting-roll", `a round roll can only be applied while awaiting one, and this match is ${state.phase.kind}`);
+  }
+  if (diceBySeat.length !== state.players.length) {
+    return reject(
+      "wrong-seat-count",
+      `this match seats ${String(state.players.length)} players and the roll carried ${String(diceBySeat.length)} entries`,
+    );
+  }
+
+  for (const [seat, player] of state.players.entries()) {
+    const dice = diceBySeat[seat]!;
+    if (dice.length !== player.dice.length) {
+      return reject(
+        "wrong-dice-count",
+        `seat ${String(seat)} holds ${String(player.dice.length)} dice and the roll carried ${String(dice.length)} faces for it`,
+      );
+    }
+    const malformed = dice.findIndex((face) => !DIE_FACES.includes(face));
+    if (malformed !== -1) {
+      return reject(
+        "malformed-face",
+        `a die shows one of ${String(DIE_FACES.length)} faces, and seat ${String(seat)}'s roll carried ${String(dice[malformed])} at position ${String(malformed)}`,
+      );
+    }
+  }
+
+  const openerSeat = state.phase.openerSeat;
+  const players = state.players.map((player, seat) => ({ ...player, dice: diceBySeat[seat]! }));
+  return { ok: true, state: { ...state, players, phase: { kind: "bidding", turnSeat: openerSeat, bid: null } } };
+}
+
 export function applyRaise(state: MatchState, action: RaiseAction): ApplyResult {
   if (state.phase.kind !== "bidding") {
     return reject("not-bidding", `a raise can only be applied during the bidding phase, and this match is ${state.phase.kind}`);

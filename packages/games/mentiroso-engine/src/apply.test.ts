@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DieFace, MatchState, Player, PlayerId } from "./state.js";
 import type { MentirosoAction } from "./legal-actions.js";
 import { getLegalActions } from "./legal-actions.js";
-import { applyOpeningDrawRoll, applyRaise } from "./apply.js";
+import { applyOpeningDrawRoll, applyRaise, applyRoundRoll } from "./apply.js";
 
 /**
  * A seat holding `diceCount` dice, mirroring every sibling test file in this
@@ -159,5 +159,87 @@ describe("applyRaise — accepts what getLegalActions offers, and nothing else (
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable — asserted above");
     expect(result.violation.code).toBe("not-bidding");
+  });
+});
+
+/**
+ * `applyRoundRoll` — the SECOND of `mentiroso-module`'s two D3 entropy shapes
+ * (SDD `mentiroso`, work unit C3/task 3.3). `roll.ts` (work unit C1) already
+ * materializes `RoundRollAction.diceBySeat` — one already-drawn array per
+ * seat, index-aligned with `state.players` — and named THIS unit as its own
+ * adopter ("applyAction (work unit C3, the first seat-count registration) is
+ * what will interpret both actions"). No engine reducer existed to interpret
+ * the SECOND shape until now; `applyOpeningDrawRoll` (work unit B3) only ever
+ * interpreted the first.
+ */
+describe("applyRoundRoll — every seat's freshly drawn dice replace its own (design D3)", () => {
+  it("assigns each seat's own dice and opens a fresh round of bidding at the opener's seat, with no prior bid", () => {
+    // Asymmetric dice counts per seat (3, 1, 2) — the same "no two readings
+    // coincide" discipline `mentiroso-module/src/roll.ts`'s own tests already
+    // apply: a fixture where every seat holds the same count could not tell
+    // "one array per seat" from "one array per die" apart.
+    const players = [seatOf(0, 3), seatOf(1, 1), seatOf(2, 2)];
+    const state: MatchState = { players, phase: { kind: "awaiting-roll", openerSeat: 2 } };
+
+    const result = applyRoundRoll(state, [
+      [4, 4, 4],
+      [5],
+      [6, 6],
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable — asserted above");
+    expect(result.state.players.map((player) => player.dice)).toEqual([[4, 4, 4], [5], [6, 6]]);
+    expect(result.state.phase).toEqual({ kind: "bidding", turnSeat: 2, bid: null });
+  });
+
+  it("an eliminated seat still owns its own entry, empty, never omitted", () => {
+    const players = [seatOf(0, 0), seatOf(1, 4)];
+    const state: MatchState = { players, phase: { kind: "awaiting-roll", openerSeat: 1 } };
+
+    const result = applyRoundRoll(state, [[], [1, 2, 3, 4]]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable — asserted above");
+    expect(result.state.players[0]!.dice).toEqual([]);
+  });
+
+  it("THE FENCE: a round roll only applies while awaiting one", () => {
+    const players = [seatOf(0, 3), seatOf(1, 3)];
+    const state: MatchState = { players, phase: { kind: "bidding", turnSeat: 0, bid: null } };
+    const result = applyRoundRoll(state, [[4, 4, 4], [4, 4, 4]]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable — asserted above");
+    expect(result.violation.code).toBe("not-awaiting-roll");
+  });
+
+  it("THE FENCE: rejects a roll carrying the wrong number of seat entries", () => {
+    const players = [seatOf(0, 3), seatOf(1, 3), seatOf(2, 3)];
+    const state: MatchState = { players, phase: { kind: "awaiting-roll", openerSeat: 0 } };
+    const result = applyRoundRoll(state, [[4, 4, 4], [4, 4, 4]]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable — asserted above");
+    expect(result.violation.code).toBe("wrong-seat-count");
+  });
+
+  it("THE FENCE: rejects a seat whose fresh dice count does not match how many it already held", () => {
+    // Seat 0 holds 3 dice and the roll carries only 2 for it — asymmetric
+    // counts (3 vs 1 for seat 1) so this could not be mistaken for a
+    // dice-vs-seat confusion.
+    const players = [seatOf(0, 3), seatOf(1, 1)];
+    const state: MatchState = { players, phase: { kind: "awaiting-roll", openerSeat: 1 } };
+    const result = applyRoundRoll(state, [[4, 4], [5]]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable — asserted above");
+    expect(result.violation.code).toBe("wrong-dice-count");
+  });
+
+  it("THE FENCE: rejects a malformed face even though DieFace is compile-time only", () => {
+    const players = [seatOf(0, 2), seatOf(1, 1)];
+    const state: MatchState = { players, phase: { kind: "awaiting-roll", openerSeat: 0 } };
+    const result = applyRoundRoll(state, [[4, 7 as DieFace], [5]]);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable — asserted above");
+    expect(result.violation.code).toBe("malformed-face");
   });
 });
