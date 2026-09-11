@@ -3,7 +3,7 @@ import type { RandomSource } from "@hexdev/platform-contract";
 import type { Bid, MentirosoAction, PlayerId, PlayerView } from "@hexdev/mentiroso-engine";
 import { raisesFrom } from "@hexdev/mentiroso-engine";
 import { DIE_FACE_PROBABILITY } from "./probability.js";
-import { chooseMentirosoAction, createNormalBot } from "./normal.js";
+import { chooseMentirosoAction, createNormalBot, selectSafestRaise } from "./normal.js";
 import type { NonEmptyActions } from "./tier.js";
 
 /**
@@ -28,6 +28,17 @@ const RIVAL_C = "rival-c" as PlayerId;
  * DECISION, never a distribution. */
 function fixedRng(value: number): RandomSource {
   return () => value;
+}
+
+/** A `RandomSource` that throws if ever called — proves a code path spends
+ * NO entropy at all (task 4.6: `selectSafestRaise` is deterministic, unlike
+ * the `chooseUniformRaise` it replaces as `normal`'s own default). Local to
+ * this file rather than imported from `./fixtures.js`, matching this file's
+ * own pre-existing local-helper convention (predates that shared file). */
+function forbiddenRng(reason: string): RandomSource {
+  return () => {
+    throw new Error(`rng() must not be called: ${reason}`);
+  };
 }
 
 function doubt(playerId: PlayerId = SELF): MentirosoAction {
@@ -143,7 +154,12 @@ describe("with no bid yet (the opening of a round) the tier always raises -- not
     }
   });
 
-  it("with several opening raises offered, rng genuinely selects among them by index", () => {
+  it("with several opening raises TIED at probability 1 (own dice match every candidate face), the tie resolves to the EARLIEST offered raise -- rng no longer decides this (task 4.6)", () => {
+    // Own dice [1,2,3,4,5] each match one of the three candidate faces at
+    // quantity 1, so every candidate reduces to k <= 0 -- probability 1, an
+    // exact three-way tie. The OLD policy (chooseUniformRaise) picked among
+    // TIED candidates like these BY rng index (this exact fixture used to
+    // prove that); the new policy never consults rng at all here.
     const view: PlayerView = {
       self: { playerId: SELF, seat: 0, dice: [1, 2, 3, 4, 5] },
       rivals: [{ seat: 1, playerId: RIVAL_A, diceCount: 5 }],
@@ -153,11 +169,66 @@ describe("with no bid yet (the opening of a round) the tier always raises -- not
     const middle = raise({ quantity: 1, face: 2 });
     const last = raise({ quantity: 1, face: 3 });
     const legalActions: NonEmptyActions = [first, middle, last];
-    // rng() = 0 must land on index 0; rng() just under 1 must land on the
-    // last index -- proving the choice genuinely depends on rng rather than
-    // always returning the same entry regardless of its draw.
-    expect(createNormalBot(fixedRng(0)).chooseAction(view, legalActions, 0)).toBe(first);
-    expect(createNormalBot(fixedRng(0.9999)).chooseAction(view, legalActions, 0)).toBe(last);
+    for (const value of [0, 0.4, 0.9999]) {
+      expect(createNormalBot(fixedRng(value)).chooseAction(view, legalActions, 0)).toBe(first);
+    }
+    void middle; // kept named for readability of the fixture; not asserted on directly
+    void last;
+  });
+
+  it("spends NO entropy at all resolving that same tie -- the old uniform pick needed rng() to break it, the new policy never calls rng", () => {
+    const view: PlayerView = {
+      self: { playerId: SELF, seat: 0, dice: [1, 2, 3, 4, 5] },
+      rivals: [{ seat: 1, playerId: RIVAL_A, diceCount: 5 }],
+      phase: { kind: "bidding", turnSeat: 0, bid: null },
+    };
+    const first = raise({ quantity: 1, face: 1 });
+    const legalActions: NonEmptyActions = [first, raise({ quantity: 1, face: 2 }), raise({ quantity: 1, face: 3 })];
+    expect(createNormalBot(forbiddenRng("selecting a raise is now a deterministic probability comparison")).chooseAction(view, legalActions, 0)).toBe(first);
+  });
+});
+
+describe("selectSafestRaise -- normal's own reasoned raise policy (task 4.6), not a copy of easy's minimal-raise habit", () => {
+  // Current bid (4,5); own dice heavy in face 1, empty in face 5 and 6:
+  // [1,1,1,2,3]. `raisesFrom((4,5), ...)` offers (4,6) FIRST -- the
+  // lexicographically MINIMAL raise (same quantity, next face) -- then
+  // (5,1) through (5,6). Own-dice reduction differs PER FACE:
+  //   (4,6): ownMatching(6) = 0 -> k = 4 -> atLeast(4, 10, p), small.
+  //   (5,1): ownMatching(1) = 3 -> k = 2 -> atLeast(2, 10, p), much larger.
+  // atLeast is monotonically NON-INCREASING in k (one more required match
+  // cannot raise a probability), so (5,1) is STRICTLY safer than (4,6)
+  // despite its higher quantity -- the exact "minimal raise and safest raise
+  // must not coincide" fixture the launch prompt's own family-of-traps risk
+  // warned to avoid.
+  const view: PlayerView = {
+    self: { playerId: SELF, seat: 0, dice: [1, 1, 1, 2, 3] },
+    rivals: [
+      { seat: 1, playerId: RIVAL_A, diceCount: 5 },
+      { seat: 2, playerId: RIVAL_B, diceCount: 5 },
+    ],
+    phase: { kind: "bidding", turnSeat: 0, bid: { quantity: 4, face: 5 } },
+  };
+  const minimalRaise = raise({ quantity: 4, face: 6 });
+  const saferRaise = raise({ quantity: 5, face: 1 });
+  const otherRaises = ([2, 3, 4, 5, 6] as const).map((face) => raise({ quantity: 5, face }));
+  const legalActions: NonEmptyActions = [doubt(), minimalRaise, saferRaise, ...otherRaises];
+
+  it("picks the higher-quantity, lower-face raise the viewer's own dice make safer -- NOT the lexicographically minimal one", () => {
+    // fixedRng(0) forces the coin flip to continue for ANY nonzero honest
+    // estimate (rng() >= estimate is false whenever estimate > 0), so this
+    // exercises the raise choice itself, never the doubt/continue gate.
+    expect(chooseMentirosoAction(view, legalActions, DIE_FACE_PROBABILITY, fixedRng(0))).toBe(saferRaise);
+  });
+
+  it("is reachable through createNormalBot's real production wiring, not only the bare function", () => {
+    expect(createNormalBot(fixedRng(0)).chooseAction(view, legalActions, 0)).toBe(saferRaise);
+  });
+
+  it("called directly, confirms the minimal raise is NOT what gets returned -- the safest one is a genuinely different candidate", () => {
+    const raises = legalActions.filter((action): action is Extract<MentirosoAction, { type: "raise" }> => action.type === "raise");
+    const chosen = selectSafestRaise(view, raises, DIE_FACE_PROBABILITY);
+    expect(chosen).toBe(saferRaise);
+    expect(chosen).not.toBe(minimalRaise);
   });
 });
 
