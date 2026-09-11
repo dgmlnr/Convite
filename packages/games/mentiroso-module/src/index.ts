@@ -1,6 +1,7 @@
-import type { ApplyResult, BotStrategy, BotTier, GameModule, HiddenState, JsonValue, PlayerId, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotStrategy, BotTier, GameModule, HiddenState, JsonValue, PlayerId, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
 import { applyDoubt, applyOpeningDrawRoll, applyRaise, applyRoundRoll, createMatch, getLegalActions, getOutcome, getViewFor, resolveShowdown, secretsFor } from "@hexdev/mentiroso-engine";
 import type { MatchState, MentirosoAction, PlayerView } from "@hexdev/mentiroso-engine";
+import { DEFAULT_THINKING_DELAY_MS, createBotStrategy, withThinkingDelay } from "@hexdev/mentiroso-bot";
 import { SYSTEM_ACTOR_ID, requestMentirosoSystemAction } from "./roll.js";
 import type { MentirosoSystemAction, OpeningDrawRollAction, RoundRollAction } from "./roll.js";
 
@@ -153,37 +154,44 @@ function buildMatch(seats: readonly SeatAssignment[]): MatchState {
   return createMatch(players);
 }
 
+/** Real crypto entropy for the two rng-consuming layers `normal`/`hard`
+ * share (`chooseModulatedMentirosoAction`'s own doubt/raise coin flip) plus
+ * `easy`'s own extra noise/minimal-raise draws — mirrors
+ * `truco-module`/`escoba-module`/`generala-module`'s identical
+ * `defaultRng`. */
+const defaultRng: RandomSource = () => crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+
 /**
- * A PLACEHOLDER, replacing nothing yet and expecting to be replaced.
+ * `getLegalActions` (`legal-actions.ts`'s own docblock: "rolling is never on
+ * this list and never will be") only ever offers `raise`/`doubt`, so this
+ * narrowing is total in practice — the same shape and argument
+ * `truco-module`'s own `toEngineActions`, `escoba-module`'s own
+ * `toPlayCardActions`, and `generala-module`'s own `toEngineActions` already
+ * use. A filter, not a cast, so the day this union grows a system action a
+ * bot must never see, the type stops being satisfied instead of the value
+ * quietly arriving.
+ */
+function toMentirosoActions(actions: readonly MentirosoModuleAction[]): readonly MentirosoAction[] {
+  return actions.filter((action): action is MentirosoAction => action.type === "raise" || action.type === "doubt");
+}
+
+/**
+ * THE REAL TIERS (SDD `mentiroso`, task 3.6), replacing the day-one
+ * placeholder this docblock used to be. `@hexdev/mentiroso-bot` now ships
+ * its own `createBotStrategy` (that package's own `index.ts`, this same
+ * task's other half) — mirrors `truco-module`/`escoba-module`/
+ * `generala-module`'s identical `createBot` shape: wrap the routed tier in
+ * the shared thinking-delay presentation pause, then narrow this module's
+ * own wider action union down to what a tier is allowed to see.
  *
- * `@hexdev/mentiroso-bot` (design's own Stage D, `sdd/mentiroso/tasks`
- * 4.1-4.4) does not exist yet, and `describeGameModule`'s own bot
- * requirement (`platform-contract/src/conformance.ts:265-285`) is
- * unconditional the moment `metadata.seatCount >= 2` — no exception for "the
- * real bot ships later". This repo already carries the exact precedent for
- * this exact situation: `truco-module/src/index.ts`'s own comment records
- * "Replaces PR9's `chooseFirstLegalAction` placeholder with the real tiers"
- * — the first legal action, unconditionally, replaced only once
- * `truco-bot`'s real tiers existed. This is that same placeholder, for the
- * same reason.
- *
- * A GENUINE task-order gap, not a silent choice: no task in
- * `sdd/mentiroso/tasks` currently assigns wiring the real bot into this
- * module once Stage D ships it — that adoption needs a task of its own,
- * mirroring the one that eventually replaced truco's own placeholder.
+ * This closes the exact task-order gap this file's own retired docblock
+ * named — the same close `truco-module`'s own history records for its
+ * "Replaces PR9's `chooseFirstLegalAction` placeholder with the real tiers".
  */
 function createBot(tier: BotTier): BotStrategy<PlayerView, MentirosoModuleAction> {
-  void tier; // the placeholder ignores the tier entirely — see this function's own docblock
+  const strategy = withThinkingDelay(createBotStrategy(tier, defaultRng), DEFAULT_THINKING_DELAY_MS);
   return {
-    chooseAction: (_view, legalActions) => {
-      const [first] = legalActions;
-      if (first === undefined) {
-        throw new Error(
-          "mentiroso-module: asked to choose from no legal actions — the ceiling always forces exactly one (doubt), so this position should be unreachable",
-        );
-      }
-      return first;
-    },
+    chooseAction: (view, legalActions, budgetMs, answer) => strategy.chooseAction(view, toMentirosoActions(legalActions), budgetMs, answer),
   };
 }
 

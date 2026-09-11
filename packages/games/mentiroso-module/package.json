@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@hexdev/platform-contract": "workspace:*",
-    "@hexdev/mentiroso-engine": "workspace:*"
+    "@hexdev/mentiroso-engine": "workspace:*",
+    "@hexdev/mentiroso-bot": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.2"

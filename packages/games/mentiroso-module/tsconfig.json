@@ -16,6 +16,9 @@
     },
     {
       "path": "../mentiroso-engine"
+    },
+    {
+      "path": "../mentiroso-bot"
     }
   ]
 }
