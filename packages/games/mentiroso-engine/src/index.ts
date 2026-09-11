@@ -17,7 +17,7 @@ export type { MentirosoAction } from "./legal-actions.js";
 export { getLegalActions } from "./legal-actions.js";
 export type { ApplyResult, RuleViolation } from "./violation.js";
 export { reject } from "./violation.js";
-export { applyOpeningDrawRoll, applyRaise } from "./apply.js";
+export { applyOpeningDrawRoll, applyRaise, applyRoundRoll } from "./apply.js";
 export { applyDoubt, resolveShowdown, tallyFace } from "./showdown.js";
 export type { MatchOutcome } from "./outcome.js";
 export { getOutcome } from "./outcome.js";
