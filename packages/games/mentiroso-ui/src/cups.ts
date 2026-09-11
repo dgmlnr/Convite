@@ -54,8 +54,28 @@ const TABLE_RADIUS_Y_PERCENT = 36;
  * fraction of the native size rather than 1 or an arbitrarily "small
  * enough" fraction: `0.32` is roughly `(circumference / 6) / nativeWidth`
  * at this file's own radii, leaving room on both sides of the seam.
+ *
+ * UNCHANGED BY WORK UNIT E5/TASK 5.5, DELIBERATELY — the real composed
+ * table's own container decision (`table-styles.ts`) is what settles this
+ * fragment's LEGIBILITY, not this constant: `cups.browser.test.ts`'s own
+ * six-seat, fully-revealed showdown fence is the ONLY existing proof that
+ * this value does not overlap, measured at a container of exactly `1280x800`
+ * — raising it here would be unverified against that same fence, and this
+ * unit's own scope is composing the table, not re-deriving a constant three
+ * earlier units already measured. The status label just below gets its own,
+ * independent fix instead — the one legibility complaint this file can
+ * settle without touching this proven geometry at all.
  */
 const SEAT_FRAGMENT_SCALE = 0.32;
+
+/**
+ * The status label's own PRE-shrink font-size (see the negative-space fix on
+ * `status.style.fontSize` below for the arithmetic). Declared beside
+ * `SEAT_FRAGMENT_SCALE` — the two numbers only make sense read together —
+ * rather than in `table-styles.ts`: this label is `cups.ts`'s own element,
+ * never `dice-ui`'s, and the fix belongs with the fragment it corrects.
+ */
+const STATUS_LABEL_FONT_SIZE_PX = 36;
 
 /**
  * "N dados"/"1 dado"/"Sin dados" — the mark design D5 assigns an eliminated
@@ -161,6 +181,19 @@ export function createMentirosoCups(): MentirosoCupsRender {
       // custom property), so this is the same plain literal every sibling
       // file in THIS package already uses, not a new theming convention.
       status.style.color = "#f2f2f2";
+      // FOUND BY LOOKING (work unit E5/task 5.5, rendering this file inside
+      // the real composed table for the first time, at `SEAT_FRAGMENT_SCALE`
+      // above): with no font-size of its own, this mark inherited the ~16px
+      // ambient default and shrank ALONGSIDE the whole fragment down to
+      // roughly 5px — legible ink, illegible size. Declared PRE-shrink, at
+      // `STATUS_LABEL_FONT_SIZE_PX` just above (whose own comment does this
+      // exact arithmetic), so the label renders at a legible size WITHOUT
+      // raising `SEAT_FRAGMENT_SCALE` itself — the one fix this unit makes
+      // to `cups.ts` that does not touch the proven overlap geometry above
+      // at all.
+      status.style.fontSize = `${String(STATUS_LABEL_FONT_SIZE_PX)}px`;
+      status.style.fontWeight = "700";
+      status.style.whiteSpace = "nowrap";
       wrapper.appendChild(status);
 
       container.appendChild(wrapper);
