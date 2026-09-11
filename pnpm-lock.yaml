@@ -377,6 +377,12 @@ importers:
         specifier: ^26.1.2
         version: 26.1.2
 
+  packages/games/mentiroso-ui:
+    devDependencies:
+      '@hexdev/truco-ui':
+        specifier: workspace:*
+        version: link:../truco-ui
+
   packages/games/truco-bot:
     dependencies:
       '@hexdev/platform-contract':
