@@ -3,6 +3,7 @@ import type { GameId } from "@hexdev/platform-contract";
 import type { PlayerId, PlayerView, TeamId } from "@hexdev/truco-engine";
 import { MAX_SENAS_PER_HAND } from "@hexdev/truco-engine";
 import type { PlayCardAction as EscobaPlayCardAction, PlayerId as EscobaPlayerId, PlayerView as EscobaPlayerView, TeamId as EscobaTeamId } from "@hexdev/escoba-engine";
+import type { MentirosoAction, PlayerId as MentirosoPlayerId, PlayerView as MentirosoPlayerView } from "@hexdev/mentiroso-engine";
 import type { GameUiEntry } from "./game-ui-registry.js";
 import { createGameUiRegistry, matchRenderContextFor } from "./game-ui-registry.js";
 
@@ -14,6 +15,7 @@ afterEach(() => {
   document.getElementById("hexdev-truco-table-styles")?.remove();
   document.getElementById("hexdev-escoba-match-styles")?.remove();
   document.getElementById("hexdev-escoba-status-styles")?.remove();
+  document.getElementById("hexdev-mentiroso-table-styles")?.remove();
 });
 
 const SELF = "player-a" as PlayerId;
@@ -493,5 +495,63 @@ describe("escoba's registered renderer — the real wiring boundary from a gener
     container.querySelector<HTMLButtonElement>('.hexdev-escoba-hand [data-card="12-espada"]')!.click();
 
     expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "play-card", playerId: ESCOBA_SELF, card: REY_ESPADA, captured: [{ suit: "oro", rank: 5 }] });
+  });
+});
+
+/**
+ * SDD `mentiroso`, task 6.1 — the same "real wiring boundary" proof the
+ * three families above already carry, over the ONE renderer factory this
+ * game's three registrations share (`createMentirosoRenderer`).
+ */
+describe("mentiroso's registered renderer — one factory, three registrations, all sharing one family (task 6.1)", () => {
+  const MENTIROSO_SELF = "seat-0" as MentirosoPlayerId;
+  const MENTIROSO_RIVAL = "seat-1" as MentirosoPlayerId;
+
+  it("has entries for all THREE mentiroso GameIds, sharing the one family", () => {
+    const registry = createGameUiRegistry();
+
+    expect(registry.get("mentiroso-2" as GameId)).not.toBeUndefined();
+    expect(registry.get("mentiroso-4" as GameId)).not.toBeUndefined();
+    expect(registry.get("mentiroso-6" as GameId)).not.toBeUndefined();
+    expect(registry.family("mentiroso-2" as GameId)).toBe(registry.family("mentiroso-4" as GameId));
+    expect(registry.family("mentiroso-4" as GameId)).toBe(registry.family("mentiroso-6" as GameId));
+  });
+
+  it("renders the real table from an opaque payload — the ceiling forces doubt, so only the Dudar button appears, never a raise grid", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("mentiroso-2" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
+    const view: MentirosoPlayerView = {
+      self: { playerId: MENTIROSO_SELF, seat: 0, dice: [6, 6] },
+      rivals: [{ seat: 1, playerId: MENTIROSO_RIVAL, diceCount: 2 }],
+      phase: { kind: "bidding", turnSeat: 0, bid: { quantity: 4, face: 6 } },
+    };
+    const legalActions: readonly MentirosoAction[] = [{ type: "doubt", playerId: MENTIROSO_SELF }];
+
+    render(container, { view, legalActions }, () => {});
+
+    expect(container.className, "the payload's own view really reached mentiroso-ui's own table, not a placeholder").toBe("hexdev-mentiroso-table-shell");
+    expect(container.querySelector(".hexdev-mentiroso-bid-doubt"), "at the ceiling, only Dudar is offered").not.toBeNull();
+    expect(container.querySelector(".hexdev-mentiroso-bid-grid"), "and never a raise grid, since none was offered").toBeNull();
+  });
+
+  it("dispatches the real doubt action offered, the same identity `sameAction` walks by", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const registry = createGameUiRegistry();
+    const render = registry.get("mentiroso-2" as GameId)!.createRenderer(matchRenderContextFor("joined", Date.now));
+    const dispatch = vi.fn();
+    const view: MentirosoPlayerView = {
+      self: { playerId: MENTIROSO_SELF, seat: 0, dice: [6, 6] },
+      rivals: [{ seat: 1, playerId: MENTIROSO_RIVAL, diceCount: 2 }],
+      phase: { kind: "bidding", turnSeat: 0, bid: { quantity: 4, face: 6 } },
+    };
+    const doubtAction: MentirosoAction = { type: "doubt", playerId: MENTIROSO_SELF };
+
+    render(container, { view, legalActions: [doubtAction] }, dispatch);
+    container.querySelector<HTMLButtonElement>(".hexdev-mentiroso-bid-doubt")!.click();
+
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith(doubtAction);
   });
 });

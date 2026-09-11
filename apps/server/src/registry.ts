@@ -5,6 +5,7 @@ import { getConsultAdvice, getConsultAsk, requestSystemAction, requestSystemActi
 import { escobaModule, escobaModule2v2, requestEscobaSystemAction } from "@hexdev/escoba-module";
 import { generalaModule, requestGeneralaSystemAction } from "@hexdev/generala-module";
 import { getAbandonedSeatAction as getMahjongAbandonedSeatAction, mahjongSolitaireModule, requestMahjongSolitaireSystemAction } from "@hexdev/mahjong-solitaire-module";
+import { mentirosoModule, mentirosoModule4, mentirosoModule6, requestMentirosoSystemAction } from "@hexdev/mentiroso-module";
 
 // The registry erases per-module state types (same documented boundary as
 // `platform-core/registry.ts` itself); this is that one spot for the pairing.
@@ -62,6 +63,43 @@ const isTrucoPaidQuestion = (action: unknown): boolean => typeof action === "obj
  * magic value nobody could argue with.
  */
 const GENERALA_SYSTEM_ACTION_PAUSE_MS = 350;
+
+/**
+ * THE SECOND GAME WITH AN OPINION ABOUT ITS OWN PACING, and `platform-core`'s
+ * own registry docblock already previewed exactly this case: "a card game
+ * pays it ONCE PER HAND; a dice game would pay it once per ROLL, which at
+ * the room's 1800ms beat is minutes of dead time per match."
+ *
+ * MEASURED, NOT ESTIMATED (design D6, `sdd/mentiroso/design`): a round ends
+ * with exactly one die surrendered, so rounds = dice surrendered. Six seats
+ * hold 30 dice at the start and the match ends when five seats hold none:
+ * 25-29 rounds, i.e. 26-30 system actions counting the opening draw. At the
+ * room's 1800ms beat that is 47-54 seconds of a six-seat table sitting
+ * still — under a minute, not the "minutos muertos" a naive projection would
+ * assume. Two seats: 6-10 system actions, 12-18 seconds.
+ *
+ * WHY 1200 AND NOT GENERALA'S 350: Generala's pause is dead time BEFORE an
+ * animation that already carries the information — `dice-ui`'s own ~640ms
+ * tumble starts the instant the view arrives, so the roll is legible with
+ * no pause at all, and 350ms is only the beat between one view leaving and
+ * the next throw beginning. Mentiroso's pause IS the showdown-reading
+ * window itself: up to 30 revealed dice and a counted face sit on screen
+ * during it, replaced by the next round's roll the moment it ends — exactly
+ * the failure `systemActionPauseMs` exists to prevent ("no hay tiempo de
+ * verla, enseguida desaparece"). 1200ms leaves roughly 560ms of stillness
+ * past the tumble and caps dead time near 36s at the six-seat ceiling, 12s
+ * at the two-seat one — both measured against system-action COUNTS
+ * (rounds plus the opening draw), the same unit the 1800ms figures above
+ * use throughout, never rounds alone.
+ *
+ * OMITTING THIS FIELD IS A DIFFERENT ANSWER FROM DECLARING `0` — see
+ * `GameModuleRegistration.systemActionPauseMs`'s own docstring
+ * (`platform-core/registry.ts`): omitting means "no opinion, keep the
+ * room's 1800ms"; `0` means "do not pause at all". This registration has an
+ * opinion, so — like Generala's — it states it rather than leaving the
+ * accessor to answer on its behalf.
+ */
+const MENTIROSO_SYSTEM_ACTION_PAUSE_MS = 1200;
 
 /**
  * The composition root's own game registry — EXTRACTED from `index.ts`
@@ -194,6 +232,48 @@ const MATCH_GAME_REGISTRATIONS: readonly GameModuleRegistration[] = [
       module: generalaModule,
       requestSystemAction: requestGeneralaSystemAction as SystemActionRequester,
       systemActionPauseMs: GENERALA_SYSTEM_ACTION_PAUSE_MS,
+    },
+    /**
+     * THE THREE MENTIROSO REGISTRATIONS (SDD `mentiroso`, task 6.1) — three
+     * separate `GameId`s over the ONE shared `requestMentirosoSystemAction`
+     * requester (`mentiroso-module/src/roll.ts`), the same seat-count-generic
+     * shape `mentirosoModule`/`mentirosoModule4`/`mentirosoModule6` already
+     * share for every other member (`applyAction`, `getLegalActions`,
+     * `getViewFor`, `getOutcome`) — nothing here branches on seat count
+     * either.
+     *
+     * `requestSystemAction` pairs the same way Generala's own entry does:
+     * every mentiroso match begins in `opening-draw`, a phase in which no
+     * seat has a legal action at all (`legal-actions.ts` offers nothing
+     * outside `bidding`) — exactly the condition `MatchRoom.runAdvanceOnce`
+     * reads as its cue to ask this registry for a system action. Without
+     * this pairing a fresh table would seat every player and then sit in
+     * front of a cup nobody in the process is able to shake.
+     *
+     * `systemActionPauseMs` is declared on all three, identically —
+     * see `MENTIROSO_SYSTEM_ACTION_PAUSE_MS`'s own comment for the
+     * measurement.
+     *
+     * No consult hooks, the same decision Generala's own entry states:
+     * mentiroso registers no partner and nothing a seat could usefully be
+     * asked (design's own Data Flow diagram has no `answer` arrow), so the
+     * fail-closed defaults already answer correctly for the three entries
+     * that supply none of them.
+     */
+    {
+      module: mentirosoModule,
+      requestSystemAction: requestMentirosoSystemAction as SystemActionRequester,
+      systemActionPauseMs: MENTIROSO_SYSTEM_ACTION_PAUSE_MS,
+    },
+    {
+      module: mentirosoModule4,
+      requestSystemAction: requestMentirosoSystemAction as SystemActionRequester,
+      systemActionPauseMs: MENTIROSO_SYSTEM_ACTION_PAUSE_MS,
+    },
+    {
+      module: mentirosoModule6,
+      requestSystemAction: requestMentirosoSystemAction as SystemActionRequester,
+      systemActionPauseMs: MENTIROSO_SYSTEM_ACTION_PAUSE_MS,
     },
 ];
 

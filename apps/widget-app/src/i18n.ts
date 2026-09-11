@@ -10,7 +10,7 @@
  * literal strings: the widget owns translation, not the game module.
  */
 
-import type { GameId } from "@hexdev/platform-contract";
+import type { GameFamilyId, GameId } from "@hexdev/platform-contract";
 
 const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   "games.truco.name": "Truco Argentino",
@@ -34,6 +34,17 @@ const GAME_NAME_LABELS: Readonly<Record<string, string>> = {
   // permanently, so there is no sibling and no knob for a name to be narrowed
   // by — the game is called what a player calls it and nothing else.
   "games.generala.name": "Generala",
+  /**
+   * SDD `mentiroso`, task 6.1 — THREE ids, not two, so unlike escoba's shared
+   * family name each seat count needs its own distinguishing label
+   * (`formatName`/`formatDescription` cannot narrow it — see this file's own
+   * "mentiroso" guard on both, below). The 2-seat table is the DEFAULT
+   * modality and carries the plain family name, the same "no qualifier on
+   * the default" convention truco's own pair already keeps.
+   */
+  "games.mentiroso2.name": "Mentiroso",
+  "games.mentiroso4.name": "Mentiroso (4 jugadores)",
+  "games.mentiroso6.name": "Mentiroso (6 jugadores)",
 };
 
 const CONFIG_LABELS: Readonly<Record<string, string>> = {
@@ -100,6 +111,24 @@ const MODALITY_SUMMARY: Readonly<Record<GameId, string>> = {
    * rather than imported for the reason this whole file is hand-written copy:
    * a line computed from the engine would reword itself silently. */
   generala: "Planilla de 11 categorías",
+  /**
+   * Mentiroso's `configOptions` is empty at all three registered seat
+   * counts, for the same platform reason escoba/mahjong/generala reach this
+   * table: there is no lobby knob beyond seat count itself
+   * (`mentiroso-module`'s own `MentirosoMatchConfig = Record<string,
+   * never>`).
+   *
+   * THE GAME'S OWN DISTINCTIVE RULE, not a scale fact like its neighbours'
+   * (30 points, 144 tiles, 11 boxes) — mentiroso has no fixed scale to state
+   * that is not already the seat count itself. The one rule a newcomer would
+   * not guess is the moving ceiling (mentiroso-rules R-CEILING): once the bid
+   * cannot rise any further, doubting stops being a choice and becomes the
+   * only legal move. Identical across 2/4/6 seats because it is a rule of
+   * the GAME, not a fact about any one table size.
+   */
+  "mentiroso-2": "El techo obliga a dudar.",
+  "mentiroso-4": "El techo obliga a dudar.",
+  "mentiroso-6": "El techo obliga a dudar.",
 };
 
 export const STRINGS = {
@@ -248,8 +277,21 @@ export const STRINGS = {
    * Argentino 2v2") and a points number. A line that says "en parejas, con un
    * compañero" is the difference between choosing and guessing.
    */
-  formatDescription: (seatCount: number): string | undefined =>
-    seatCount === 1
+  /**
+   * `gameFamily` is OPTIONAL and every existing call keeps working unchanged
+   * without it — this generic, seat-count-only lookup assumed every 4-seat
+   * game was two teams of two, which was true of every game shipped before
+   * mentiroso and stops being true the moment a 4-seat FREE-FOR-ALL table
+   * exists (mentiroso's own second registration: four individual rivals, no
+   * partner at all). `"En parejas..."` would be a wrong claim about THAT
+   * game, not merely an imprecise one, so this one family opts out at every
+   * seat count it registers — `game-screen.ts` passes `entry.gameFamily`
+   * through so this function can tell mentiroso's 4 seats from truco's/
+   * escoba's, which it otherwise structurally cannot.
+   */
+  formatDescription: (seatCount: number, gameFamily?: GameFamilyId): string | undefined => {
+    if (gameFamily === "mentiroso") return undefined;
+    return seatCount === 1
       ? // Deliberately the two-seat line with the rival replaced rather than
         // removed, because a solitaire is not "the same game with nobody
         // else in it": something IS on the other side of it. Saying so is
@@ -260,7 +302,8 @@ export const STRINGS = {
         ? "Vos contra un rival."
         : seatCount === 4
           ? "En parejas: vos y un compañero contra dos."
-          : undefined,
+          : undefined;
+  },
   /* WHAT A CARD IS, once the hero has already said WHICH GAME.
    *
    * The hero reads "Truco Argentino" and the first card's heading read "Truco
@@ -272,14 +315,19 @@ export const STRINGS = {
    * table says mano a mano and en parejas. Same seat-count switch and same
    * undefined-for-anything-else shape as formatDescription above, so a seat
    * count nobody has written a line for falls back to the game's name. */
-  formatName: (seatCount: number): string | undefined =>
+  /** `gameFamily` — same opt-out and same reason as `formatDescription`
+   * above, kept as a matched pair so the title and the blurb under it can
+   * never disagree about whether THIS family means teams by "4 seats". */
+  formatName: (seatCount: number, gameFamily?: GameFamilyId): string | undefined => {
+    if (gameFamily === "mentiroso") return undefined;
     // "Solitario" is the ordinary Spanish word for a one-player format, the
     // same register "mano a mano" and "en parejas" are in — a phrase a
     // player says rather than a seat count spelled out. It repeats a word
     // the game's own name already carries, which is the price of naming the
     // FORMAT here instead of the game; the alternative ("Un jugador") names
     // an arithmetic fact nobody says out loud.
-    seatCount === 1 ? "Solitario" : seatCount === 2 ? "Mano a mano" : seatCount === 4 ? "En parejas" : undefined,
+    return seatCount === 1 ? "Solitario" : seatCount === 2 ? "Mano a mano" : seatCount === 4 ? "En parejas" : undefined;
+  },
   /** The label over the modality selector — what the buttons under it choose. */
   modalityLegend: "Modo",
   playVsBot: "Jugar contra la máquina",

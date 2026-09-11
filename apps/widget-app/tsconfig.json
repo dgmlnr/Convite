@@ -43,6 +43,12 @@
       "path": "../../packages/games/generala-ui"
     },
     {
+      "path": "../../packages/games/mentiroso-engine"
+    },
+    {
+      "path": "../../packages/games/mentiroso-ui"
+    },
+    {
       "path": "../../packages/games/truco-engine"
     },
     {
