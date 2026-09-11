@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { describeGameModule, findLeakedSecrets } from "@hexdev/platform-contract";
 import type { ApplyResult, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
-import { applyDoubt, applyRaise, createMatch, getLegalActions, getOutcome, getViewFor, resolveShowdown, secretsFor, totalDice } from "@hexdev/mentiroso-engine";
+import { applyDoubt, applyRaise, ceilingFor, createMatch, getLegalActions, getOutcome, getViewFor, resolveShowdown, secretsFor, totalDice } from "@hexdev/mentiroso-engine";
 import type { DieFace, MatchState, PlayerId } from "@hexdev/mentiroso-engine";
 import { SYSTEM_ACTOR_ID as ROLL_SYSTEM_ACTOR_ID, requestMentirosoSystemAction as rollRequestMentirosoSystemAction } from "./roll.js";
-import { SYSTEM_ACTOR_ID, applyAction, mentirosoHiddenState, mentirosoModule, requestMentirosoSystemAction } from "./index.js";
+import { SYSTEM_ACTOR_ID, applyAction, mentirosoHiddenState, mentirosoModule, mentirosoModule4, mentirosoModule6, requestMentirosoSystemAction } from "./index.js";
 import type { MentirosoModuleAction } from "./index.js";
 
 /**
@@ -651,5 +651,412 @@ describe("the full round trip through a doubt (SDD `mentiroso`, task 3.5 — the
     state = driveOneSystemStep(state, faceScript([1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 1, 2]));
     expect(state.phase.kind).toBe("bidding");
     expect(totalDice(state)).toBe(14); // a roll redistributes dice, it never spends them
+  });
+});
+
+/**
+ * `mentirosoModule4`/`mentirosoModule6` — the SECOND and THIRD `GameModule`
+ * registrations (SDD `mentiroso`, work unit C4/task 3.4), adopting
+ * `mentirosoModule`'s own (C3's) fixture SHAPE: every fixture below is sized
+ * for ITS OWN registration's seat count, never widened from another one —
+ * `mentirosoModule.createMatch` (2 seats) can never reach a 4- or 6-player
+ * state, so reusing its fixtures would not be genuinely reachable through
+ * THIS registration's own port, the identical reasoning C3's own docblock
+ * already recorded for not reusing C2's four-seat `PLAYER_0..PLAYER_3`
+ * fixtures.
+ */
+const FOUR_SEAT_P0 = "c4-4seat-0" as PlayerId;
+const FOUR_SEAT_P1 = "c4-4seat-1" as PlayerId;
+const FOUR_SEAT_P2 = "c4-4seat-2" as PlayerId;
+const FOUR_SEAT_P3 = "c4-4seat-3" as PlayerId;
+const FOUR_SEAT_ASSIGNMENTS: readonly SeatAssignment[] = [
+  { seat: 0, playerId: FOUR_SEAT_P0 },
+  { seat: 1, playerId: FOUR_SEAT_P1 },
+  { seat: 2, playerId: FOUR_SEAT_P2 },
+  { seat: 3, playerId: FOUR_SEAT_P3 },
+];
+
+/** The floor state (design D4's own fixtures note): every seat still alive,
+ * `secretsFor` MUST produce a real secret somewhere this registration's own
+ * fixtures reach. */
+const fourSeatReachableState: MatchState = {
+  players: [
+    { id: FOUR_SEAT_P0, seat: 0, dice: [5, 2, 6, 1] },
+    { id: FOUR_SEAT_P1, seat: 1, dice: [3, 4] },
+    { id: FOUR_SEAT_P2, seat: 2, dice: [6, 5, 5] },
+    { id: FOUR_SEAT_P3, seat: 3, dice: [1, 2, 3, 4, 5] },
+  ],
+  phase: { kind: "bidding", turnSeat: 2, bid: { quantity: 3, face: 5 } },
+};
+
+/** Same quantity, strictly higher face — one of the raises `getLegalActions`
+ * offers seat 2 above. */
+const FOUR_SEAT_LEGAL_ACTION: MentirosoModuleAction = { type: "raise", playerId: FOUR_SEAT_P2, bid: { quantity: 3, face: 6 } };
+
+/** Built through the REGISTRATION's own `createMatch` (design D4: the
+ * opening draw is public) — a fresh four-seat table is exactly what that
+ * function already produces. */
+const fourSeatOpeningDrawState: MatchState = mentirosoModule4.createMatch({}, FOUR_SEAT_ASSIGNMENTS);
+
+/** Internally consistent with `showdown.ts`'s own tally rule: three sixes on
+ * the table (two on seat 0, one on seat 1) exactly meet a bid of (3, 6), so
+ * the bidder (seat 0) wins on "at least" and the doubter (seat 1) surrenders
+ * a die. */
+const fourSeatShowdownState: MatchState = {
+  players: [
+    { id: FOUR_SEAT_P0, seat: 0, dice: [6, 6, 2, 4] },
+    { id: FOUR_SEAT_P1, seat: 1, dice: [6, 1, 3] },
+    { id: FOUR_SEAT_P2, seat: 2, dice: [2, 3, 5] },
+    { id: FOUR_SEAT_P3, seat: 3, dice: [4, 5] },
+  ],
+  phase: { kind: "showdown", bid: { quantity: 3, face: 6 }, doubterSeat: 1, matched: 3, loserSeat: 1, winnerSeat: 0 },
+};
+
+/**
+ * ONE seat eliminated, three still active — at four seats this is genuinely
+ * DISTINCT from `fourSeatTerminalState` below (unlike `mentirosoModule`'s own
+ * two seats, where the two coincide): three live seats is nowhere near "the
+ * sole seat left holding dice."
+ */
+const fourSeatMidMatchEliminatedState: MatchState = {
+  players: [
+    { id: FOUR_SEAT_P0, seat: 0, dice: [3, 5] },
+    { id: FOUR_SEAT_P1, seat: 1, dice: [] },
+    { id: FOUR_SEAT_P2, seat: 2, dice: [6, 2, 4] },
+    { id: FOUR_SEAT_P3, seat: 3, dice: [1, 6] },
+  ],
+  phase: { kind: "bidding", turnSeat: 2, bid: { quantity: 2, face: 4 } },
+};
+
+/** Three seats eliminated, one holding dice — the actual terminal state. */
+const fourSeatTerminalState: MatchState = {
+  players: [
+    { id: FOUR_SEAT_P0, seat: 0, dice: [] },
+    { id: FOUR_SEAT_P1, seat: 1, dice: [] },
+    { id: FOUR_SEAT_P2, seat: 2, dice: [] },
+    { id: FOUR_SEAT_P3, seat: 3, dice: [6, 3] },
+  ],
+  phase: { kind: "bidding", turnSeat: 3, bid: { quantity: 1, face: 6 } },
+};
+
+const FOUR_SEAT_HAND_BUILT_STATES: readonly MatchState[] = [
+  fourSeatReachableState,
+  fourSeatShowdownState,
+  fourSeatMidMatchEliminatedState,
+  fourSeatTerminalState,
+];
+
+describe("mentirosoModule4 fixtures — this unit's own named risk, checked rather than assumed", () => {
+  it("no two players in the same hand-built state share an identical dice array", () => {
+    // Eliminated seats are deliberately excluded here: two or more empty
+    // arrays coinciding is exactly what the empty-array-exclusion fence
+    // (mentiroso-hidden-dice) expects — `secretsFor` never declares an empty
+    // array a secret in the first place, so a coincidence between two
+    // eliminated seats carries none of the risk this check exists to catch.
+    for (const state of FOUR_SEAT_HAND_BUILT_STATES) {
+      for (const player of state.players) {
+        if (player.dice.length === 0) continue;
+        const sameArray = state.players.filter(
+          (other) => other.id !== player.id && other.dice.length > 0 && JSON.stringify(other.dice) === JSON.stringify(player.dice),
+        );
+        expect(sameArray).toEqual([]);
+      }
+    }
+  });
+
+  it("no LIVE player's dice count equals their own seat number, in any hand-built state", () => {
+    for (const state of FOUR_SEAT_HAND_BUILT_STATES) {
+      for (const player of state.players) {
+        if (player.dice.length === 0) continue;
+        expect(player.dice.length).not.toBe(player.seat);
+      }
+    }
+  });
+});
+
+describeGameModule(
+  mentirosoModule4,
+  {
+    config: {},
+    seats: FOUR_SEAT_ASSIGNMENTS,
+    playerId: FOUR_SEAT_P2,
+    reachableState: fourSeatReachableState,
+    legalAction: FOUR_SEAT_LEGAL_ACTION,
+    terminalState: fourSeatTerminalState,
+    botTier: "normal",
+    hiddenStateSamples: [fourSeatOpeningDrawState, fourSeatShowdownState, fourSeatMidMatchEliminatedState],
+  },
+  { describe, it, expect },
+);
+
+describe("what mentirosoModule4 tells the registry", () => {
+  it("declares four seats, the dados shelf and its own family", () => {
+    expect(mentirosoModule4.metadata).toEqual({
+      seatCount: 4,
+      gameFamily: "mentiroso",
+      section: "dados",
+      displayNameKey: "games.mentiroso4.name",
+      assetBase: "/games/mentiroso",
+    });
+    expect(mentirosoModule4.id).toBe("mentiroso-4");
+  });
+});
+
+describe("the table mentirosoModule4 builds", () => {
+  it("refuses to seat one player twice", () => {
+    expect(() =>
+      mentirosoModule4.createMatch({}, [
+        { seat: 0, playerId: FOUR_SEAT_P0 },
+        { seat: 1, playerId: FOUR_SEAT_P0 },
+        { seat: 2, playerId: FOUR_SEAT_P2 },
+        { seat: 3, playerId: FOUR_SEAT_P3 },
+      ]),
+    ).toThrow(/distinct player/);
+  });
+
+  it("refuses a seat list that is not one player at each of its four seats", () => {
+    expect(() => mentirosoModule4.createMatch({}, [{ seat: 0, playerId: FOUR_SEAT_P0 }])).toThrow(/seats 0/);
+    expect(() => mentirosoModule4.createMatch({}, [...FOUR_SEAT_ASSIGNMENTS, { seat: 4, playerId: "fifth" as PlayerId }])).toThrow(/seats 0/);
+  });
+});
+
+/**
+ * Six seats: the FIRST registration in this whole chain able to carry more
+ * than one eliminated seat while the match still continues (with two seats,
+ * eliminating the sole rival always ends the match in the same step; with
+ * four, only one elimination is unambiguously safe before the table nears
+ * its own terminal shape). This registration's own fixtures are built to
+ * exercise exactly that opportunity — see this unit's own apply-progress
+ * record for the reasoning.
+ */
+const SIX_SEAT_P0 = "c4-6seat-0" as PlayerId;
+const SIX_SEAT_P1 = "c4-6seat-1" as PlayerId;
+const SIX_SEAT_P2 = "c4-6seat-2" as PlayerId;
+const SIX_SEAT_P3 = "c4-6seat-3" as PlayerId;
+const SIX_SEAT_P4 = "c4-6seat-4" as PlayerId;
+const SIX_SEAT_P5 = "c4-6seat-5" as PlayerId;
+const SIX_SEAT_ASSIGNMENTS: readonly SeatAssignment[] = [
+  { seat: 0, playerId: SIX_SEAT_P0 },
+  { seat: 1, playerId: SIX_SEAT_P1 },
+  { seat: 2, playerId: SIX_SEAT_P2 },
+  { seat: 3, playerId: SIX_SEAT_P3 },
+  { seat: 4, playerId: SIX_SEAT_P4 },
+  { seat: 5, playerId: SIX_SEAT_P5 },
+];
+
+/** The floor state: every seat still alive, `secretsFor` MUST produce a real
+ * secret somewhere this registration's own fixtures reach. */
+const sixSeatReachableState: MatchState = {
+  players: [
+    { id: SIX_SEAT_P0, seat: 0, dice: [4, 2, 6, 1, 5] },
+    { id: SIX_SEAT_P1, seat: 1, dice: [3, 3] },
+    { id: SIX_SEAT_P2, seat: 2, dice: [6, 5, 5, 2] },
+    { id: SIX_SEAT_P3, seat: 3, dice: [1] },
+    { id: SIX_SEAT_P4, seat: 4, dice: [2, 6, 4] },
+    { id: SIX_SEAT_P5, seat: 5, dice: [5, 1, 3, 2, 6, 4] },
+  ],
+  phase: { kind: "bidding", turnSeat: 4, bid: { quantity: 3, face: 5 } },
+};
+
+const SIX_SEAT_LEGAL_ACTION: MentirosoModuleAction = { type: "raise", playerId: SIX_SEAT_P4, bid: { quantity: 3, face: 6 } };
+
+/** Built through the REGISTRATION's own `createMatch` — a fresh six-seat
+ * table (30 dice, the ruleset's own worked example) is exactly what that
+ * function already produces. */
+const sixSeatOpeningDrawState: MatchState = mentirosoModule6.createMatch({}, SIX_SEAT_ASSIGNMENTS);
+
+/** Internally consistent with `showdown.ts`'s own tally rule: four sixes on
+ * the table (two on seat 0, one on seat 2, one on seat 5) exactly meet a bid
+ * of (4, 6), so the bidder (seat 0) wins on "at least" and the doubter (seat
+ * 1) surrenders a die. */
+const sixSeatShowdownState: MatchState = {
+  players: [
+    { id: SIX_SEAT_P0, seat: 0, dice: [6, 6, 2, 1] },
+    { id: SIX_SEAT_P1, seat: 1, dice: [3, 4, 5] },
+    { id: SIX_SEAT_P2, seat: 2, dice: [6, 1, 3] },
+    { id: SIX_SEAT_P3, seat: 3, dice: [2, 5, 4, 1] },
+    { id: SIX_SEAT_P4, seat: 4, dice: [3, 2] },
+    { id: SIX_SEAT_P5, seat: 5, dice: [6, 5, 4, 3] },
+  ],
+  phase: { kind: "showdown", bid: { quantity: 4, face: 6 }, doubterSeat: 1, matched: 4, loserSeat: 1, winnerSeat: 0 },
+};
+
+/**
+ * TWO eliminated seats (1 and 4), INTERSPERSED among four still-alive seats
+ * (0, 2, 3, 5) rather than trailing at the end — the shape this whole
+ * registration is uniquely positioned to reach, and the one the empty-array
+ * exclusion trap is easiest to trip against: a leaked-secret scan that only
+ * ever saw a trailing empty seat could still miss one sitting in the middle
+ * of the table.
+ */
+const sixSeatMidMatchInterspersedState: MatchState = {
+  players: [
+    { id: SIX_SEAT_P0, seat: 0, dice: [3, 3, 5] },
+    { id: SIX_SEAT_P1, seat: 1, dice: [] },
+    { id: SIX_SEAT_P2, seat: 2, dice: [2, 6, 4] },
+    { id: SIX_SEAT_P3, seat: 3, dice: [5, 6, 4, 2] },
+    { id: SIX_SEAT_P4, seat: 4, dice: [] },
+    { id: SIX_SEAT_P5, seat: 5, dice: [1, 3] },
+  ],
+  phase: { kind: "bidding", turnSeat: 3, bid: { quantity: 2, face: 3 } },
+};
+
+/**
+ * THREE consecutively eliminated seats (1, 2, 3), three still alive (0, 4,
+ * 5) — the fixture behind both the turn-skip test and the shrunk-ceiling
+ * test below, since both need the identical depleted table: `nextActiveSeat`
+ * jumping several seats in a row is only reachable with three or more
+ * consecutive eliminations, and only a six-seat table can hold that many
+ * while still leaving more than one seat alive (getOutcome stays null with
+ * three seats standing).
+ */
+const sixSeatDepletedPlayers: MatchState["players"] = [
+  { id: SIX_SEAT_P0, seat: 0, dice: [6, 6] },
+  { id: SIX_SEAT_P1, seat: 1, dice: [] },
+  { id: SIX_SEAT_P2, seat: 2, dice: [] },
+  { id: SIX_SEAT_P3, seat: 3, dice: [] },
+  { id: SIX_SEAT_P4, seat: 4, dice: [6] },
+  { id: SIX_SEAT_P5, seat: 5, dice: [3] },
+];
+
+/** A low, easily-raised bid — for the turn-skip test: seat 0 raises, and the
+ * next turn must land on seat 4, skipping seats 1, 2 and 3 in one hop. */
+const sixSeatTurnSkipState: MatchState = {
+  players: sixSeatDepletedPlayers,
+  phase: { kind: "bidding", turnSeat: 0, bid: { quantity: 1, face: 1 } },
+};
+
+/** The SAME depleted table, at its own ceiling exactly — for the shrunk-
+ * ceiling test: total dice is 4 (2 + 1 + 1), so the ceiling is (4, 6), far
+ * below the (30, 6) a fresh six-seat table opens at. */
+const sixSeatLowCeilingState: MatchState = {
+  players: sixSeatDepletedPlayers,
+  phase: { kind: "bidding", turnSeat: 0, bid: { quantity: 4, face: 6 } },
+};
+
+/** Five seats eliminated, one holding dice — the actual terminal state. */
+const sixSeatTerminalState: MatchState = {
+  players: [
+    { id: SIX_SEAT_P0, seat: 0, dice: [] },
+    { id: SIX_SEAT_P1, seat: 1, dice: [] },
+    { id: SIX_SEAT_P2, seat: 2, dice: [] },
+    { id: SIX_SEAT_P3, seat: 3, dice: [] },
+    { id: SIX_SEAT_P4, seat: 4, dice: [] },
+    { id: SIX_SEAT_P5, seat: 5, dice: [6, 3] },
+  ],
+  phase: { kind: "bidding", turnSeat: 5, bid: { quantity: 1, face: 6 } },
+};
+
+const SIX_SEAT_HAND_BUILT_STATES: readonly MatchState[] = [
+  sixSeatReachableState,
+  sixSeatShowdownState,
+  sixSeatMidMatchInterspersedState,
+  sixSeatTerminalState,
+];
+
+describe("mentirosoModule6 fixtures — this unit's own named risk, checked rather than assumed", () => {
+  it("no two players in the same hand-built state share an identical dice array", () => {
+    // Same exclusion as `mentirosoModule4`'s own version of this check above:
+    // two or more eliminated seats sharing the empty array is expected, not a
+    // risk — `secretsFor` never declares `[]` a secret to begin with.
+    for (const state of SIX_SEAT_HAND_BUILT_STATES) {
+      for (const player of state.players) {
+        if (player.dice.length === 0) continue;
+        const sameArray = state.players.filter(
+          (other) => other.id !== player.id && other.dice.length > 0 && JSON.stringify(other.dice) === JSON.stringify(player.dice),
+        );
+        expect(sameArray).toEqual([]);
+      }
+    }
+  });
+
+  it("no LIVE player's dice count equals their own seat number, in any hand-built state", () => {
+    for (const state of SIX_SEAT_HAND_BUILT_STATES) {
+      for (const player of state.players) {
+        if (player.dice.length === 0) continue;
+        expect(player.dice.length).not.toBe(player.seat);
+      }
+    }
+  });
+});
+
+describeGameModule(
+  mentirosoModule6,
+  {
+    config: {},
+    seats: SIX_SEAT_ASSIGNMENTS,
+    playerId: SIX_SEAT_P4,
+    reachableState: sixSeatReachableState,
+    legalAction: SIX_SEAT_LEGAL_ACTION,
+    terminalState: sixSeatTerminalState,
+    botTier: "hard",
+    hiddenStateSamples: [sixSeatOpeningDrawState, sixSeatShowdownState, sixSeatMidMatchInterspersedState, sixSeatLowCeilingState],
+  },
+  { describe, it, expect },
+);
+
+describe("what mentirosoModule6 tells the registry", () => {
+  it("declares six seats, the dados shelf and its own family", () => {
+    expect(mentirosoModule6.metadata).toEqual({
+      seatCount: 6,
+      gameFamily: "mentiroso",
+      section: "dados",
+      displayNameKey: "games.mentiroso6.name",
+      assetBase: "/games/mentiroso",
+    });
+    expect(mentirosoModule6.id).toBe("mentiroso-6");
+  });
+});
+
+describe("the table mentirosoModule6 builds", () => {
+  it("refuses to seat one player twice", () => {
+    expect(() =>
+      mentirosoModule6.createMatch({}, [
+        { seat: 0, playerId: SIX_SEAT_P0 },
+        { seat: 1, playerId: SIX_SEAT_P0 },
+        { seat: 2, playerId: SIX_SEAT_P2 },
+        { seat: 3, playerId: SIX_SEAT_P3 },
+        { seat: 4, playerId: SIX_SEAT_P4 },
+        { seat: 5, playerId: SIX_SEAT_P5 },
+      ]),
+    ).toThrow(/distinct player/);
+  });
+
+  it("refuses a seat list that is not one player at each of its six seats", () => {
+    expect(() => mentirosoModule6.createMatch({}, [{ seat: 0, playerId: SIX_SEAT_P0 }])).toThrow(/seats 0/);
+    expect(() => mentirosoModule6.createMatch({}, [...SIX_SEAT_ASSIGNMENTS, { seat: 6, playerId: "seventh" as PlayerId }])).toThrow(/seats 0/);
+  });
+});
+
+describe("mentirosoModule6 — the more-than-one-eliminated-seat opportunity (SDD mentiroso, work unit C4/task 3.4)", () => {
+  it("THE FENCE, with eliminated seats INTERSPERSED rather than trailing: excludes seats 1 and 4 while still reporting real secrets for the seats still alive", () => {
+    const secretsAtSeat1 = mentirosoModule6.hiddenState.kind === "hidden-per-seat" ? mentirosoModule6.hiddenState.secretsFor(sixSeatMidMatchInterspersedState, SIX_SEAT_P1) : [];
+    expect(secretsAtSeat1).not.toContainEqual([]);
+    expect(secretsAtSeat1.length).toBeGreaterThan(0); // seat 1 still sees real secrets from seats 0, 2, 3, 5
+
+    const leaks = SIX_SEAT_ASSIGNMENTS.flatMap((assignment) => {
+      const secrets = mentirosoModule6.hiddenState.kind === "hidden-per-seat" ? mentirosoModule6.hiddenState.secretsFor(sixSeatMidMatchInterspersedState, assignment.playerId) : [];
+      const leaked = findLeakedSecrets(mentirosoModule6.getViewFor(sixSeatMidMatchInterspersedState, assignment.playerId), secrets);
+      return leaked.length === 0 ? [] : [{ leakedTo: assignment.playerId, leaked }];
+    });
+    expect(leaks).toEqual([]);
+  });
+
+  it("nextActiveSeat skips THREE consecutive eliminated seats in one hop, driven through the full applyAction path", () => {
+    const legal = getLegalActions(sixSeatTurnSkipState, SIX_SEAT_P0).find((action) => action.type === "raise");
+    if (legal === undefined) throw new Error("expected at least one legal raise for seat 0");
+    const result = applyAction(sixSeatTurnSkipState, legal);
+    if (!result.ok) throw new Error(`the raise was refused: ${result.violation.code}`);
+    expect(result.state.phase).toEqual({ kind: "bidding", turnSeat: 4, bid: legal.bid });
+  });
+
+  it("the ceiling shrinks from (30, 6) at a fresh table to (4, 6) once four of six seats are eliminated", () => {
+    expect(ceilingFor(sixSeatOpeningDrawState)).toEqual({ quantity: 30, face: 6 });
+    expect(ceilingFor(sixSeatLowCeilingState)).toEqual({ quantity: 4, face: 6 });
+  });
+
+  it("at that shrunk ceiling, only doubt is offered — the same forced move the ruleset names, now measured at its lower end", () => {
+    const legal = getLegalActions(sixSeatLowCeilingState, SIX_SEAT_P0);
+    expect(legal).toEqual([{ type: "doubt", playerId: SIX_SEAT_P0 }]);
   });
 });
