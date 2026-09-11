@@ -217,6 +217,30 @@ describe("cups: a rival's dice count is public — a status mark says so without
     const status = container.querySelector<HTMLElement>('[data-seat="5"] .hexdev-mentiroso-cup-status')!;
     expect(status.style.color).toBe("rgb(242, 242, 242)");
   });
+
+  /**
+   * FOUND BY LOOKING (SDD `mentiroso`, work unit E5/task 5.5, rendering this
+   * package's own real composed table — `table.ts` — for the first time,
+   * inside the felt `SEAT_FRAGMENT_SCALE` shrinks by): with no font-size of
+   * its own, this mark inherits the ~16px ambient body default, which the
+   * SAME 0.32 shrink then renders at ~5px — legible ink (the fix just above),
+   * illegible size. `STATUS_LABEL_FONT_SIZE_PX` is declared PRE-shrink,
+   * specifically so the post-shrink rendered size lands well above that,
+   * without raising `SEAT_FRAGMENT_SCALE` (and its proven overlap fence,
+   * `table.visual.test.ts`) at all.
+   */
+  it("gives the status mark its own explicit font-size, so it survives the fragment's own shrink at a legible size", () => {
+    const container = mountContainer();
+    const render = createMentirosoCups();
+    render(container, getViewFor(biddingState(), MY_PLAYER_ID));
+
+    const status = container.querySelector<HTMLElement>('[data-seat="5"] .hexdev-mentiroso-cup-status')!;
+    // Pre-shrink size, not the rendered one: `getComputedStyle` inside this
+    // fragment's own `transform: scale(...)` still reports the UNSCALED CSS
+    // font-size (a transform is paint-time, not a style read back), so this
+    // asserts the one number this file actually declares.
+    expect(status.style.fontSize).toBe("36px");
+  });
 });
 
 describe("cups: a seat's fragment keeps its own footprint, wherever its anchor lands in the container", () => {
