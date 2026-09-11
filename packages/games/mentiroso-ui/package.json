@@ -9,7 +9,13 @@
       "default": "./dist/index.js"
     }
   },
+  "dependencies": {
+    "@hexdev/dice-ui": "workspace:*",
+    "@hexdev/mentiroso-engine": "workspace:*"
+  },
   "devDependencies": {
-    "@hexdev/truco-ui": "workspace:*"
+    "@hexdev/truco-ui": "workspace:*",
+    "@types/node": "^26.1.2",
+    "@vitest/browser": "^4.1.10"
   }
 }
