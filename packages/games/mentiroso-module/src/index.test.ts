@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { describeGameModule, findLeakedSecrets } from "@hexdev/platform-contract";
 import type { ApplyResult, RandomSource, SeatAssignment } from "@hexdev/platform-contract";
+import { DEFAULT_THINKING_DELAY_MS } from "@hexdev/mentiroso-bot";
 import { applyDoubt, applyRaise, ceilingFor, createMatch, getLegalActions, getOutcome, getViewFor, resolveShowdown, secretsFor, totalDice } from "@hexdev/mentiroso-engine";
 import type { DieFace, MatchState, PlayerId } from "@hexdev/mentiroso-engine";
 import { SYSTEM_ACTOR_ID as ROLL_SYSTEM_ACTOR_ID, requestMentirosoSystemAction as rollRequestMentirosoSystemAction } from "./roll.js";
@@ -505,16 +506,61 @@ describe("mentirosoModule — the engine's three read members are handed through
   });
 });
 
-describe("mentirosoModule.createBot — the day-one placeholder (see index.ts's own docblock)", () => {
-  it("always chooses the first legal action offered, never anything else", () => {
-    const legal = getLegalActions(twoSeatReachableState, TWO_SEAT_P1);
-    const bot = mentirosoModule.createBot!("hard");
-    expect(bot.chooseAction(getViewFor(twoSeatReachableState, TWO_SEAT_P1), legal, 50)).toBe(legal[0]);
+describe("mentirosoModule.createBot wires REAL tiers (task 3.6 — the day-one placeholder is gone)", () => {
+  /**
+   * The retired placeholder always picked `legalActions[0]` — the smallest
+   * legal raise, whenever one was offered. This state's own current bid is
+   * mathematically impossible to hold from the seat in turn's own vantage:
+   * `probabilityBidHolds` (`mentiroso-bot/src/normal.ts`) needs 6 successes
+   * (`bid.quantity - ownMatching`, `6 - 0`, seat 1 holds no 3s) out of only 5
+   * unseen dice (seat 0's own count), and `atLeast` (task 4.1) returns
+   * EXACTLY zero for `k > n`, not merely a small number. Because `normal`'s
+   * own doubt/raise coin flip is `rng() >= estimate` and `RandomSource` never
+   * reaches 1 (`[0, 1)`), an estimate of exactly 0 makes the doubt outright
+   * DETERMINISTIC — true for every draw `createBot`'s own crypto-backed
+   * `defaultRng` could possibly produce — so this test needs no injected rng
+   * to tell a genuine evaluation apart from the retired placeholder's pick.
+   */
+  const IMPOSSIBLE_BID_STATE: MatchState = {
+    players: [
+      { id: TWO_SEAT_P0, seat: 0, dice: [1, 1, 1, 1, 1] },
+      { id: TWO_SEAT_P1, seat: 1, dice: [1, 2] },
+    ],
+    phase: { kind: "bidding", turnSeat: 1, bid: { quantity: 6, face: 3 } },
+  };
+
+  it("the normal tier doubts an impossible bid instead of raising with legal[0], the retired placeholder's own pick", async () => {
+    const legal = getLegalActions(IMPOSSIBLE_BID_STATE, TWO_SEAT_P1);
+    expect(legal[0]?.type).toBe("raise"); // sanity: the retired placeholder would have raised
+    const bot = mentirosoModule.createBot!("normal");
+    const chosen = await bot.chooseAction(getViewFor(IMPOSSIBLE_BID_STATE, TWO_SEAT_P1), legal, 50);
+    expect(chosen.type).toBe("doubt");
   });
 
-  it("THE FENCE: throws rather than fabricate a move when offered no legal action at all", () => {
-    const bot = mentirosoModule.createBot!("easy");
-    expect(() => bot.chooseAction(getViewFor(twoSeatReachableState, TWO_SEAT_P1), [], 50)).toThrow(/no legal actions/);
+  it("the hard tier is wired too, and still only ever returns an offered legal action", async () => {
+    const legal = getLegalActions(twoSeatReachableState, TWO_SEAT_P1);
+    const bot = mentirosoModule.createBot!("hard");
+    const chosen = await bot.chooseAction(getViewFor(twoSeatReachableState, TWO_SEAT_P1), legal, 50);
+    expect(legal).toContainEqual(chosen);
+  });
+
+  it("wraps whichever tier it returns in the shared thinking delay (real setTimeout, proven with fake timers)", async () => {
+    vi.useFakeTimers();
+    try {
+      const legal = getLegalActions(twoSeatReachableState, TWO_SEAT_P1);
+      const view = getViewFor(twoSeatReachableState, TWO_SEAT_P1);
+      const bot = mentirosoModule.createBot!("easy");
+      let resolved = false;
+      void Promise.resolve(bot.chooseAction(view, legal, 50)).then(() => {
+        resolved = true;
+      });
+      await vi.advanceTimersByTimeAsync(DEFAULT_THINKING_DELAY_MS - 100);
+      expect(resolved, "still waiting just before the delay elapses").toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(resolved, "resolved once it has").toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
