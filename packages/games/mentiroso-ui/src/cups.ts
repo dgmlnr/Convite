@@ -150,6 +150,17 @@ export function createMentirosoCups(): MentirosoCupsRender {
 
       const status = container.ownerDocument.createElement("div");
       status.className = "hexdev-mentiroso-cup-status";
+      // FOUND BY LOOKING (work unit E4/task 5.4, rendering this file beside
+      // `showdown.ts` for the first time over a dark table felt): with no
+      // colour of its own, this mark drew in the browser's default ink —
+      // near-black — over a dark green felt, effectively invisible. The
+      // other games' own `--gx-color-on-surface` fallback (`#f2f2f2`,
+      // `escoba-ui/src/match-over-styles.ts`) is a TENANT-surface token,
+      // not this felt's own — `mentiroso-ui` has not adopted that theming
+      // layer yet (no file in this package references a `--gx-*`/`--hx-*`
+      // custom property), so this is the same plain literal every sibling
+      // file in THIS package already uses, not a new theming convention.
+      status.style.color = "#f2f2f2";
       wrapper.appendChild(status);
 
       container.appendChild(wrapper);
