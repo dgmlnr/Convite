@@ -21,10 +21,17 @@ import type { MentirosoTier, NonEmptyActions } from "./tier.js";
  * task brief warns against, because there IS no cutoff — only a probability.
  *
  * WHICH RAISE TO MAKE, once continuing, is a SEPARATE question research is
- * silent on entirely (C5 only addresses doubting). Picking uniformly among
- * the legal raises is this file's own undecorated default — no bias toward
- * the minimal one, which is `easy`'s own declared differentiator (design
- * D7), and no lookahead, which is `hard`'s.
+ * silent on entirely (C5 only addresses doubting). THIS FILE'S OWN POLICY
+ * CHANGED IN TASK 4.6: it USED to pick uniformly among the legal raises
+ * (`chooseUniformRaise` below, kept only as `easy.ts`'s own fallback now);
+ * D4's seeded round-robin measured that uniform pick losing to `easy`'s own
+ * minimal-raise habit 82.8% of the time (`sdd/mentiroso/apply-progress/stage-d`,
+ * task 4.4's own "THE MEASUREMENT" — the product owner asked for a BETTER
+ * `normal`, not merely one that wins). `selectSafestRaise` below is the
+ * reasoned replacement: among the legal raises, pick whichever
+ * `probabilityBidHolds` scores HIGHEST — the SAME closed-form evaluation the
+ * coin flip already trusts, applied once per candidate, never a second
+ * probability model and never a lookahead (`hard`'s own differentiator).
  *
  * THIS TIER SEES ONLY `PlayerView` — never `MatchState` — the exact
  * information a human sitting in this seat would have. `PlayerView.rivals`
@@ -82,14 +89,60 @@ function isDoubt(action: MentirosoAction): action is Extract<MentirosoAction, { 
 }
 
 /**
- * `normal`'s own raise choice, extracted so `easy.ts` can fall back to the
- * SAME default once its own minimal-raise bias does not trigger, instead of
- * a second "pick uniformly" implementation in a sibling file. Behavior is
- * byte-identical to this file's pre-refactor inline version.
+ * `normal`'s OLD raise choice (task 4.2) — extracted so `easy.ts` can fall
+ * back to the SAME default once its own minimal-raise bias does not trigger,
+ * instead of a second "pick uniformly" implementation in a sibling file.
+ * Behavior is byte-identical to this file's pre-refactor inline version.
+ *
+ * `normal` ITSELF no longer calls this (task 4.6 — see `selectSafestRaise`
+ * below and this file's own top docblock for why); kept exported, unchanged,
+ * purely because `easy.ts` still depends on it.
  */
 export function chooseUniformRaise(raises: readonly RaiseAction[], rng: RandomSource): MentirosoAction {
   const index = Math.floor(rng() * raises.length);
   return raises[index] ?? raises[0];
+}
+
+/**
+ * `normal`'s OWN raise choice as of task 4.6 (product-owner request after
+ * D4's round-robin measured `normal` losing to `easy` 82.8% of the time —
+ * `sdd/mentiroso/apply-progress/stage-d`, task 4.4's own "THE MEASUREMENT").
+ * See this file's own top docblock for the full argument; this docblock
+ * covers only the mechanism.
+ *
+ * Scores every legal raise with `probabilityBidHolds` — the SAME closed-form
+ * evaluation the coin flip above already trusts, applied once per candidate
+ * — and returns whichever scores HIGHEST: the raise this seat is least
+ * likely to later lose a showdown over.
+ *
+ * NOT "ALWAYS `raises[0]`" (the lexicographically minimal raise, `easy.ts`'s
+ * own habitual pick). A legal raise may increase QUANTITY while DROPPING
+ * face (mentiroso-rules: "increasing quantity permits any face, even a
+ * lower one"), and this seat's OWN dice reduce each candidate's required
+ * count differently PER FACE — a hand heavy in one face can make a
+ * HIGHER-quantity, DIFFERENT-face raise strictly SAFER than the smallest
+ * legal one. `normal.test.ts` pins a fixture where the two genuinely
+ * disagree, deliberately avoiding the fixture shape where they would
+ * coincide and prove nothing.
+ *
+ * DETERMINISTIC — no `rng` parameter at all. `normal`'s only remaining
+ * randomness is the coin flip in `chooseModulatedMentirosoAction`, unchanged
+ * by this unit. Ties (equal probability) resolve to whichever candidate
+ * appears EARLIEST in `raises` — the same tie-break convention `hard.ts`'s
+ * own `selectSafestRaise` already uses, so the two tiers' raise-selection
+ * code cannot disagree about what "tied" means.
+ */
+export function selectSafestRaise(view: PlayerView, raises: readonly RaiseAction[], p: number): MentirosoAction {
+  let bestIndex = 0;
+  let bestProbability = probabilityBidHolds(view, raises[0]!.bid, p);
+  for (let index = 1; index < raises.length; index += 1) {
+    const candidateProbability = probabilityBidHolds(view, raises[index]!.bid, p);
+    if (candidateProbability > bestProbability) {
+      bestIndex = index;
+      bestProbability = candidateProbability;
+    }
+  }
+  return raises[bestIndex]!;
 }
 
 /**
@@ -98,8 +151,9 @@ export function chooseUniformRaise(raises: readonly RaiseAction[], rng: RandomSo
  * it explicit one level down (task 4.1/4.2's own p=1/6-vs-1/3 decision-level
  * fence). `modulateEstimate` reshapes the honest `P(bid holds)` BEFORE the
  * coin flip (identity for `normal`, additive noise for `easy` — task 4.3);
- * `selectRaise` picks among the legal raises once continuing (uniform for
- * `normal`, biased toward the minimal one for `easy`).
+ * `selectRaise` picks among the legal raises once continuing (highest
+ * `probabilityBidHolds` for `normal`, task 4.6; biased toward the minimal
+ * one for `easy`).
  *
  * THE CEILING IS CHECKED FIRST, AHEAD OF ANY PROBABILITY (mentiroso-rules
  * R-CEILING): when no raise is legal, `doubt` is returned outright, without
@@ -144,12 +198,13 @@ export function chooseModulatedMentirosoAction(
 }
 
 /**
- * `normal`'s own entry point: the honest estimate, unmodulated, and a
- * uniform pick among the legal raises. `createNormalBot` below is the only
- * production caller, and it always hands in the real `DIE_FACE_PROBABILITY`.
+ * `normal`'s own entry point: the honest estimate, unmodulated, and (task
+ * 4.6) the raise `selectSafestRaise` scores highest among the legal ones.
+ * `createNormalBot` below is the only production caller, and it always hands
+ * in the real `DIE_FACE_PROBABILITY`.
  */
 export function chooseMentirosoAction(view: PlayerView, legalActions: NonEmptyActions, p: number, rng: RandomSource): MentirosoAction {
-  return chooseModulatedMentirosoAction(view, legalActions, p, rng, (honestEstimate) => honestEstimate, chooseUniformRaise);
+  return chooseModulatedMentirosoAction(view, legalActions, p, rng, (honestEstimate) => honestEstimate, (raises) => selectSafestRaise(view, raises, p));
 }
 
 /**

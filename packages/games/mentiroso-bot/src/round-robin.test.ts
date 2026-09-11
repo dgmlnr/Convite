@@ -53,36 +53,56 @@ import type { MentirosoTier, NonEmptyActions } from "./tier.js";
  *     `truco-module/src/tournament.test.ts` already applies.
  *
  * ============================================================================
- * THE FINDING (measured, not adjusted for): `hard > normal` and `hard > easy`
- * both hold overwhelmingly (100.0% and 99.3% aggregate, respectively, with
- * near-zero dispersion across all three seed ranges — see the exact counts
- * in each `it` below). But `normal > easy` — the ordering this task was
- * asked to confirm — DOES NOT HOLD. `easy` beats `normal` in 82.8% of
- * matches (497/600 aggregate), just as consistently across all three seed
- * ranges (497/600 is not a fluke of one range: 168/200, 163/200, 166/200).
+ * TASK 4.6 UPDATE — THE MEASUREMENT WAS RE-RUN AFTER `normal.ts` CHANGED.
  *
- * The true measured order is `hard > easy > normal`, not `hard > normal >
- * easy`. Per the launch prompt's own instruction ("si `hard` no le gana a
- * `normal`, lo reportás ... no ajustes constantes hasta que el número dé"),
- * this file asserts what was ACTUALLY measured, not what the difficulty
- * ladder's name implies. Re-sampling, reseeding, or hand-tuning
- * `normal.ts`/`easy.ts` (both already shipped, unmerged, in PRs #369/#370)
- * to force the "expected" order would be exactly the fabrication that
- * instruction forbids.
+ * D4 (task 4.4, see the archived numbers this file's own git history still
+ * carries) measured `hard > easy > normal` — `normal`'s raise choice back
+ * then was a blind UNIFORM pick, and lost to `easy`'s 70%-of-the-time
+ * minimal-raise habit 82.8% of the time. The product owner asked for a
+ * BETTER `normal` (not merely one that wins) rather than renaming the tiers.
+ * `normal.ts` (task 4.6) now scores every legal raise by
+ * `probabilityBidHolds` and takes the highest-scoring one — a REASONED
+ * policy, not a copy of `easy`'s bias (see `normal.ts`'s own docblock and
+ * `normal.test.ts`'s dedicated fixture proving the two disagree). SAME seed
+ * ranges, SAME sample size, SAME driver as D4 — re-run, not re-designed.
  *
- * WHY, ARGUED FROM THE CODE, NOT ONLY FROM THE NUMBERS: `normal.ts` (task
- * 4.2) picks its raise UNIFORMLY across the entire legal lattice once
- * continuing — including wild, deeply-improbable jumps clear across the
- * board. `easy.ts` (task 4.3) instead raises by the MINIMAL legal step 70%
- * of the time (`MINIMAL_RAISE_BIAS_RATE`), a habit that happens to be a far
- * SAFER one than a blind uniform pick, even though `easy` also adds noise to
- * its own doubt/continue gate. Over many rounds, `normal`'s uniform choice
- * regularly lands on a bid its honest-evaluating opponent correctly doubts
- * and wins; `easy`'s habitual minimal raises are far more often true, so
- * `easy` loses far fewer showdowns despite its noisier doubting. Neither
- * `normal.ts` nor `easy.ts` is touched by this unit — both were already
- * reviewed and shipped in prior work units; this file only measures and
- * reports what their already-shipped policies actually produce together.
+ * THE NEW FINDING (measured, not adjusted for; task 4.6):
+ *
+ *   | pairing        | per range           | aggregate    |
+ *   |----------------|----------------------|--------------|
+ *   | hard vs normal | 105/200, 110/200, 107/200 | 322/600 (53.7%) |
+ *   | hard vs easy   | 199/200, 199/200, 198/200 | 596/600 (99.3%) — UNCHANGED |
+ *   | normal vs easy | 198/200, 199/200, 199/200 | 596/600 (99.3%) |
+ *
+ * `normal > easy` NOW HOLDS, overwhelmingly — a complete reversal from D4's
+ * 82.8%-for-easy finding, not a marginal correction. `hard > easy` is
+ * BYTE-IDENTICAL to D4 (596/600, same per-range split): `easy.ts`/`hard.ts`
+ * are untouched by this unit, exactly as scoped.
+ *
+ * BUT `hard > normal` NEARLY COLLAPSED: from 600/600 (100.0%) down to
+ * 322/600 (53.7%), barely above a coin flip. THIS IS A REAL FINDING, ARGUED
+ * FROM THE CODE, NOT A REGRESSION IN THIS UNIT'S OWN WORK: `hard.ts` (task
+ * 4.4) and `normal.ts` (task 4.6) now both maximize essentially the SAME
+ * quantity — "how likely is this raise to hold" — over the SAME legal
+ * lattice, just through two different mechanisms: `normal` computes it in
+ * exact closed form (`probabilityBidHolds`, task 4.1's own binomial tail);
+ * `hard` estimates it via `DETERMINIZATION_SAMPLES = 200` Monte-Carlo boards
+ * (`hard.ts`'s own `selectSafestRaise`). Two estimators of the same
+ * quantity converging on similar decisions is not a coincidence to explain
+ * away — the sampled estimate has no reason to systematically disagree with
+ * the exact one at 200 samples, which is exactly what a near-50% result
+ * against an otherwise-identical evaluation core predicts. `hard`'s
+ * remaining ~3.7-point edge is consistent with the SAMPLING NOISE its
+ * Monte-Carlo estimate carries and the exact one does not.
+ *
+ * NOT THIS UNIT'S JOB TO FIX: task 4.6 asked for a BETTER `normal` and to
+ * report what re-running THE MEASUREMENT produces, not to preserve `hard`'s
+ * prior margin over `normal`. `hard.ts` is unmodified. Whether `hard` should
+ * gain its own further differentiation (a genuine lookahead, multiple
+ * plies, opponent modeling — none of which any source names for this game,
+ * `sdd/mentiroso/research` C8/C14) is a decision left open for the product
+ * owner, the same way task 4.4 left "does `hard>normal>easy` hold" open for
+ * this task to pick up.
  * ============================================================================
  */
 
@@ -200,33 +220,41 @@ function measureAcrossRanges(left: TierName, right: TierName): { readonly perRan
   return { perRange: results.map((r) => r.leftWins / r.total), aggregate: totalWins / totalMatches };
 }
 
-describe("hard vs normal — seeded round-robin, 2 seats", () => {
-  it("hard wins overwhelmingly, consistently across all three seed ranges (measured: 200/200, 200/200, 200/200 -- 600/600 aggregate)", () => {
+describe("hard vs normal — seeded round-robin, 2 seats (task 4.6: RE-MEASURED after normal's raise policy changed)", () => {
+  it("hard's edge has nearly collapsed to a coin flip -- normal's new closed-form raise choice converges toward hard's Monte-Carlo one (measured: 105/200, 110/200, 107/200 -- 322/600 aggregate, 53.7%)", () => {
+    // See this file's own top docblock ("TASK 4.6 UPDATE") for the full
+    // argument: both tiers now maximize essentially the SAME quantity over
+    // the SAME lattice, through two different mechanisms (exact vs
+    // sampled). Bounded on BOTH sides, not just a one-sided floor, so a
+    // future drift back toward D4's old 100% (hard dominant again) or an
+    // unexpected reversal (normal dominant) is caught, not silently
+    // absorbed.
     const { perRange, aggregate } = measureAcrossRanges("hard", "normal");
-    for (const rate of perRange) expect(rate).toBeGreaterThan(0.9);
-    expect(aggregate).toBeGreaterThan(0.9);
+    for (const rate of perRange) {
+      expect(rate).toBeGreaterThan(0.5);
+      expect(rate).toBeLessThan(0.65);
+    }
+    expect(aggregate).toBeGreaterThan(0.5);
+    expect(aggregate).toBeLessThan(0.65);
   });
 });
 
 describe("hard vs easy — seeded round-robin, 2 seats", () => {
-  it("hard wins overwhelmingly, consistently across all three seed ranges (measured: 199/200, 199/200, 198/200 -- 596/600 aggregate)", () => {
+  it("hard wins overwhelmingly, consistently across all three seed ranges -- UNCHANGED from D4, since easy.ts and hard.ts are untouched by task 4.6 (measured: 199/200, 199/200, 198/200 -- 596/600 aggregate)", () => {
     const { perRange, aggregate } = measureAcrossRanges("hard", "easy");
     for (const rate of perRange) expect(rate).toBeGreaterThan(0.9);
     expect(aggregate).toBeGreaterThan(0.9);
   });
 });
 
-describe("normal vs easy — seeded round-robin, 2 seats -- THE UNCOMFORTABLE FINDING", () => {
-  it("does NOT show normal beating easy -- easy wins instead, consistently across all three seed ranges (measured: 168/200, 163/200, 166/200 easy wins -- 497/600 aggregate, 82.8%)", () => {
-    // This is the opposite of what the "easy/normal/hard" naming implies.
-    // See this file's own top docblock for the measured numbers and the
-    // argument from `normal.ts`/`easy.ts`'s own already-shipped code for
-    // WHY: a blind uniform raise pick (normal) loses to a 70%-of-the-time
-    // minimal-raise habit (easy), even though easy also adds doubt-decision
-    // noise normal does not have. Reported as measured -- not adjusted,
-    // not re-seeded, not laundered by enlarging the sample.
-    const { perRange, aggregate } = measureAcrossRanges("easy", "normal");
-    for (const rate of perRange) expect(rate).toBeGreaterThan(0.65);
-    expect(aggregate).toBeGreaterThan(0.65);
+describe("normal vs easy — seeded round-robin, 2 seats -- TASK 4.6: THE LADDER NOW HOLDS HERE", () => {
+  it("normal now beats easy overwhelmingly -- a complete reversal from D4's 82.8%-for-easy finding, not a marginal correction (measured: 198/200, 199/200, 199/200 -- 596/600 aggregate, 99.3%)", () => {
+    // D4 (task 4.4) measured EASY beating a uniform-raise `normal` 82.8% of
+    // the time. `normal.ts`'s new, reasoned raise policy (task 4.6)
+    // reverses this completely. Reported as measured -- same seed ranges,
+    // same sample size, same driver as D4; no re-seeding, no re-tuning.
+    const { perRange, aggregate } = measureAcrossRanges("normal", "easy");
+    for (const rate of perRange) expect(rate).toBeGreaterThan(0.9);
+    expect(aggregate).toBeGreaterThan(0.9);
   });
 });
