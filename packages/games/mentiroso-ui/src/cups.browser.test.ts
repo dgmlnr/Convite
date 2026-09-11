@@ -199,6 +199,24 @@ describe("cups: a rival's dice count is public — a status mark says so without
     const wrapper = container.querySelector<HTMLElement>('[data-seat="0"]')!;
     expect(wrapper.querySelector(".hexdev-mentiroso-cup-status")?.textContent).toBe("1 dado");
   });
+
+  /**
+   * FOUND BY LOOKING (SDD `mentiroso`, work unit E4/task 5.4 — rendering this
+   * package's own `showdown.ts` alongside `cups.ts` for the first time over a
+   * dark table felt, per `AGENTS.md`'s "todos los defectos visuales... los
+   * encontró alguien mirando"): this mark never set its own ink, so it drew
+   * in the BROWSER'S DEFAULT text colour — near-black — over a dark green
+   * felt. At 4x zoom on the rendered PNG it was barely a shadow, not text.
+   * `diceStatusLabel`'s own string was always correct; nothing tested colour.
+   */
+  it("gives the status mark a light ink of its own, never the browser's default, so it reads against a dark felt", () => {
+    const container = mountContainer();
+    const render = createMentirosoCups();
+    render(container, getViewFor(biddingState(), MY_PLAYER_ID));
+
+    const status = container.querySelector<HTMLElement>('[data-seat="5"] .hexdev-mentiroso-cup-status')!;
+    expect(status.style.color).toBe("rgb(242, 242, 242)");
+  });
 });
 
 describe("cups: a seat's fragment keeps its own footprint, wherever its anchor lands in the container", () => {
