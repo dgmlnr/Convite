@@ -10,6 +10,7 @@
     }
   },
   "dependencies": {
-    "@hexdev/mentiroso-engine": "workspace:*"
+    "@hexdev/mentiroso-engine": "workspace:*",
+    "@hexdev/platform-contract": "workspace:*"
   }
 }
