@@ -9,7 +9,9 @@ y adopta los colores de identidad del sitio.
 ## Estado
 
 En desarrollo, y jugable de punta a punta. Hay **cuatro juegos** —Truco Argentino, Escoba de
-15, Mahjong Solitario y Generala—, cada uno con su motor de reglas completo, y sobre ellos el
+15, Mahjong Solitario y Generala—, cada uno con su motor de reglas completo, y **un quinto en
+construcción**: el mentiroso, que ya tiene motor, adaptador, bot y mesa, pero todavía no se
+mergeó. Sobre todos ellos está el
 contrato genérico de juegos, el transporte con autenticación por tenant, los dos roles de
 servidor, el lobby con emparejamiento, los bots y el widget embebible.
 
@@ -96,14 +98,69 @@ están tomadas y escritas junto al código, no elegidas al pasar:
   nunca, y eso es un defecto, no una variante.
 - **La escalera al as** (3-4-5-6-1) no cuenta. El set popular la lista como "a convenir de
   antemano", y convenir es lo que se hace para agregarla.
+- **El tachado va en orden**, de mayor a menor pago: generala doble, generala, póker, full,
+  escalera y después los números del 6 al 1. Anotar un puntaje real sigue siendo libre en cualquier
+  casilla abierta; lo que el orden gobierna es **escribir un cero**. Sin esa regla, tachar se vuelve
+  una forma de esconder las casillas caras hasta el final, y la partida pierde la tensión de tener
+  que gastar algo bueno cuando la tirada no acompaña. La misma función que decide qué se ofrece es
+  la que decide qué se acepta, así que "todo lo aceptado fue ofrecido" es cierto por construcción.
 
 Es el primer juego de la plataforma que puede **empatar**, y empatar se reporta como lo que es:
 todos los que llegan al total más alto salen ganadores, en vez de que decida el orden de asiento.
+
+En la mesa, la planilla nombra sus filas de arriba con el número —**1 a 6**, no "unos" y "doses"— y
+distingue las dos cosas que un jugador puede hacer con un casillero: un **lápiz** sobre el puntaje
+que se anotaría, una **cruz roja** sobre el único que en ese momento se puede tachar. Que sea uno
+solo es consecuencia del orden obligatorio. El rojo no se eligió a ojo: el rojo puro da 3,76:1
+sobre este paño y no alcanza el piso de contraste para texto, así que se midió hasta encontrar uno
+que sí. Y el color nunca es la única diferencia: cambian también la forma y el grosor del trazo.
+
+Arriba de la planilla corre **el reloj del turno**, en cuenta regresiva y con los dos asientos a la
+vista. Si se acaba, el bot juega por vos — y **te lo dice**: qué anotó, dónde, y que el asiento
+sigue siendo tuyo.
+
+El cubilete **se sacude mientras espera y vuelca al tirar**, y suena: un revoleo sintetizado con
+Web Audio, sin un solo byte de audio grabado. No puede sonar antes de que lo toques, porque el
+contexto de audio recién se construye dentro de una pulsación real; después queda encendido y se
+apaga para siempre en una pulsación.
 
 Los dados y el cubilete siguen viviendo en `dice-ui`, afuera del juego, igual que el mazo español
 está afuera del truco. El azar entra por una sola puerta: **tira el servidor**, y el motor sólo
 recibe caras ya decididas. Un jugador sentado no puede tirarse sus propios dados, y hay un test de
 integración que lo intenta para probarlo.
+
+## El mentiroso — en construcción
+
+**Todavía no está en `main`.** Vive en una cadena de PRs abiertos, y se describe acá porque el
+juego ya existe entero: motor, adaptador, bot y mesa.
+
+Cinco dados por jugador, escondidos bajo el cubilete. Se apuesta sobre **cuántos dados de una cara
+hay en la mesa entera**, contando los de todos, y el siguiente sube o canta mentiroso. Al destapar
+se cuenta: si hay **al menos** esa cantidad, ganó el que apostó. El que pierde **entrega un dado**,
+y el que se queda sin dados sale. Gana el último que conserva alguno.
+
+Las reglas de esta casa, decididas y escritas antes de una línea de código:
+
+- **Sin comodines.** Un 1 vale 1 y nada más. Eso importa más de lo que parece: casi toda la
+  literatura de dados de mentir asume ases comodines, donde cada dado ajeno cuenta con probabilidad
+  1/3. Acá es 1/6, y cualquier tabla publicada que no declare su supuesto queda invalidada. El bot
+  tiene una valla que se pone roja si alguien sustituye una por la otra.
+- **Subir es ser estrictamente mayor** en el par (cantidad, cara): más cantidad con cualquier cara,
+  o la misma cantidad con una cara más alta. Nunca bajar.
+- **Hay un techo, y obliga.** La apuesta máxima es el total de dados que quedan en la mesa, de la
+  cara más alta. Al llegar ahí no queda ninguna subida legal y el que sigue **está obligado a
+  dudar**. El techo baja solo a medida que se entregan dados, así que se calcula del estado y nunca
+  se guarda.
+- **El que gana el desafío abre la ronda siguiente**, no el que perdió el dado.
+
+Mesas de **2, 4 y 6**. El motor soporta cualquier número entre 2 y 6 igual, porque con la
+eliminación una mesa de seis pasa por cinco, cuatro y tres.
+
+Es el primer juego de la plataforma con **información privada por asiento**, y eso cambió la
+plataforma: declarar qué es secreto dejó de ser una convención de cada juego y pasó a ser
+obligatorio por tipos. Un módulo que no lo declara **no compila**, y la suite de conformidad escanea
+cada vista contra cada secreto en cada asiento. La valla que existía antes **no podía fallar**, y se
+descubrió construyendo ésta.
 
 ## Arquitectura
 
