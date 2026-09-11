@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyAction, createTeamMatch, getLegalActions, startHand } from "@hexdev/truco-engine";
 import type { Action, MatchState, PlayerId } from "@hexdev/truco-engine";
 import { createGameModuleRegistry } from "@hexdev/platform-core";
-import type { ApplyResult, BotStrategy, GameModule, SeatAssignment } from "@hexdev/platform-contract";
+import type { ApplyResult, BotStrategy, GameId, GameModule, SeatAssignment } from "@hexdev/platform-contract";
 import { MATCH_GAME_IDS, buildGameRegistry } from "./registry.js";
 
 /**
@@ -298,6 +298,14 @@ describe("createGameModuleRegistry — the factory THIS root composes with admit
  * this file. What these tests hold on their own is that THIS registry reaches
  * THIS module's requester by game id, and that the pause travelled with it.
  */
+/**
+ * Every game id whose own registration declares `systemActionPauseMs` —
+ * named explicitly rather than derived from the registry itself, so a test
+ * reading this constant states its own exclusion list in plain sight instead
+ * of asking the very registry under test which ids to skip.
+ */
+const GAMES_WITH_OWN_PAUSE: ReadonlySet<GameId> = new Set(["generala", "mentiroso-2", "mentiroso-4", "mentiroso-6"]);
+
 describe("buildGameRegistry — Generala's registration (slice 18)", () => {
   const seats: readonly SeatAssignment[] = [
     { seat: 0, playerId: "generala-srv-a" as PlayerId },
@@ -326,19 +334,32 @@ describe("buildGameRegistry — Generala's registration (slice 18)", () => {
 
   /**
    * THE CASE THAT TELLS A LOOKUP FROM A `[0]`, and the regression this whole
-   * seam exists to avoid. Generala is the only entry here declaring a pause, so
-   * "answered for generala" and "answered from whichever entry declared one"
-   * are the same observation until some OTHER game is asked. Every one of them
-   * must still read `undefined` — "no opinion" — because that is what keeps
-   * their 1800ms beat, and an accessor answering 350 for all of them would
-   * speed up card games nobody asked to speed up.
+   * seam exists to avoid. Generala USED to be the only entry here declaring a
+   * pause, so "answered for generala" and "answered from whichever entry
+   * declared one" were the same observation until some OTHER game was asked.
+   * Every game with NO opinion must still read `undefined` — "no opinion" —
+   * because that is what keeps their 1800ms beat, and an accessor answering a
+   * declared value for all of them would speed up games nobody asked to speed
+   * up.
+   *
+   * SDD `mentiroso`, task 6.1: mentiroso's own three registrations ALSO
+   * declare a pause (design D6, 1200ms) — a second real opinion, not a second
+   * accident. Excluding only `"generala"` here would either red this test for
+   * the wrong reason the moment mentiroso registers, or — worse — get "fixed"
+   * by relaxing the assertion instead of naming the games that legitimately
+   * own one. `GAMES_WITH_OWN_PAUSE` (below) names every game with an opinion
+   * explicitly, so this fence keeps testing "every game WITHOUT one still
+   * reads undefined" rather than quietly narrowing to "every game except the
+   * ones this test happens to know about".
    */
   it("leaves every other game on this root at the room's own beat, undefined and unopinionated", () => {
     const registry = buildGameRegistry();
-    const others = MATCH_GAME_IDS.filter((gameId) => gameId !== "generala");
+    const others = MATCH_GAME_IDS.filter((gameId) => !GAMES_WITH_OWN_PAUSE.has(gameId));
 
     // Fence setup: read off the real list, so this cannot pass by iterating
-    // over nothing the day the registration list changes shape.
+    // over nothing the day the registration list changes shape. Five real
+    // games remain excluded only "generala" plus mentiroso's own three ids —
+    // never zero, which is what would make this comparison vacuous.
     expect(others.length, "fence setup: some other game has to exist to be asked about").toBeGreaterThan(0);
     for (const gameId of others) {
       expect(registry.getSystemActionPauseMs(gameId), `${gameId} must keep the room's handEndPauseMs`).toBeUndefined();
@@ -357,5 +378,72 @@ describe("buildGameRegistry — Generala's registration (slice 18)", () => {
     expect(registry.isHumanPriorityAction("generala", { type: "hold" })).toBe(false);
     expect(registry.isPaidQuestion("generala", { type: "hold" })).toBe(false);
     expect(registry.getConsultAsk("generala", fresh, seats[0]!.playerId)).toBeNull();
+  });
+});
+
+/**
+ * SDD `mentiroso`, task 6.1 — the composition root's own three registrations,
+ * mirrored against Generala's own tests above: rung 1 is the MODULE's own
+ * behaviour (fenced in `mentiroso-module`'s own tests, not re-asserted here);
+ * what these tests hold on their own is that THIS registry reaches THIS
+ * module's requester by game id, and that the pause (design D6) travelled
+ * with all three.
+ */
+describe("buildGameRegistry — Mentiroso's three registrations (task 6.1)", () => {
+  const twoSeats: readonly SeatAssignment[] = [
+    { seat: 0, playerId: "mentiroso-srv-a" as PlayerId },
+    { seat: 1, playerId: "mentiroso-srv-b" as PlayerId },
+  ];
+
+  it("wires requestMentirosoSystemAction on mentiroso-2: a real opening draw, not null", () => {
+    const registry = buildGameRegistry();
+    const module = registry.get("mentiroso-2" as GameId);
+    expect(module, "null here means the module itself is missing from the registry").toBeDefined();
+    const fresh = module!.createMatch({}, twoSeats);
+
+    const action = registry.getSystemAction("mentiroso-2" as GameId, fresh, () => 0.25);
+
+    expect(action, "null here means the requestSystemAction REGISTRATION itself is missing").not.toBeNull();
+    const drawn = JSON.parse(JSON.stringify(action)) as { type: string; faces: readonly number[] };
+    expect(drawn.type).toBe("opening-draw-roll");
+    // Anti-vacuity: a draw carrying no faces would satisfy the type
+    // assertion above and roll nothing for either seat.
+    expect(drawn.faces).toHaveLength(2);
+  });
+
+  it("wires the same requester on mentiroso-4 and mentiroso-6 too — one function, three ids, never a copy per registration", () => {
+    const registry = buildGameRegistry();
+    for (const [gameId, seatCount] of [
+      ["mentiroso-4", 4],
+      ["mentiroso-6", 6],
+    ] as const) {
+      const module = registry.get(gameId as GameId)!;
+      const seats: readonly SeatAssignment[] = Array.from({ length: seatCount }, (_unused, seat) => ({ seat, playerId: `mentiroso-srv-${String(seat)}` as PlayerId }));
+      const fresh = module.createMatch({}, seats);
+      const action = registry.getSystemAction(gameId as GameId, fresh, () => 0.25);
+      expect(action, `${gameId}: requestSystemAction registration is missing`).not.toBeNull();
+      const drawn = JSON.parse(JSON.stringify(action)) as { type: string; faces: readonly number[] };
+      expect(drawn.type).toBe("opening-draw-roll");
+      expect(drawn.faces).toHaveLength(seatCount);
+    }
+  });
+
+  it("declares the SAME 1200ms beat for all three registrations, design D6's measured (not estimated) value", () => {
+    const registry = buildGameRegistry();
+    expect(registry.getSystemActionPauseMs("mentiroso-2" as GameId)).toBe(1200);
+    expect(registry.getSystemActionPauseMs("mentiroso-4" as GameId)).toBe(1200);
+    expect(registry.getSystemActionPauseMs("mentiroso-6" as GameId)).toBe(1200);
+  });
+
+  it("registers NO consult hooks for Mentiroso — there is nothing to ask a partner about, on any of its three tables", () => {
+    const registry = buildGameRegistry();
+    const fresh = registry.get("mentiroso-2" as GameId)!.createMatch({}, twoSeats);
+
+    for (const gameId of ["mentiroso-2", "mentiroso-4", "mentiroso-6"] as const) {
+      expect(registry.isNonBlockingAction(gameId as GameId, { type: "doubt" })).toBe(false);
+      expect(registry.isHumanPriorityAction(gameId as GameId, { type: "doubt" })).toBe(false);
+      expect(registry.isPaidQuestion(gameId as GameId, { type: "doubt" })).toBe(false);
+    }
+    expect(registry.getConsultAsk("mentiroso-2" as GameId, fresh, twoSeats[0]!.playerId)).toBeNull();
   });
 });

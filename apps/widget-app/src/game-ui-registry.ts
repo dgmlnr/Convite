@@ -39,6 +39,8 @@ import { TILE_ATTRIBUTION } from "@hexdev/mahjong-tile-ui";
 import { getCupArtUrl, getDieFaceArtUrl } from "@hexdev/dice-ui";
 import type { DieFace } from "@hexdev/dice-ui";
 import type { GeneralaAction, HoldAction, PlayerView as GeneralaPlayerView, ScoreAction } from "@hexdev/generala-engine";
+import type { MentirosoAction, PlayerView as MentirosoPlayerView } from "@hexdev/mentiroso-engine";
+import { createMentirosoTableRenderer } from "@hexdev/mentiroso-ui";
 import type { GeneralaAutoplay } from "@hexdev/generala-ui";
 import {
   BOARD_CLASS,
@@ -621,7 +623,46 @@ const GENERALA_FAMILY: GameFamilyUi = {
   cardArtIsCutOut: true,
 };
 
-const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY, GENERALA_FAMILY];
+/**
+ * THE FIFTH FAMILY, AND THE SECOND THAT PLAYS WITH DICE.
+ *
+ * Reuses `dice-ui` directly, exactly as `GENERALA_ART` above: the cup and a
+ * die are literally the objects THIS game is played with too, and
+ * `dice-ui`'s own license (fully procedural die, CC0 cup) already covers
+ * both games without a second obligation — see `GENERALA_FAMILY`'s own
+ * docblock for why no `credits` entry follows either.
+ *
+ * A DIFFERENT flanking face from Generala's own choice (5), so the two dice
+ * families' cards read as two distinct games side by side on the same
+ * shelf rather than as one card repeated. `GENERALA_FLANKING_FACE`'s own
+ * docblock already argues 5's quincunx survives the fan's clamp better than
+ * 1 or 6; 3 is the other face whose pip pattern (a diagonal, not a block)
+ * stays legible at the same size, for the identical reason.
+ */
+const MENTIROSO_FLANKING_FACE: DieFace = 3;
+
+const MENTIROSO_ART: readonly string[] = [
+  getDieFaceArtUrl(MENTIROSO_FLANKING_FACE).href,
+  getCupArtUrl().href,
+  getDieFaceArtUrl(MENTIROSO_FLANKING_FACE).href,
+];
+
+/**
+ * `hero` IS declared, unlike `MAHJONG_FAMILY`/`GENERALA_FAMILY`: mentiroso
+ * registers THREE modalities (2/4/6 seats), so screen two's header fan has
+ * formats to fan, the same reason `TRUCO_FAMILY`/`ESCOBA_FAMILY` declare one.
+ * Reused as `cardArt` too, the same one-array-two-jobs shape
+ * `ESCOBA_FAMILY`'s own docblock argues for.
+ */
+const MENTIROSO_FAMILY: GameFamilyUi = {
+  id: "mentiroso",
+  heroTitle: "Mentiroso",
+  hero: MENTIROSO_ART,
+  cardArt: MENTIROSO_ART,
+  cardArtIsCutOut: true,
+};
+
+const FAMILIES: readonly GameFamilyUi[] = [TRUCO_FAMILY, ESCOBA_FAMILY, MAHJONG_FAMILY, GENERALA_FAMILY, MENTIROSO_FAMILY];
 
 /**
  * The family whose face the front door wears — or none.
@@ -1130,6 +1171,52 @@ function createGeneralaRenderer(): GameUiEntry["createRenderer"] {
  */
 const generalaEntry: GameUiEntry = { id: "generala" as GameId, gameFamily: GENERALA_FAMILY.id, createRenderer: createGeneralaRenderer() };
 
+/**
+ * ONE RENDERER, THREE REGISTRATIONS (SDD `mentiroso`, task 6.1) — the same
+ * "one game, several seat counts, one rendering function" shape
+ * `createTrucoRenderer` already establishes for its own 1v1/2v2 pair.
+ * `mentiroso-ui`'s own `createMentirosoTableRenderer` is already seat-count
+ * generic (`table-layout.ts`'s own polar formula takes `seatCount` as a
+ * parameter, derived from `view.rivals.length + 1`), so there is no
+ * seat-count branch here either — mirrors `createTrucoRenderer`'s own
+ * comment on `createMatchTableRenderer` almost verbatim.
+ *
+ * `context`/`onPlayAgain`/`onLeaveMatch` are ignored, the same "untouched by
+ * this and pay nothing for it" shape `GameUiEntry`'s own docblock states for
+ * every entry that declares no parameter for them.
+ *
+ * A GENUINE, DECLARED GAP CARRIED FORWARD FROM THIS: `mentiroso-ui` renders
+ * no match-over overlay of its own (unlike truco's/escoba's/generala's own
+ * `renderMatchOverOverlay`/`renderGeneralaMatchOver`) — a finished match's
+ * `outcome` (R-WINNER, last seat standing) currently has nowhere on this
+ * table to be shown. Wiring this renderer as-is matches what the package
+ * actually provides; adding that overlay is new UI work, not composition-root
+ * wiring, and was never assigned to task 6.1 or to any of Stage E's own
+ * units (E1-E5). Reported here rather than silently built or silently
+ * skipped.
+ */
+function createMentirosoRenderer(): GameUiEntry["createRenderer"] {
+  return () => {
+    const render = createMentirosoTableRenderer();
+    return (container, payload, dispatch) => {
+      render(container, payload.view as MentirosoPlayerView, payload.legalActions as readonly MentirosoAction[], (action) => dispatch(action));
+    };
+  };
+}
+
+/**
+ * THREE IDS, EACH ITS OWN CALL TO `createMentirosoRenderer()` — mirrors
+ * `trucoEntry`/`trucoEntry2v2` sharing the factory FUNCTION but each
+ * invoking it separately, never sharing one built instance, so a match at
+ * one seat count never leaks its own per-mount state
+ * (`createMentirosoTableRenderer`'s own closed-over `mountedDocument`/
+ * `cupsLayer`/etc.) into a different match at another seat count reusing
+ * the same widget session.
+ */
+const mentirosoEntry: GameUiEntry = { id: "mentiroso-2" as GameId, gameFamily: MENTIROSO_FAMILY.id, createRenderer: createMentirosoRenderer() };
+const mentirosoEntry4: GameUiEntry = { id: "mentiroso-4" as GameId, gameFamily: MENTIROSO_FAMILY.id, createRenderer: createMentirosoRenderer() };
+const mentirosoEntry6: GameUiEntry = { id: "mentiroso-6" as GameId, gameFamily: MENTIROSO_FAMILY.id, createRenderer: createMentirosoRenderer() };
+
 export interface GameUiRegistry {
   get(gameId: GameId): GameUiEntry | undefined;
   /** The identity behind a joinable id — see `GameFamilyUi`. Screen 2 asks
@@ -1146,6 +1233,9 @@ export function createGameUiRegistry(): GameUiRegistry {
     [escobaEntry2v2.id, escobaEntry2v2],
     [mahjongEntry.id, mahjongEntry],
     [generalaEntry.id, generalaEntry],
+    [mentirosoEntry.id, mentirosoEntry],
+    [mentirosoEntry4.id, mentirosoEntry4],
+    [mentirosoEntry6.id, mentirosoEntry6],
   ]);
   const byFamily = new Map<GameFamilyId, GameFamilyUi>(FAMILIES.map((entry) => [entry.id, entry]));
   return {

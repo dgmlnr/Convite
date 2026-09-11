@@ -109,6 +109,9 @@ importers:
       '@hexdev/mahjong-solitaire-module':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-module
+      '@hexdev/mentiroso-module':
+        specifier: workspace:*
+        version: link:../../packages/games/mentiroso-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -137,6 +140,9 @@ importers:
       '@hexdev/mahjong-solitaire-module':
         specifier: workspace:*
         version: link:../../packages/games/mahjong-solitaire-module
+      '@hexdev/mentiroso-module':
+        specifier: workspace:*
+        version: link:../../packages/games/mentiroso-module
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract
@@ -189,6 +195,12 @@ importers:
       '@hexdev/mahjong-tile-ui':
         specifier: workspace:*
         version: link:../../packages/mahjong-tile-ui
+      '@hexdev/mentiroso-engine':
+        specifier: workspace:*
+        version: link:../../packages/games/mentiroso-engine
+      '@hexdev/mentiroso-ui':
+        specifier: workspace:*
+        version: link:../../packages/games/mentiroso-ui
       '@hexdev/platform-contract':
         specifier: workspace:*
         version: link:../../packages/platform-contract

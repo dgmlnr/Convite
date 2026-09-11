@@ -5,6 +5,7 @@ import { trucoModule, trucoModule2v2 } from "@hexdev/truco-module";
 import { escobaModule, escobaModule2v2 } from "@hexdev/escoba-module";
 import { generalaModule } from "@hexdev/generala-module";
 import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
+import { mentirosoModule, mentirosoModule4, mentirosoModule6 } from "@hexdev/mentiroso-module";
 
 /**
  * The MINTING role's own game registry — EXTRACTED from `index.ts` for the
@@ -49,12 +50,21 @@ import { mahjongSolitaireModule } from "@hexdev/mahjong-solitaire-module";
  * for `section: "dados"`, the shelf that makes Generala the first entry in this
  * list not filed under `cartas` or `fichas`; and `configOptions`, which is
  * empty, so `deriveModalities` yields Generala's single empty-config modality.
+ *
+ * MENTIROSO'S THREE ENTRIES JOIN BARE TOO, and for the identical reason
+ * Generala's own single entry does (SDD `mentiroso`, task 6.1): this role
+ * reads only `metadata`/`configOptions` to build the catalog and never
+ * runs a match, so `requestMentirosoSystemAction` and the declared
+ * `systemActionPauseMs` (both the match root's own concern, `apps/server`'s
+ * `registry.ts`) are reachable from nowhere on this root and would be lines
+ * nothing here can call. All three share `section: "dados"` with Generala —
+ * the same shelf, a second family on it.
  */
 /** The exact module list `buildMintGameRegistry` composes with — pulled into
  * its own constant (tenant-administration slice 3b) so `MINT_GAME_IDS`
  * below can derive from the SAME array rather than authoring a second,
  * independently-maintained list of ids that could drift from it. */
-const MINT_GAME_MODULES = [trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule, generalaModule];
+const MINT_GAME_MODULES = [trucoModule, trucoModule2v2, escobaModule, escobaModule2v2, mahjongSolitaireModule, generalaModule, mentirosoModule, mentirosoModule4, mentirosoModule6];
 
 export function buildMintGameRegistry(): GameModuleRegistry {
   return createGameModuleRegistry(MINT_GAME_MODULES);

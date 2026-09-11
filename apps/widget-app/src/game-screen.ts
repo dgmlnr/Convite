@@ -359,13 +359,16 @@ function renderGame(
    * (see renderGameSelection's own note on `heroTitle`), and there this
    * heading is the only thing naming the game -- so it keeps the name. And a
    * seat count with no format word written for it keeps it too. */
-  title.textContent = heroTitle === undefined ? gameName : (STRINGS.formatName(entry.seatCount) ?? gameName);
+  title.textContent = heroTitle === undefined ? gameName : (STRINGS.formatName(entry.seatCount, entry.gameFamily) ?? gameName);
   card.appendChild(title);
 
   // What this format IS, from the platform's own seat count — see
-  // i18n.ts's formatDescription. Absent for a seat count nobody has written a
-  // line for yet, and an absent line is simply not rendered.
-  const explanation = STRINGS.formatDescription(entry.seatCount);
+  // i18n.ts's formatDescription. `entry.gameFamily` lets that lookup opt a
+  // specific family OUT of a generic guess that would misdescribe it (see
+  // its own docblock: mentiroso's 4-seat table is not two teams of two).
+  // Absent for a seat count nobody has written a line for yet, and an absent
+  // line is simply not rendered.
+  const explanation = STRINGS.formatDescription(entry.seatCount, entry.gameFamily);
   if (explanation !== undefined) {
     const blurb = document.createElement("p");
     blurb.className = "hexdev-game-blurb";

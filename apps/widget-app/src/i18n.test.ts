@@ -149,4 +149,61 @@ describe("i18n (Spanish user-facing copy — the player is Argentine, the game i
       expect(STRINGS.sectionDados).toBe("Dados");
     });
   });
+
+  /**
+   * SDD `mentiroso`, task 6.1 — the copy the composition root needs to seat
+   * a player at a real table.
+   *
+   * Mentiroso registers THREE ids at THREE seat counts (2/4/6), never two —
+   * so unlike escoba's shared family name, each seat count needs its OWN
+   * distinguishing label. The DEFAULT modality (2 seats) carries the plain
+   * family name; the wider tables say how many sit at them, the same
+   * "default carries no qualifier, the rest do" convention truco's own pair
+   * ("Truco Argentino" / "Truco Argentino 2v2") already establishes.
+   */
+  describe("the bluffing dice game (task 6.1)", () => {
+    it("names the game itself at 2 seats, with no qualifier — the default modality", () => {
+      expect(translateGameName("games.mentiroso2.name")).toBe("Mentiroso");
+    });
+
+    it("names the wider tables distinctly, each carrying its own seat count", () => {
+      expect(translateGameName("games.mentiroso4.name")).toBe("Mentiroso (4 jugadores)");
+      expect(translateGameName("games.mentiroso6.name")).toBe("Mentiroso (6 jugadores)");
+      // Three genuinely different strings, not one repeated three times.
+      expect(new Set([translateGameName("games.mentiroso2.name"), translateGameName("games.mentiroso4.name"), translateGameName("games.mentiroso6.name")]).size).toBe(3);
+    });
+
+    it("gives the empty-configOptions summary the game's own distinctive rule, for all three seat counts", () => {
+      expect(STRINGS.modalitySummary("mentiroso-2")).toBe("El techo obliga a dudar.");
+      expect(STRINGS.modalitySummary("mentiroso-4")).toBe("El techo obliga a dudar.");
+      expect(STRINGS.modalitySummary("mentiroso-6")).toBe("El techo obliga a dudar.");
+    });
+
+    /**
+     * THE REGRESSION THIS FAMILY WOULD OTHERWISE HIT. `formatName`/
+     * `formatDescription` are generic, seat-count-only lookups — every
+     * 4-seat game shipped before this one really was two teams of two, so
+     * `formatName(4)` reads "En parejas" ("in pairs") and
+     * `formatDescription(4)` reads "En parejas: vos y un compañero contra
+     * dos." ("teamed up: you and a partner against two"). Mentiroso's own
+     * 4-seat table is four individual rivals with no partner at all — that
+     * generic answer would be a wrong claim about the game, not merely an
+     * imprecise one. The optional `gameFamily` parameter lets exactly this
+     * one family opt out, without changing what any other family reads.
+     */
+    it("opts OUT of the generic seat-count guess at every seat count mentiroso registers, unlike every family that came before it", () => {
+      expect(STRINGS.formatName(2, "mentiroso")).toBeUndefined();
+      expect(STRINGS.formatName(4, "mentiroso")).toBeUndefined();
+      expect(STRINGS.formatName(6, "mentiroso")).toBeUndefined();
+      expect(STRINGS.formatDescription(2, "mentiroso")).toBeUndefined();
+      expect(STRINGS.formatDescription(4, "mentiroso")).toBeUndefined();
+      expect(STRINGS.formatDescription(6, "mentiroso")).toBeUndefined();
+    });
+
+    it("and the generic guess is still exactly what it was for every OTHER family — the override is scoped, not a global change", () => {
+      expect(STRINGS.formatName(2)).toBe("Mano a mano");
+      expect(STRINGS.formatName(4)).toBe("En parejas");
+      expect(STRINGS.formatDescription(4)).toBe("En parejas: vos y un compañero contra dos.");
+    });
+  });
 });

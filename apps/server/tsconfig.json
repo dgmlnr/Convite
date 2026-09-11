@@ -40,6 +40,9 @@
       "path": "../../packages/games/mahjong-solitaire-module"
     },
     {
+      "path": "../../packages/games/mentiroso-module"
+    },
+    {
       "path": "../../packages/widget-protocol"
     }
   ]

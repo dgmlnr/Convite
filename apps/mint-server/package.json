@@ -10,6 +10,7 @@
     "@hexdev/escoba-module": "workspace:*",
     "@hexdev/generala-module": "workspace:*",
     "@hexdev/mahjong-solitaire-module": "workspace:*",
+    "@hexdev/mentiroso-module": "workspace:*",
     "@hexdev/platform-contract": "workspace:*",
     "@hexdev/platform-core": "workspace:*",
     "@hexdev/truco-module": "workspace:*",
