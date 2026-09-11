@@ -141,4 +141,56 @@ describe("table: composes the felt, the bid picker and the showdown reveal — n
     const expectedCenter = (container.scrollWidth - container.clientWidth) / 2;
     expect(container.scrollLeft).toBeCloseTo(expectedCenter, 0);
   });
+
+  /**
+   * FENCES the "flat overlay" decision task 5.6's own launch prompt asked
+   * for explicitly ("decidí si [el panel del destape] se contra-transforma o
+   * vive en una capa plana por encima, y cercalo"): the bid picker and the
+   * showdown panel are siblings of `cups.ts`'s own tilted cups layer, never
+   * descendants of it (this file's own top docblock: "cups NEVER SHARE
+   * THEIR OWN CONTAINER WITH THE PANELS"), so neither one ever needs a
+   * counter-transform — there is nothing tilting them to begin with. This
+   * is a characterization of an existing structural guarantee (both panels
+   * were already siblings before task 5.6), locked in here so a future
+   * restructuring that nests either panel under the tilted layer is caught
+   * immediately rather than discovered by a skewed screenshot.
+   */
+  function ancestorsOf(element: HTMLElement, stopAt: HTMLElement): readonly HTMLElement[] {
+    const chain: HTMLElement[] = [];
+    for (let node = element.parentElement; node !== null && node !== stopAt; node = node.parentElement) {
+      chain.push(node);
+    }
+    return chain;
+  }
+
+  it("never applies a 3D transform anywhere between either panel and the table container — both stay flat, outside the tilted cups layer", () => {
+    const container = mountContainer();
+    const render = createMentirosoTableRenderer();
+    render(container, getViewFor(showdownState(), MY_PLAYER_ID), getLegalActions(showdownState(), MY_PLAYER_ID), () => {});
+
+    // `getComputedStyle(el).transform` only reports an element's OWN
+    // transform, never one composed in from an ancestor — so the real fence
+    // walks every ancestor UP TO the container `render` was given, not just
+    // the panel itself, catching a mutation that tilts the felt or the cups
+    // layer (an ancestor) just as surely as one that tilts the panel
+    // directly. Both panels DO carry an ordinary 2D `transform: translate(
+    // -50%, -50%)` for centering (`table-styles.ts`) — the fence is that
+    // NOTHING between them and `container` ever carries `rotateX`,
+    // `perspective`, or a resolved `matrix3d`, any of which a
+    // `cupTiltTransform()`-style ancestor would introduce.
+    const showdownPanel = container.querySelector<HTMLElement>(".hexdev-mentiroso-showdown")!;
+    for (const ancestor of [showdownPanel, ...ancestorsOf(showdownPanel, container)]) {
+      const transform = getComputedStyle(ancestor).transform;
+      expect(transform).not.toContain("matrix3d");
+    }
+
+    const biddingContainer = mountContainer();
+    const state = biddingState(MY_SEAT);
+    createMentirosoTableRenderer()(biddingContainer, getViewFor(state, MY_PLAYER_ID), getLegalActions(state, MY_PLAYER_ID), () => {});
+    const bidPanel = biddingContainer.querySelector<HTMLElement>(".hexdev-mentiroso-bid-picker")!;
+    for (const ancestor of [bidPanel, ...ancestorsOf(bidPanel, biddingContainer)]) {
+      const transform = getComputedStyle(ancestor).transform;
+      expect(transform).not.toContain("matrix3d");
+    }
+  });
 });
