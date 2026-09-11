@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getViewFor } from "@hexdev/mentiroso-engine";
 import type { MatchState, PlayerId } from "@hexdev/mentiroso-engine";
 
-import { createMentirosoCups } from "./cups.js";
+import { createMentirosoCups, SEAT_FRAGMENT_SCALE } from "./cups.js";
+import { cupTiltTransform, depthScaleFor } from "./table-perspective.js";
 
 /**
  * `cups.ts`'s own tests (SDD `mentiroso`, work unit E2/task 5.2, design D5).
@@ -330,6 +331,71 @@ describe("cups: at six-seat showdown, every seat's tray stays legible — no cup
         expect(overlaps).toBe(false);
       }
     }
+  });
+});
+
+function wrapperFor(container: HTMLElement, seat: number): HTMLElement {
+  return container.querySelector<HTMLElement>(`[data-seat="${String(seat)}"]`)!;
+}
+
+function scaleOf(wrapper: HTMLElement): number {
+  const match = /scale\(([-\d.]+)\)/.exec(wrapper.style.transform);
+  if (match === null) throw new Error(`wrapper transform carries no scale(): "${wrapper.style.transform}"`);
+  return Number(match[1]);
+}
+
+describe("cups: the table tilts back — a real perspective, not a flat scale (SDD mentiroso, task 5.6)", () => {
+  it("wraps every seat's cup GRAPHIC in the one shared, declared tilt — never a per-seat copy", () => {
+    const container = mountContainer();
+    const render = createMentirosoCups();
+    render(container, getViewFor(biddingState(), MY_PLAYER_ID));
+
+    for (const seat of [0, 1, 2, 3, 4, 5]) {
+      const tilt = wrapperFor(container, seat).querySelector<HTMLElement>(".hexdev-mentiroso-cup-tilt")!;
+      expect(tilt.style.transform).toBe(cupTiltTransform());
+    }
+  });
+
+  /**
+   * FENCES the "flat overlay" decision (design D5/task 5.6's own launch
+   * prompt: "decidí si [los rótulos] se contra-transforman o si viven en una
+   * capa plana por encima, y cercalo"): the status label is a SIBLING of the
+   * tilt wrapper, never a descendant, so it never inherits the tilt's own
+   * `rotateX` skew — only the wrapper's ordinary (untilted) `scale()`, the
+   * same mechanism it already lived under before this unit.
+   */
+  it("never nests the status label inside the tilted graphic — it stays flat, a sibling of the tilt wrapper", () => {
+    const container = mountContainer();
+    const render = createMentirosoCups();
+    render(container, getViewFor(biddingState(), MY_PLAYER_ID));
+
+    const wrapper = wrapperFor(container, 5); // a living rival — carries a status label
+    const tilt = wrapper.querySelector<HTMLElement>(".hexdev-mentiroso-cup-tilt")!;
+    const status = wrapper.querySelector<HTMLElement>(".hexdev-mentiroso-cup-status")!;
+    expect(status.parentElement).toBe(wrapper);
+    expect(tilt.contains(status)).toBe(false);
+  });
+
+  /**
+   * THE FREE BENEFIT, MEASURED — never assumed. `MY_SEAT` (3) is the
+   * nearest point on the table (`table-layout.ts`'s own `y=1` at the
+   * viewer's own seat); seat 0, exactly opposite at 6 seats, is the
+   * farthest (`y=-1`). A flat `SEAT_FRAGMENT_SCALE` alone could not tell
+   * these two apart — the whole point of task 5.6's own "check whether it
+   * dissolves the uniform-scale problem before adding a formula".
+   */
+  it("renders the viewer's own (nearest) seat measurably BIGGER than a flat scale, and the farthest seat measurably SMALLER", () => {
+    const container = mountContainer();
+    const render = createMentirosoCups();
+    render(container, getViewFor(biddingState(), MY_PLAYER_ID));
+
+    const ownScale = scaleOf(wrapperFor(container, MY_SEAT));
+    const farScale = scaleOf(wrapperFor(container, 0));
+
+    expect(ownScale).toBeCloseTo(SEAT_FRAGMENT_SCALE * depthScaleFor(1), 6);
+    expect(farScale).toBeCloseTo(SEAT_FRAGMENT_SCALE * depthScaleFor(-1), 6);
+    expect(ownScale).toBeGreaterThan(SEAT_FRAGMENT_SCALE);
+    expect(farScale).toBeLessThan(SEAT_FRAGMENT_SCALE);
   });
 });
 

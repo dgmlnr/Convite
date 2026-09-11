@@ -3,6 +3,7 @@ import type { DiceCupHandle } from "@hexdev/dice-ui";
 import type { DieFace, PlayerView, RevealedRivalView, RivalView } from "@hexdev/mentiroso-engine";
 
 import { tableLayout } from "./table-layout.js";
+import { cupTiltTransform, depthScaleFor } from "./table-perspective.js";
 
 /**
  * Wires one `DiceCupHandle` (`@hexdev/dice-ui`, read-only, unmodified) per
@@ -65,8 +66,18 @@ const TABLE_RADIUS_Y_PERCENT = 36;
  * earlier units already measured. The status label just below gets its own,
  * independent fix instead — the one legibility complaint this file can
  * settle without touching this proven geometry at all.
+ *
+ * MODULATED, NOT REPLACED, BY WORK UNIT E5B/TASK 5.6 — the owner's own
+ * "el cubilete es una manchita" decision. This constant stays the SAME flat
+ * baseline the six-seat fence already proved safe; `table-perspective.ts`'s
+ * `depthScaleFor(position.y)` multiplies it per seat, so the viewer's own
+ * (nearest) seat renders measurably bigger than this number alone and the
+ * farthest seat renders measurably smaller — a real perspective projection,
+ * never a second per-seat-count constant. Exported so
+ * `cups.browser.test.ts` can assert the exact multiplication rather than
+ * hardcode a duplicate of either factor.
  */
-const SEAT_FRAGMENT_SCALE = 0.32;
+export const SEAT_FRAGMENT_SCALE = 0.32;
 
 /**
  * The status label's own PRE-shrink font-size (see the negative-space fix on
@@ -165,8 +176,21 @@ export function createMentirosoCups(): MentirosoCupsRender {
       // already-sized box, strictly after this decides the size.
       wrapper.style.width = "max-content";
 
+      // THE TILTED GRAPHIC (task 5.6, design D5 extended): only the cup+tray
+      // fragment itself tilts — never `wrapper` (still positioned by plain
+      // 2D `left`/`top`/`scale`, unchanged) and never `status` below (a
+      // SIBLING of this div, not a descendant, so it never inherits the
+      // `rotateX` skew — see this file's own `cups.browser.test.ts` for the
+      // fence). The SAME declared transform for every seat: the only
+      // per-seat variable is the render loop's own `depthScaleFor`, applied
+      // to `wrapper`'s scale below, never a second copy of the angle here.
+      const tilt = container.ownerDocument.createElement("div");
+      tilt.className = "hexdev-mentiroso-cup-tilt";
+      tilt.style.transform = cupTiltTransform();
+
       const handle = createDiceCup(container.ownerDocument, { onPress: () => {} });
-      wrapper.appendChild(handle.element);
+      tilt.appendChild(handle.element);
+      wrapper.appendChild(tilt);
 
       const status = container.ownerDocument.createElement("div");
       status.className = "hexdev-mentiroso-cup-status";
@@ -213,7 +237,12 @@ export function createMentirosoCups(): MentirosoCupsRender {
 
       cup.wrapper.style.left = `${String(50 + position.x * TABLE_RADIUS_X_PERCENT)}%`;
       cup.wrapper.style.top = `${String(50 + position.y * TABLE_RADIUS_Y_PERCENT)}%`;
-      cup.wrapper.style.transform = `translate(-50%, -50%) scale(${String(SEAT_FRAGMENT_SCALE)})`;
+      // `depthScaleFor` — the tilt's own "free" benefit (task 5.6): the
+      // viewer's own (nearest) seat renders bigger than `SEAT_FRAGMENT_SCALE`
+      // alone, the farthest renders smaller, continuously over ANY seat
+      // count — never a second, per-seat-count formula.
+      const finalScale = SEAT_FRAGMENT_SCALE * depthScaleFor(position.y);
+      cup.wrapper.style.transform = `translate(-50%, -50%) scale(${String(finalScale)})`;
 
       if (position.seat === view.self.seat) {
         cup.handle.cupElement.disabled = false;
